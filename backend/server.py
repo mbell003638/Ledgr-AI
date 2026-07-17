@@ -146,6 +146,35 @@ class InventoryCheckCreate(BaseModel):
 class SettingsModel(BaseModel):
     googleApiKey: Optional[str] = ""
     fcRate: float = 1.0  # 1 USD = fcRate CDF
+    managerCommissionPct: Optional[float] = 0.0
+    currentPeriodStart: Optional[str] = "1970-01-01"
+    openingInventory: Optional[float] = 0.0
+    openingCash: Optional[float] = 0.0
+
+
+class ClosedPeriod(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    startDate: str
+    endDate: str
+    openingInventory: float
+    openingCash: float
+    totalSales: float
+    totalPurchases: float
+    grossProfit: float
+    managerCommissionPct: float
+    commission: float
+    drawings: float
+    supplierPayments: float
+    netProfit: float
+    closingInventory: float
+    closingCash: float
+    notes: Optional[str] = ""
+    closed_at: str = Field(default_factory=now_iso)
+
+
+class ClosePeriodIn(BaseModel):
+    actualStock: float
+    notes: Optional[str] = ""
 
 
 class GeminiTextIn(BaseModel):
@@ -194,18 +223,27 @@ async def root():
 async def get_settings():
     s = await db.settings.find_one({"_id": "app"})
     if not s:
-        return {"googleApiKey": "", "fcRate": 1.0}
+        return {"googleApiKey": "", "fcRate": 1.0, "managerCommissionPct": 0.0,
+                "currentPeriodStart": "1970-01-01", "openingInventory": 0.0, "openingCash": 0.0}
     s.pop("_id", None)
-    # Mask key
-    key = s.get("googleApiKey", "")
-    return {"googleApiKey": key, "fcRate": s.get("fcRate", 1.0)}
+    return {
+        "googleApiKey": s.get("googleApiKey", ""),
+        "fcRate": s.get("fcRate", 1.0),
+        "managerCommissionPct": s.get("managerCommissionPct", 0.0),
+        "currentPeriodStart": s.get("currentPeriodStart", "1970-01-01"),
+        "openingInventory": s.get("openingInventory", 0.0),
+        "openingCash": s.get("openingCash", 0.0),
+    }
 
 
 @api_router.put("/settings")
 async def update_settings(body: SettingsModel):
-    doc = body.model_dump()
-    await db.settings.update_one({"_id": "app"}, {"$set": doc}, upsert=True)
-    return doc
+    # Only update explicitly provided fields so partial updates don't wipe others
+    doc = body.model_dump(exclude_unset=True)
+    if doc:
+        await db.settings.update_one({"_id": "app"}, {"$set": doc}, upsert=True)
+    s = await db.settings.find_one({"_id": "app"}, {"_id": 0}) or {}
+    return s
 
 
 @api_router.post("/settings/test-key")
@@ -444,6 +482,10 @@ async def delete_inventory(iid: str):
 async def dashboard():
     settings = await db.settings.find_one({"_id": "app"}) or {}
     fc_rate = settings.get("fcRate", 1.0) or 1.0
+    period_start = settings.get("currentPeriodStart", "1970-01-01") or "1970-01-01"
+    opening_inv = float(settings.get("openingInventory", 0.0) or 0.0)
+    opening_cash = float(settings.get("openingCash", 0.0) or 0.0)
+    commission_pct = float(settings.get("managerCommissionPct", 0.0) or 0.0)
 
     def to_usd(amount, currency, rate):
         if currency == "USD":
@@ -451,10 +493,11 @@ async def dashboard():
         r = rate or fc_rate or 1.0
         return float(amount) / r if r else 0.0
 
-    bills = await db.bills.find({}, {"_id": 0}).to_list(5000)
-    sales = await db.sales.find({}, {"_id": 0}).to_list(5000)
-    payments = await db.payments.find({}, {"_id": 0}).to_list(5000)
-    inv = await db.inventoryChecks.find_one({}, {"_id": 0}, sort=[("date", -1)])
+    q = {"date": {"$gte": period_start}}
+    bills = await db.bills.find(q, {"_id": 0}).to_list(5000)
+    sales = await db.sales.find(q, {"_id": 0}).to_list(5000)
+    payments = await db.payments.find(q, {"_id": 0}).to_list(5000)
+    inv = await db.inventoryChecks.find_one(q, {"_id": 0}, sort=[("date", -1)])
     suppliers = await db.suppliers.count_documents({})
 
     total_purchases = sum(to_usd(b["amount"], b.get("currency", "USD"), b.get("rate", fc_rate)) for b in bills)
@@ -464,14 +507,18 @@ async def dashboard():
     drawings = sum(to_usd(p["amount"], p.get("currency", "USD"), p.get("rate", fc_rate))
                    for p in payments if p.get("type") == "drawing")
 
-    liabilities = round(total_purchases - supplier_payments, 2)
-    inventory_value = float(inv["actualStock"]) if inv else 0.0
-    cash = round(total_sales - supplier_payments - drawings, 2)
-    assets = round(cash + inventory_value, 2)
-    net_worth = round(assets - liabilities, 2)
     gross_profit = round(total_sales - total_purchases, 2)
+    commission = round(gross_profit * commission_pct / 100.0, 2) if gross_profit > 0 else 0.0
+    net_profit = round(gross_profit - commission - drawings, 2)
 
-    # 7-day sales trend
+    liabilities = round(total_purchases - supplier_payments + commission, 2)
+    inventory_value = float(inv["actualStock"]) if inv else opening_inv
+    cash = round(opening_cash + total_sales - supplier_payments - drawings, 2)
+    assets = round(cash + inventory_value, 2)
+    opening_balance = round(opening_cash + opening_inv, 2)
+    closing_balance = round(assets, 2)
+    net_worth = round(assets - liabilities, 2)
+
     from collections import defaultdict
     trend = defaultdict(float)
     for s in sales:
@@ -485,12 +532,20 @@ async def dashboard():
         "netWorth": net_worth,
         "cash": cash,
         "inventoryValue": inventory_value,
+        "openingBalance": opening_balance,
+        "openingInventory": opening_inv,
+        "openingCash": opening_cash,
+        "closingBalance": closing_balance,
         "totalPurchases": round(total_purchases, 2),
         "totalSales": round(total_sales, 2),
         "grossProfit": gross_profit,
+        "managerCommissionPct": commission_pct,
+        "commission": commission,
+        "netProfit": net_profit,
         "drawings": round(drawings, 2),
         "supplierPayments": round(supplier_payments, 2),
         "suppliers": suppliers,
+        "periodStart": period_start,
         "salesTrend": [{"date": d, "value": round(v, 2)} for d, v in sorted_trend],
     }
 
@@ -503,8 +558,10 @@ async def report_pnl():
         "revenue": d["totalSales"],
         "cogs": d["totalPurchases"],
         "grossProfit": d["grossProfit"],
+        "managerCommissionPct": d["managerCommissionPct"],
+        "commission": d["commission"],
         "drawings": d["drawings"],
-        "netProfit": round(d["grossProfit"] - d["drawings"], 2),
+        "netProfit": d["netProfit"],
     }
 
 
@@ -956,6 +1013,91 @@ async def backup_import(body: BackupPayload):
         await db.settings.update_one({"_id": "app"}, {"$set": s}, upsert=True)
         counts["settings"] = 1
     return {"ok": True, "mode": mode, "imported": counts}
+
+
+# ---------- Periods (Close Period) ----------
+@api_router.get("/periods")
+async def list_periods():
+    return await db.periods.find({}, {"_id": 0}).sort("closed_at", -1).to_list(500)
+
+
+@api_router.post("/periods/close")
+async def close_period(body: ClosePeriodIn):
+    """Snapshot the current period, save as a closed period, and start fresh with the closing values as new opening."""
+    d = await dashboard()
+    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    period_start = d.get("periodStart", "1970-01-01")
+
+    # Closing cash uses current computed cash (which already includes opening)
+    closing_cash = float(d.get("cash", 0.0))
+    actual_stock = float(body.actualStock)
+
+    period = ClosedPeriod(
+        startDate=period_start,
+        endDate=now_date,
+        openingInventory=float(d.get("openingInventory", 0.0)),
+        openingCash=float(d.get("openingCash", 0.0)),
+        totalSales=float(d.get("totalSales", 0.0)),
+        totalPurchases=float(d.get("totalPurchases", 0.0)),
+        grossProfit=float(d.get("grossProfit", 0.0)),
+        managerCommissionPct=float(d.get("managerCommissionPct", 0.0)),
+        commission=float(d.get("commission", 0.0)),
+        drawings=float(d.get("drawings", 0.0)),
+        supplierPayments=float(d.get("supplierPayments", 0.0)),
+        netProfit=float(d.get("netProfit", 0.0)),
+        closingInventory=actual_stock,
+        closingCash=closing_cash,
+        notes=body.notes or "",
+    )
+    await db.periods.insert_one(period.model_dump())
+
+    # Also record a normal inventory check for continuity
+    inv = InventoryCheck(
+        date=now_date,
+        expectedStock=float(d.get("inventoryValue", 0.0)),
+        actualStock=actual_stock,
+        variance=round(actual_stock - float(d.get("inventoryValue", 0.0)), 2),
+        notes=f"Period close: {period.startDate} → {period.endDate}",
+    )
+    await db.inventoryChecks.insert_one(inv.model_dump())
+
+    # Bump period start and opening balances
+    next_day_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta
+    next_day = (next_day_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    await db.settings.update_one(
+        {"_id": "app"},
+        {"$set": {
+            "currentPeriodStart": next_day,
+            "openingInventory": actual_stock,
+            "openingCash": closing_cash,
+        }},
+        upsert=True,
+    )
+
+    return period.model_dump()
+
+
+# ---------- Danger zone ----------
+@api_router.post("/reset")
+async def reset_all(confirm: str = ""):
+    """Wipe all data. Requires ?confirm=YES query param."""
+    if confirm != "YES":
+        raise HTTPException(400, "Reset requires ?confirm=YES")
+    for c in ["suppliers", "bills", "sales", "payments", "inventoryChecks", "periods"]:
+        await db[c].delete_many({})
+    # Preserve Gemini key + FC rate; reset only accounting-related settings
+    await db.settings.update_one(
+        {"_id": "app"},
+        {"$set": {
+            "currentPeriodStart": "1970-01-01",
+            "openingInventory": 0.0,
+            "openingCash": 0.0,
+            "managerCommissionPct": 0.0,
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "message": "All data reset. Settings (Gemini key + FC rate) preserved."}
 
 
 app.include_router(api_router)

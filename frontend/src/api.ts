@@ -83,6 +83,11 @@ export const api = {
   exportBackup: () => req('/backup/export'),
   importBackup: (payload: any) => req('/backup/import', 'POST', payload),
 
+  // Periods & danger
+  listPeriods: () => req('/periods'),
+  closePeriod: (actualStock: number, notes = '') => req('/periods/close', 'POST', { actualStock, notes }),
+  resetAll: () => req('/reset?confirm=YES', 'POST'),
+
   // AI
   parseCommand: (text: string) => req('/ai/parse-command', 'POST', { text }),
   ocrReceipt: (imageBase64: string, mimeType = 'image/jpeg') =>

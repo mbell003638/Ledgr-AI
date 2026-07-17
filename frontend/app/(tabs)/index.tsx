@@ -15,8 +15,12 @@ import { sharePlainText } from "@/src/utils/share";
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
   cash: number; inventoryValue: number;
+  openingBalance: number; openingInventory: number; openingCash: number;
+  closingBalance: number;
   totalPurchases: number; totalSales: number; grossProfit: number;
+  managerCommissionPct: number; commission: number; netProfit: number;
   drawings: number; supplierPayments: number; suppliers: number;
+  periodStart: string;
   salesTrend: { date: string; value: number }[];
 };
 
@@ -274,4 +278,8 @@ function makeStyles(theme: any) { return StyleSheet.create({
   dailyStatValue: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface, marginTop: 2 },
   shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#25D366", padding: 10, borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   shareBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  pfRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
+  pfStrong: { borderTopWidth: 1, borderTopColor: theme.color.divider, marginTop: 4, paddingTop: 8 },
+  pfLabel: { color: theme.color.onSurfaceTertiary, fontSize: 14 },
+  pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
 }); }

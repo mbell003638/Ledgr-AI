@@ -13,9 +13,12 @@ export default function SettingsScreen() {
   const { mode, setMode } = useThemeMode();
   const [key, setKey] = useState("");
   const [rate, setRate] = useState("2500");
+  const [commissionPct, setCommissionPct] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -24,6 +27,7 @@ export default function SettingsScreen() {
       const localKey = await getGeminiKey();
       setKey(localKey || s.googleApiKey || "");
       setRate(String(s.fcRate ?? 2500));
+      setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -34,7 +38,11 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       await setGeminiKey(key.trim());
-      await api.updateSettings({ googleApiKey: key.trim(), fcRate: parseFloat(rate) || 1 });
+      await api.updateSettings({
+        googleApiKey: key.trim(),
+        fcRate: parseFloat(rate) || 1,
+        managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+      });
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Failed" });
@@ -189,6 +197,42 @@ export default function SettingsScreen() {
                 placeholder="2500"
                 placeholderTextColor={theme.color.muted}
               />
+              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Manager Commission %</Text>
+              <Text style={styles.hint}>% of Gross Profit paid to the shop manager. Leave blank if none.</Text>
+              <TextInput
+                testID="input-commission-pct"
+                value={commissionPct}
+                onChangeText={setCommissionPct}
+                keyboardType="decimal-pad"
+                style={styles.input}
+                placeholder="e.g. 10"
+                placeholderTextColor={theme.color.muted}
+              />
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md, borderColor: theme.color.error }}>
+              <Text style={[styles.label, { color: theme.color.error }]}>Danger Zone — Reset All Data</Text>
+              <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key and FC rate are preserved.</Text>
+              {!confirmReset ? (
+                <Pressable testID="btn-reset-init" onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}>
+                  <Ionicons name="trash-outline" size={16} color={theme.color.error} />
+                  <Text style={styles.resetInitText}>Reset All Data…</Text>
+                </Pressable>
+              ) : (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>
+                    This cannot be undone. Consider exporting a backup first.
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                    <Pressable testID="btn-reset-cancel" onPress={() => setConfirmReset(false)} style={styles.resetCancelBtn}>
+                      <Text style={styles.resetCancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable testID="btn-reset-confirm" onPress={doReset} disabled={resetting} style={styles.resetConfirmBtn}>
+                      {resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, delete everything</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              )}
             </Card>
 
             {status && (
@@ -278,4 +322,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
   backupBtnTextPrimary: { color: "#fff", fontWeight: "600", fontSize: 13 },
   backupBtnTextSecondary: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
+  resetInitBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.error, marginTop: theme.spacing.md,
+  },
+  resetInitText: { color: theme.color.error, fontWeight: "600", fontSize: 13 },
+  resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+  resetCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
+  resetConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
+  resetConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 }); }

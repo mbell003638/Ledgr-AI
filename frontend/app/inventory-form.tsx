@@ -96,6 +96,38 @@ export default function InventoryForm() {
               <Pressable testID="btn-save-inv" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Audit</Text>}
               </Pressable>
+
+              <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
+                <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
+                <Text style={styles.hint}>
+                  Snapshot everything (Sales, Purchases, Gross Profit, Commission, Drawings, Net Profit) as a closed period.
+                  The current inventory value + cash become the OPENING BALANCE for the next period. All new transactions from tomorrow onwards go into a fresh period.
+                </Text>
+                {!confirmClose ? (
+                  <Pressable
+                    testID="btn-close-init"
+                    onPress={() => setConfirmClose(true)}
+                    style={[styles.closeInitBtn, { marginTop: theme.spacing.md }]}
+                  >
+                    <Ionicons name="checkmark-done-outline" size={18} color={theme.color.brandPrimary} />
+                    <Text style={styles.closeInitText}>Close & Carry Forward…</Text>
+                  </Pressable>
+                ) : (
+                  <View style={{ marginTop: theme.spacing.md }}>
+                    <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>
+                      This locks the current period. Previous transactions remain but are excluded from new Dashboard calculations.
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                      <Pressable testID="btn-close-cancel" onPress={() => setConfirmClose(false)} style={styles.closeCancelBtn}>
+                        <Text style={styles.closeCancelText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable testID="btn-close-confirm" onPress={closePeriod} disabled={closing} style={styles.closeConfirmBtn}>
+                        {closing ? <ActivityIndicator color="#fff" /> : <Text style={styles.closeConfirmText}>Yes, close period</Text>}
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </Card>
             </>
           )}
         </ScrollView>
@@ -119,4 +151,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
   error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  closeInitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary },
+  closeInitText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 14 },
+  closeCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+  closeCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
+  closeConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.brandPrimary },
+  closeConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 }); }
