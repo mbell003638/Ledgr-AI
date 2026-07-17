@@ -1,0 +1,201 @@
+{
+  "app_name": "Vocash Accounting Suite",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A highly readable, trustworthy, and tactile accounting utility that relies on clean spacing, botanical greens, and data-first clarity.",
+  "color": {
+    "surface": "#F6F7F5",
+    "onSurface": "#111513",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C221F",
+    "surfaceTertiary": "#EAECE7",
+    "onSurfaceTertiary": "#3B4540",
+    "surfaceInverse": "#111513",
+    "onSurfaceInverse": "#F6F7F5",
+    "brand": "#1C4030",
+    "brandPrimary": "#1C4030",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#4A6E5C",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#D6E5DB",
+    "onBrandTertiary": "#1C4030",
+    "success": "#2D6B45",
+    "onSuccess": "#FFFFFF",
+    "warning": "#B87A1E",
+    "onWarning": "#FFFFFF",
+    "error": "#B83A2E",
+    "onError": "#FFFFFF",
+    "info": "#4A6E5C",
+    "onInfo": "#FFFFFF",
+    "border": "#E2E5DF",
+    "borderStrong": "#B4BDB7",
+    "divider": "#E2E5DF"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "DM Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room for financial data. Cards never flush to screen edges. Use md/lg gaps between modular tiles.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Floating action button (Vocash voice widget) with brandTertiary tint and blur",
+      "Sticky headers when scrolling down reports or lists",
+      "Bottom sheet background for Voice Assistant modal",
+      "Bottom tab bar background"
+    ],
+    "dont's": [
+      "Do not blur form fields",
+      "Do not blur individual dashboard tiles",
+      "Do not stack more than 2 blurred surfaces"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Dashboard (Home)",
+      "purpose": "A modular Odoo-style launchpad providing instant access to all apps and key financial KPIs.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "No initial setup required, show default tiles.",
+        "error": "Failed to load dashboard data + Retry"
+      },
+      "layout": "Use a 2-column masonry or even grid for the Odoo-inspired tiles (Invoicing, Vendor Bills, Payments, Suppliers, Inventory, Reports). Each tile sits on surfaceSecondary with an icon, title, and subtle shadow. Top of the screen displays a summary card (Assets, Liabilities) with a brandTertiary gradient. A floating Voice Assistant widget (FAB) is pinned to the bottom right."
+    },
+    {
+      "name": "Vendor Bills",
+      "purpose": "Log and manage supplier purchases with currency toggling.",
+      "states": {
+        "loading": "List skeleton",
+        "empty": "Empty state illustration of a blank paper, 'No bills recorded yet.'",
+        "error": "Failed to load bills."
+      },
+      "layout": "Sticky header contains a global USD/CDF toggle switch. Below it, a list of bill cards (showing supplier, date, amounts). Include a sticky primary CTA 'Add Bill' at the bottom. The 'Add Bill' screen is a single-column form with an OCR camera button, credit/cash segments, and numeric inputs."
+    },
+    {
+      "name": "Receipt Scan (OCR)",
+      "purpose": "Capture receipts and extract data via AI vision.",
+      "states": {
+        "loading": "Scanning overlay animation",
+        "empty": "N/A",
+        "error": "Could not extract data + Retry"
+      },
+      "layout": "Full-screen camera view with a visual frame guide in the center. Once captured, shifts to an 'Extraction Preview' card hovering over the blurred image, showing parsed Vendor, Date, and Amount fields. Users tap 'Confirm' to save the bill."
+    },
+    {
+      "name": "Voice Assistant Modal",
+      "purpose": "A floating conversational agent to log transactions hands-free.",
+      "states": {
+        "loading": "Listening waveform",
+        "empty": "Tap mic to start",
+        "error": "Voice recognition failed"
+      },
+      "layout": "Opens as a glassmorphic bottom sheet over the current screen. Shows a live transcript stream of what the user is saying. Once AI processes the intent, it renders an 'Action Card' (e.g., 'Draft: Pay Supplier X $50') inside the sheet with a primary Confirm button."
+    },
+    {
+      "name": "Supplier Profile",
+      "purpose": "View supplier details and a running account statement.",
+      "states": {
+        "loading": "Profile skeleton",
+        "empty": "No transactions for this supplier.",
+        "error": "Could not load supplier."
+      },
+      "layout": "Top banner with supplier initials in a brandTertiary circle. Below it, outstanding balance prominently displayed. The lower half is a vertical timeline of bills and payments (Account Statement)."
+    },
+    {
+      "name": "Inventory Audit",
+      "purpose": "Reconcile expected stock against actual physical counts.",
+      "states": {
+        "loading": "Product list skeleton",
+        "empty": "No inventory items.",
+        "error": "Error loading inventory."
+      },
+      "layout": "List of products. Each row shows expected quantity with an input field for 'Actual'. If actual < expected, a 'warning' colored tag appears showing the variance. Bottom sticky button 'Save Audit'."
+    },
+    {
+      "name": "Reports",
+      "purpose": "View P&L, Balance Sheet, and Trial Balance charts.",
+      "states": {
+        "loading": "Chart skeletons",
+        "empty": "No financial data to visualize.",
+        "error": "Error generating reports."
+      },
+      "layout": "Segmented control at the top (P&L / Balance Sheet / Trial Balance). Below, a clean line/bar chart using victory-native, followed by a breakdown list of categories."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Configure Google Gemini API keys and the custom CDF exchange rate.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Simple forms. 'API Key' password input, 'FC Exchange Rate' numeric input. Include a 'Test API' secondary button and a 'Save Settings' sticky primary button at the bottom."
+    }
+  ],
+  "images": {
+    "receipt_empty_state": {
+      "url": "https://images.unsplash.com/photo-1585119192382-71236d43b689",
+      "alt": "Blank white paper on a clean wooden desk representing missing bills or receipts"
+    },
+    "voice_assistant_hero": {
+      "url": "https://images.pexels.com/photos/5638740/pexels-photo-5638740.jpeg",
+      "alt": "Studio microphone held in hand against a minimal green leaf background"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Adhere strictly to the 1 iOS-Native Clean personality. Utilize generous md/lg padding between tiles and cards to avoid cramped dashboard layouts.",
+    "Do NOT use any blues, purples, or indigo in the app. Stick to the provided botanical green (brand), sage, and earthy ochre tones.",
+    "Implement the Odoo-inspired dashboard as a 2-column grid of modular tiles. Each tile should have a Phosphor icon, title, and use surfaceSecondary.",
+    "The Voice Assistant MUST be a floating action button (FAB) pinned above the bottom tab bar. When tapped, it triggers a @gorhom/bottom-sheet containing a live transcript and a drafted action card.",
+    "For numbers, amounts, and exchange rates, use DM Sans (or a tabular numerals feature if available) to ensure financial clarity. Right-align currency amounts in lists.",
+    "Implement a sticky global toggle (USD / CDF) in the header of financial lists (like Vendor Bills) so users can view amounts in either currency seamlessly.",
+    "Use expo-glass-effect for the bottom tab bar, the voice assistant bottom sheet, and sticky headers over scrolling content.",
+    "Integrate victory-native or react-native-gifted-charts for the Reports screen to visualize the P&L and Balance Sheet."
+  ],
+  "haptics": {
+    "events": {
+      "tile_press": "light",
+      "voice_mic_tap": "medium",
+      "ocr_scan_success": "success",
+      "usd_cdf_toggle": "light",
+      "save_bill": "success",
+      "error_alert": "error"
+    }
+  }
+}
