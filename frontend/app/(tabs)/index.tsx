@@ -115,20 +115,60 @@ export default function Dashboard() {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={styles.hero}
             >
-              <Text style={styles.heroLabel}>Net Worth</Text>
-              <Text style={styles.heroValue} testID="dashboard-net-worth">{fmt(dash?.netWorth)}</Text>
+              <Text style={styles.heroLabel}>Net Profit {(dash?.periodStart && dash.periodStart !== "1970-01-01") ? `since ${dash.periodStart}` : ""}</Text>
+              <Text style={styles.heroValue} testID="dashboard-net-profit">{fmt(dash?.netProfit)}</Text>
               <View style={styles.heroRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.heroSub}>Assets</Text>
-                  <Text style={styles.heroSubVal}>{fmt(dash?.assets)}</Text>
+                  <Text style={styles.heroSub}>Opening</Text>
+                  <Text style={styles.heroSubVal}>{fmt(dash?.openingBalance)}</Text>
                 </View>
                 <View style={{ width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" }} />
                 <View style={{ flex: 1, paddingLeft: theme.spacing.md }}>
-                  <Text style={styles.heroSub}>Liabilities</Text>
-                  <Text style={styles.heroSubVal}>{fmt(dash?.liabilities)}</Text>
+                  <Text style={styles.heroSub}>Closing</Text>
+                  <Text style={styles.heroSubVal}>{fmt(dash?.closingBalance)}</Text>
+                </View>
+                <View style={{ width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" }} />
+                <View style={{ flex: 1, paddingLeft: theme.spacing.md }}>
+                  <Text style={styles.heroSub}>Net Worth</Text>
+                  <Text style={styles.heroSubVal}>{fmt(dash?.netWorth)}</Text>
                 </View>
               </View>
             </LinearGradient>
+
+            {/* Profit Flow breakdown */}
+            {(dash?.totalSales || dash?.totalPurchases) ? (
+              <Card style={{ marginBottom: theme.spacing.lg }} testID="profit-flow">
+                <Text style={styles.sectionTitleInline}>Profit Flow</Text>
+                <View style={styles.pfRow}>
+                  <Text style={styles.pfLabel}>Sales</Text>
+                  <Text style={[styles.pfVal, { color: theme.color.success }]}>+ {fmt(dash?.totalSales)}</Text>
+                </View>
+                <View style={styles.pfRow}>
+                  <Text style={styles.pfLabel}>Purchases (COGS)</Text>
+                  <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.totalPurchases)}</Text>
+                </View>
+                <View style={[styles.pfRow, styles.pfStrong]}>
+                  <Text style={[styles.pfLabel, { fontWeight: "700" }]}>Gross Profit</Text>
+                  <Text style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(dash?.grossProfit)}</Text>
+                </View>
+                {(dash?.managerCommissionPct ?? 0) > 0 ? (
+                  <View style={styles.pfRow}>
+                    <Text style={styles.pfLabel}>Manager Commission ({dash?.managerCommissionPct}%)</Text>
+                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.commission)}</Text>
+                  </View>
+                ) : null}
+                {(dash?.drawings ?? 0) > 0 ? (
+                  <View style={styles.pfRow}>
+                    <Text style={styles.pfLabel}>Drawings</Text>
+                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.drawings)}</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.pfRow, styles.pfStrong, { borderTopWidth: 2, borderTopColor: theme.color.brandPrimary, paddingTop: 8, marginTop: 4 }]}>
+                  <Text style={[styles.pfLabel, { fontWeight: "700", color: theme.color.brandPrimary }]}>Net Profit</Text>
+                  <Text style={[styles.pfVal, { fontWeight: "700", color: theme.color.brandPrimary, fontSize: 16 }]}>{fmt(dash?.netProfit)}</Text>
+                </View>
+              </Card>
+            ) : null}
 
             {/* Daily quick summary — WhatsApp shareable */}
             <Card style={styles.dailyCard} testID="daily-card">

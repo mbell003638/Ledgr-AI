@@ -45,7 +45,11 @@ A mobile-first accounting app for small shop owners (rebranded from "Vocash" to 
 - Push notifications (only on user request)
 
 ## Recent additions
-- **Rebrand → Ledgr** (name + header)
+- **Manager Commission** — new setting `managerCommissionPct` (blank/manual). Dashboard, P&L, monthly summary all deduct commission (= grossProfit × pct/100) before Net Profit. Net Profit = Gross − Commission − Drawings.
+- **Close Period & Carry-Forward** — new backend endpoint `POST /api/periods/close` + `periods` collection. On the Inventory Audit form, enter today's actual stock and tap "Close & Carry Forward…". Snapshots the current period (opening, sales, purchases, gross profit, commission, drawings, net profit, closing inventory, closing cash) into `periods`, then bumps `settings.currentPeriodStart` and sets `openingInventory`/`openingCash` for the next period.
+- **Period-aware Dashboard** — all `/api/dashboard` aggregates now filter transactions by `date >= currentPeriodStart` so closed-period entries don't inflate current numbers. Response includes `openingBalance`, `openingCash`, `openingInventory`, `closingBalance`, `commission`, `netProfit`, `managerCommissionPct`, `periodStart`.
+- **Reset All Data** — `POST /api/reset?confirm=YES` wipes all collections while preserving Gemini key + FC rate. Settings screen has a Danger-Zone card with a 2-tap confirmation flow.
+- **New Dashboard UX** — Hero card now shows **NET PROFIT** with Opening / Closing / Net Worth footer. New "Profit Flow" card breaks down Sales → Purchases → Gross Profit → Commission → Drawings → Net Profit visually.
 - **Dark mode** via `src/context/ThemeContext.tsx` with `light | dark | system` toggle in Settings.
 - **Monthly Summary Export** — screen + endpoint + text/PDF share
 - **Web / Laptop support** — centered mobile-frame on wide viewports
