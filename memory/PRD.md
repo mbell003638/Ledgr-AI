@@ -46,8 +46,13 @@ A mobile-first accounting app for small shop owners (rebranded from "Vocash" to 
 
 ## Recent additions
 - **Rebrand → Ledgr** (name + header)
-- **Dark mode** via `src/context/ThemeContext.tsx` with `light | dark | system` toggle in Settings. All screens dynamically re-style via `useTheme()` + `useMemo(makeStyles)`.
-- **Monthly Summary Export** — new screen at `/monthly-summary.tsx` + backend endpoint `GET /api/reports/monthly-summary?month=YYYY-MM`. Includes horizontal month chip picker, net-profit hero card, KPI grid, top suppliers list, and two share actions: plain-text share (WhatsApp/SMS/email) via `Share.share()`, and formatted PDF export via `expo-print` + `expo-sharing`.
-- **Web / Laptop support** — Expo router web build renders full app; on wide screens (>= 768px) the app is centered in a 480px column with a subtle drop shadow, giving a mobile-preview feel on desktop.
-- **Backup & Restore** — new endpoints `GET /api/backup/export` (full JSON dump) and `POST /api/backup/import` (replace or merge modes). Settings screen has Export/Import buttons: on mobile uses `expo-sharing` (WhatsApp/email); on web triggers browser download. Import uses `expo-document-picker` on mobile or `<input type=file>` on web.
-- **Daily Quick Summary widget** on Dashboard — shows revenue / purchases / profit / net cash for any day with prev/next arrows and a green **Share to WhatsApp** CTA (native share sheet on mobile, navigator.share/clipboard on web). Backend: `GET /api/reports/daily-summary?date=YYYY-MM-DD`.
+- **Dark mode** via `src/context/ThemeContext.tsx` with `light | dark | system` toggle in Settings.
+- **Monthly Summary Export** — screen + endpoint + text/PDF share
+- **Web / Laptop support** — centered mobile-frame on wide viewports
+- **Backup & Restore** — JSON export/import, WhatsApp-shareable, cross-device
+- **Daily Quick Summary widget** on Dashboard with WhatsApp share button
+- **Gemini model upgraded** from deprecated `gemini-2.5-flash` to current `gemini-3.5-flash` (May 2026 replacement)
+- **Edit & delete existing entries** — PUT endpoints for suppliers/bills/sales/payments. Each list row (Bills tab, supplier detail timeline) is tap-to-edit; each edit form has an Update + Delete button.
+- **Upload receipt from gallery** — bill form now has both **Scan** (camera) and **Upload** (gallery) buttons. OCR runs on either.
+- **Auto-create supplier from OCR** — when the receipt OCR detects a supplier name not in the database, Ledgr creates it automatically and selects it on the form.
+- **Statement Reconciliation** (new): `/reconcile` screen accessible from a supplier's detail page. Photograph or upload the supplier's ledger/statement; Gemini extracts every line item; Ledgr compares against its own records and shows three lists: **Matched**, **On statement — missing from Ledgr** (with one-tap Import), **In Ledgr — not on statement**. Backend endpoint: `POST /api/ai/reconcile-statement`.
