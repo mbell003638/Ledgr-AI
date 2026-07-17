@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Vocash Accounting",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,15 +10,21 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.vocashaccounting.si9xp5"
+      "bundleIdentifier": "com.emergent.vocashaccounting.si9xp5",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
+        "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
+        "NSPhotoLibraryUsageDescription": "Attach receipt photos to bills"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.vocashaccounting.si9xp5"
+      "package": "com.emergent.vocashaccounting.si9xp5",
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
@@ -27,13 +33,27 @@
     },
     "plugins": [
       "expo-router",
+      "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan receipts to auto-fill vendor bills"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Scan receipts to auto-fill vendor bills",
+          "photosPermission": "Attach receipt photos to bills"
+        }
+      ],
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#1C4030"
         }
       ]
     ],
