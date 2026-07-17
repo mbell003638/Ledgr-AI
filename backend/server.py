@@ -379,6 +379,16 @@ async def delete_payment(pid: str):
     return {"ok": True}
 
 
+@api_router.put("/payments/{pid}")
+async def update_payment(pid: str, body: PaymentCreate):
+    doc = body.model_dump()
+    await db.payments.update_one({"id": pid}, {"$set": doc})
+    p = await db.payments.find_one({"id": pid}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Payment not found")
+    return p
+
+
 # ---------- Inventory ----------
 @api_router.get("/inventory")
 async def list_inventory():

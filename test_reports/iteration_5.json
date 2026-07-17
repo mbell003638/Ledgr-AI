@@ -1,0 +1,30 @@
+{
+  "summary": "Backend-only regression to verify the PUT /api/payments/{id} bug fix in /app/backend/server.py (new handler at line 382). Ran TestPutPayment class first (2/2 passed) then full backend suite (60/60 passed). PUT with valid id returns updated fields without _id; PUT with non-existent id returns HTTP 404 (no longer 405). Other PUT handlers (suppliers/bills/sales) and all prior features unaffected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/payments/{pid}", "issue": "Handler performs update_one() before the 404 existence check. On a missing id the update is a no-op so behavior is correct today, but consider checking existence first (or using result.matched_count) to avoid the wasted write and to be consistent with other PUT handlers."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ledgr_edit_and_reconcile.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py PUT /payments/{pid}: minor - reorder so existence is checked before update, or assert matched_count > 0, to align with other PUT handlers."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (60/60)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "None. Existing tests create/cleanup their own fixtures.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PUT /api/payments/{pid} handler exists at server.py:382. All 60 backend tests currently pass. No frontend tests were run this iteration.",
+  "rca_of_issue": "Root cause of prior 405: no PUT route was registered for /payments/{pid}; FastAPI fell through to the collection-level route or returned 405. Fix: added @api_router.put('/payments/{pid}') update_payment handler that upserts the PaymentCreate body and returns the persisted document (without _id) or raises 404. Verified via pytest: TestPutPayment.test_update_payment and test_update_payment_404 both pass."
+}
