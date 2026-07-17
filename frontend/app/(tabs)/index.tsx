@@ -10,6 +10,7 @@ import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
+import { sharePlainText } from "@/src/utils/share";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -36,24 +37,55 @@ export default function Dashboard() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [dash, setDash] = useState<Dash | null>(null);
+  const [daily, setDaily] = useState<any>(null);
+  const [dailyDate, setDailyDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const d = await api.dashboard();
+      const [d, day] = await Promise.all([
+        api.dashboard(),
+        api.dailySummary(dailyDate),
+      ]);
       setDash(d);
+      setDaily(day);
     } catch (e) {
       console.warn("dash", e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [dailyDate]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  const shareDaily = async () => {
+    if (!daily) return;
+    const dLabel = new Date(dailyDate + "T00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    const lines = [
+      `Ledgr — Daily Summary`,
+      dLabel,
+      ``,
+      `Sales: ${fmt(daily.revenue)} (${daily.salesCount})`,
+      `Purchases: ${fmt(daily.purchases)} (${daily.billsCount})`,
+      `Gross Profit: ${fmt(daily.grossProfit)}`,
+      `Net Cash: ${fmt(daily.netCash)}`,
+    ];
+    if (daily.drawings > 0) lines.push(`Drawings: ${fmt(daily.drawings)}`);
+    lines.push(``, `— Sent from Ledgr`);
+    await sharePlainText(lines.join("\n"), `Ledgr — ${dLabel}`);
+  };
+
+  const shiftDay = (delta: number) => {
+    const d = new Date(dailyDate + "T00:00");
+    d.setDate(d.getDate() + delta);
+    setDailyDate(d.toISOString().slice(0, 10));
+  };
+  const isToday = dailyDate === new Date().toISOString().slice(0, 10);
+  const dailyLabel = new Date(dailyDate + "T00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
   const barData = (dash?.salesTrend || []).map((s) => ({
     value: s.value,
@@ -93,6 +125,45 @@ export default function Dashboard() {
                 </View>
               </View>
             </LinearGradient>
+
+            {/* Daily quick summary — WhatsApp shareable */}
+            <Card style={styles.dailyCard} testID="daily-card">
+              <View style={styles.dailyHead}>
+                <View>
+                  <Text style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
+                  <Text style={styles.dailyValue}>{fmt(daily?.netCash ?? 0)}</Text>
+                  <Text style={styles.dailySub}>
+                    {daily?.salesCount ?? 0} sales • {daily?.billsCount ?? 0} bills • {daily?.paymentsCount ?? 0} payments
+                  </Text>
+                </View>
+                <View style={styles.dailyNav}>
+                  <Pressable testID="btn-day-prev" onPress={() => shiftDay(-1)} style={styles.dailyNavBtn}>
+                    <Ionicons name="chevron-back" size={18} color={theme.color.onSurface} />
+                  </Pressable>
+                  <Pressable testID="btn-day-next" onPress={() => shiftDay(1)} disabled={isToday} style={[styles.dailyNavBtn, isToday && { opacity: 0.35 }]}>
+                    <Ionicons name="chevron-forward" size={18} color={theme.color.onSurface} />
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.dailyStats}>
+                <View style={styles.dailyStat}>
+                  <Text style={styles.dailyStatLabel}>Sales</Text>
+                  <Text style={[styles.dailyStatValue, { color: theme.color.success }]}>{fmt(daily?.revenue ?? 0)}</Text>
+                </View>
+                <View style={styles.dailyStat}>
+                  <Text style={styles.dailyStatLabel}>Purchases</Text>
+                  <Text style={[styles.dailyStatValue, { color: theme.color.warning }]}>{fmt(daily?.purchases ?? 0)}</Text>
+                </View>
+                <View style={styles.dailyStat}>
+                  <Text style={styles.dailyStatLabel}>Profit</Text>
+                  <Text style={styles.dailyStatValue}>{fmt(daily?.grossProfit ?? 0)}</Text>
+                </View>
+              </View>
+              <Pressable testID="btn-share-daily" onPress={shareDaily} style={styles.shareBtn}>
+                <Ionicons name="logo-whatsapp" size={16} color="#fff" />
+                <Text style={styles.shareBtnText}>Share to WhatsApp</Text>
+              </Pressable>
+            </Card>
 
             {/* KPI row */}
             <View style={styles.kpiRow}>
@@ -190,4 +261,17 @@ function makeStyles(theme: any) { return StyleSheet.create({
   },
   tileLabel: { fontSize: 14, fontWeight: "600", marginTop: 12 },
   emptyText: { color: theme.color.muted, fontSize: 13, textAlign: "center", paddingVertical: theme.spacing.lg },
+  dailyCard: { marginBottom: theme.spacing.lg, padding: theme.spacing.lg },
+  dailyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  dailyLabel: { fontSize: 12, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
+  dailyValue: { fontSize: 28, fontWeight: "700", color: theme.color.onSurface, marginTop: 4, letterSpacing: -0.5 },
+  dailySub: { fontSize: 11, color: theme.color.muted, marginTop: 4 },
+  dailyNav: { flexDirection: "row", gap: 6 },
+  dailyNavBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.surfaceTertiary, justifyContent: "center", alignItems: "center" },
+  dailyStats: { flexDirection: "row", marginTop: theme.spacing.md, paddingTop: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.color.divider, gap: theme.spacing.md },
+  dailyStat: { flex: 1 },
+  dailyStatLabel: { fontSize: 10, color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: "500" },
+  dailyStatValue: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface, marginTop: 2 },
+  shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#25D366", padding: 10, borderRadius: theme.radius.md, marginTop: theme.spacing.md },
+  shareBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
 }); }

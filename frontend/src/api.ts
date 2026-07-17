@@ -73,6 +73,11 @@ export const api = {
 
   // Monthly summary
   monthlySummary: (month: string) => req(`/reports/monthly-summary?month=${month}`),
+  dailySummary: (date: string) => req(`/reports/daily-summary?date=${date}`),
+
+  // Backup
+  exportBackup: () => req('/backup/export'),
+  importBackup: (payload: any) => req('/backup/import', 'POST', payload),
 
   // AI
   parseCommand: (text: string) => req('/ai/parse-command', 'POST', { text }),

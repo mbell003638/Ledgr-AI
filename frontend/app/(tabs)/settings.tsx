@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getGeminiKey, setGeminiKey } from "@/src/api";
 import { ScreenHeader, Card } from "@/src/components/UI";
+import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -56,6 +57,36 @@ export default function SettingsScreen() {
     }
   };
 
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+
+  const doExport = async () => {
+    setBusy("export"); setStatus(null);
+    try {
+      const data = await api.exportBackup();
+      const stamp = new Date().toISOString().slice(0, 10);
+      await shareJsonFile(`ledgr-backup-${stamp}.json`, data);
+      setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Export failed" });
+    } finally { setBusy(null); }
+  };
+
+  const doImport = async () => {
+    setBusy("import"); setStatus(null);
+    try {
+      const data = await pickJsonFile();
+      if (!data) { setBusy(null); return; }
+      if (!data._meta || data._meta.app !== "ledgr") {
+        setStatus({ ok: false, msg: "Not a Ledgr backup file." });
+        setBusy(null); return;
+      }
+      await api.importBackup({ ...data, mode: "replace" });
+      setStatus({ ok: true, msg: "Data restored! Restart or pull-to-refresh." });
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Import failed" });
+    } finally { setBusy(null); }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader title="Settings" subtitle="Configure AI & currency" />
@@ -87,6 +118,39 @@ export default function SettingsScreen() {
                 {testing ? <ActivityIndicator color={theme.color.brandPrimary} /> :
                   <Text style={styles.secondaryText}>Test API Key</Text>}
               </Pressable>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Backup & Restore</Text>
+              <Text style={styles.hint}>Share your data as a JSON file via WhatsApp, then import it on any other device to sync.</Text>
+              <View style={styles.backupRow}>
+                <Pressable
+                  testID="btn-export"
+                  onPress={doExport}
+                  disabled={busy !== null}
+                  style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}
+                >
+                  {busy === "export" ? <ActivityIndicator color="#fff" /> : (
+                    <>
+                      <Ionicons name="share-outline" size={18} color="#fff" />
+                      <Text style={styles.backupBtnTextPrimary}>Export & Share</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  testID="btn-import"
+                  onPress={doImport}
+                  disabled={busy !== null}
+                  style={({ pressed }) => [styles.backupBtn, styles.backupBtnSecondary, (pressed || busy === "import") && { opacity: 0.85 }]}
+                >
+                  {busy === "import" ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
+                    <>
+                      <Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} />
+                      <Text style={styles.backupBtnTextSecondary}>Import File</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
@@ -205,4 +269,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   modeTextActive: { color: theme.color.onBrandPrimary },
+  backupRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.md },
+  backupBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+  },
+  backupBtnPrimary: { backgroundColor: theme.color.brandPrimary },
+  backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
+  backupBtnTextPrimary: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  backupBtnTextSecondary: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
 }); }

@@ -691,6 +691,111 @@ async def monthly_summary(month: str):
     }
 
 
+@api_router.get("/reports/daily-summary")
+async def daily_summary(date: str):
+    """date format: YYYY-MM-DD. Returns single-day totals for quick WhatsApp sharing."""
+    settings = await db.settings.find_one({"_id": "app"}) or {}
+    fc_rate = settings.get("fcRate", 1.0) or 1.0
+
+    def to_usd(amount, currency, rate):
+        if currency == "USD":
+            return float(amount)
+        r = rate or fc_rate or 1.0
+        return float(amount) / r if r else 0.0
+
+    start = date
+    q = {"date": {"$gte": start, "$lt": start + "\uffff"}}  # date-prefix match
+
+    bills = await db.bills.find(q, {"_id": 0}).to_list(1000)
+    sales = await db.sales.find(q, {"_id": 0}).to_list(1000)
+    payments = await db.payments.find(q, {"_id": 0}).to_list(1000)
+
+    sup_map = {s["id"]: s["name"] for s in await db.suppliers.find({}, {"_id": 0}).to_list(500)}
+
+    rev = sum(to_usd(s["amount"], s.get("currency", "USD"), s.get("rate", fc_rate)) for s in sales)
+    purch = sum(to_usd(b["amount"], b.get("currency", "USD"), b.get("rate", fc_rate)) for b in bills)
+    sup_pay = sum(to_usd(p["amount"], p.get("currency", "USD"), p.get("rate", fc_rate))
+                  for p in payments if p.get("type") == "supplier_payment")
+    draw = sum(to_usd(p["amount"], p.get("currency", "USD"), p.get("rate", fc_rate))
+               for p in payments if p.get("type") == "drawing")
+
+    return {
+        "date": date,
+        "revenue": round(rev, 2),
+        "purchases": round(purch, 2),
+        "grossProfit": round(rev - purch, 2),
+        "supplierPayments": round(sup_pay, 2),
+        "drawings": round(draw, 2),
+        "netCash": round(rev - sup_pay - draw, 2),
+        "billsCount": len(bills),
+        "salesCount": len(sales),
+        "paymentsCount": len(payments),
+        "suppliers": [{"name": sup_map.get(b.get("supplierId", ""), "Unknown"), "amount": to_usd(b["amount"], b.get("currency", "USD"), b.get("rate", fc_rate))} for b in bills],
+    }
+
+
+@api_router.get("/backup/export")
+async def backup_export():
+    """Full DB dump as JSON for backup/share/restore."""
+    collections = ["suppliers", "bills", "sales", "payments", "inventoryChecks"]
+    data = {}
+    for c in collections:
+        data[c] = await db[c].find({}, {"_id": 0}).to_list(20000)
+    s = await db.settings.find_one({"_id": "app"}, {"_id": 0}) or {}
+    data["settings"] = s
+    data["_meta"] = {
+        "app": "ledgr",
+        "version": 1,
+        "exportedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    return data
+
+
+class BackupPayload(BaseModel):
+    suppliers: Optional[List[dict]] = None
+    bills: Optional[List[dict]] = None
+    sales: Optional[List[dict]] = None
+    payments: Optional[List[dict]] = None
+    inventoryChecks: Optional[List[dict]] = None
+    settings: Optional[dict] = None
+    mode: Optional[Literal["replace", "merge"]] = "replace"
+
+
+@api_router.post("/backup/import")
+async def backup_import(body: BackupPayload):
+    """Restore from a backup file. mode=replace wipes then inserts, mode=merge appends by id (upsert)."""
+    mode = body.mode or "replace"
+    counts = {}
+    mapping = [
+        ("suppliers", body.suppliers),
+        ("bills", body.bills),
+        ("sales", body.sales),
+        ("payments", body.payments),
+        ("inventoryChecks", body.inventoryChecks),
+    ]
+    for name, items in mapping:
+        if items is None:
+            continue
+        if mode == "replace":
+            await db[name].delete_many({})
+            if items:
+                await db[name].insert_many(items)
+            counts[name] = len(items)
+        else:
+            n = 0
+            for it in items:
+                if "id" in it:
+                    await db[name].update_one({"id": it["id"]}, {"$set": it}, upsert=True)
+                    n += 1
+            counts[name] = n
+    if body.settings is not None:
+        s = dict(body.settings)
+        s.pop("_id", None)
+        await db.settings.update_one({"_id": "app"}, {"$set": s}, upsert=True)
+        counts["settings"] = 1
+    return {"ok": True, "mode": mode, "imported": counts}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
