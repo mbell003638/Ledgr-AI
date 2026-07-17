@@ -176,11 +176,11 @@ export default function VoiceModal() {
               <Text style={styles.draftLabel}>Draft {parsed.intent?.replace("_", " ")}</Text>
               <Text style={styles.draftSummary}>{parsed.summary}</Text>
               <View style={styles.draftGrid}>
-                {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, parsed.currency || "USD")} />}
-                {parsed.date && <DKV k="Date" v={parsed.date} />}
-                {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} />}
-                {parsed.partnerName && <DKV k="Partner" v={parsed.partnerName} />}
-                {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} />}
+                {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, parsed.currency || "USD")} theme={theme} />}
+                {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
+                {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
+                {parsed.partnerName && <DKV k="Partner" v={parsed.partnerName} theme={theme} />}
+                {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
               </View>
               <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                 <Pressable testID="btn-voice-cancel" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
@@ -206,7 +206,7 @@ export default function VoiceModal() {
   );
 }
 
-function DKV({ k, v }: { k: string; v: string }) {
+function DKV({ k, v, theme }: { k: string; v: string; theme: any }) {
   return (
     <View style={{ width: "50%", paddingVertical: 4 }}>
       <Text style={{ fontSize: 11, color: theme.color.muted }}>{k}</Text>

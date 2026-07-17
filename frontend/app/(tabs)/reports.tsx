@@ -56,27 +56,27 @@ export default function ReportsScreen() {
           {seg === "P&L" && pnl && (
             <Card testID="report-pnl">
               <Text style={styles.rTitle}>Profit & Loss</Text>
-              <RowKV label="Revenue" value={fmt(pnl.revenue)} />
-              <RowKV label="Cost of Goods Sold" value={`- ${fmt(pnl.cogs)}`} />
-              <RowKV label="Gross Profit" value={fmt(pnl.grossProfit)} strong />
-              <RowKV label="Drawings" value={`- ${fmt(pnl.drawings)}`} />
+              <RowKV label="Revenue" value={fmt(pnl.revenue)} theme={theme} styles={styles} />
+              <RowKV label="Cost of Goods Sold" value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
+              <RowKV label="Gross Profit" value={fmt(pnl.grossProfit)} strong theme={theme} styles={styles} />
+              <RowKV label="Drawings" value={`- ${fmt(pnl.drawings)}`} theme={theme} styles={styles} />
               <View style={styles.divider} />
-              <RowKV label="Net Profit" value={fmt(pnl.netProfit)} strong big />
+              <RowKV label="Net Profit" value={fmt(pnl.netProfit)} strong big theme={theme} styles={styles} />
             </Card>
           )}
           {seg === "Balance" && bs && (
             <>
               <Card testID="report-bs-assets">
                 <Text style={styles.rTitle}>Assets</Text>
-                <RowKV label="Cash" value={fmt(bs.assets.cash)} />
-                <RowKV label="Inventory" value={fmt(bs.assets.inventory)} />
+                <RowKV label="Cash" value={fmt(bs.assets.cash)} theme={theme} styles={styles} />
+                <RowKV label="Inventory" value={fmt(bs.assets.inventory)} theme={theme} styles={styles} />
                 <View style={styles.divider} />
-                <RowKV label="Total Assets" value={fmt(bs.assets.total)} strong />
+                <RowKV label="Total Assets" value={fmt(bs.assets.total)} strong theme={theme} styles={styles} />
               </Card>
               <Card style={{ marginTop: theme.spacing.md }} testID="report-bs-liab">
                 <Text style={styles.rTitle}>Liabilities & Equity</Text>
-                <RowKV label="Suppliers Payable" value={fmt(bs.liabilities.suppliersPayable)} />
-                <RowKV label="Owner's Equity" value={fmt(bs.equity)} />
+                <RowKV label="Suppliers Payable" value={fmt(bs.liabilities.suppliersPayable)} theme={theme} styles={styles} />
+                <RowKV label="Owner's Equity" value={fmt(bs.equity)} theme={theme} styles={styles} />
               </Card>
             </>
           )}
@@ -84,9 +84,9 @@ export default function ReportsScreen() {
             <Card testID="report-tb">
               <Text style={styles.rTitle}>Trial Balance</Text>
               <Text style={styles.groupHeader}>Debits</Text>
-              {tb.debits.map((d: any) => <RowKV key={d.account} label={d.account} value={fmt(d.amount)} />)}
+              {tb.debits.map((d: any) => <RowKV key={d.account} label={d.account} value={fmt(d.amount)} theme={theme} styles={styles} />)}
               <Text style={styles.groupHeader}>Credits</Text>
-              {tb.credits.map((c: any) => <RowKV key={c.account} label={c.account} value={fmt(c.amount)} />)}
+              {tb.credits.map((c: any) => <RowKV key={c.account} label={c.account} value={fmt(c.amount)} theme={theme} styles={styles} />)}
             </Card>
           )}
           <View style={{ height: 120 }} />
@@ -96,7 +96,7 @@ export default function ReportsScreen() {
   );
 }
 
-function RowKV({ label, value, strong, big }: { label: string; value: string; strong?: boolean; big?: boolean }) {
+function RowKV({ label, value, strong, big, theme, styles }: { label: string; value: string; strong?: boolean; big?: boolean; theme: any; styles: any }) {
   return (
     <View style={styles.kv}>
       <Text style={[styles.kvLabel, strong && { fontWeight: "700", color: theme.color.onSurface }]}>{label}</Text>
