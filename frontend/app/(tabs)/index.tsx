@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -42,7 +42,11 @@ export default function Dashboard() {
   const router = useRouter();
   const [dash, setDash] = useState<Dash | null>(null);
   const [daily, setDaily] = useState<any>(null);
-  const [dailyDate, setDailyDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const localTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const [dailyDate, setDailyDate] = useState(localTodayStr);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -63,6 +67,9 @@ export default function Dashboard() {
   }, [dailyDate]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Reload whenever the day changes (even without refocusing)
+  useEffect(() => { load(); }, [dailyDate, load]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -86,9 +93,11 @@ export default function Dashboard() {
   const shiftDay = (delta: number) => {
     const d = new Date(dailyDate + "T00:00");
     d.setDate(d.getDate() + delta);
-    setDailyDate(d.toISOString().slice(0, 10));
+    setDailyDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   };
-  const isToday = dailyDate === new Date().toISOString().slice(0, 10);
+  const jumpToToday = () => setDailyDate(localTodayStr());
+  const today = localTodayStr();
+  const isToday = dailyDate === today;
   const dailyLabel = new Date(dailyDate + "T00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
   const barData = (dash?.salesTrend || []).map((s) => ({
@@ -184,7 +193,12 @@ export default function Dashboard() {
                   <Pressable testID="btn-day-prev" onPress={() => shiftDay(-1)} style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-back" size={18} color={theme.color.onSurface} />
                   </Pressable>
-                  <Pressable testID="btn-day-next" onPress={() => shiftDay(1)} disabled={isToday} style={[styles.dailyNavBtn, isToday && { opacity: 0.35 }]}>
+                  {!isToday ? (
+                    <Pressable testID="btn-day-today" onPress={jumpToToday} style={[styles.dailyNavBtn, { paddingHorizontal: 10, width: undefined }]}>
+                      <Text style={{ color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 }}>Today</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable testID="btn-day-next" onPress={() => shiftDay(1)} style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-forward" size={18} color={theme.color.onSurface} />
                   </Pressable>
                 </View>
