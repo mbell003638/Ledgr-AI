@@ -8,6 +8,7 @@ import * as Sharing from "expo-sharing";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { Card } from "@/src/components/UI";
+import { api } from "@/src/api";
 
 function ymOptions(count = 12): { key: string; label: string }[] {
   const opts = [];
@@ -35,9 +36,7 @@ export default function MonthlySummary() {
   const load = useCallback(async (m: string) => {
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/reports/monthly-summary?month=${m}`);
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.detail || "Failed");
+      const j = await api.monthlySummary(m);
       setData(j);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }

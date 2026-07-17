@@ -1,99 +1,117 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const API = `${BASE}/api`;
+import * as db from '@/src/db/local';
+import * as ai from '@/src/db/gemini';
 
 const GEMINI_KEY_STORAGE = 'gemini_api_key';
 
 export async function getGeminiKey(): Promise<string> {
-  return (await AsyncStorage.getItem(GEMINI_KEY_STORAGE)) || '';
+  const local = await AsyncStorage.getItem(GEMINI_KEY_STORAGE);
+  if (local) return local;
+  const s = await db.getSettings();
+  return s.googleApiKey || '';
 }
 export async function setGeminiKey(v: string) {
   await AsyncStorage.setItem(GEMINI_KEY_STORAGE, v);
 }
 
-async function req<T = any>(path: string, method = 'GET', body?: any, extraHeaders?: Record<string, string>): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+// ---------- reconcile helper (matching logic in JS) ----------
+async function reconcileStatement(imageBase64: string, supplierId: string, mimeType = 'image/jpeg') {
   const key = await getGeminiKey();
-  if (key) headers['x-gemini-api-key'] = key;
-  if (extraHeaders) Object.assign(headers, extraHeaders);
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let data: any = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) {
-    const msg = (data && data.detail) || `${res.status} ${res.statusText}`;
-    throw new Error(msg);
+  const extracted = await ai.reconcileStatementAI(key, imageBase64, mimeType);
+
+  let ourBills: any[] = [], ourPayments: any[] = [];
+  if (supplierId) {
+    const all = await db.listBills();
+    ourBills = all.filter((b: any) => b.supplierId === supplierId);
+    const pays = await db.listPayments();
+    ourPayments = pays.filter((p: any) => p.supplierId === supplierId && p.type === 'supplier_payment');
   }
-  return data as T;
+
+  const daysBetween = (a: string, b: string) => {
+    const A = new Date(a); const B = new Date(b);
+    if (isNaN(A.getTime()) || isNaN(B.getTime())) return 999;
+    return Math.abs(Math.round((A.getTime() - B.getTime()) / 86400000));
+  };
+  const match = (e: any, pool: any[]) => {
+    const eAmt = Number(e.amount || 0);
+    for (const o of pool) {
+      if (daysBetween(e.date || '', o.date || '') > 3) continue;
+      const oAmt = Number(o.amount || 0);
+      if (eAmt && oAmt && Math.abs(oAmt - eAmt) / Math.max(eAmt, 1) <= 0.01) return o;
+    }
+    return null;
+  };
+
+  const matched: any[] = [], missing: any[] = [];
+  for (const e of (extracted.entries || [])) {
+    const pool = e.type === 'bill' ? ourBills : e.type === 'payment' ? ourPayments : [...ourBills, ...ourPayments];
+    const m = match(e, pool);
+    if (m) matched.push({ statement: e, ledgr: m });
+    else missing.push(e);
+  }
+  const stmtRefs = (extracted.entries || []).map((e: any) => ({ date: e.date, amount: Number(e.amount || 0) }));
+  const extra: any[] = [];
+  for (const o of [...ourBills, ...ourPayments]) {
+    const oAmt = Number(o.amount || 0);
+    const found = stmtRefs.some((r: any) => r.date === o.date && r.amount && Math.abs(r.amount - oAmt) / Math.max(r.amount, 1) <= 0.01);
+    if (!found) extra.push(o);
+  }
+  return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, supplierId };
 }
 
 export const api = {
   // Settings
-  getSettings: () => req('/settings'),
-  updateSettings: (s: { googleApiKey?: string; fcRate?: number }) => req('/settings', 'PUT', s),
-  testKey: () => req('/settings/test-key', 'POST'),
+  getSettings: () => db.getSettings(),
+  updateSettings: (s: any) => db.updateSettings(s),
+  testKey: async () => ai.testKey(await getGeminiKey()),
 
   // Suppliers
-  listSuppliers: () => req('/suppliers'),
-  createSupplier: (s: any) => req('/suppliers', 'POST', s),
-  updateSupplier: (id: string, s: any) => req(`/suppliers/${id}`, 'PUT', s),
-  getSupplier: (id: string) => req(`/suppliers/${id}`),
-  deleteSupplier: (id: string) => req(`/suppliers/${id}`, 'DELETE'),
+  listSuppliers: () => db.listSuppliers(),
+  createSupplier: (s: any) => db.createSupplier(s),
+  updateSupplier: (id: string, s: any) => db.updateSupplier(id, s),
+  getSupplier: (id: string) => db.getSupplier(id),
+  deleteSupplier: (id: string) => db.deleteSupplier(id),
 
-  // Bills
-  listBills: () => req('/bills'),
-  createBill: (b: any) => req('/bills', 'POST', b),
-  updateBill: (id: string, b: any) => req(`/bills/${id}`, 'PUT', b),
-  deleteBill: (id: string) => req(`/bills/${id}`, 'DELETE'),
+  // Bills / Sales / Payments
+  listBills: () => db.listBills(),
+  createBill: (b: any) => db.createBill(b),
+  updateBill: (id: string, b: any) => db.updateBill(id, b),
+  deleteBill: (id: string) => db.deleteBill(id),
 
-  // Sales
-  listSales: () => req('/sales'),
-  createSale: (s: any) => req('/sales', 'POST', s),
-  updateSale: (id: string, s: any) => req(`/sales/${id}`, 'PUT', s),
-  deleteSale: (id: string) => req(`/sales/${id}`, 'DELETE'),
+  listSales: () => db.listSales(),
+  createSale: (s: any) => db.createSale(s),
+  updateSale: (id: string, s: any) => db.updateSale(id, s),
+  deleteSale: (id: string) => db.deleteSale(id),
 
-  // Payments
-  listPayments: () => req('/payments'),
-  createPayment: (p: any) => req('/payments', 'POST', p),
-  updatePayment: (id: string, p: any) => req(`/payments/${id}`, 'PUT', p),
-  deletePayment: (id: string) => req(`/payments/${id}`, 'DELETE'),
+  listPayments: () => db.listPayments(),
+  createPayment: (p: any) => db.createPayment(p),
+  updatePayment: (id: string, p: any) => db.updatePayment(id, p),
+  deletePayment: (id: string) => db.deletePayment(id),
 
   // Inventory
-  listInventory: () => req('/inventory'),
-  expectedInventory: () => req('/inventory/expected'),
-  createInventory: (i: any) => req('/inventory', 'POST', i),
-  deleteInventory: (id: string) => req(`/inventory/${id}`, 'DELETE'),
+  listInventory: () => db.listInventory(),
+  expectedInventory: () => db.expectedInventory(),
+  createInventory: (i: any) => db.createInventory(i),
+  deleteInventory: (id: string) => db.deleteInventory(id),
 
   // Dashboard & reports
-  dashboard: () => req('/dashboard'),
-  pnl: () => req('/reports/pnl'),
-  balanceSheet: () => req('/reports/balance-sheet'),
-  trialBalance: () => req('/reports/trial-balance'),
+  dashboard: () => db.dashboard(),
+  pnl: () => db.pnl(),
+  balanceSheet: () => db.balanceSheet(),
+  trialBalance: () => db.trialBalance(),
+  monthlySummary: (m: string) => db.monthlySummary(m),
+  dailySummary: (d: string) => db.dailySummary(d),
 
-  // Monthly summary
-  monthlySummary: (month: string) => req(`/reports/monthly-summary?month=${month}`),
-  dailySummary: (date: string) => req(`/reports/daily-summary?date=${date}`),
-
-  // Backup
-  exportBackup: () => req('/backup/export'),
-  importBackup: (payload: any) => req('/backup/import', 'POST', payload),
-
-  // Periods & danger
-  listPeriods: () => req('/periods'),
-  closePeriod: (actualStock: number, notes = '') => req('/periods/close', 'POST', { actualStock, notes }),
-  resetAll: () => req('/reset?confirm=YES', 'POST'),
+  // Backup + danger
+  exportBackup: () => db.exportBackup(),
+  importBackup: (payload: any) => db.importBackup(payload),
+  listPeriods: () => db.listPeriods(),
+  closePeriod: (actualStock: number, notes = '') => db.closePeriod(actualStock, notes),
+  resetAll: () => db.resetAll(),
 
   // AI
-  parseCommand: (text: string) => req('/ai/parse-command', 'POST', { text }),
-  ocrReceipt: (imageBase64: string, mimeType = 'image/jpeg') =>
-    req('/ai/ocr-receipt', 'POST', { imageBase64, mimeType }),
-  transcribe: (audioBase64: string, mimeType = 'audio/m4a') =>
-    req('/ai/transcribe', 'POST', { audioBase64, mimeType }),
-  reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') =>
-    req('/ai/reconcile-statement', 'POST', { imageBase64, supplierId, mimeType }),
+  parseCommand: async (text: string) => ai.parseCommand(await getGeminiKey(), text),
+  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getGeminiKey(), imageBase64, mimeType),
+  transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getGeminiKey(), audioBase64, mimeType),
+  reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') => reconcileStatement(imageBase64, supplierId, mimeType),
 };
