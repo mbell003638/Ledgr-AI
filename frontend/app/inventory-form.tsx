@@ -43,6 +43,20 @@ export default function InventoryForm() {
     finally { setSaving(false); }
   };
 
+  const [closing, setClosing] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  const closePeriod = async () => {
+    const act = parseFloat(actual);
+    if (isNaN(act) || act < 0) { setError("Enter actual stock first"); return; }
+    setClosing(true); setError("");
+    try {
+      await api.closePeriod(act, notes);
+      router.back();
+    } catch (e: any) { setError(e.message); }
+    finally { setClosing(false); setConfirmClose(false); }
+  };
+
   const variance = actual ? parseFloat(actual) - expected : 0;
   const varColor = variance === 0 ? theme.color.muted : variance > 0 ? theme.color.success : theme.color.error;
 

@@ -95,6 +95,17 @@ export default function SettingsScreen() {
     } finally { setBusy(null); }
   };
 
+  const doReset = async () => {
+    setResetting(true); setStatus(null);
+    try {
+      await api.resetAll();
+      setStatus({ ok: true, msg: "All accounting data reset. Gemini key + FC rate preserved." });
+      setConfirmReset(false);
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Reset failed" });
+    } finally { setResetting(false); }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader title="Settings" subtitle="Configure AI & currency" />
