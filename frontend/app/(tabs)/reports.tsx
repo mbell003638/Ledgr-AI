@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { theme, fmt } from "@/src/theme";
+import { fmt } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, Card } from "@/src/components/UI";
 
@@ -10,6 +11,8 @@ const SEGMENTS = ["P&L", "Balance", "Trial"] as const;
 type Seg = typeof SEGMENTS[number];
 
 export default function ReportsScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [seg, setSeg] = useState<Seg>("P&L");
   const [pnl, setPnl] = useState<any>(null);
   const [bs, setBs] = useState<any>(null);
@@ -102,7 +105,7 @@ function RowKV({ label, value, strong, big }: { label: string; value: string; st
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   segRow: {
     flexDirection: "row", marginHorizontal: theme.spacing.lg, backgroundColor: theme.color.surfaceTertiary,
@@ -119,4 +122,4 @@ const styles = StyleSheet.create({
   kvValue: { fontSize: 14, color: theme.color.onSurface, fontWeight: "500" },
   divider: { height: 1, backgroundColor: theme.color.divider, marginVertical: theme.spacing.sm },
   groupHeader: { fontSize: 12, fontWeight: "700", color: theme.color.muted, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
-});
+}); }

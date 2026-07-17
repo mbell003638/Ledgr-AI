@@ -2,15 +2,20 @@ import React from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { theme } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 
 export default function VoiceFab() {
   const router = useRouter();
+  const theme = useTheme();
   return (
     <Pressable
       testID="voice-fab"
       onPress={() => router.push("/voice")}
-      style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]}
+      style={({ pressed }) => [
+        styles.fab,
+        { backgroundColor: theme.color.brandPrimary },
+        pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+      ]}
     >
       <Ionicons name="mic" size={26} color={theme.color.onBrandPrimary} />
     </Pressable>
@@ -25,7 +30,6 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: theme.color.brandPrimary,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",

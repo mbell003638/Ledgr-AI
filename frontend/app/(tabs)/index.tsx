@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,7 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BarChart } from "react-native-gifted-charts";
 
-import { theme, fmt } from "@/src/theme";
+import { fmt } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 
@@ -25,11 +26,14 @@ const TILES = [
   { key: "suppliers", label: "Partners", icon: "people-outline", route: "/suppliers", color: "#DCE4E0" },
   { key: "inventory", label: "Inventory", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
   { key: "reports", label: "Reports", icon: "bar-chart-outline", route: "/reports", color: "#E0E0DA" },
+  { key: "monthly", label: "Monthly Report", icon: "calendar-outline", route: "/monthly-summary", color: "#EFDCC8" },
   { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
   { key: "settings", label: "Settings", icon: "settings-outline", route: "/settings", color: "#EAECE7" },
 ] as const;
 
 export default function Dashboard() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [dash, setDash] = useState<Dash | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,7 +63,7 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Vocash" subtitle="Shop accounting suite" testID="dashboard-header" />
+      <ScreenHeader title="Ledgr" subtitle="Shop accounting, AI-fast" testID="dashboard-header" />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
@@ -154,7 +158,7 @@ export default function Dashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl },
   hero: {
@@ -186,4 +190,4 @@ const styles = StyleSheet.create({
   },
   tileLabel: { fontSize: 14, fontWeight: "600", marginTop: 12 },
   emptyText: { color: theme.color.muted, fontSize: 13, textAlign: "center", paddingVertical: theme.spacing.lg },
-});
+}); }

@@ -1,13 +1,16 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { theme, fmt, shortDate } from "@/src/theme";
+import { fmt, shortDate } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 
 export default function BillsScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [bills, setBills] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<Record<string, string>>({});
@@ -82,7 +85,7 @@ export default function BillsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg },
   addBtn: {
@@ -105,4 +108,4 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
   amount: { fontSize: 16, fontWeight: "700", color: theme.color.brandPrimary },
   delete: { fontSize: 11, color: theme.color.error, marginTop: 4 },
-});
+}); }

@@ -1,7 +1,7 @@
-# Vocash — Odoo-Inspired Shop Accounting Suite (PRD)
+# Ledgr — AI-Powered Shop Accounting (PRD)
 
 ## Overview
-A mobile-first accounting app for small shop owners, inspired by Odoo's modular apps and Vocash/Dext AI assistants. Single-user, no auth. USD + Franc Congolese (CDF) supported with an editable FC exchange rate.
+A mobile-first accounting app for small shop owners (rebranded from "Vocash" to **Ledgr** — Gen-Z-styled ledger). Inspired by Odoo's modular apps and Vocash/Dext AI assistants. Single-user, no auth. USD + Franc Congolese (CDF) with editable FC rate. Full dark mode support.
 
 ## Data Models (MongoDB)
 - `suppliers` — vendor partners (name, phone, notes)
@@ -43,3 +43,8 @@ A mobile-first accounting app for small shop owners, inspired by Odoo's modular 
 - Multi-currency beyond USD/CDF
 - Multi-user auth
 - Push notifications (only on user request)
+
+## Recent additions
+- **Rebrand → Ledgr** (name + header)
+- **Dark mode** via `src/context/ThemeContext.tsx` with `light | dark | system` toggle in Settings. All screens dynamically re-style via `useTheme()` + `useMemo(makeStyles)`.
+- **Monthly Summary Export** — new screen at `/monthly-summary.tsx` + backend endpoint `GET /api/reports/monthly-summary?month=YYYY-MM`. Includes horizontal month chip picker, net-profit hero card, KPI grid, top suppliers list, and two share actions: plain-text share (WhatsApp/SMS/email) via `Share.share()`, and formatted PDF export via `expo-print` + `expo-sharing`.

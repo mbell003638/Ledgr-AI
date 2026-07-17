@@ -1,12 +1,15 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "@/src/theme";
+import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getGeminiKey, setGeminiKey } from "@/src/api";
 import { ScreenHeader, Card } from "@/src/components/UI";
 
 export default function SettingsScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { mode, setMode } = useThemeMode();
   const [key, setKey] = useState("");
   const [rate, setRate] = useState("2500");
   const [loading, setLoading] = useState(true);
@@ -87,6 +90,30 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Appearance</Text>
+              <Text style={styles.hint}>Choose light, dark or match system.</Text>
+              <View style={styles.modeRow}>
+                {(["light", "dark", "system"] as const).map((m) => (
+                  <Pressable
+                    key={m}
+                    testID={`mode-${m}`}
+                    onPress={() => setMode(m)}
+                    style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
+                  >
+                    <Ionicons
+                      name={m === "light" ? "sunny-outline" : m === "dark" ? "moon-outline" : "phone-portrait-outline"}
+                      size={18}
+                      color={mode === m ? theme.color.onBrandPrimary : theme.color.onSurface}
+                    />
+                    <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
+                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>FC Exchange Rate</Text>
               <Text style={styles.hint}>1 USD = X Franc Congolese (CDF)</Text>
               <TextInput
@@ -128,7 +155,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 60 },
   label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
@@ -169,4 +196,13 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
   },
   statusText: { fontSize: 13, fontWeight: "500", flex: 1 },
-});
+  modeRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.md },
+  modeBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+  },
+  modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+  modeTextActive: { color: theme.color.onBrandPrimary },
+}); }

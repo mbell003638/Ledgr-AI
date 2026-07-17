@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { theme } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 
 type PayType = "supplier_payment" | "drawing";
 
 export default function PaymentForm() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [type, setType] = useState<PayType>("supplier_payment");
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -117,7 +119,7 @@ export default function PaymentForm() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
@@ -137,4 +139,4 @@ const styles = StyleSheet.create({
   error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
-});
+}); }

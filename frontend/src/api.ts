@@ -71,6 +71,9 @@ export const api = {
   balanceSheet: () => req('/reports/balance-sheet'),
   trialBalance: () => req('/reports/trial-balance'),
 
+  // Monthly summary
+  monthlySummary: (month: string) => req(`/reports/monthly-summary?month=${month}`),
+
   // AI
   parseCommand: (text: string) => req('/ai/parse-command', 'POST', { text }),
   ocrReceipt: (imageBase64: string, mimeType = 'image/jpeg') =>

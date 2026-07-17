@@ -1,13 +1,16 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { theme, fmt } from "@/src/theme";
+import { fmt } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 
 export default function SuppliersScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +85,7 @@ export default function SuppliersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg },
   addBtn: {
@@ -107,4 +110,4 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: "600", color: theme.color.onSurface },
   sub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
   balance: { fontSize: 15, fontWeight: "700" },
-});
+}); }

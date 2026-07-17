@@ -1,13 +1,16 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { theme, fmt, shortDate } from "@/src/theme";
+import { fmt, shortDate } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 
 export default function SupplierDetail() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<any>(null);
@@ -111,7 +114,7 @@ export default function SupplierDetail() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
@@ -134,4 +137,4 @@ const styles = StyleSheet.create({
   tlTitle: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
   tlSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
   tlAmount: { fontSize: 14, fontWeight: "700" },
-});
+}); }

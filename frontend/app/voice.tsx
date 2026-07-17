@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
-import { theme, fmt } from "@/src/theme";
+import { fmt } from "@/src/theme";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 export default function VoiceModal() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -212,7 +215,7 @@ function DKV({ k, v }: { k: string; v: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
@@ -234,4 +237,4 @@ const styles = StyleSheet.create({
   actionText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   errorText: { color: theme.color.error, fontSize: 13, flex: 1 },
-});
+}); }

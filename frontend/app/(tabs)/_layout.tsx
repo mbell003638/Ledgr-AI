@@ -1,10 +1,11 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, StyleSheet } from "react-native";
-import { theme } from "@/src/theme";
+import { View } from "react-native";
+import { useTheme } from "@/src/context/ThemeContext";
 import VoiceFab from "@/src/components/VoiceFab";
 
 export default function TabsLayout() {
+  const theme = useTheme();
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
       <Tabs
@@ -20,6 +21,7 @@ export default function TabsLayout() {
             paddingBottom: 24,
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
+          sceneStyle: { backgroundColor: theme.color.surface },
         }}
       >
         <Tabs.Screen

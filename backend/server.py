@@ -618,6 +618,79 @@ async def transcribe(body: GeminiAudioIn, x_gemini_api_key: str = Header(default
         raise HTTPException(status_code=400, detail=f"Transcription failed: {e}")
 
 
+@api_router.get("/reports/monthly-summary")
+async def monthly_summary(month: str):
+    """month format: YYYY-MM. Returns full monthly P&L + top suppliers + cash flow."""
+    settings = await db.settings.find_one({"_id": "app"}) or {}
+    fc_rate = settings.get("fcRate", 1.0) or 1.0
+
+    def to_usd(amount, currency, rate):
+        if currency == "USD":
+            return float(amount)
+        r = rate or fc_rate or 1.0
+        return float(amount) / r if r else 0.0
+
+    start = f"{month}-01"
+    # naive end of month
+    y, m = month.split("-")
+    ny, nm = (int(y) + 1, 1) if int(m) == 12 else (int(y), int(m) + 1)
+    end = f"{ny:04d}-{nm:02d}-01"
+
+    q = {"date": {"$gte": start, "$lt": end}}
+    bills = await db.bills.find(q, {"_id": 0}).to_list(5000)
+    sales = await db.sales.find(q, {"_id": 0}).to_list(5000)
+    payments = await db.payments.find(q, {"_id": 0}).to_list(5000)
+
+    suppliers_all = await db.suppliers.find({}, {"_id": 0}).to_list(1000)
+    sup_map = {s["id"]: s["name"] for s in suppliers_all}
+
+    revenue = sum(to_usd(s["amount"], s.get("currency", "USD"), s.get("rate", fc_rate)) for s in sales)
+    purchases = sum(to_usd(b["amount"], b.get("currency", "USD"), b.get("rate", fc_rate)) for b in bills)
+    supplier_pay = sum(to_usd(p["amount"], p.get("currency", "USD"), p.get("rate", fc_rate))
+                       for p in payments if p.get("type") == "supplier_payment")
+    drawings = sum(to_usd(p["amount"], p.get("currency", "USD"), p.get("rate", fc_rate))
+                   for p in payments if p.get("type") == "drawing")
+
+    gross_profit = round(revenue - purchases, 2)
+    net_profit = round(gross_profit - drawings, 2)
+    cash_flow = round(revenue - supplier_pay - drawings, 2)
+
+    # Top suppliers by purchase volume
+    from collections import defaultdict
+    sup_totals = defaultdict(float)
+    for b in bills:
+        sid = b.get("supplierId", "")
+        sup_totals[sid] += to_usd(b["amount"], b.get("currency", "USD"), b.get("rate", fc_rate))
+    top = sorted(
+        [{"supplierId": k, "name": sup_map.get(k, "Unknown"), "amount": round(v, 2)}
+         for k, v in sup_totals.items() if v > 0],
+        key=lambda x: x["amount"], reverse=True,
+    )[:5]
+
+    # Daily sales
+    daily = defaultdict(float)
+    for s in sales:
+        d = s.get("date", "")[:10]
+        daily[d] += to_usd(s["amount"], s.get("currency", "USD"), s.get("rate", fc_rate))
+    daily_series = [{"date": d, "value": round(v, 2)} for d, v in sorted(daily.items())]
+
+    return {
+        "month": month,
+        "revenue": round(revenue, 2),
+        "purchases": round(purchases, 2),
+        "grossProfit": gross_profit,
+        "supplierPayments": round(supplier_pay, 2),
+        "drawings": round(drawings, 2),
+        "netProfit": net_profit,
+        "cashFlow": cash_flow,
+        "billsCount": len(bills),
+        "salesCount": len(sales),
+        "paymentsCount": len(payments),
+        "topSuppliers": top,
+        "dailySales": daily_series,
+    }
+
+
 app.include_router(api_router)
 
 app.add_middleware(
