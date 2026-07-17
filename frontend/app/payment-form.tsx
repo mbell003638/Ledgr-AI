@@ -13,6 +13,8 @@ export default function PaymentForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editId = params.id;
   const [type, setType] = useState<PayType>("supplier_payment");
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState("");
@@ -22,17 +24,28 @@ export default function PaymentForm() {
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [rate, setRate] = useState(2500);
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     (async () => {
       const s = await api.listSuppliers();
       setSuppliers(s);
-      if (s.length && !supplierId) setSupplierId(s[0].id);
+      if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
       const st = await api.getSettings();
       setRate(st.fcRate || 2500);
+      if (editId) {
+        const list = await api.listPayments();
+        const it = list.find((x: any) => x.id === editId);
+        if (it) {
+          setType(it.type); setSupplierId(it.supplierId || "");
+          setPartnerName(it.partnerName || "");
+          setAmount(String(it.amount)); setCurrency(it.currency);
+          setMethod(it.method || "cash"); setNotes(it.notes || ""); setDate(it.date);
+        }
+      }
     })();
   }, []);
 
@@ -43,22 +56,32 @@ export default function PaymentForm() {
     if (type === "drawing" && !partnerName.trim()) { setError("Enter partner name"); return; }
     setSaving(true); setError("");
     try {
-      await api.createPayment({
+      const payload = {
         date, amount: amt, currency, rate, type,
         supplierId: type === "supplier_payment" ? supplierId : "",
         partnerName: type === "drawing" ? partnerName.trim() : "",
         method, notes,
-      });
+      };
+      if (editId) await api.updatePayment(editId, payload);
+      else await api.createPayment(payload);
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!editId) return;
+    setDeleting(true);
+    try { await api.deletePayment(editId); router.back(); }
+    catch (e: any) { setError(e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Pressable testID="btn-close-payment" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
-        <Text style={styles.headerTitle}>New Payment</Text>
+        <Text style={styles.headerTitle}>{editId ? "Edit Payment" : "New Payment"}</Text>
         <View style={{ width: 26 }} />
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -111,8 +134,13 @@ export default function PaymentForm() {
           </Card>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable testID="btn-save-payment" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Payment</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Payment" : "Save Payment"}</Text>}
           </Pressable>
+          {editId ? (
+            <Pressable testID="btn-delete-payment" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+              {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete Payment</Text>}
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

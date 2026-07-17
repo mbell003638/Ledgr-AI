@@ -63,21 +63,17 @@ export default function BillsScreen() {
             />
           }
           renderItem={({ item }) => (
-            <View style={styles.card} testID={`bill-${item.id}`}>
+            <Pressable
+              testID={`bill-${item.id}`}
+              onPress={() => router.push({ pathname: "/bill-form", params: { id: item.id } })}
+              style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{suppliers[item.supplierId] || "Unknown supplier"}</Text>
                 <Text style={styles.cardSub}>{shortDate(item.date)} • {item.paymentType === "cash" ? "Cash" : "Credit"}{item.invoiceNo ? ` • #${item.invoiceNo}` : ""}</Text>
               </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
-                <Pressable
-                  testID={`bill-delete-${item.id}`}
-                  onPress={async () => { await api.deleteBill(item.id); load(); }}
-                >
-                  <Text style={styles.delete}>Delete</Text>
-                </Pressable>
-              </View>
-            </View>
+              <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
+            </Pressable>
           )}
         />
       )}

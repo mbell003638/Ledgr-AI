@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
@@ -11,20 +11,43 @@ export default function SupplierForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editId = params.id;
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!editId) return;
+    (async () => {
+      try {
+        const s = await api.getSupplier(editId);
+        setName(s.name || ""); setPhone(s.phone || ""); setNotes(s.notes || "");
+      } catch (e: any) { setError(e.message); }
+    })();
+  }, [editId]);
 
   const save = async () => {
     if (!name.trim()) { setError("Enter a name"); return; }
     setSaving(true); setError("");
     try {
-      await api.createSupplier({ name: name.trim(), phone, notes });
+      const payload = { name: name.trim(), phone, notes };
+      if (editId) await api.updateSupplier(editId, payload);
+      else await api.createSupplier(payload);
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!editId) return;
+    setDeleting(true);
+    try { await api.deleteSupplier(editId); router.back(); router.back(); }
+    catch (e: any) { setError(e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -33,7 +56,7 @@ export default function SupplierForm() {
         <Pressable testID="btn-close-supplier" onPress={() => router.back()}>
           <Ionicons name="close" size={26} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>New Partner</Text>
+        <Text style={styles.headerTitle}>{editId ? "Edit Partner" : "New Partner"}</Text>
         <View style={{ width: 26 }} />
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -53,8 +76,13 @@ export default function SupplierForm() {
             disabled={saving}
             style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}
           >
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Partner</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Partner" : "Save Partner"}</Text>}
           </Pressable>
+          {editId ? (
+            <Pressable testID="btn-delete-supplier" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+              {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete Partner</Text>}
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

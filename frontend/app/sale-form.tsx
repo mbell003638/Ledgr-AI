@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
@@ -11,32 +11,55 @@ export default function SaleForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editId = params.id;
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"USD" | "CDF">("USD");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [rate, setRate] = useState(2500);
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-  useEffect(() => { (async () => { const s = await api.getSettings(); setRate(s.fcRate || 2500); })(); }, []);
+  useEffect(() => {
+    (async () => {
+      const s = await api.getSettings();
+      setRate(s.fcRate || 2500);
+      if (editId) {
+        const list = await api.listSales();
+        const it = list.find((x: any) => x.id === editId);
+        if (it) { setAmount(String(it.amount)); setCurrency(it.currency); setNotes(it.notes || ""); setDate(it.date); }
+      }
+    })();
+  }, []);
 
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     setSaving(true); setError("");
     try {
-      await api.createSale({ date, amount: amt, currency, rate, notes });
+      const payload = { date, amount: amt, currency, rate, notes };
+      if (editId) await api.updateSale(editId, payload);
+      else await api.createSale(payload);
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!editId) return;
+    setDeleting(true);
+    try { await api.deleteSale(editId); router.back(); }
+    catch (e: any) { setError(e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Pressable testID="btn-close-sale" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
-        <Text style={styles.headerTitle}>Log Daily Sale</Text>
+        <Text style={styles.headerTitle}>{editId ? "Edit Sale" : "Log Daily Sale"}</Text>
         <View style={{ width: 26 }} />
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -58,8 +81,13 @@ export default function SaleForm() {
           </Card>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable testID="btn-save-sale" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Sale</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Sale" : "Save Sale"}</Text>}
           </Pressable>
+          {editId ? (
+            <Pressable testID="btn-delete-sale" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+              {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete Sale</Text>}
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

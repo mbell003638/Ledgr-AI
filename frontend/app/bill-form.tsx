@@ -12,7 +12,8 @@ export default function BillForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const params = useLocalSearchParams<{ supplierId?: string }>();
+  const params = useLocalSearchParams<{ supplierId?: string; id?: string }>();
+  const editId = params.id;
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState<string>(params.supplierId || "");
   const [amount, setAmount] = useState("");
@@ -20,10 +21,11 @@ export default function BillForm() {
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [notes, setNotes] = useState("");
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [photo, setPhoto] = useState<string>("");
   const [ocrLoading, setOcrLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [rate, setRate] = useState(2500);
 
@@ -31,11 +33,51 @@ export default function BillForm() {
     (async () => {
       const s = await api.listSuppliers();
       setSuppliers(s);
-      if (!supplierId && s.length) setSupplierId(s[0].id);
+      if (!supplierId && !editId && s.length) setSupplierId(s[0].id);
       const st = await api.getSettings();
       setRate(st.fcRate || 2500);
+      if (editId) {
+        const bills = await api.listBills();
+        const b = bills.find((x: any) => x.id === editId);
+        if (b) {
+          setSupplierId(b.supplierId);
+          setAmount(String(b.amount));
+          setCurrency(b.currency);
+          setPaymentType(b.paymentType);
+          setInvoiceNo(b.invoiceNo || "");
+          setNotes(b.notes || "");
+          setDate(b.date);
+          setPhoto(b.photo || "");
+        }
+      }
     })();
   }, []);
+
+  const runOcr = async (base64: string, mimeType: string) => {
+    setOcrLoading(true);
+    try {
+      const r = await api.ocrReceipt(base64, mimeType);
+      if (r.amount) setAmount(String(r.amount));
+      if (r.currency && (r.currency === "USD" || r.currency === "CDF")) setCurrency(r.currency);
+      if (r.invoiceNo) setInvoiceNo(r.invoiceNo);
+      if (r.date) setDate(r.date);
+      if (r.supplierName) {
+        const list = await api.listSuppliers();
+        let match = list.find((s: any) => s.name.toLowerCase().includes(r.supplierName.toLowerCase()));
+        if (!match) {
+          match = await api.createSupplier({ name: r.supplierName });
+          setSuppliers([...list, match]);
+        } else {
+          setSuppliers(list);
+        }
+        setSupplierId(match.id);
+      }
+    } catch (e: any) {
+      setError(e.message || "OCR failed");
+    } finally {
+      setOcrLoading(false);
+    }
+  };
 
   const scanReceipt = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -44,22 +86,17 @@ export default function BillForm() {
     if (res.canceled || !res.assets[0].base64) return;
     const asset = res.assets[0];
     setPhoto(asset.base64!);
-    setOcrLoading(true);
-    try {
-      const r = await api.ocrReceipt(asset.base64!, asset.mimeType || "image/jpeg");
-      if (r.amount) setAmount(String(r.amount));
-      if (r.currency && (r.currency === "USD" || r.currency === "CDF")) setCurrency(r.currency);
-      if (r.invoiceNo) setInvoiceNo(r.invoiceNo);
-      if (r.supplierName) {
-        const match = suppliers.find((s) => s.name.toLowerCase().includes(r.supplierName.toLowerCase()));
-        if (match) setSupplierId(match.id);
-        else setNotes((n) => (n ? n + "\n" : "") + `Detected supplier: ${r.supplierName}`);
-      }
-    } catch (e: any) {
-      setError(e.message || "OCR failed");
-    } finally {
-      setOcrLoading(false);
-    }
+    await runOcr(asset.base64!, asset.mimeType || "image/jpeg");
+  };
+
+  const uploadReceipt = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { setError("Gallery permission denied"); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (res.canceled || !res.assets[0].base64) return;
+    const asset = res.assets[0];
+    setPhoto(asset.base64!);
+    await runOcr(asset.base64!, asset.mimeType || "image/jpeg");
   };
 
   const save = async () => {
@@ -69,13 +106,23 @@ export default function BillForm() {
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     setSaving(true);
     try {
-      await api.createBill({
+      const payload = {
         supplierId, date, amount: amt, currency, rate,
         paymentType, invoiceNo, notes, photo,
-      });
+      };
+      if (editId) await api.updateBill(editId, payload);
+      else await api.createBill(payload);
       router.back();
     } catch (e: any) { setError(e.message || "Failed"); }
     finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!editId) return;
+    setDeleting(true);
+    try { await api.deleteBill(editId); router.back(); }
+    catch (e: any) { setError(e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -89,16 +136,27 @@ export default function BillForm() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Pressable
-            testID="btn-scan-receipt"
-            onPress={scanReceipt}
-            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.85 }]}
-          >
-            {ocrLoading ? <ActivityIndicator color="#fff" /> : <>
-              <Ionicons name="scan-outline" size={20} color="#fff" />
-              <Text style={styles.scanText}>Scan Receipt (AI OCR)</Text>
-            </>}
-          </Pressable>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable
+              testID="btn-scan-receipt"
+              onPress={scanReceipt}
+              style={({ pressed }) => [styles.scanBtn, { flex: 1 }, pressed && { opacity: 0.85 }]}
+            >
+              {ocrLoading ? <ActivityIndicator color="#fff" /> : <>
+                <Ionicons name="camera-outline" size={20} color="#fff" />
+                <Text style={styles.scanText}>Scan</Text>
+              </>}
+            </Pressable>
+            <Pressable
+              testID="btn-upload-receipt"
+              onPress={uploadReceipt}
+              disabled={ocrLoading}
+              style={({ pressed }) => [styles.scanBtn, { flex: 1, backgroundColor: theme.color.brandSecondary }, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons name="cloud-upload-outline" size={20} color="#fff" />
+              <Text style={styles.scanText}>Upload</Text>
+            </Pressable>
+          </View>
 
           {photo ? (
             <Image source={{ uri: `data:image/jpeg;base64,${photo}` }} style={styles.preview} />
@@ -177,8 +235,18 @@ export default function BillForm() {
             disabled={saving}
             style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}
           >
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Bill</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Bill" : "Save Bill"}</Text>}
           </Pressable>
+          {editId ? (
+            <Pressable
+              testID="btn-delete-bill"
+              onPress={remove}
+              disabled={deleting}
+              style={({ pressed }) => [styles.deleteBtn, (pressed || deleting) && { opacity: 0.85 }]}
+            >
+              {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={styles.deleteText}>Delete Bill</Text>}
+            </Pressable>
+          ) : null}
           <View style={{ height: 60 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -211,4 +279,6 @@ function makeStyles(theme: any) { return StyleSheet.create({
   error: { color: theme.color.error, textAlign: "center", marginTop: theme.spacing.md, fontSize: 13 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  deleteBtn: { padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm },
+  deleteText: { color: theme.color.error, fontWeight: "600", fontSize: 14 },
 }); }

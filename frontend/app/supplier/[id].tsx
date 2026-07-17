@@ -91,13 +91,36 @@ export default function SupplierDetail() {
               <Text style={styles.actionText}>Pay</Text>
             </Pressable>
           </View>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+            <Pressable
+              testID="btn-reconcile"
+              onPress={() => router.push({ pathname: "/reconcile", params: { supplierId: id } })}
+              style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, flex: 1.4 }]}
+            >
+              <Ionicons name="scan-outline" size={16} color={theme.color.brandPrimary} />
+              <Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Reconcile Statement</Text>
+            </Pressable>
+            <Pressable
+              testID="btn-edit-supplier"
+              onPress={() => router.push({ pathname: "/supplier-form", params: { id: id } })}
+              style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, flex: 1 }]}
+            >
+              <Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} />
+              <Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Edit</Text>
+            </Pressable>
+          </View>
         </Card>
 
         <Text style={styles.section}>Account Statement</Text>
         {timeline.length === 0 ? (
           <Text style={styles.empty}>No transactions yet.</Text>
         ) : timeline.map((t) => (
-          <View key={t.id} style={styles.timelineRow}>
+          <Pressable
+            key={t.id}
+            testID={`tl-${t.kind}-${t.id}`}
+            onPress={() => router.push({ pathname: t.kind === "bill" ? "/bill-form" : "/payment-form", params: { id: t.id } })}
+            style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.85 }]}
+          >
             <View style={[styles.timelineDot, { backgroundColor: t.kind === "bill" ? theme.color.warning : theme.color.success }]} />
             <View style={{ flex: 1 }}>
               <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill" : "Payment"} • {shortDate(t.date)}</Text>
@@ -106,7 +129,7 @@ export default function SupplierDetail() {
             <Text style={[styles.tlAmount, { color: t.kind === "bill" ? theme.color.error : theme.color.success }]}>
               {t.kind === "bill" ? "+" : "-"}{fmt(t.amount, t.currency)}
             </Text>
-          </View>
+          </Pressable>
         ))}
         <View style={{ height: 60 }} />
       </ScrollView>

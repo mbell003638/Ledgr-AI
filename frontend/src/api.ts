@@ -41,22 +41,26 @@ export const api = {
   // Suppliers
   listSuppliers: () => req('/suppliers'),
   createSupplier: (s: any) => req('/suppliers', 'POST', s),
+  updateSupplier: (id: string, s: any) => req(`/suppliers/${id}`, 'PUT', s),
   getSupplier: (id: string) => req(`/suppliers/${id}`),
   deleteSupplier: (id: string) => req(`/suppliers/${id}`, 'DELETE'),
 
   // Bills
   listBills: () => req('/bills'),
   createBill: (b: any) => req('/bills', 'POST', b),
+  updateBill: (id: string, b: any) => req(`/bills/${id}`, 'PUT', b),
   deleteBill: (id: string) => req(`/bills/${id}`, 'DELETE'),
 
   // Sales
   listSales: () => req('/sales'),
   createSale: (s: any) => req('/sales', 'POST', s),
+  updateSale: (id: string, s: any) => req(`/sales/${id}`, 'PUT', s),
   deleteSale: (id: string) => req(`/sales/${id}`, 'DELETE'),
 
   // Payments
   listPayments: () => req('/payments'),
   createPayment: (p: any) => req('/payments', 'POST', p),
+  updatePayment: (id: string, p: any) => req(`/payments/${id}`, 'PUT', p),
   deletePayment: (id: string) => req(`/payments/${id}`, 'DELETE'),
 
   // Inventory
@@ -85,4 +89,6 @@ export const api = {
     req('/ai/ocr-receipt', 'POST', { imageBase64, mimeType }),
   transcribe: (audioBase64: string, mimeType = 'audio/m4a') =>
     req('/ai/transcribe', 'POST', { audioBase64, mimeType }),
+  reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') =>
+    req('/ai/reconcile-statement', 'POST', { imageBase64, supplierId, mimeType }),
 };

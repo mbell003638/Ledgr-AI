@@ -289,6 +289,16 @@ async def delete_supplier(sid: str):
     return {"ok": True}
 
 
+@api_router.put("/suppliers/{sid}")
+async def update_supplier(sid: str, body: SupplierCreate):
+    doc = body.model_dump()
+    await db.suppliers.update_one({"id": sid}, {"$set": doc})
+    s = await db.suppliers.find_one({"id": sid}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Supplier not found")
+    return s
+
+
 # ---------- Bills ----------
 @api_router.get("/bills")
 async def list_bills():
@@ -309,6 +319,16 @@ async def delete_bill(bid: str):
     return {"ok": True}
 
 
+@api_router.put("/bills/{bid}")
+async def update_bill(bid: str, body: BillCreate):
+    doc = body.model_dump()
+    await db.bills.update_one({"id": bid}, {"$set": doc})
+    b = await db.bills.find_one({"id": bid}, {"_id": 0})
+    if not b:
+        raise HTTPException(404, "Bill not found")
+    return b
+
+
 # ---------- Sales ----------
 @api_router.get("/sales")
 async def list_sales():
@@ -327,6 +347,16 @@ async def create_sale(body: SaleCreate):
 async def delete_sale(sid: str):
     await db.sales.delete_one({"id": sid})
     return {"ok": True}
+
+
+@api_router.put("/sales/{sid}")
+async def update_sale(sid: str, body: SaleCreate):
+    doc = body.model_dump()
+    await db.sales.update_one({"id": sid}, {"$set": doc})
+    s = await db.sales.find_one({"id": sid}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Sale not found")
+    return s
 
 
 # ---------- Payments ----------
@@ -616,6 +646,128 @@ async def transcribe(body: GeminiAudioIn, x_gemini_api_key: str = Header(default
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Transcription failed: {e}")
+
+
+STATEMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "supplierName": {"type": "string"},
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string"},
+                    "amount": {"type": "number"},
+                    "type": {"type": "string", "enum": ["bill", "payment", "unknown"]},
+                    "description": {"type": "string"},
+                    "reference": {"type": "string"},
+                },
+            },
+        },
+        "totalOnStatement": {"type": "number"},
+    },
+    "required": ["entries"],
+}
+
+
+class ReconcileIn(BaseModel):
+    imageBase64: str
+    mimeType: str = "image/jpeg"
+    supplierId: Optional[str] = ""
+
+
+@api_router.post("/ai/reconcile-statement")
+async def reconcile_statement(body: ReconcileIn, x_gemini_api_key: str = Header(default="")):
+    """Photograph a supplier statement; Gemini extracts line items, we compare with our records."""
+    key = await get_api_key(x_gemini_api_key)
+    try:
+        img = base64.b64decode(body.imageBase64)
+        part = gtypes.Part.from_bytes(data=img, mime_type=body.mimeType)
+        prompt = (
+            "Extract every line item from this supplier statement / ledger photo. "
+            "For each line, return: date (YYYY-MM-DD), amount (positive number), "
+            "type ('bill' for purchase/invoice/debit or 'payment' for credit/payment received), "
+            "description, reference/invoice number. Also return the statement's total if visible. "
+            "Return JSON matching the schema."
+        )
+        c = gemini_client(key)
+        resp = c.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[prompt, part],
+            config=gtypes.GenerateContentConfig(
+                temperature=0,
+                response_mime_type="application/json",
+                response_schema=STATEMENT_SCHEMA,
+            ),
+        )
+        extracted = json.loads(resp.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reconciliation OCR failed: {e}")
+
+    our_bills = []
+    our_payments = []
+    if body.supplierId:
+        our_bills = await db.bills.find({"supplierId": body.supplierId}, {"_id": 0}).to_list(2000)
+        our_payments = await db.payments.find(
+            {"supplierId": body.supplierId, "type": "supplier_payment"}, {"_id": 0}).to_list(2000)
+
+    def _match(entry, pool):
+        from datetime import datetime as dt
+        try:
+            e_date = dt.fromisoformat(entry.get("date", ""))
+        except Exception:
+            e_date = None
+        e_amt = float(entry.get("amount", 0) or 0)
+        for o in pool:
+            try:
+                o_date = dt.fromisoformat(o.get("date", ""))
+            except Exception:
+                o_date = None
+            if e_date and o_date and abs((e_date - o_date).days) > 3:
+                continue
+            o_amt = float(o.get("amount", 0) or 0)
+            if e_amt and o_amt and abs(o_amt - e_amt) / max(e_amt, 1) <= 0.01:
+                return o
+        return None
+
+    matched, missing = [], []
+    for e in extracted.get("entries", []):
+        if e.get("type") == "bill":
+            pool = our_bills
+        elif e.get("type") == "payment":
+            pool = our_payments
+        else:
+            pool = our_bills + our_payments
+        m = _match(e, pool)
+        if m:
+            matched.append({"statement": e, "ledgr": m})
+        else:
+            missing.append(e)
+
+    stmt_refs = [(e.get("date"), float(e.get("amount", 0) or 0)) for e in extracted.get("entries", [])]
+    extra = []
+    for o in (our_bills + our_payments):
+        o_amt = float(o.get("amount", 0) or 0)
+        found = False
+        for d, a in stmt_refs:
+            if d and o.get("date") == d and a and abs(a - o_amt) / max(a, 1) <= 0.01:
+                found = True
+                break
+        if not found:
+            extra.append(o)
+
+    return {
+        "extracted": extracted,
+        "matched": matched,
+        "missingInLedgr": missing,
+        "notOnStatement": extra,
+        "supplierId": body.supplierId,
+    }
+
+
 
 
 @api_router.get("/reports/monthly-summary")
