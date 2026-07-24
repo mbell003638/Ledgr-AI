@@ -33,8 +33,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       try {
         const v = (await AsyncStorage.getItem(STORAGE_KEY)) as Mode | null;
         if (v === 'light' || v === 'dark' || v === 'system') setModeState(v);
-      } finally { setHydrated(true); }
+      } catch { /* ignore */ }
+      finally { setHydrated(true); }
     })();
+    // Safety: if AsyncStorage hangs, render with defaults after 3s
+    const timer = setTimeout(() => setHydrated(true), 3000);
+    return () => clearTimeout(timer);
   }, []);
 
   const setMode = (m: Mode) => {
