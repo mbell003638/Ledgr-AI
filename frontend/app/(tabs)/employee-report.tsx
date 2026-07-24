@@ -43,7 +43,7 @@ export default function EmployeeReportScreen() {
       const actual = currentData.inventoryValue;
       const grossProfit = actual - expected;
       
-      const expenses = currentData.drawings + currentData.supplierPayments; 
+      const expenses = currentData.drawings;
       const netProfit = grossProfit - expenses;
       const commAmt = currentData.commission; 
       const restNet = netProfit - commAmt;
@@ -79,11 +79,11 @@ export default function EmployeeReportScreen() {
         expectedStock: expected,
         actualStock: actual,
         grossProfit,
-        expenses: 0, 
-        netProfit: grossProfit,
-        commissionPct: 0,
-        commissionAmt: 0,
-        restNet: grossProfit
+        expenses: p.drawings || 0,
+        netProfit: grossProfit - (p.drawings || 0),
+        commissionPct: p.managerCommissionPct || 0,
+        commissionAmt: p.commission || 0,
+        restNet: grossProfit - (p.drawings || 0) - (p.commission || 0)
       };
     }
   }, [selectedId, currentData, periods]);
@@ -132,14 +132,14 @@ export default function EmployeeReportScreen() {
               <RowKV label="Total Amount of Physical Goods" value={fmt(report.expectedGoods)} strong theme={theme} styles={styles} />
               
               <View style={{ height: 16 }} />
-              <RowKV label="Minus: Total Sales in Period" value={`(${fmt(report.sales)})`} color={theme.color.danger} theme={theme} styles={styles} />
+              <RowKV label="Minus: Total Sales in Period" value={`(${fmt(report.sales)})`} color={theme.color.error} theme={theme} styles={styles} />
               <View style={styles.divider} />
               <RowKV label="Total Stock Should Rest In Shop" value={fmt(report.expectedStock)} strong theme={theme} styles={styles} />
               
               <View style={{ height: 16 }} />
               <RowKV label="Real Amount Of Physical Goods (Inventory)" value={fmt(report.actualStock)} theme={theme} styles={styles} />
               <View style={styles.divider} />
-              <RowKV label="Gross Profit" value={fmt(report.grossProfit)} strong color={report.grossProfit >= 0 ? theme.color.success : theme.color.danger} theme={theme} styles={styles} />
+              <RowKV label="Gross Profit" value={fmt(report.grossProfit)} strong color={report.grossProfit >= 0 ? theme.color.success : theme.color.error} theme={theme} styles={styles} />
               
               {showNet && (
                 <>
@@ -147,14 +147,14 @@ export default function EmployeeReportScreen() {
                   <View style={[styles.divider, { borderStyle: 'dashed', borderWidth: 1, borderColor: theme.color.border, backgroundColor: 'transparent', height: 0 }]} />
                   <View style={{ height: 16 }} />
                   
-                  <RowKV label="Minus: Total Expenses of Business" value={`(${fmt(report.expenses)})`} color={theme.color.danger} theme={theme} styles={styles} />
+                  <RowKV label="Minus: Total Expenses of Business" value={`(${fmt(report.expenses)})`} color={theme.color.error} theme={theme} styles={styles} />
                   <View style={styles.divider} />
                   <RowKV label="Net Profit" value={fmt(report.netProfit)} strong theme={theme} styles={styles} />
                   
                   <View style={{ height: 16 }} />
-                  <RowKV label={`Minus: ${report.commissionPct}% Commission`} value={`(${fmt(report.commissionAmt)})`} color={theme.color.danger} theme={theme} styles={styles} />
+                  <RowKV label={`Minus: ${report.commissionPct}% Commission`} value={`(${fmt(report.commissionAmt)})`} color={theme.color.error} theme={theme} styles={styles} />
                   <View style={styles.divider} />
-                  <RowKV label="Rest Net Profit" value={fmt(report.restNet)} strong big color={report.restNet >= 0 ? theme.color.success : theme.color.danger} theme={theme} styles={styles} />
+                  <RowKV label="Rest Net Profit" value={fmt(report.restNet)} strong big color={report.restNet >= 0 ? theme.color.success : theme.color.error} theme={theme} styles={styles} />
                 </>
               )}
             </Card>

@@ -3,7 +3,7 @@
  * Uses the same model & schemas as the previous FastAPI implementation.
  */
 
-const MODEL = 'gemini-flash-latest';
+const MODEL = 'gemini-2.0-flash';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 async function callGemini(apiKey: string, prompt: string, parts: any[] = [], schema?: any) {

@@ -247,7 +247,7 @@ export default function SettingsScreen() {
             </Card>
 
             {status && (
-              <View style={[styles.status, { backgroundColor: status.ok ? "#E7F1EA" : "#FBE8E5" }]}>
+              <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
                 <Ionicons
                   name={status.ok ? "checkmark-circle" : "alert-circle"}
                   size={18}
