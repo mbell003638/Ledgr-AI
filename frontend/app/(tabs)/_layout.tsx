@@ -64,6 +64,14 @@ export default function TabsLayout() {
             tabBarButtonTestID: "tab-settings",
           }}
         />
+        <Tabs.Screen
+          name="employee-report"
+          options={{
+            title: "Staff",
+            tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" size={size} color={color} />,
+            tabBarButtonTestID: "tab-staff",
+          }}
+        />
       </Tabs>
       <VoiceFab />
     </View>
