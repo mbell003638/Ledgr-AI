@@ -1,0 +1,62 @@
+name: Build Ledgr AI Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Yarn
+        run: npm install -g yarn
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          yarn install --frozen-lockfile || yarn install
+
+      - name: Prebuild Android project
+        run: |
+          cd frontend
+          npx expo prebuild --platform android --no-install
+
+      - name: Install Android dependencies
+        run: |
+          cd frontend/android
+          chmod +x gradlew
+
+      - name: Build Android Debug APK
+        run: |
+          cd frontend/android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Find APK files
+        run: find frontend/android -name "*.apk" -type f
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ledgr-AI-APK
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

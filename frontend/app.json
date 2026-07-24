@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.vocashaccounting.si9xp5",
@@ -24,7 +24,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.vocashaccounting.si9xp5",
-      "permissions": ["CAMERA", "RECORD_AUDIO"]
+      "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET", "WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"]
     },
     "web": {
       "bundler": "metro",
