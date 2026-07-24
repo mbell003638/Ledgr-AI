@@ -154,7 +154,7 @@ export default function SettingsScreen() {
                 style={({ pressed }) => [styles.secondaryBtn, (pressed || testing) && { opacity: 0.7 }]}
               >
                 {testing ? <ActivityIndicator color={theme.color.brandPrimary} /> :
-                  <Text style={styles.secondaryText}>Test API Key</Text>}
+                  <Text style={styles.secondaryText}>Test API Key &amp; Model</Text>}
               </Pressable>
             </Card>
 

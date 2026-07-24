@@ -114,8 +114,29 @@ export const api = {
   dailySummary: (d: string) => db.dailySummary(d),
 
   // Backup + danger
-  exportBackup: () => db.exportBackup(),
-  importBackup: (payload: any) => db.importBackup(payload),
+  exportBackup: async () => {
+    const data = await db.exportBackup();
+    // Strip API key from backup for security
+    if (data.settings) {
+      const { googleApiKey, ...safeSettings } = data.settings;
+      data.settings = safeSettings;
+    }
+    // Include model name so it carries over to other devices
+    data.geminiModel = await getGeminiModel();
+    return data;
+  },
+  importBackup: async (payload: any) => {
+    // Strip any API key that may have leaked into an older backup
+    if (payload.settings) {
+      delete payload.settings.googleApiKey;
+    }
+    const result = await db.importBackup(payload);
+    // Restore model name if present in backup
+    if (payload.geminiModel && typeof payload.geminiModel === 'string') {
+      await setGeminiModel(payload.geminiModel);
+    }
+    return result;
+  },
   listPeriods: () => db.listPeriods(),
   closePeriod: (actualStock: number, notes = '') => db.closePeriod(actualStock, notes),
   resetAll: () => db.resetAll(),
