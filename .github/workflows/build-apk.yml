@@ -10,9 +10,18 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
 
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/graalvm /opt/ghc /usr/local/share/powershell /usr/local/lib/android/sdk/ndk/26* || true
+          sudo apt-get clean || true
+          df -h
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,15 +50,11 @@ jobs:
           cd frontend
           npx expo prebuild --platform android --no-install
 
-      - name: Install Android dependencies
+      - name: Build Android Debug APK (arm64 only)
         run: |
           cd frontend/android
           chmod +x gradlew
-
-      - name: Build Android Debug APK
-        run: |
-          cd frontend/android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon -PreactNativeArchitectures=arm64-v8a
 
       - name: Find APK files
         run: find frontend/android -name "*.apk" -type f
