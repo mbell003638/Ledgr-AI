@@ -46,7 +46,7 @@ const PARSE_SCHEMA = {
     intent: { type: 'string', enum: ['bill', 'sale', 'supplier_payment', 'drawing', 'inventory', 'unknown'] },
     date: { type: 'string' },
     amount: { type: 'number' },
-    currency: { type: 'string', enum: ['USD', 'CDF'] },
+    currency: { type: 'string', enum: ['USD'] },
     supplierName: { type: 'string' },
     partnerName: { type: 'string' },
     paymentType: { type: 'string', enum: ['cash', 'credit'] },
@@ -62,7 +62,7 @@ export async function parseCommand(apiKey: string, model: string, text: string) 
     `Today is ${today}. Parse this shop accounting voice command into JSON. ` +
     "Intents: 'bill' (vendor purchase), 'sale' (customer revenue), 'supplier_payment' (paying a supplier), " +
     "'drawing' (partner withdrawal), 'inventory' (stock count). " +
-    'Use ISO date YYYY-MM-DD. Default currency USD unless CDF/FC/Franc is mentioned. ' +
+    'Use ISO date YYYY-MM-DD. All amounts are in USD. ' +
     'Provide a short human summary. Command: ' + text;
   const out = await callGemini(apiKey, model, prompt, [], PARSE_SCHEMA);
   return JSON.parse(out);
@@ -83,7 +83,7 @@ const OCR_SCHEMA = {
 export async function ocrReceipt(apiKey: string, model: string, imageBase64: string, mimeType = 'image/jpeg') {
   const prompt =
     'Extract from this receipt/invoice: supplierName (business name), date (YYYY-MM-DD), ' +
-    'amount (total), currency (USD or CDF), invoiceNo, rawText (full text). Return JSON.';
+    'amount (total), currency (always USD), invoiceNo, rawText (full text). Return JSON.';
   const parts = [{ inlineData: { mimeType, data: imageBase64 } }];
   const out = await callGemini(apiKey, model, prompt, parts, OCR_SCHEMA);
   return JSON.parse(out);

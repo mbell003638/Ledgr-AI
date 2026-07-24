@@ -67,10 +67,8 @@ export default function VoiceModal() {
     if (!parsed) return;
     setSaving(true);
     try {
-      const rateSettings = await api.getSettings();
-      const rate = rateSettings.fcRate || 2500;
       const date = parsed.date || new Date().toISOString().slice(0, 10);
-      const currency = parsed.currency || "USD";
+      const currency = "USD";
 
       if (parsed.intent === "bill") {
         // find or create supplier
@@ -85,12 +83,12 @@ export default function VoiceModal() {
           }
         }
         await api.createBill({
-          supplierId: sid, date, amount: parsed.amount, currency, rate,
+          supplierId: sid, date, amount: parsed.amount, currency,
           paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
           notes: parsed.notes || parsed.summary,
         });
       } else if (parsed.intent === "sale") {
-        await api.createSale({ date, amount: parsed.amount, currency, rate, notes: parsed.notes || parsed.summary });
+        await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary });
       } else if (parsed.intent === "supplier_payment") {
         let sid = "";
         if (parsed.supplierName) {
@@ -100,13 +98,13 @@ export default function VoiceModal() {
           else { const c = await api.createSupplier({ name: parsed.supplierName }); sid = c.id; }
         }
         await api.createPayment({
-          date, amount: parsed.amount, currency, rate,
+          date, amount: parsed.amount, currency,
           type: "supplier_payment", supplierId: sid,
           method: "cash", notes: parsed.notes || parsed.summary,
         });
       } else if (parsed.intent === "drawing") {
         await api.createPayment({
-          date, amount: parsed.amount, currency, rate,
+          date, amount: parsed.amount, currency,
           type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Partner",
           method: "cash", notes: parsed.notes || parsed.summary,
         });

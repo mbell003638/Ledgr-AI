@@ -1,4 +1,4 @@
-name: Build Ledgr AI Android APK
+name: Build Ledgr AI Android
 
 on:
   push:
@@ -7,61 +7,81 @@ on:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Release APK & AAB
     runs-on: ubuntu-latest
-
     env:
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:+HeapDumpOnOutOfMemoryError"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/graalvm /opt/ghc /usr/local/share/powershell /usr/local/lib/android/sdk/ndk/26* || true
-          sudo apt-get clean || true
-          df -h
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
-      - name: Setup Java JDK
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '21'
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Yarn
-        run: npm install -g yarn
-
       - name: Install dependencies
-        run: |
-          cd frontend
-          yarn install --frozen-lockfile || yarn install
+        working-directory: frontend
+        run: yarn install --frozen-lockfile || yarn install
 
-      - name: Prebuild Android project
-        run: |
-          cd frontend
-          npx expo prebuild --platform android --no-install
+      - name: Expo prebuild (generate android project)
+        working-directory: frontend
+        run: npx expo prebuild --platform android --no-install
 
-      - name: Build Android Debug APK (arm64 only)
+      - name: Generate signing keystore
+        working-directory: frontend/android/app
         run: |
-          cd frontend/android
+          keytool -genkeypair -v -keystore ledgr-release.keystore \
+            -alias ledgr -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass ledgr123 -keypass ledgr123 \
+            -dname "CN=Ledgr, OU=Mobile, O=Ledgr, L=City, ST=State, C=US"
+
+      - name: Configure release signing
+        working-directory: frontend/android
+        run: |
+          {
+            echo "MYAPP_RELEASE_STORE_FILE=ledgr-release.keystore"
+            echo "MYAPP_RELEASE_KEY_ALIAS=ledgr"
+            echo "MYAPP_RELEASE_STORE_PASSWORD=ledgr123"
+            echo "MYAPP_RELEASE_KEY_PASSWORD=ledgr123"
+          } >> gradle.properties
+          python3 ../scripts/ci-sign.py
+
+      - name: Build Release APK
+        working-directory: frontend/android
+        run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon -PreactNativeArchitectures=arm64-v8a
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
-      - name: Find APK files
-        run: find frontend/android -name "*.apk" -type f
+      - name: Build Release AAB (Play Store)
+        working-directory: frontend/android
+        run: ./gradlew bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
-      - name: Upload Android APK Artifact
+      - name: List outputs
+        run: |
+          find frontend/android -name "*.apk" -type f
+          find frontend/android -name "*.aab" -type f
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Ledgr-AI-APK
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          path: frontend/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ledgr-AI-AAB
+          path: frontend/android/app/build/outputs/bundle/release/*.aab
           retention-days: 30

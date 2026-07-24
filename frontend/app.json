@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.vocashaccounting.si9xp5",
+      "bundleIdentifier": "com.mbell.ledgr",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
         "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
@@ -23,8 +23,8 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.vocashaccounting.si9xp5",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET", "WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"]
+      "package": "com.mbell.ledgr",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET"]
     },
     "web": {
       "bundler": "metro",

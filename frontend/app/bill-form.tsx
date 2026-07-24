@@ -17,7 +17,7 @@ export default function BillForm() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState<string>(params.supplierId || "");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"USD" | "CDF">("USD");
+  const currency = "USD";
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [notes, setNotes] = useState("");
@@ -27,7 +27,6 @@ export default function BillForm() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-  const [rate, setRate] = useState(2500);
 
   useEffect(() => {
     (async () => {
@@ -35,14 +34,13 @@ export default function BillForm() {
       setSuppliers(s);
       if (!supplierId && !editId && s.length) setSupplierId(s[0].id);
       const st = await api.getSettings();
-      setRate(st.fcRate || 2500);
       if (editId) {
         const bills = await api.listBills();
         const b = bills.find((x: any) => x.id === editId);
         if (b) {
           setSupplierId(b.supplierId);
           setAmount(String(b.amount));
-          setCurrency(b.currency);
+          
           setPaymentType(b.paymentType);
           setInvoiceNo(b.invoiceNo || "");
           setNotes(b.notes || "");
@@ -58,7 +56,6 @@ export default function BillForm() {
     try {
       const r = await api.ocrReceipt(base64, mimeType);
       if (r.amount) setAmount(String(r.amount));
-      if (r.currency && (r.currency === "USD" || r.currency === "CDF")) setCurrency(r.currency);
       if (r.invoiceNo) setInvoiceNo(r.invoiceNo);
       if (r.date) setDate(r.date);
       if (r.supplierName) {
@@ -107,7 +104,7 @@ export default function BillForm() {
     setSaving(true);
     try {
       const payload = {
-        supplierId, date, amount: amt, currency, rate,
+        supplierId, date, amount: amt, currency,
         paymentType, invoiceNo, notes, photo,
       };
       if (editId) await api.updateBill(editId, payload);
@@ -180,29 +177,15 @@ export default function BillForm() {
             </ScrollView>
 
             <Text style={[styles.label, { marginTop: 8 }]}>Amount</Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput
-                testID="input-amount"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <View style={styles.segRow}>
-                {(["USD", "CDF"] as const).map((c) => (
-                  <Pressable
-                    key={c}
-                    testID={`currency-${c}`}
-                    onPress={() => setCurrency(c)}
-                    style={[styles.segBtn, currency === c && styles.segBtnActive]}
-                  >
-                    <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+            <TextInput
+              testID="input-amount"
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={theme.color.muted}
+              style={[styles.input]}
+            />
 
             <Text style={[styles.label, { marginTop: 12 }]}>Payment Type</Text>
             <View style={styles.segRowFull}>

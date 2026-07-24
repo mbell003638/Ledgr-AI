@@ -115,7 +115,7 @@ export const api = {
 
   // Backup + danger
   exportBackup: async () => {
-    const data = await db.exportBackup();
+    const data: any = await db.exportBackup();
     // Strip API key from backup for security
     if (data.settings) {
       const { googleApiKey, ...safeSettings } = data.settings;

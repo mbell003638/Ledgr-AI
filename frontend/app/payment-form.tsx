@@ -20,13 +20,12 @@ export default function PaymentForm() {
   const [supplierId, setSupplierId] = useState("");
   const [partnerName, setPartnerName] = useState("");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"USD" | "CDF">("USD");
+  const currency = "USD";
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-  const [rate, setRate] = useState(2500);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
@@ -35,14 +34,13 @@ export default function PaymentForm() {
       setSuppliers(s);
       if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
       const st = await api.getSettings();
-      setRate(st.fcRate || 2500);
       if (editId) {
         const list = await api.listPayments();
         const it = list.find((x: any) => x.id === editId);
         if (it) {
           setType(it.type); setSupplierId(it.supplierId || "");
           setPartnerName(it.partnerName || "");
-          setAmount(String(it.amount)); setCurrency(it.currency);
+          setAmount(String(it.amount)); 
           setMethod(it.method || "cash"); setNotes(it.notes || ""); setDate(it.date);
         }
       }
@@ -57,7 +55,7 @@ export default function PaymentForm() {
     setSaving(true); setError("");
     try {
       const payload = {
-        date, amount: amt, currency, rate, type,
+        date, amount: amt, currency, type,
         supplierId: type === "supplier_payment" ? supplierId : "",
         partnerName: type === "drawing" ? partnerName.trim() : "",
         method, notes,
@@ -115,16 +113,7 @@ export default function PaymentForm() {
             )}
 
             <Text style={[styles.label, { marginTop: 12 }]}>Amount ({date})</Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput testID="input-payment-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
-              <View style={styles.segRow}>
-                {(["USD", "CDF"] as const).map((c) => (
-                  <Pressable key={c} testID={`pay-currency-${c}`} onPress={() => setCurrency(c)} style={[styles.segBtn, currency === c && styles.segBtnActive]}>
-                    <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+            <TextInput testID="input-payment-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
 
             <Text style={[styles.label, { marginTop: 12 }]}>Method</Text>
             <TextInput testID="input-method" value={method} onChangeText={setMethod} placeholder="cash / bank / mobile" placeholderTextColor={theme.color.muted} style={styles.input} />

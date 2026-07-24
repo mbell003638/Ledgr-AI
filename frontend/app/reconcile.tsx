@@ -57,15 +57,14 @@ export default function Reconcile() {
     if (!supplierId) return;
     try {
       const st = await api.getSettings();
-      const rate = st.fcRate || 2500;
       if (e.type === "bill" || !e.type) {
         await api.createBill({
-          supplierId, date: e.date, amount: e.amount, currency: "USD", rate,
+          supplierId, date: e.date, amount: e.amount, currency: "USD",
           paymentType: "credit", invoiceNo: e.reference || "", notes: e.description || "From reconciliation",
         });
       } else {
         await api.createPayment({
-          date: e.date, amount: e.amount, currency: "USD", rate,
+          date: e.date, amount: e.amount, currency: "USD",
           type: "supplier_payment", supplierId, method: "cash",
           reference: e.reference || "", notes: e.description || "From reconciliation",
         });

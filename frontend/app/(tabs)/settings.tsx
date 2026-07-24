@@ -13,7 +13,6 @@ export default function SettingsScreen() {
   const { mode, setMode } = useThemeMode();
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
-  const [rate, setRate] = useState("2500");
   const [commissionPct, setCommissionPct] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,7 +28,6 @@ export default function SettingsScreen() {
       const localModel = await getGeminiModel();
       setKey(localKey || s.googleApiKey || "");
       setModelName(localModel);
-      setRate(String(s.fcRate ?? 2500));
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
@@ -44,7 +42,6 @@ export default function SettingsScreen() {
       await setGeminiModel(modelName.trim() || 'gemini-2.0-flash-001');
       await api.updateSettings({
         googleApiKey: key.trim(),
-        fcRate: parseFloat(rate) || 1,
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
       });
       setStatus({ ok: true, msg: "Settings saved." });
@@ -104,7 +101,7 @@ export default function SettingsScreen() {
     setResetting(true); setStatus(null);
     try {
       await api.resetAll();
-      setStatus({ ok: true, msg: "All accounting data reset. Gemini key + FC rate preserved." });
+      setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
       setConfirmReset(false);
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Reset failed" });
@@ -113,7 +110,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Settings" subtitle="Configure AI & currency" />
+      <ScreenHeader title="Settings" subtitle="Configure AI & backup" />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
@@ -216,18 +213,7 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>FC Exchange Rate</Text>
-              <Text style={styles.hint}>1 USD = X Franc Congolese (CDF)</Text>
-              <TextInput
-                testID="input-fc-rate"
-                value={rate}
-                onChangeText={setRate}
-                keyboardType="decimal-pad"
-                style={styles.input}
-                placeholder="2500"
-                placeholderTextColor={theme.color.muted}
-              />
-              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Manager Commission %</Text>
+              <Text style={styles.label}>Manager Commission %</Text>
               <Text style={styles.hint}>% of Gross Profit paid to the shop manager. Leave blank if none.</Text>
               <TextInput
                 testID="input-commission-pct"
@@ -242,7 +228,7 @@ export default function SettingsScreen() {
 
             <Card style={{ marginTop: theme.spacing.md, borderColor: theme.color.error }}>
               <Text style={[styles.label, { color: theme.color.error }]}>Danger Zone — Reset All Data</Text>
-              <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key and FC rate are preserved.</Text>
+              <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key is preserved.</Text>
               {!confirmReset ? (
                 <Pressable testID="btn-reset-init" onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}>
                   <Ionicons name="trash-outline" size={16} color={theme.color.error} />

@@ -1,5 +1,5 @@
 import { Platform, Share } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
+import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
 /**
@@ -48,11 +48,12 @@ export async function shareJsonFile(filename: string, data: any) {
     return;
   }
 
-  const uri = `${FileSystem.cacheDirectory}${filename}`;
-  await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+  const file = new File(Paths.cache, filename);
+  try { file.create({ overwrite: true }); } catch { /* may already exist */ }
+  file.write(json);
   const can = await Sharing.isAvailableAsync();
   if (can) {
-    await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: filename });
+    await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: filename });
   }
 }
 
@@ -82,6 +83,7 @@ export async function pickJsonFile(): Promise<any | null> {
   const res = await DocumentPicker.getDocumentAsync({ type: "application/json", copyToCacheDirectory: true });
   if (res.canceled || !res.assets?.[0]) return null;
   const uri = res.assets[0].uri;
-  const text = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+  const file = new File(uri);
+  const text = file.textSync();
   try { return JSON.parse(text); } catch { return null; }
 }

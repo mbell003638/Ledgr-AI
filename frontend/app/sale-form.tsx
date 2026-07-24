@@ -14,22 +14,20 @@ export default function SaleForm() {
   const params = useLocalSearchParams<{ id?: string }>();
   const editId = params.id;
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"USD" | "CDF">("USD");
+  const currency = "USD";
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-  const [rate, setRate] = useState(2500);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     (async () => {
       const s = await api.getSettings();
-      setRate(s.fcRate || 2500);
       if (editId) {
         const list = await api.listSales();
         const it = list.find((x: any) => x.id === editId);
-        if (it) { setAmount(String(it.amount)); setCurrency(it.currency); setNotes(it.notes || ""); setDate(it.date); }
+        if (it) { setAmount(String(it.amount)); setNotes(it.notes || ""); setDate(it.date); }
       }
     })();
   }, []);
@@ -39,7 +37,7 @@ export default function SaleForm() {
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     setSaving(true); setError("");
     try {
-      const payload = { date, amount: amt, currency, rate, notes };
+      const payload = { date, amount: amt, currency, notes };
       if (editId) await api.updateSale(editId, payload);
       else await api.createSale(payload);
       router.back();
@@ -66,16 +64,7 @@ export default function SaleForm() {
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
           <Card>
             <Text style={styles.label}>Amount ({date})</Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
-              <View style={styles.segRow}>
-                {(["USD", "CDF"] as const).map((c) => (
-                  <Pressable key={c} testID={`sale-currency-${c}`} onPress={() => setCurrency(c)} style={[styles.segBtn, currency === c && styles.segBtnActive]}>
-                    <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+            <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
             <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
             <TextInput testID="input-sale-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
           </Card>
