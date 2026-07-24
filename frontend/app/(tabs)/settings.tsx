@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndic
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
-import { api, getGeminiKey, setGeminiKey } from "@/src/api";
+import { api, getGeminiKey, setGeminiKey, getGeminiModel, setGeminiModel } from "@/src/api";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 
@@ -12,6 +12,7 @@ export default function SettingsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
   const [key, setKey] = useState("");
+  const [modelName, setModelName] = useState("");
   const [rate, setRate] = useState("2500");
   const [commissionPct, setCommissionPct] = useState("");
   const [loading, setLoading] = useState(true);
@@ -25,7 +26,9 @@ export default function SettingsScreen() {
     try {
       const s = await api.getSettings();
       const localKey = await getGeminiKey();
+      const localModel = await getGeminiModel();
       setKey(localKey || s.googleApiKey || "");
+      setModelName(localModel);
       setRate(String(s.fcRate ?? 2500));
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
     } catch (e) { console.warn(e); }
@@ -38,6 +41,7 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       await setGeminiKey(key.trim());
+      await setGeminiModel(modelName.trim() || 'gemini-2.0-flash-001');
       await api.updateSettings({
         googleApiKey: key.trim(),
         fcRate: parseFloat(rate) || 1,
@@ -56,6 +60,7 @@ export default function SettingsScreen() {
     setStatus(null);
     try {
       await setGeminiKey(key.trim());
+      await setGeminiModel(modelName.trim() || 'gemini-2.0-flash-001');
       const r = await api.testKey();
       setStatus({ ok: true, msg: `API key works. Reply: ${r.reply}` });
     } catch (e: any) {
@@ -128,6 +133,20 @@ export default function SettingsScreen() {
                 secureTextEntry
                 style={styles.input}
               />
+              
+              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>AI Model</Text>
+              <Text style={styles.hint}>e.g. gemini-2.0-flash-001</Text>
+              <TextInput
+                testID="input-api-model"
+                value={modelName}
+                onChangeText={setModelName}
+                placeholder="gemini-2.0-flash-001"
+                placeholderTextColor={theme.color.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
+
               <Pressable
                 testID="btn-test-key"
                 onPress={testKey}

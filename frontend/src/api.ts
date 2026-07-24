@@ -3,6 +3,7 @@ import * as db from '@/src/db/local';
 import * as ai from '@/src/db/gemini';
 
 const GEMINI_KEY_STORAGE = 'gemini_api_key';
+const GEMINI_MODEL_STORAGE = 'gemini_model';
 
 export async function getGeminiKey(): Promise<string> {
   const local = await AsyncStorage.getItem(GEMINI_KEY_STORAGE);
@@ -14,10 +15,20 @@ export async function setGeminiKey(v: string) {
   await AsyncStorage.setItem(GEMINI_KEY_STORAGE, v);
 }
 
+export async function getGeminiModel(): Promise<string> {
+  const local = await AsyncStorage.getItem(GEMINI_MODEL_STORAGE);
+  if (local) return local;
+  return 'gemini-2.0-flash-001';
+}
+export async function setGeminiModel(v: string) {
+  await AsyncStorage.setItem(GEMINI_MODEL_STORAGE, v);
+}
+
 // ---------- reconcile helper (matching logic in JS) ----------
 async function reconcileStatement(imageBase64: string, supplierId: string, mimeType = 'image/jpeg') {
   const key = await getGeminiKey();
-  const extracted = await ai.reconcileStatementAI(key, imageBase64, mimeType);
+  const model = await getGeminiModel();
+  const extracted = await ai.reconcileStatementAI(key, model, imageBase64, mimeType);
 
   let ourBills: any[] = [], ourPayments: any[] = [];
   if (supplierId) {
@@ -63,7 +74,7 @@ export const api = {
   // Settings
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
-  testKey: async () => ai.testKey(await getGeminiKey()),
+  testKey: async () => ai.testKey(await getGeminiKey(), await getGeminiModel()),
 
   // Suppliers
   listSuppliers: () => db.listSuppliers(),
@@ -110,8 +121,8 @@ export const api = {
   resetAll: () => db.resetAll(),
 
   // AI
-  parseCommand: async (text: string) => ai.parseCommand(await getGeminiKey(), text),
-  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getGeminiKey(), imageBase64, mimeType),
-  transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getGeminiKey(), audioBase64, mimeType),
+  parseCommand: async (text: string) => ai.parseCommand(await getGeminiKey(), await getGeminiModel(), text),
+  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getGeminiKey(), await getGeminiModel(), imageBase64, mimeType),
+  transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getGeminiKey(), await getGeminiModel(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') => reconcileStatement(imageBase64, supplierId, mimeType),
 };
