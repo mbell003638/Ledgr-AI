@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Ledgr",
+    "name": "Ledgr Safe",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -23,7 +23,7 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.mbell.ledgr",
+      "package": "com.mbell.ledgr.safe",
       "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET"]
     },
     "web": {
