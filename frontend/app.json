@@ -24,7 +24,11 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mbell.ledgr",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "INTERNET"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -55,7 +59,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#1C4030"
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true
