@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ main, master, feature/html-parity ]
+    branches: [ main, master, feature/html-parity, phase2-sqlite-storage ]
   pull_request:
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
