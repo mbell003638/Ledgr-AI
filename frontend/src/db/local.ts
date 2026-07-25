@@ -1,9 +1,17 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { computeCogs, grossProfit as calcGross, commission as calcCommission, netProfit as calcNet, computeCash } from '../accounting';
+import {
+  readColl as backendReadColl,
+  writeColl as backendWriteColl,
+  readSettings as backendReadSettings,
+  writeSettings as backendWriteSettings,
+  clearColl as backendClearColl,
+} from './backend';
 
 /**
  * Ledgr local database (single-user, on-device).
- * Each collection is stored as a JSON array under a key.
+ * Persistence is delegated to ./backend, which routes to SQLite when active
+ * (see initStorage) or AsyncStorage otherwise. All report/accounting logic
+ * below is storage-agnostic.
  */
 
 const KEYS = {
@@ -32,21 +40,18 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+// Storage primitives delegate to the active backend (SQLite or AsyncStorage).
 async function readColl<T = any>(c: Collection): Promise<T[]> {
-  const raw = await AsyncStorage.getItem(KEYS[c]);
-  if (!raw) return [];
-  try { return JSON.parse(raw) as T[]; } catch { return []; }
+  return backendReadColl<T>(c as any);
 }
 async function writeColl<T = any>(c: Collection, arr: T[]) {
-  await AsyncStorage.setItem(KEYS[c], JSON.stringify(arr));
+  await backendWriteColl(c as any, arr);
 }
 async function readSettings(): Promise<any> {
-  const raw = await AsyncStorage.getItem(KEYS.settings);
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch { return {}; }
+  return backendReadSettings();
 }
 async function writeSettings(s: any) {
-  await AsyncStorage.setItem(KEYS.settings, JSON.stringify(s));
+  await backendWriteSettings(s);
 }
 
 const uuid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -726,7 +731,7 @@ export async function importBackup(data: any) {
       throw new Error(`This backup was made by a newer version of Ledgr (format v${v}). Please update the app before restoring.`);
     }
   }
-  const setColl = async (name: string, val: any) => { if (Array.isArray(val)) await AsyncStorage.setItem(`ledgr:${name}`, JSON.stringify(val)); };
+  const setColl = async (name: string, val: any) => { if (Array.isArray(val)) await writeColl(name as Collection, val); };
   await setColl('suppliers', data.suppliers);
   await setColl('bills', data.bills);
   await setColl('sales', data.sales);
@@ -766,15 +771,15 @@ export async function resetAll() {
     businessType: s.businessType ?? '',
   };
   await Promise.all([
-    AsyncStorage.removeItem(KEYS.suppliers),
-    AsyncStorage.removeItem(KEYS.bills),
-    AsyncStorage.removeItem(KEYS.sales),
-    AsyncStorage.removeItem(KEYS.payments),
-    AsyncStorage.removeItem(KEYS.inventoryChecks),
-    AsyncStorage.removeItem(KEYS.periods),
-    AsyncStorage.removeItem(KEYS.expenses),
-    AsyncStorage.removeItem(KEYS.debtors),
-    AsyncStorage.removeItem(KEYS.invoices),
+    backendClearColl('suppliers'),
+    backendClearColl('bills'),
+    backendClearColl('sales'),
+    backendClearColl('payments'),
+    backendClearColl('inventoryChecks'),
+    backendClearColl('periods'),
+    backendClearColl('expenses'),
+    backendClearColl('debtors'),
+    backendClearColl('invoices'),
   ]);
   await writeSettings({ ...keep, currentPeriodStart: '1970-01-01', openingInventory: 0, openingCash: 0 });
   return { ok: true };

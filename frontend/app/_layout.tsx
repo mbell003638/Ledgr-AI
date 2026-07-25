@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
+import { initStorage } from "@/src/db/backend";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -110,6 +111,20 @@ function ThemedStack() {
 export default function RootLayout() {
   const [loaded, error] = useIconFontsSafe();
   const [timedOut, setTimedOut] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
+
+  useEffect(() => {
+    // Activate the storage backend (SQLite if available, else AsyncStorage).
+    // initStorage self-catches and falls back to AsyncStorage, so this can
+    // never reject — the app always becomes ready.
+    let cancelled = false;
+    initStorage()
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStorageReady(true); });
+    // Hard safety: never let storage init block the app for more than 4s.
+    const t = setTimeout(() => { if (!cancelled) setStorageReady(true); }, 4000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, []);
 
   useEffect(() => {
     // Safety: hide splash after 5 seconds no matter what
@@ -121,12 +136,13 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (loaded || error) {
+    if ((loaded || error) && storageReady) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [loaded, error]);
+  }, [loaded, error, storageReady]);
 
   if (!loaded && !error && !timedOut) return null;
+  if (!storageReady && !timedOut) return null;
 
   return (
     <ErrorBoundary>

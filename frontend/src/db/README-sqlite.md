@@ -1,9 +1,11 @@
-# Phase 2B — Experimental SQLite storage backend
+# Phase 2B — SQLite storage backend (ACTIVE)
 
-> **Status: EXPERIMENTAL. Not active in the app.** The app currently runs on the
-> proven AsyncStorage layer (`src/db/local.ts`). This backend is built, unit-tested,
-> and ready for on-device verification — but is **not wired in by default**, so it
-> cannot affect your live data until you deliberately switch it on.
+> **Status: ACTIVE (opt-in wired in at startup).** The app now activates SQLite at
+> launch via `initStorage()` in `app/_layout.tsx`. If SQLite fails to initialize
+> for any reason, the app automatically falls back to the proven AsyncStorage
+> layer — it can never hard-break. Your AsyncStorage data is preserved as a
+> fallback (the migration is non-destructive), so `feature/html-parity` remains a
+> clean revert target.
 
 ## Why
 
