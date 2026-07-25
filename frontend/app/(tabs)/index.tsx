@@ -25,15 +25,19 @@ type Dash = {
 };
 
 const TILES = [
-  { key: "bills", label: "Vendor Bills", icon: "receipt-outline", route: "/bills", color: "#D6E5DB" },
+  { key: "bills", label: "Purchases", icon: "receipt-outline", route: "/bills", color: "#D6E5DB" },
   { key: "sales", label: "Sales", icon: "trending-up-outline", route: "/sale-form", color: "#F3E4C8" },
   { key: "payments", label: "Payments", icon: "cash-outline", route: "/payment-form", color: "#E8DAD0" },
-  { key: "suppliers", label: "Partners", icon: "people-outline", route: "/suppliers", color: "#DCE4E0" },
+  { key: "suppliers", label: "Creditors", icon: "people-outline", route: "/suppliers", color: "#DCE4E0" },
+  { key: "invoices", label: "Invoices", icon: "document-text-outline", route: "/invoices", color: "#D8E4F0" },
+  { key: "debtors", label: "Debtors", icon: "person-add-outline", route: "/debtors", color: "#E6DCE4" },
+  { key: "expenses", label: "Expenses", icon: "wallet-outline", route: "/expenses", color: "#E4D8D8" },
   { key: "inventory", label: "Inventory", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
+  { key: "daybook", label: "Day Book", icon: "book-outline", route: "/daybook", color: "#DDE3EC" },
   { key: "reports", label: "Reports", icon: "bar-chart-outline", route: "/reports", color: "#E0E0DA" },
   { key: "monthly", label: "Monthly Report", icon: "calendar-outline", route: "/monthly-summary", color: "#EFDCC8" },
+  { key: "ask", label: "Ask AI", icon: "sparkles-outline", route: "/ask", color: "#D0E0D8" },
   { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
-  { key: "settings", label: "Settings", icon: "settings-outline", route: "/settings", color: "#EAECE7" },
 ] as const;
 
 export default function Dashboard() {

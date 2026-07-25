@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 
@@ -22,6 +23,11 @@ export default function SettingsScreen() {
   const [partnerNames, setPartnerNames] = useState<string[]>([]);
   const [extraAssets, setExtraAssets] = useState<{ name: string; amount: string }[]>([]);
   const [extraLiabilities, setExtraLiabilities] = useState<{ name: string; amount: string }[]>([]);
+  const [currency, setCurrency] = useState("USD");
+  const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
+  const [taxLabelCustom, setTaxLabelCustom] = useState("");
+  const [taxRate, setTaxRate] = useState("");
+  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", paymentDetails: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -52,6 +58,17 @@ export default function SettingsScreen() {
           amount: l?.amount != null ? String(l.amount) : "",
         }))
       );
+      setCurrency(s.currency || "USD");
+      setTaxLabel((s.taxLabel as TaxLabel) || "None");
+      setTaxLabelCustom(s.taxLabelCustom || "");
+      setTaxRate(s.taxRate ? String(s.taxRate) : "");
+      setBizProfile({
+        businessName: s.businessName || "",
+        businessAddress: s.businessAddress || "",
+        businessPhone: s.businessPhone || "",
+        businessEmail: s.businessEmail || "",
+        paymentDetails: s.paymentDetails || "",
+      });
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -79,6 +96,11 @@ export default function SettingsScreen() {
         extraLiabilities: extraLiabilities
           .map((l) => ({ name: l.name.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
           .filter((l) => l.name),
+        currency,
+        taxLabel,
+        taxLabelCustom: taxLabelCustom.trim(),
+        taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
+        ...bizProfile,
       });
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
@@ -436,6 +458,87 @@ export default function SettingsScreen() {
                 <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
                 <Text style={styles.addText}>Add Liability</Text>
               </Pressable>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Business Profile</Text>
+              <Text style={styles.hint}>Appears on invoices and reports.</Text>
+              {[
+                { label: "Business Name", key: "businessName", placeholder: "e.g. Amit General Store" },
+                { label: "Address", key: "businessAddress", placeholder: "Street, City" },
+                { label: "Phone", key: "businessPhone", placeholder: "+1 555 000 0000" },
+                { label: "Email", key: "businessEmail", placeholder: "you@example.com" },
+                { label: "Payment Details (UPI / Bank / Link)", key: "paymentDetails", placeholder: "UPI: name@upi" },
+              ].map(({ label, key, placeholder }) => (
+                <View key={key}>
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{label}</Text>
+                  <TextInput
+                    value={bizProfile[key as keyof typeof bizProfile]}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, [key]: v }))}
+                    placeholder={placeholder}
+                    placeholderTextColor={theme.color.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                  />
+                </View>
+              ))}
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Currency</Text>
+              <Text style={styles.hint}>Used across all reports and entries.</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {CURRENCIES.map((c) => (
+                  <Pressable
+                    key={c.code}
+                    onPress={() => setCurrency(c.code)}
+                    style={[styles.modeBtn, currency === c.code && styles.modeBtnActive, { paddingHorizontal: 10 }]}
+                  >
+                    <Text style={[styles.modeText, currency === c.code && styles.modeTextActive]}>{c.symbol} {c.code}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Tax Label</Text>
+              <Text style={styles.hint}>What tax is called in your country (or None).</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {TAX_LABELS.map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => setTaxLabel(t)}
+                    style={[styles.modeBtn, taxLabel === t && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, taxLabel === t && styles.modeTextActive]}>{t}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {taxLabel === "Custom" && (
+                <TextInput
+                  value={taxLabelCustom}
+                  onChangeText={setTaxLabelCustom}
+                  placeholder="e.g. Service Tax"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { marginTop: 8 }]}
+                />
+              )}
+              {taxLabel !== "None" && (
+                <>
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>
+                    {taxLabel === "Custom" ? taxLabelCustom || "Tax" : taxLabel} Rate %
+                  </Text>
+                  <TextInput
+                    value={taxRate}
+                    onChangeText={setTaxRate}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 18"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+                </>
+              )}
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md, borderColor: theme.color.error }}>

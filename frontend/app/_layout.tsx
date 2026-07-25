@@ -92,6 +92,12 @@ function ThemedStack() {
         <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
         <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
         <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
+        <Stack.Screen name="invoices" options={{ presentation: "card" }} />
+        <Stack.Screen name="expenses" options={{ presentation: "card" }} />
+        <Stack.Screen name="debtors" options={{ presentation: "card" }} />
+        <Stack.Screen name="daybook" options={{ presentation: "card" }} />
+        <Stack.Screen name="ask" options={{ presentation: "card" }} />
+        <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
         </Stack>
       </View>
     </View>

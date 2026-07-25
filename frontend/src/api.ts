@@ -171,4 +171,31 @@ export const api = {
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType),
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') => reconcileStatement(imageBase64, supplierId, mimeType),
+  askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
+
+  // Expenses
+  listExpenses: () => db.listExpenses(),
+  createExpense: (e: any) => db.createExpense(e),
+  updateExpense: (id: string, e: any) => db.updateExpense(id, e),
+  deleteExpense: (id: string) => db.deleteExpense(id),
+
+  // Debtors
+  listDebtors: () => db.listDebtors(),
+  createDebtor: (d: any) => db.createDebtor(d),
+  updateDebtor: (id: string, d: any) => db.updateDebtor(id, d),
+  deleteDebtor: (id: string) => db.deleteDebtor(id),
+  addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
+
+  // Date-range reports
+  pnlRange: (from: string, to: string) => db.pnlRange(from, to),
+  creditorsReport: (from?: string, to?: string) => db.creditorsReport(from, to),
+  debtorsReport: (from?: string, to?: string) => db.debtorsReport(from, to),
+
+  // Invoices
+  listInvoices: () => db.listInvoices(),
+  createInvoice: (inv: any) => db.createInvoice(inv),
+  updateInvoice: (id: string, inv: any) => db.updateInvoice(id, inv),
+  deleteInvoice: (id: string) => db.deleteInvoice(id),
+  markInvoicePaid: (id: string) => db.markInvoicePaid(id),
+  overdueInvoices: () => db.overdueInvoices(),
 };

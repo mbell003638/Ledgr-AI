@@ -62,10 +62,10 @@ export const font = { displayBold: '700' as const, displaySemi: '600' as const, 
 export const theme = { color: lightColors, spacing, radius, font };
 export type ThemeType = { color: typeof lightColors; spacing: typeof spacing; radius: typeof radius; font: typeof font };
 
-export const fmt = (n: number | null | undefined, _currency?: string) => {
+export const fmt = (n: number | null | undefined, currencySymbol = '$') => {
   const v = Number(n ?? 0);
   const s = v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `$${s}`;
+  return `${currencySymbol}${s}`;
 };
 
 export const shortDate = (iso?: string) => {

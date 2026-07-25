@@ -3,15 +3,33 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Refre
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { LineChart, PieChart } from "react-native-gifted-charts";
-import { fmt, shortDate } from "@/src/theme";
+import { Linking } from "react-native";
+import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 
-const SEGMENTS = ["P&L", "Balance", "Trial", "Capital", "Drawings"] as const;
+const SEGMENTS = ["P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors"] as const;
 type Seg = typeof SEGMENTS[number];
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+function rangePreset(preset: string): { from: string; to: string } {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  switch (preset) {
+    case "This Month": return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
+    case "Last Month": return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
+    case "This Quarter": { const q = Math.floor(m / 3) * 3; return { from: iso(new Date(y, q, 1)), to: iso(new Date(y, q + 3, 0)) }; }
+    case "This Year": return { from: `${y}-01-01`, to: `${y}-12-31` };
+    case "All Time": return { from: "1970-01-01", to: "2999-12-31" };
+    default: return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
+  }
+}
+const RANGE_PRESETS = ["This Month", "Last Month", "This Quarter", "This Year", "All Time"] as const;
 
 export default function ReportsScreen() {
   const theme = useTheme();
@@ -24,21 +42,39 @@ export default function ReportsScreen() {
   const [draws, setDraws] = useState<any[]>([]);
   const [profitTrend, setProfitTrend] = useState<any[]>([]);
   const [assetDist, setAssetDist] = useState<any[]>([]);
+  const [creditors, setCreditors] = useState<any[]>([]);
+  const [debtors, setDebtors] = useState<any[]>([]);
+  const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [rangePresetSel, setRangePresetSel] = useState("This Month");
+  const [from, setFrom] = useState(() => rangePreset("This Month").from);
+  const [to, setTo] = useState(() => rangePreset("This Month").to);
+
+  const fmt = useCallback((n: number | null | undefined) => fmtBase(n, currSym), [currSym]);
+
+  const applyPreset = (p: string) => {
+    setRangePresetSel(p);
+    const r = rangePreset(p);
+    setFrom(r.from); setTo(r.to);
+  };
 
   const load = useCallback(async () => {
     try {
-      const [p, b, t, c, dh, pt, ad] = await Promise.all([
-        api.pnl(), api.balanceSheet(), api.trialBalance(),
+      const s = await api.getSettings();
+      setCurrSym(getCurrencySymbol(s.currency || "USD"));
+      const [p, b, t, c, dh, pt, ad, cr, dr] = await Promise.all([
+        api.pnlRange(from, to), api.balanceSheet(), api.trialBalance(),
         api.capitalStatement(), api.drawingsHistory(),
         api.monthlyProfitTrend(6), api.assetDistribution(),
+        api.creditorsReport(from, to), api.debtorsReport(from, to),
       ]);
       setPnl(p); setBs(b); setTb(t); setCap(c); setDraws(dh);
       setProfitTrend(pt); setAssetDist(ad);
+      setCreditors(cr); setDebtors(dr);
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [from, to]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -47,14 +83,20 @@ export default function ReportsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader title="Reports" subtitle="Financial statements" />
+
+      {/* Date range presets */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 44, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 6, paddingVertical: 6 }}>
+        {RANGE_PRESETS.map((p) => (
+          <Pressable key={p} onPress={() => applyPreset(p)} style={[styles.seg, rangePresetSel === p && styles.segActive]}>
+            <Text style={[styles.segText, rangePresetSel === p && styles.segTextActive]}>{p}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* Report segments */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
         {SEGMENTS.map((s) => (
-          <Pressable
-            key={s}
-            testID={`report-seg-${s}`}
-            onPress={() => setSeg(s)}
-            style={[styles.seg, seg === s && styles.segActive]}
-          >
+          <Pressable key={s} testID={`report-seg-${s}`} onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
             <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
           </Pressable>
         ))}
@@ -205,6 +247,56 @@ export default function ReportsScreen() {
             </Card>
           )}
 
+          {seg === "Creditors" && (
+            <Card testID="report-creditors">
+              <Text style={styles.rTitle}>Creditors Ledger</Text>
+              <Text style={styles.hint}>{from} → {to}</Text>
+              {creditors.length === 0 ? (
+                <Text style={styles.empty}>No creditors found for this period.</Text>
+              ) : creditors.map((c: any) => (
+                <View key={c.supplierId} style={{ marginBottom: theme.spacing.md }}>
+                  <View style={styles.kv}>
+                    <Text style={[styles.kvLabel, { fontWeight: "700", color: theme.color.onSurface }]}>{c.name}</Text>
+                    <Text style={[styles.kvValue, { color: c.balance > 0 ? theme.color.error : theme.color.success, fontWeight: "700" }]}>{fmt(c.balance)}</Text>
+                  </View>
+                  <RowKV label="Total Billed" value={fmt(c.totalBilled)} theme={theme} styles={styles} />
+                  <RowKV label="Total Paid" value={fmt(c.totalPaid)} theme={theme} styles={styles} />
+                  {c.phone ? (
+                    <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${c.phone}&text=${encodeURIComponent(`Hi, your outstanding balance is ${fmt(c.balance)}. Please arrange payment.`)}`)}>
+                      <Text style={{ color: theme.color.brandPrimary, fontSize: 12, marginTop: 4 }}>📱 WhatsApp Reminder</Text>
+                    </Pressable>
+                  ) : null}
+                  <View style={styles.divider} />
+                </View>
+              ))}
+            </Card>
+          )}
+
+          {seg === "Debtors" && (
+            <Card testID="report-debtors">
+              <Text style={styles.rTitle}>Debtors Ledger</Text>
+              <Text style={styles.hint}>{from} → {to}</Text>
+              {debtors.length === 0 ? (
+                <Text style={styles.empty}>No debtors found. Add debtors from the Debtors screen.</Text>
+              ) : debtors.map((d: any) => (
+                <View key={d.id} style={{ marginBottom: theme.spacing.md }}>
+                  <View style={styles.kv}>
+                    <Text style={[styles.kvLabel, { fontWeight: "700", color: theme.color.onSurface }]}>{d.name}</Text>
+                    <Text style={[styles.kvValue, { color: d.balance > 0 ? theme.color.error : theme.color.success, fontWeight: "700" }]}>{fmt(d.balance)}</Text>
+                  </View>
+                  <RowKV label="Total Invoiced" value={fmt(d.totalInvoiced)} theme={theme} styles={styles} />
+                  <RowKV label="Total Paid" value={fmt(d.totalPaid)} theme={theme} styles={styles} />
+                  {d.phone ? (
+                    <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${d.phone}&text=${encodeURIComponent(`Hi ${d.name}, your outstanding balance is ${fmt(d.balance)}. Please arrange payment. Thank you.`)}`)}>
+                      <Text style={{ color: theme.color.brandPrimary, fontSize: 12, marginTop: 4 }}>📱 Send WhatsApp Reminder</Text>
+                    </Pressable>
+                  ) : null}
+                  <View style={styles.divider} />
+                </View>
+              ))}
+            </Card>
+          )}
+
           <View style={{ height: 120 }} />
         </ScrollView>
       )}
@@ -243,6 +335,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   divider: { height: 1, backgroundColor: theme.color.divider, marginVertical: theme.spacing.sm },
   groupHeader: { fontSize: 12, fontWeight: "700", color: theme.color.muted, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.md, fontSize: 13, fontStyle: "italic" },
+  hint: { color: theme.color.muted, fontSize: 12, marginBottom: theme.spacing.sm },
   legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 5 },
   legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 10 },
   legendLabel: { flex: 1, fontSize: 13, color: theme.color.onSurface },

@@ -13,6 +13,9 @@ const KEYS = {
   inventoryChecks: 'ledgr:inventoryChecks',
   periods: 'ledgr:periods',
   settings: 'ledgr:settings',
+  expenses: 'ledgr:expenses',
+  debtors: 'ledgr:debtors',
+  invoices: 'ledgr:invoices',
 } as const;
 
 export type Collection = keyof typeof KEYS;
@@ -48,7 +51,32 @@ async function writeSettings(s: any) {
 const uuid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const nowIso = () => new Date().toISOString();
 
-// ---------- currency (USD-only) ----------
+// ---------- currency / tax helpers ----------
+export const CURRENCIES = [
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
+  { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'BDT', symbol: '৳', name: 'Bangladeshi Taka' },
+  { code: 'PKR', symbol: '₨', name: 'Pakistani Rupee' },
+  { code: 'PHP', symbol: '₱', name: 'Philippine Peso' },
+  { code: 'MXN', symbol: 'MX$', name: 'Mexican Peso' },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
+] as const;
+
+export const TAX_LABELS = ['None', 'GST', 'VAT', 'Sales Tax', 'HST', 'PST', 'Custom'] as const;
+export type TaxLabel = typeof TAX_LABELS[number];
+
+export function getCurrencySymbol(code: string): string {
+  return CURRENCIES.find((c) => c.code === code)?.symbol ?? code;
+}
+
 function toUsd(amount: number) {
   return Number(amount) || 0;
 }
@@ -66,6 +94,17 @@ export async function getSettings() {
     partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'],
     extraAssets: Array.isArray(s.extraAssets) ? s.extraAssets : [],
     extraLiabilities: Array.isArray(s.extraLiabilities) ? s.extraLiabilities : [],
+    currency: s.currency ?? 'USD',
+    taxLabel: s.taxLabel ?? 'None',
+    taxLabelCustom: s.taxLabelCustom ?? '',
+    taxRate: s.taxRate ?? 0,
+    businessName: s.businessName ?? '',
+    businessAddress: s.businessAddress ?? '',
+    businessPhone: s.businessPhone ?? '',
+    businessEmail: s.businessEmail ?? '',
+    paymentDetails: s.paymentDetails ?? '',
+    hasOnboarded: s.hasOnboarded ?? false,
+    businessType: s.businessType ?? '',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
@@ -460,7 +499,146 @@ export async function dailySummary(date: string) {
   };
 }
 
-// ---------- Periods (close & carry) ----------
+// ---------- Expenses ----------
+export async function listExpenses() {
+  return (await readColl<any>('expenses')).sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+export async function createExpense(e: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('expenses');
+    const item = { id: uuid(), created_at: nowIso(), ...e };
+    items.push(item);
+    await writeColl('expenses', items);
+    return item;
+  });
+}
+export async function updateExpense(id: string, e: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('expenses');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Expense not found');
+    items[idx] = { ...items[idx], ...e };
+    await writeColl('expenses', items);
+    return items[idx];
+  });
+}
+export async function deleteExpense(id: string) {
+  return serialize(async () => {
+    const items = await readColl<any>('expenses');
+    await writeColl('expenses', items.filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+
+// ---------- Debtors ----------
+export async function listDebtors() {
+  return (await readColl<any>('debtors')).sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
+}
+export async function createDebtor(d: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('debtors');
+    const item = { id: uuid(), created_at: nowIso(), payments: [], ...d };
+    items.push(item);
+    await writeColl('debtors', items);
+    return item;
+  });
+}
+export async function updateDebtor(id: string, d: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('debtors');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Debtor not found');
+    items[idx] = { ...items[idx], ...d };
+    await writeColl('debtors', items);
+    return items[idx];
+  });
+}
+export async function deleteDebtor(id: string) {
+  return serialize(async () => {
+    const items = await readColl<any>('debtors');
+    await writeColl('debtors', items.filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+export async function addDebtorPayment(debtorId: string, payment: { amount: number; date: string; notes?: string }) {
+  return serialize(async () => {
+    const items = await readColl<any>('debtors');
+    const idx = items.findIndex((x: any) => x.id === debtorId);
+    if (idx === -1) throw new Error('Debtor not found');
+    const p = { id: uuid(), ...payment, created_at: nowIso() };
+    items[idx].payments = [...(items[idx].payments || []), p];
+    await writeColl('debtors', items);
+    return items[idx];
+  });
+}
+
+// ---------- Date-range reports ----------
+export async function pnlRange(from: string, to: string) {
+  const s = await getSettings();
+  const pct = Number(s.managerCommissionPct || 0);
+  const inRange = (d: string) => (d || '').slice(0, 10) >= from && (d || '').slice(0, 10) <= to;
+  const [bills, sales, payments, expenses, invChecks] = await Promise.all([
+    readColl<any>('bills'), readColl<any>('sales'), readColl<any>('payments'), readColl<any>('expenses'), readColl<any>('inventoryChecks'),
+  ]);
+  const revenue = sales.filter((x: any) => inRange(x.date)).reduce((s: number, x: any) => s + toUsd(x.amount), 0);
+  const purchases = bills.filter((b: any) => inRange(b.date)).reduce((s: number, b: any) => s + toUsd(b.amount), 0);
+  const totalExpenses = expenses.filter((e: any) => inRange(e.date)).reduce((s: number, e: any) => s + toUsd(e.amount), 0);
+  const drawings = payments.filter((p: any) => inRange(p.date) && p.type === 'drawing').reduce((s: number, p: any) => s + toUsd(p.amount), 0);
+
+  // Periodic inventory: COGS = opening stock + purchases - closing stock.
+  // Opening stock = latest physical count strictly BEFORE `from` (else settings.openingInventory).
+  // Closing stock = latest physical count on/before `to` (else falls back to opening).
+  const sortedChecks = [...invChecks].filter((i: any) => i.date).sort((a: any, b: any) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
+  const beforeFrom = sortedChecks.filter((i: any) => i.date < from);
+  const openingStock = beforeFrom.length ? Number(beforeFrom[beforeFrom.length - 1].actualStock) : Number(s.openingInventory || 0);
+  const upToTo = sortedChecks.filter((i: any) => i.date <= to);
+  const hasClosingCount = upToTo.length > 0;
+  const closingStock = hasClosingCount ? Number(upToTo[upToTo.length - 1].actualStock) : openingStock;
+
+  // If we have a real closing count, use true COGS; otherwise fall back to purchases as COGS
+  // (so profit isn't overstated before the first stock take).
+  const cogs = hasClosingCount ? +(openingStock + purchases - closingStock).toFixed(2) : +purchases.toFixed(2);
+  const grossProfit = +(revenue - cogs).toFixed(2);
+  const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
+  const netProfit = +(grossProfit - commission - totalExpenses - drawings).toFixed(2);
+  return {
+    from, to, revenue: +revenue.toFixed(2), purchases: +purchases.toFixed(2),
+    openingStock: +openingStock.toFixed(2), closingStock: +closingStock.toFixed(2), hasClosingCount,
+    cogs, grossProfit, managerCommissionPct: pct, commission,
+    expenses: +totalExpenses.toFixed(2), drawings: +drawings.toFixed(2), netProfit,
+  };
+}
+
+export async function creditorsReport(from?: string, to?: string) {
+  const [suppliers, bills, payments] = await Promise.all([
+    readColl<any>('suppliers'), readColl<any>('bills'), readColl<any>('payments'),
+  ]);
+  const supMap: Record<string, any> = Object.fromEntries(suppliers.map((s: any) => [s.id, s]));
+  const inRange = (d: string) => (!from || (d || '').slice(0, 10) >= from) && (!to || (d || '').slice(0, 10) <= to);
+  const result: any[] = [];
+  for (const sup of suppliers) {
+    const supBills = bills.filter((b: any) => b.supplierId === sup.id && inRange(b.date));
+    const supPays = payments.filter((p: any) => p.supplierId === sup.id && p.type === 'supplier_payment' && inRange(p.date));
+    const totalBilled = supBills.reduce((s: number, b: any) => s + toUsd(b.amount), 0);
+    const totalPaid = supPays.reduce((s: number, p: any) => s + toUsd(p.amount), 0);
+    const balance = +(totalBilled - totalPaid).toFixed(2);
+    result.push({ supplierId: sup.id, name: sup.name, phone: sup.phone || '', totalBilled: +totalBilled.toFixed(2), totalPaid: +totalPaid.toFixed(2), balance, transactions: [...supBills.map((b: any) => ({ ...b, txType: 'bill' })), ...supPays.map((p: any) => ({ ...p, txType: 'payment' }))].sort((a: any, b: any) => (a.date > b.date ? 1 : -1)) });
+  }
+  return result.sort((a, b) => b.balance - a.balance);
+}
+
+export async function debtorsReport(from?: string, to?: string) {
+  const debtors = await readColl<any>('debtors');
+  const inRange = (d: string) => (!from || (d || '').slice(0, 10) >= from) && (!to || (d || '').slice(0, 10) <= to);
+  return debtors.map((d: any) => {
+    const invoices = (d.invoices || []).filter((i: any) => inRange(i.date));
+    const payments = (d.payments || []).filter((p: any) => inRange(p.date));
+    const totalInvoiced = invoices.reduce((s: number, i: any) => s + toUsd(i.amount), 0);
+    const totalPaid = payments.reduce((s: number, p: any) => s + toUsd(p.amount), 0);
+    const balance = +(totalInvoiced - totalPaid).toFixed(2);
+    return { ...d, totalInvoiced: +totalInvoiced.toFixed(2), totalPaid: +totalPaid.toFixed(2), balance };
+  }).sort((a: any, b: any) => b.balance - a.balance);
+}
 export async function listPeriods() {
   return (await readColl<any>('periods')).sort((a: any, b: any) => (a.closed_at && b.closed_at ? (a.closed_at > b.closed_at ? -1 : a.closed_at < b.closed_at ? 1 : 0) : 0));
 }
@@ -494,12 +672,13 @@ export async function closePeriod(actualStock: number, notes = '') {
 
 // ---------- Backup / Restore / Reset ----------
 export async function exportBackup() {
-  const [suppliers, bills, sales, payments, inventoryChecks, periods, settings] = await Promise.all([
-    readColl('suppliers'), readColl('bills'), readColl('sales'), readColl('payments'), readColl('inventoryChecks'), readColl('periods'), readSettings(),
+  const [suppliers, bills, sales, payments, inventoryChecks, periods, settings, expenses, debtors, invoices] = await Promise.all([
+    readColl('suppliers'), readColl('bills'), readColl('sales'), readColl('payments'), readColl('inventoryChecks'), readColl('periods'), readSettings(), readColl('expenses'), readColl('debtors'), readColl('invoices'),
   ]);
   return {
     suppliers, bills, sales, payments, inventoryChecks, periods, settings,
-    _meta: { app: 'ledgr', version: 2, exportedAt: nowIso() },
+    expenses, debtors, invoices,
+    _meta: { app: 'ledgr', version: 3, exportedAt: nowIso() },
   };
 }
 export async function importBackup(data: any) {
@@ -510,6 +689,9 @@ export async function importBackup(data: any) {
   await setColl('payments', data.payments);
   await setColl('inventoryChecks', data.inventoryChecks);
   await setColl('periods', data.periods);
+  await setColl('expenses', data.expenses);
+  await setColl('debtors', data.debtors);
+  await setColl('invoices', data.invoices);
   if (data.settings && typeof data.settings === 'object') {
     await writeSettings({ ...(await readSettings()), ...data.settings });
   }
@@ -517,7 +699,25 @@ export async function importBackup(data: any) {
 }
 export async function resetAll() {
   const s = await readSettings();
-  const keep = { googleApiKey: s.googleApiKey || '' };
+  const keep = {
+    googleApiKey: s.googleApiKey || '',
+    openingCapital: s.openingCapital ?? 0,
+    partnerNames: s.partnerNames,
+    currency: s.currency ?? 'USD',
+    taxLabel: s.taxLabel ?? 'None',
+    taxLabelCustom: s.taxLabelCustom ?? '',
+    taxRate: s.taxRate ?? 0,
+    businessName: s.businessName ?? '',
+    businessAddress: s.businessAddress ?? '',
+    businessPhone: s.businessPhone ?? '',
+    businessEmail: s.businessEmail ?? '',
+    paymentDetails: s.paymentDetails ?? '',
+    managerCommissionPct: s.managerCommissionPct ?? 0,
+    extraAssets: s.extraAssets ?? [],
+    extraLiabilities: s.extraLiabilities ?? [],
+    hasOnboarded: s.hasOnboarded ?? false,
+    businessType: s.businessType ?? '',
+  };
   await Promise.all([
     AsyncStorage.removeItem(KEYS.suppliers),
     AsyncStorage.removeItem(KEYS.bills),
@@ -525,7 +725,101 @@ export async function resetAll() {
     AsyncStorage.removeItem(KEYS.payments),
     AsyncStorage.removeItem(KEYS.inventoryChecks),
     AsyncStorage.removeItem(KEYS.periods),
+    AsyncStorage.removeItem(KEYS.expenses),
+    AsyncStorage.removeItem(KEYS.debtors),
+    AsyncStorage.removeItem(KEYS.invoices),
   ]);
-  await writeSettings({ ...keep, managerCommissionPct: 0, currentPeriodStart: '1970-01-01', openingInventory: 0, openingCash: 0 });
+  await writeSettings({ ...keep, currentPeriodStart: '1970-01-01', openingInventory: 0, openingCash: 0 });
   return { ok: true };
+}
+
+// ---------- Invoices ----------
+export async function listInvoices() {
+  return (await readColl<any>('invoices')).sort((a: any, b: any) => (a.date > b.date ? -1 : 1));
+}
+export async function createInvoice(inv: any) {
+  // Step 1: create the invoice record
+  const item = await serialize(async () => {
+    const items = await readColl<any>('invoices');
+    // Numbering: derive next sequence from the max existing INV-#### so deletes/imports never cause a collision.
+    const maxSeq = items.reduce((m: number, it: any) => {
+      const match = /INV-(\d+)/.exec(it.invoiceNumber || '');
+      return match ? Math.max(m, parseInt(match[1], 10)) : m;
+    }, 0);
+    const num = `INV-${String(maxSeq + 1).padStart(4, '0')}`;
+    const newItem = { id: uuid(), invoiceNumber: num, status: 'unpaid', created_at: nowIso(), ...inv };
+    items.push(newItem);
+    await writeColl('invoices', items);
+    return newItem;
+  });
+  // Step 2: sync to debtor ledger (find-or-create debtor, push invoice ref)
+  // This runs as a separate serialize call to avoid deadlock.
+  if (inv.clientName) {
+    await serialize(async () => {
+      const debtors = await readColl<any>('debtors');
+      const norm = (s: string) => s.trim().toLowerCase();
+      let idx = debtors.findIndex((d: any) => norm(d.name) === norm(inv.clientName));
+      if (idx === -1) {
+        debtors.push({ id: uuid(), name: inv.clientName.trim(), phone: inv.clientPhone || '', payments: [], invoices: [], created_at: nowIso() });
+        idx = debtors.length - 1;
+      }
+      if (!Array.isArray(debtors[idx].invoices)) debtors[idx].invoices = [];
+      debtors[idx].invoices.push({ id: item.id, invoiceNumber: item.invoiceNumber, date: item.date, amount: item.total, status: 'unpaid' });
+      await writeColl('debtors', debtors);
+    });
+  }
+  return item;
+}
+export async function updateInvoice(id: string, inv: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('invoices');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Invoice not found');
+    items[idx] = { ...items[idx], ...inv };
+    await writeColl('invoices', items);
+    return items[idx];
+  });
+}
+export async function deleteInvoice(id: string) {
+  await serialize(async () => {
+    const items = await readColl<any>('invoices');
+    await writeColl('invoices', items.filter((x: any) => x.id !== id));
+  });
+  // Remove the invoice reference from any debtor's ledger.
+  await serialize(async () => {
+    const debtors = await readColl<any>('debtors');
+    let changed = false;
+    for (const d of debtors) {
+      if (Array.isArray(d.invoices) && d.invoices.some((i: any) => i.id === id)) {
+        d.invoices = d.invoices.filter((i: any) => i.id !== id);
+        changed = true;
+      }
+    }
+    if (changed) await writeColl('debtors', debtors);
+  });
+  return { ok: true };
+}
+export async function markInvoicePaid(id: string) {
+  const updated = await updateInvoice(id, { status: 'paid', paidAt: nowIso() });
+  // Sync to debtor ledger: mark the invoice paid and record a matching payment
+  // so the outstanding balance reflects the settlement.
+  await serialize(async () => {
+    const debtors = await readColl<any>('debtors');
+    let changed = false;
+    for (const d of debtors) {
+      const inv = (d.invoices || []).find((i: any) => i.id === id);
+      if (inv && inv.status !== 'paid') {
+        inv.status = 'paid';
+        d.payments = [...(d.payments || []), { id: uuid(), amount: inv.amount, date: new Date().toISOString().slice(0, 10), notes: `Invoice ${inv.invoiceNumber} paid`, created_at: nowIso() }];
+        changed = true;
+      }
+    }
+    if (changed) await writeColl('debtors', debtors);
+  });
+  return updated;
+}
+export async function overdueInvoices() {
+  const today = new Date().toISOString().slice(0, 10);
+  const all = await readColl<any>('invoices');
+  return all.filter((inv: any) => inv.status === 'unpaid' && inv.dueDate && inv.dueDate < today);
 }
