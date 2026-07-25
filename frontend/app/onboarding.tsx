@@ -6,11 +6,13 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 
-type BizType = "shop" | "service" | "salon" | "handyman" | "vendor";
+type BizType = "shop" | "service" | "salon" | "handyman" | "vendor" | "it_consultant" | "freelancer";
 
 const BIZ_TYPES: { key: BizType; label: string; icon: string; desc: string; taxLabel: string }[] = [
   { key: "shop", label: "Shop / Retail", icon: "storefront-outline", desc: "Sells physical goods, tracks inventory", taxLabel: "GST" },
   { key: "service", label: "Service Business", icon: "briefcase-outline", desc: "Consulting, repairs, professional services", taxLabel: "VAT" },
+  { key: "it_consultant", label: "IT Consultant", icon: "laptop-outline", desc: "Software, IT services, tech consulting", taxLabel: "VAT" },
+  { key: "freelancer", label: "Freelancer", icon: "person-outline", desc: "Design, writing, creative, gig work", taxLabel: "VAT" },
   { key: "salon", label: "Salon / Spa", icon: "cut-outline", desc: "Beauty, hair, wellness services", taxLabel: "VAT" },
   { key: "handyman", label: "Handyman / Contractor", icon: "hammer-outline", desc: "Plumbing, electrical, construction", taxLabel: "VAT" },
   { key: "vendor", label: "Vendor / Trader", icon: "cart-outline", desc: "Market stall, wholesale, distribution", taxLabel: "GST" },

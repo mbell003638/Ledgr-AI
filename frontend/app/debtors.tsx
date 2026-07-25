@@ -15,6 +15,7 @@ type Debtor = {
   id: string;
   name: string;
   phone?: string;
+  email?: string;
   notes?: string;
   payments: { id: string; amount: number; date: string; notes?: string }[];
   totalInvoiced?: number;
@@ -34,6 +35,7 @@ export default function DebtorsScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState("");
   const [addPhone, setAddPhone] = useState("");
+  const [addEmail, setAddEmail] = useState("");
   const [addNotes, setAddNotes] = useState("");
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState("");
@@ -67,8 +69,8 @@ export default function DebtorsScreen() {
     if (!addName.trim()) { setAddError("Name is required"); return; }
     setAddSaving(true); setAddError("");
     try {
-      await api.createDebtor({ name: addName.trim(), phone: addPhone.trim(), notes: addNotes.trim() });
-      setShowAdd(false); setAddName(""); setAddPhone(""); setAddNotes("");
+      await api.createDebtor({ name: addName.trim(), phone: addPhone.trim(), email: addEmail.trim(), notes: addNotes.trim() });
+      setShowAdd(false); setAddName(""); setAddPhone(""); setAddEmail(""); setAddNotes("");
       await load();
     } catch (e: any) { setAddError(e.message); }
     finally { setAddSaving(false); }
@@ -95,6 +97,13 @@ export default function DebtorsScreen() {
     if (!phone) return;
     const msg = `Hi ${d.name}, your outstanding balance is ${currency}${(d.balance ?? 0).toFixed(2)}. Please arrange payment. Thank you.`;
     Linking.openURL(`whatsapp://send?phone=${phone}&text=${encodeURIComponent(msg)}`).catch(() => {});
+  };
+
+  const sendEmail = (d: Debtor) => {
+    if (!d.email) return;
+    const subject = "Payment Reminder";
+    const body = `Hi ${d.name},\n\nYour outstanding balance is ${currency}${(d.balance ?? 0).toFixed(2)}. Please arrange payment at your earliest convenience.\n\nThank you.`;
+    Linking.openURL(`mailto:${d.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`).catch(() => {});
   };
 
   if (loading) {
@@ -149,6 +158,12 @@ export default function DebtorsScreen() {
                 <Pressable onPress={() => sendWhatsApp(selected)} style={[styles.actionBtn, { backgroundColor: "#25D366" }]}>
                   <Ionicons name="logo-whatsapp" size={16} color="#fff" />
                   <Text style={styles.actionText}>WhatsApp Reminder</Text>
+                </Pressable>
+              ) : null}
+              {selected.email ? (
+                <Pressable onPress={() => sendEmail(selected)} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                  <Ionicons name="mail-outline" size={16} color="#fff" />
+                  <Text style={styles.actionText}>Email Reminder</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -237,6 +252,8 @@ export default function DebtorsScreen() {
               <TextInput value={addName} onChangeText={setAddName} placeholder="Full name" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Phone</Text>
               <TextInput value={addPhone} onChangeText={setAddPhone} placeholder="+123****7890" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
+              <Text style={[styles.label, { marginTop: 12 }]}>Email</Text>
+              <TextInput value={addEmail} onChangeText={setAddEmail} placeholder="Optional — for email reminders" placeholderTextColor={theme.color.muted} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
               <TextInput value={addNotes} onChangeText={setAddNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 50 }]} multiline />
               {addError ? <Text style={styles.error}>{addError}</Text> : null}

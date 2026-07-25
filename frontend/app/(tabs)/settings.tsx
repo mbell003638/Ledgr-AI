@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "react-native";
 import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
@@ -27,7 +29,8 @@ export default function SettingsScreen() {
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
   const [taxRate, setTaxRate] = useState("");
-  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", paymentDetails: "" });
+  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", bankAccount: "", upiId: "", paymentDetails: "" });
+  const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -67,8 +70,11 @@ export default function SettingsScreen() {
         businessAddress: s.businessAddress || "",
         businessPhone: s.businessPhone || "",
         businessEmail: s.businessEmail || "",
+        bankAccount: s.bankAccount || "",
+        upiId: s.upiId || "",
         paymentDetails: s.paymentDetails || "",
       });
+      setLogo(s.logo || "");
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -101,6 +107,7 @@ export default function SettingsScreen() {
         taxLabelCustom: taxLabelCustom.trim(),
         taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
         ...bizProfile,
+        logo,
       });
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
@@ -108,6 +115,14 @@ export default function SettingsScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const pickLogo = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { setStatus({ ok: false, msg: "Gallery permission denied" }); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1] });
+    if (res.canceled || !res.assets[0].base64) return;
+    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${res.assets[0].base64}`);
   };
 
   const testKey = async () => {
@@ -463,12 +478,36 @@ export default function SettingsScreen() {
             <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Business Profile</Text>
               <Text style={styles.hint}>Appears on invoices and reports.</Text>
+
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Company Logo</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
+                {logo ? (
+                  <Image source={{ uri: logo }} style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary }} />
+                ) : (
+                  <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="image-outline" size={24} color={theme.color.muted} />
+                  </View>
+                )}
+                <Pressable onPress={pickLogo} style={styles.addBtn}>
+                  <Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} />
+                  <Text style={styles.addText}>{logo ? "Change Logo" : "Upload Logo"}</Text>
+                </Pressable>
+                {logo ? (
+                  <Pressable onPress={() => setLogo("")} style={styles.addBtn}>
+                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                    <Text style={[styles.addText, { color: theme.color.error }]}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
               {[
                 { label: "Business Name", key: "businessName", placeholder: "e.g. Amit General Store" },
                 { label: "Address", key: "businessAddress", placeholder: "Street, City" },
                 { label: "Phone", key: "businessPhone", placeholder: "+1 555 000 0000" },
                 { label: "Email", key: "businessEmail", placeholder: "you@example.com" },
-                { label: "Payment Details (UPI / Bank / Link)", key: "paymentDetails", placeholder: "UPI: name@upi" },
+                { label: "Bank Account / IBAN / Interac", key: "bankAccount", placeholder: "Acct no, IBAN, or Interac email" },
+                { label: "UPI ID", key: "upiId", placeholder: "name@upi" },
+                { label: "Other Payment Details / Link", key: "paymentDetails", placeholder: "PayPal, payment link, cheque payable to…" },
               ].map(({ label, key, placeholder }) => (
                 <View key={key}>
                   <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{label}</Text>

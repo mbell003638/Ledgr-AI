@@ -123,7 +123,9 @@ export default function PaymentForm() {
               </>
             )}
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Amount ({date})</Text>
+            <Text style={[styles.label, { marginTop: 12 }]}>Date (YYYY-MM-DD)</Text>
+            <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
             <TextInput testID="input-payment-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
 
             <Text style={[styles.label, { marginTop: 12 }]}>Method</Text>

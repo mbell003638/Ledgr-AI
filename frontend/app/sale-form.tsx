@@ -63,7 +63,9 @@ export default function SaleForm() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
           <Card>
-            <Text style={styles.label}>Amount ({date})</Text>
+            <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
+            <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
             <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
             <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
             <TextInput testID="input-sale-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />

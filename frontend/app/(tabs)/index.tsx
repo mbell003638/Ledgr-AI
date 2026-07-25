@@ -40,6 +40,19 @@ const TILES = [
   { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
 ] as const;
 
+// Persona-based customization: hide tiles that don't apply to a business type.
+// Service businesses (consultant/freelancer/salon/handyman/service) don't hold stock,
+// so Inventory is irrelevant. Pure service personas also lean on Invoices+Debtors over
+// supplier Purchases/Creditors, so those are de-emphasised for the lightest personas.
+const HIDDEN_TILES: Record<string, string[]> = {
+  service: ["inventory"],
+  salon: ["inventory"],
+  handyman: ["inventory"],
+  it_consultant: ["inventory", "bills", "suppliers"],
+  freelancer: ["inventory", "bills", "suppliers"],
+  // shop / vendor: show everything (default)
+};
+
 export default function Dashboard() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -53,15 +66,18 @@ export default function Dashboard() {
   const [dailyDate, setDailyDate] = useState(localTodayStr);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [businessType, setBusinessType] = useState<string>("");
 
   const load = useCallback(async () => {
     try {
-      const [d, day] = await Promise.all([
+      const [d, day, settings] = await Promise.all([
         api.dashboard(),
         api.dailySummary(dailyDate),
+        api.getSettings(),
       ]);
       setDash(d);
       setDaily(day);
+      setBusinessType(settings.businessType || "");
     } catch (e) {
       console.warn("dash", e);
     } finally {
@@ -69,6 +85,11 @@ export default function Dashboard() {
       setRefreshing(false);
     }
   }, [dailyDate]);
+
+  const visibleTiles = useMemo(() => {
+    const hidden = HIDDEN_TILES[businessType] || [];
+    return TILES.filter((t) => !hidden.includes(t.key));
+  }, [businessType]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -240,7 +261,7 @@ export default function Dashboard() {
             {/* Apps grid */}
             <Text style={styles.sectionTitle}>Apps</Text>
             <View style={styles.grid}>
-              {TILES.map((t) => {
+              {visibleTiles.map((t) => {
                 const isBrand = t.key === "voice";
                 return (
                   <Pressable

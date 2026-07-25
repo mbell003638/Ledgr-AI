@@ -15,6 +15,7 @@ export default function SupplierForm() {
   const editId = params.id;
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -25,7 +26,7 @@ export default function SupplierForm() {
     (async () => {
       try {
         const s = await api.getSupplier(editId);
-        setName(s.name || ""); setPhone(s.phone || ""); setNotes(s.notes || "");
+        setName(s.name || ""); setPhone(s.phone || ""); setEmail(s.email || ""); setNotes(s.notes || "");
       } catch (e: any) { setError(e.message); }
     })();
   }, [editId]);
@@ -34,7 +35,7 @@ export default function SupplierForm() {
     if (!name.trim()) { setError("Enter a name"); return; }
     setSaving(true); setError("");
     try {
-      const payload = { name: name.trim(), phone, notes };
+      const payload = { name: name.trim(), phone, email: email.trim(), notes };
       if (editId) await api.updateSupplier(editId, payload);
       else await api.createSupplier(payload);
       router.back();
@@ -66,6 +67,8 @@ export default function SupplierForm() {
             <TextInput testID="input-supplier-name" value={name} onChangeText={setName} style={styles.input} placeholder="e.g. Rahim Trading" placeholderTextColor={theme.color.muted} />
             <Text style={[styles.label, { marginTop: 12 }]}>Phone</Text>
             <TextInput testID="input-supplier-phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={styles.input} placeholder="Optional" placeholderTextColor={theme.color.muted} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Email</Text>
+            <TextInput testID="input-supplier-email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} placeholder="Optional — for email reminders" placeholderTextColor={theme.color.muted} />
             <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
             <TextInput testID="input-supplier-notes" value={notes} onChangeText={setNotes} style={[styles.input, { minHeight: 60 }]} multiline placeholder="Optional" placeholderTextColor={theme.color.muted} />
           </Card>

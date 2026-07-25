@@ -1,21 +1,23 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { LineChart, PieChart } from "react-native-gifted-charts";
 import { Linking } from "react-native";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import { Ionicons } from "@expo/vector-icons";
 import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 
-const SEGMENTS = ["P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors"] as const;
+const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors"] as const;
 type Seg = typeof SEGMENTS[number];
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
 function rangePreset(preset: string): { from: string; to: string } {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
@@ -29,12 +31,16 @@ function rangePreset(preset: string): { from: string; to: string } {
     default: return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
   }
 }
-const RANGE_PRESETS = ["This Month", "Last Month", "This Quarter", "This Year", "All Time"] as const;
+const RANGE_PRESETS = ["This Month", "Last Month", "This Quarter", "This Year", "All Time", "Custom"] as const;
+
+const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export default function ReportsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const [seg, setSeg] = useState<Seg>("P&L");
+  const [seg, setSeg] = useState<Seg>("Summary");
+  const [dash, setDash] = useState<any>(null);
+  const [periods, setPeriods] = useState<any[]>([]);
   const [pnl, setPnl] = useState<any>(null);
   const [bs, setBs] = useState<any>(null);
   const [tb, setTb] = useState<any>(null);
@@ -45,6 +51,7 @@ export default function ReportsScreen() {
   const [creditors, setCreditors] = useState<any[]>([]);
   const [debtors, setDebtors] = useState<any[]>([]);
   const [currSym, setCurrSym] = useState("$");
+  const [bizName, setBizName] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rangePresetSel, setRangePresetSel] = useState("This Month");
@@ -55,20 +62,25 @@ export default function ReportsScreen() {
 
   const applyPreset = (p: string) => {
     setRangePresetSel(p);
-    const r = rangePreset(p);
-    setFrom(r.from); setTo(r.to);
+    if (p !== "Custom") {
+      const r = rangePreset(p);
+      setFrom(r.from); setTo(r.to);
+    }
   };
 
   const load = useCallback(async () => {
     try {
       const s = await api.getSettings();
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      const [p, b, t, c, dh, pt, ad, cr, dr] = await Promise.all([
+      setBizName(s.businessName || "");
+      const [dl, pd, p, b, t, c, dh, pt, ad, cr, dr] = await Promise.all([
+        api.dashboard(), api.listPeriods(),
         api.pnlRange(from, to), api.balanceSheet(), api.trialBalance(),
         api.capitalStatement(), api.drawingsHistory(),
         api.monthlyProfitTrend(6), api.assetDistribution(),
         api.creditorsReport(from, to), api.debtorsReport(from, to),
       ]);
+      setDash(dl); setPeriods(pd);
       setPnl(p); setBs(b); setTb(t); setCap(c); setDraws(dh);
       setProfitTrend(pt); setAssetDist(ad);
       setCreditors(cr); setDebtors(dr);
@@ -79,6 +91,92 @@ export default function ReportsScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const screenW = Dimensions.get("window").width;
+
+  // ------- Legacy vs Live figures for the Summary tab -------
+  const legacy = useMemo(() => {
+    const sum = (k: string) => periods.reduce((s, p) => s + (Number(p[k]) || 0), 0);
+    return {
+      totalProfit: +sum("netProfit").toFixed(2),
+      totalDrawings: +sum("drawings").toFixed(2),
+      entries: periods.length,
+      lastAssets: periods[0] ? (Number(periods[0].closingCash) || 0) + (Number(periods[0].closingInventory) || 0) : 0,
+    };
+  }, [periods]);
+
+  // ------- Build a shareable plain-text report for the active segment -------
+  const buildText = (): string => {
+    const head = `${bizName || "Ledgr"} — ${seg} Report\n${from} → ${to}\n`;
+    const line = (l: string, v: any) => `${l}: ${fmt(v)}`;
+    let body = "";
+    if (seg === "Summary" && dash) {
+      body = [
+        `— LIVE (current period)`,
+        line("Sales", dash.totalSales),
+        line("Purchases", dash.totalPurchases),
+        line("Gross Profit", dash.grossProfit),
+        line("Net Profit", dash.netProfit),
+        line("Cash", dash.cash),
+        line("Inventory", dash.inventoryValue),
+        line("Net Worth", dash.netWorth),
+        line("Outstanding Payables", dash.liabilities),
+        `Registered Suppliers: ${dash.suppliers}`,
+        ``,
+        `— LEGACY (closed periods: ${legacy.entries})`,
+        line("Total Profit (legacy)", legacy.totalProfit),
+        line("Total Drawings (legacy)", legacy.totalDrawings),
+        ``,
+        `— PARTNER CAPITAL`,
+        ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
+        cap ? line("Closing Capital", cap.closingCapital) : "",
+      ].join("\n");
+    } else if (seg === "P&L" && pnl) {
+      body = [line("Revenue", pnl.revenue), line("COGS", pnl.cogs), line("Gross Profit", pnl.grossProfit), line("Net Profit", pnl.netProfit)].join("\n");
+    } else if (seg === "Balance" && bs) {
+      body = [line("Total Assets", bs.assets.total), line("Total Liabilities", bs.liabilities.total), line("Equity", bs.equity)].join("\n");
+    } else if (seg === "Capital" && cap) {
+      body = [line("Opening Capital", cap.openingCapital), line("Net Profit", cap.netProfit), line("Drawings", cap.totalDrawings), line("Closing Capital", cap.closingCapital)].join("\n");
+    } else if (seg === "Creditors") {
+      body = creditors.map((c) => `${c.name}: ${fmt(c.balance)}`).join("\n") || "No creditors.";
+    } else if (seg === "Debtors") {
+      body = debtors.map((d) => `${d.name}: ${fmt(d.balance)}`).join("\n") || "No debtors.";
+    } else if (seg === "Drawings") {
+      body = draws.map((d) => `${d.partnerName} ${shortDate(d.date)}: ${fmt(d.amount)}`).join("\n") || "No drawings.";
+    } else if (seg === "Trial" && tb) {
+      body = ["Debits", ...tb.debits.map((d: any) => `  ${d.account}: ${fmt(d.amount)}`), "Credits", ...tb.credits.map((c: any) => `  ${c.account}: ${fmt(c.amount)}`)].join("\n");
+    }
+    return `${head}\n${body}\n\n— Sent from Ledgr`;
+  };
+
+  // ------- Build an HTML document for PDF export -------
+  const buildHtml = (): string => {
+    const rows = buildText().split("\n").map((l) => {
+      if (!l.trim()) return "<div style='height:8px'></div>";
+      if (l.startsWith("—")) return `<h3 style='margin:14px 0 4px;color:#1C4030'>${esc(l.replace(/—/g, "").trim())}</h3>`;
+      const [k, ...rest] = l.split(":");
+      if (rest.length) return `<div style='display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee'><span>${esc(k)}</span><b>${esc(rest.join(":").trim())}</b></div>`;
+      return `<div style='padding:2px 0'>${esc(l)}</div>`;
+    }).join("");
+    return `<html><head><meta name='viewport' content='width=device-width,initial-scale=1'/></head>
+      <body style='font-family:-apple-system,Roboto,sans-serif;padding:24px;color:#222'>
+      <h1 style='color:#1C4030;margin-bottom:2px'>${esc(bizName || "Ledgr")}</h1>
+      <p style='color:#666;margin-top:0'>${esc(seg)} Report · ${esc(from)} → ${esc(to)}</p>
+      <div style='margin-top:16px'>${rows}</div>
+      <p style='margin-top:32px;color:#999;font-size:12px'>Generated by Ledgr</p>
+      </body></html>`;
+  };
+
+  const shareWhatsApp = async () => {
+    try { await Share.share({ message: buildText(), title: `${seg} Report` }); }
+    catch (e) { console.warn(e); }
+  };
+
+  const sharePdf = async () => {
+    try {
+      const { uri } = await Print.printToFileAsync({ html: buildHtml() });
+      const can = await Sharing.isAvailableAsync();
+      if (can) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${seg} Report` });
+    } catch (e) { console.warn(e); }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -93,6 +191,23 @@ export default function ReportsScreen() {
         ))}
       </ScrollView>
 
+      {/* Custom date inputs (shown when Custom selected) */}
+      {rangePresetSel === "Custom" && (
+        <View style={styles.customRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.customLabel}>From</Text>
+            <TextInput value={from} onChangeText={setFrom} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.customLabel}>To</Text>
+            <TextInput value={to} onChangeText={setTo} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+          </View>
+          <Pressable onPress={() => load()} style={styles.applyBtn}>
+            <Text style={styles.applyText}>Apply</Text>
+          </Pressable>
+        </View>
+      )}
+
       {/* Report segments */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
         {SEGMENTS.map((s) => (
@@ -102,6 +217,18 @@ export default function ReportsScreen() {
         ))}
       </ScrollView>
 
+      {/* Share bar */}
+      <View style={styles.shareBar}>
+        <Pressable onPress={shareWhatsApp} style={[styles.shareBtn, { backgroundColor: "#25D366" }]}>
+          <Ionicons name="logo-whatsapp" size={16} color="#fff" />
+          <Text style={styles.shareBtnText}>WhatsApp</Text>
+        </Pressable>
+        <Pressable onPress={sharePdf} style={[styles.shareBtn, { backgroundColor: theme.color.brandPrimary }]}>
+          <Ionicons name="document-outline" size={16} color="#fff" />
+          <Text style={styles.shareBtnText}>PDF</Text>
+        </Pressable>
+      </View>
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
@@ -109,6 +236,47 @@ export default function ReportsScreen() {
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
+          {seg === "Summary" && dash && (
+            <>
+              <Card testID="report-summary-live">
+                <Text style={styles.rTitle}>Live — Current Period</Text>
+                <RowKV label="Sales" value={fmt(dash.totalSales)} theme={theme} styles={styles} />
+                <RowKV label="Purchases" value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
+                <RowKV label="Gross Profit" value={fmt(dash.grossProfit)} strong theme={theme} styles={styles} />
+                <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
+                <View style={styles.divider} />
+                <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
+                <RowKV label="Inventory Value" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
+                <RowKV label="Net Worth" value={fmt(dash.netWorth)} strong theme={theme} styles={styles} />
+                <RowKV label="Outstanding Payables" value={fmt(dash.liabilities)} theme={theme} styles={styles} danger />
+                <RowKV label="Registered Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
+              </Card>
+
+              <Card style={{ marginTop: theme.spacing.md }} testID="report-summary-legacy">
+                <Text style={styles.rTitle}>Legacy — Closed Periods</Text>
+                <RowKV label="Total Profit (legacy)" value={fmt(legacy.totalProfit)} theme={theme} styles={styles} />
+                <RowKV label="Total Drawings (legacy)" value={fmt(legacy.totalDrawings)} theme={theme} styles={styles} danger />
+                <RowKV label="Last Period Assets" value={fmt(legacy.lastAssets)} theme={theme} styles={styles} />
+                <RowKV label="Period Entries" value={String(legacy.entries)} theme={theme} styles={styles} />
+              </Card>
+
+              {cap && (
+                <Card style={{ marginTop: theme.spacing.md }} testID="report-summary-capital">
+                  <Text style={styles.rTitle}>Partner Capital</Text>
+                  <RowKV label="Opening Capital" value={fmt(cap.openingCapital)} theme={theme} styles={styles} />
+                  <RowKV label="Net Profit" value={`+ ${fmt(cap.netProfit)}`} theme={theme} styles={styles} />
+                  <RowKV label="Total Drawings" value={`- ${fmt(cap.totalDrawings)}`} theme={theme} styles={styles} />
+                  <View style={styles.divider} />
+                  {cap.partners.map((p: any) => (
+                    <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
+                  ))}
+                  <View style={styles.divider} />
+                  <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
+                </Card>
+              )}
+            </>
+          )}
+
           {seg === "P&L" && pnl && (
             <>
               <Card testID="report-pnl">
@@ -261,11 +429,18 @@ export default function ReportsScreen() {
                   </View>
                   <RowKV label="Total Billed" value={fmt(c.totalBilled)} theme={theme} styles={styles} />
                   <RowKV label="Total Paid" value={fmt(c.totalPaid)} theme={theme} styles={styles} />
-                  {c.phone ? (
-                    <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${c.phone}&text=${encodeURIComponent(`Hi, your outstanding balance is ${fmt(c.balance)}. Please arrange payment.`)}`)}>
-                      <Text style={{ color: theme.color.brandPrimary, fontSize: 12, marginTop: 4 }}>📱 WhatsApp Reminder</Text>
-                    </Pressable>
-                  ) : null}
+                  <View style={styles.reminderRow}>
+                    {c.phone ? (
+                      <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${String(c.phone).replace(/\D/g, "")}&text=${encodeURIComponent(`Hi ${c.name}, your outstanding balance is ${fmt(c.balance)}. Please arrange payment.`)}`)}>
+                        <Text style={styles.reminderLink}>📱 WhatsApp</Text>
+                      </Pressable>
+                    ) : null}
+                    {c.email ? (
+                      <Pressable onPress={() => Linking.openURL(`mailto:${c.email}?subject=${encodeURIComponent("Payment Reminder")}&body=${encodeURIComponent(`Hi ${c.name},\n\nYour outstanding balance is ${fmt(c.balance)}. Please arrange payment.\n\nThank you.`)}`)}>
+                        <Text style={styles.reminderLink}>✉️ Email</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                   <View style={styles.divider} />
                 </View>
               ))}
@@ -286,11 +461,18 @@ export default function ReportsScreen() {
                   </View>
                   <RowKV label="Total Invoiced" value={fmt(d.totalInvoiced)} theme={theme} styles={styles} />
                   <RowKV label="Total Paid" value={fmt(d.totalPaid)} theme={theme} styles={styles} />
-                  {d.phone ? (
-                    <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${d.phone}&text=${encodeURIComponent(`Hi ${d.name}, your outstanding balance is ${fmt(d.balance)}. Please arrange payment. Thank you.`)}`)}>
-                      <Text style={{ color: theme.color.brandPrimary, fontSize: 12, marginTop: 4 }}>📱 Send WhatsApp Reminder</Text>
-                    </Pressable>
-                  ) : null}
+                  <View style={styles.reminderRow}>
+                    {d.phone ? (
+                      <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${String(d.phone).replace(/\D/g, "")}&text=${encodeURIComponent(`Hi ${d.name}, your outstanding balance is ${fmt(d.balance)}. Please arrange payment. Thank you.`)}`)}>
+                        <Text style={styles.reminderLink}>📱 WhatsApp</Text>
+                      </Pressable>
+                    ) : null}
+                    {d.email ? (
+                      <Pressable onPress={() => Linking.openURL(`mailto:${d.email}?subject=${encodeURIComponent("Payment Reminder")}&body=${encodeURIComponent(`Hi ${d.name},\n\nYour outstanding balance is ${fmt(d.balance)}. Please arrange payment.\n\nThank you.`)}`)}>
+                        <Text style={styles.reminderLink}>✉️ Email</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                   <View style={styles.divider} />
                 </View>
               ))}
@@ -304,11 +486,11 @@ export default function ReportsScreen() {
   );
 }
 
-function RowKV({ label, value, strong, big, theme, styles }: { label: string; value: string; strong?: boolean; big?: boolean; theme: any; styles: any }) {
+function RowKV({ label, value, strong, big, danger, theme, styles }: { label: string; value: string; strong?: boolean; big?: boolean; danger?: boolean; theme: any; styles: any }) {
   return (
     <View style={styles.kv}>
       <Text style={[styles.kvLabel, strong && { fontWeight: "700", color: theme.color.onSurface }]}>{label}</Text>
-      <Text style={[styles.kvValue, strong && { fontWeight: "700" }, big && { fontSize: 18 }]}>{value}</Text>
+      <Text style={[styles.kvValue, strong && { fontWeight: "700" }, big && { fontSize: 18 }, danger && { color: theme.color.error }]}>{value}</Text>
     </View>
   );
 }
@@ -327,6 +509,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   segActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   segText: { color: theme.color.muted, fontWeight: "600", fontSize: 13 },
   segTextActive: { color: "#fff", fontWeight: "700" },
+  customRow: { flexDirection: "row", gap: 8, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, alignItems: "flex-end" },
+  customLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "600", marginBottom: 4 },
+  customInput: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary },
+  applyBtn: { backgroundColor: theme.color.brandPrimary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.md },
+  applyText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  shareBar: { flexDirection: "row", gap: 8, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
+  shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: theme.radius.md },
+  shareBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   scroll: { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingTop: theme.spacing.sm },
   rTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.md },
   kv: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
@@ -336,6 +526,8 @@ function makeStyles(theme: any) { return StyleSheet.create({
   groupHeader: { fontSize: 12, fontWeight: "700", color: theme.color.muted, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.md, fontSize: 13, fontStyle: "italic" },
   hint: { color: theme.color.muted, fontSize: 12, marginBottom: theme.spacing.sm },
+  reminderRow: { flexDirection: "row", gap: 16, marginTop: 4 },
+  reminderLink: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "600" },
   legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 5 },
   legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 10 },
   legendLabel: { flex: 1, fontSize: 13, color: theme.color.onSurface },

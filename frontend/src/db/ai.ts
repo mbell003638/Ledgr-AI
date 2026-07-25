@@ -336,13 +336,91 @@ export async function reconcileStatementAI(cfg: AIConfig, imageBase64: string, m
   return parseJson(out);
 }
 
-/** Free-form: ask the AI a question about the books (Gemini chat feature). */
+// Knowledge about the app itself, so the assistant can explain how to use it.
+const APP_GUIDE =
+  "This app is Ledgr, a standalone (offline, on-device) bookkeeping app for small businesses " +
+  "(shops, service providers, retailers). All data is stored on the phone; nothing is sent to a server. " +
+  "Main features and where to find them:\n" +
+  "- Dashboard (Home): cash, inventory value, net worth, sales, purchases, profit at a glance.\n" +
+  "- Purchases (Bills): record what you buy from suppliers/vendors (cash or credit).\n" +
+  "- Sales: record customer revenue.\n" +
+  "- Invoices: create invoices, share as PDF or on WhatsApp, mark paid. An invoice automatically " +
+  "creates/updates a Debtor (the customer who owes you).\n" +
+  "- Debtors: who owes you money; record payments; send WhatsApp reminders.\n" +
+  "- Creditors: suppliers you owe; running balances; WhatsApp reminders.\n" +
+  "- Expenses: day-to-day costs by category.\n" +
+  "- Inventory: stock counts. Profit uses periodic inventory: COGS = opening stock + purchases - closing stock.\n" +
+  "- Reports: Profit & Loss, Balance Sheet, Trial Balance, Partner Capital, Drawings, with date-range filters and charts.\n" +
+  "- Day Book: every transaction in date order.\n" +
+  "- Reconcile: photograph or upload a supplier statement/PDF; AI compares it to your ledger.\n" +
+  "- Voice/Camera entry: speak an entry or snap a receipt; AI fills the form (you confirm before saving).\n" +
+  "- Settings: business profile, currency (15 options), tax label & rate, partner names, opening capital, " +
+  "backup/restore, WhatsApp share, and the AI provider + API key.\n" +
+  "- Ask AI (this screen): ask questions about your books, general questions, how to use the app, and request changes.";
+
+// Actions the AI is allowed to PROPOSE. The app executes them only after the user confirms.
+const ACTION_SPEC =
+  "You may propose ONE data change when the user clearly asks to add/record/create/update/delete something. " +
+  "Supported actions and their fields:\n" +
+  "- add_expense: { category, amount, date?, notes? }\n" +
+  "- add_sale: { amount, date?, paymentType? ('cash'|'credit'), notes? }\n" +
+  "- add_bill: { supplierName, amount, date?, paymentType? ('cash'|'credit'), notes? }\n" +
+  "- add_debtor: { name, phone?, notes? }\n" +
+  "- add_debtor_payment: { name, amount, date? }\n" +
+  "- create_invoice: { clientName, amount, date?, notes? }\n" +
+  "Dates are YYYY-MM-DD; default to today if unspecified. Never invent amounts — if a required field is " +
+  "missing, ask for it in 'answer' and set action to null.";
+
+const ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    answer: { type: 'string' },
+    action: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice'],
+        },
+        params: { type: 'object' },
+        confirm: { type: 'string' }, // one-line human summary to show before applying
+      },
+    },
+  },
+  required: ['answer'],
+};
+
+/**
+ * Free-form assistant about the books.
+ * Returns { answer, action? } where action (if present) is a proposed data change
+ * for the app to confirm-and-apply.
+ */
 export async function askBooks(cfg: AIConfig, question: string, dataContext: string) {
+  const today = new Date().toISOString().slice(0, 10);
   const prompt =
-    'You are an accounting assistant for a small business bookkeeping app. ' +
-    "Answer the user's question using ONLY the data snapshot below. " +
-    'Be concise, use the currency as shown, and if the data does not contain the answer, say so.\n\n' +
-    `=== DATA SNAPSHOT ===\n${dataContext}\n=== END DATA ===\n\nQuestion: ${question}`;
-  const out = await call(cfg, prompt);
-  return (out || '').trim();
+    `You are the built-in AI assistant inside a bookkeeping app. Today is ${today}.\n` +
+    'You have THREE jobs:\n' +
+    "1) Answer questions about the user's finances using the data snapshot below.\n" +
+    '2) Answer general questions and explain how to use this app (use the App Guide).\n' +
+    '3) When the user asks to record/add/update/delete data, PROPOSE an action for confirmation.\n\n' +
+    'Rules: Be concise and friendly. Use the currency shown in the data. ' +
+    'For finance questions, base numbers on the snapshot; if a specific figure is not in the snapshot, ' +
+    "say what you can see and note what's missing (do NOT refuse general or how-to questions). " +
+    'Only fill "action" when the user is clearly requesting a change; otherwise set it to null.\n\n' +
+    `=== APP GUIDE ===\n${APP_GUIDE}\n\n` +
+    `=== ACTIONS YOU MAY PROPOSE ===\n${ACTION_SPEC}\n\n` +
+    `=== DATA SNAPSHOT ===\n${dataContext}\n=== END DATA ===\n\n` +
+    `User: ${question}\n\n` +
+    'Respond as JSON: { "answer": string, "action": null | { "type": string, "params": object, "confirm": string } }.';
+  const out = await call(cfg, prompt, [], ASK_SCHEMA);
+  try {
+    const parsed = parseJson(out);
+    return {
+      answer: (parsed.answer || '').trim() || "Sorry, I didn't catch that.",
+      action: parsed.action && parsed.action.type ? parsed.action : null,
+    };
+  } catch {
+    // Fallback: some providers ignore JSON schema — return raw text as the answer.
+    return { answer: (out || '').trim(), action: null };
+  }
 }

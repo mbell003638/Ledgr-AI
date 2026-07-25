@@ -57,7 +57,10 @@ function buildHtml(inv: Invoice, biz: any, sym: string) {
     .payment{margin-top:16px;font-size:12px;color:#1C4030;font-weight:600}
   </style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div><h1>${escapeHtml(biz.businessName || "Invoice")}</h1><div class="biz">${escapeHtml([biz.businessAddress, biz.businessPhone, biz.businessEmail].filter(Boolean).join(" · "))}</div></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        ${biz.logo ? `<img src="${biz.logo}" style="width:56px;height:56px;border-radius:8px;object-fit:cover"/>` : ""}
+        <div><h1>${escapeHtml(biz.businessName || "Invoice")}</h1><div class="biz">${escapeHtml([biz.businessAddress, biz.businessPhone, biz.businessEmail].filter(Boolean).join(" · "))}</div></div>
+      </div>
       <div style="text-align:right"><div class="label">Invoice</div><div class="val">${inv.invoiceNumber}</div><div style="margin-top:8px"><span class="badge">${inv.status.toUpperCase()}</span></div></div>
     </div>
     <div class="row">
@@ -70,7 +73,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string) {
     <tr class="total-row"><td colspan="3" style="text-align:right">Total</td><td style="text-align:right">${sym}${inv.total.toFixed(2)}</td></tr>
     </tbody></table>
     ${inv.notes ? `<div class="notes">Notes: ${escapeHtml(inv.notes)}</div>` : ""}
-    ${biz.paymentDetails ? `<div class="payment">Payment: ${escapeHtml(biz.paymentDetails)}</div>` : ""}
+    ${(biz.bankAccount || biz.upiId || biz.paymentDetails) ? `<div class="payment">Payment details:${biz.bankAccount ? `<br/>Bank / Interac: ${escapeHtml(biz.bankAccount)}` : ""}${biz.upiId ? `<br/>UPI: ${escapeHtml(biz.upiId)}` : ""}${biz.paymentDetails ? `<br/>${escapeHtml(biz.paymentDetails)}` : ""}</div>` : ""}
   </body></html>`;
 }
 
@@ -94,6 +97,8 @@ export default function InvoicesScreen() {
   const [dueDate, setDueDate] = useState("");
   const [lines, setLines] = useState<InvoiceLine[]>([{ description: "", qty: 1, rate: 0 }]);
   const [notes, setNotes] = useState("");
+  const [taxLabelInput, setTaxLabelInput] = useState("");
+  const [taxRateInput, setTaxRateInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -114,6 +119,10 @@ export default function InvoicesScreen() {
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setFormError("");
+    // Pre-fill tax from global settings; user can override per-invoice.
+    const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
+    setTaxLabelInput(defLabel);
+    setTaxRateInput(biz.taxRate ? String(biz.taxRate) : "");
     setShowForm(true);
   };
 
@@ -123,6 +132,8 @@ export default function InvoicesScreen() {
     setDate(inv.date); setDueDate(inv.dueDate || "");
     setLines(inv.lines.length ? inv.lines : [{ description: "", qty: 1, rate: 0 }]);
     setNotes(inv.notes || ""); setFormError("");
+    setTaxLabelInput(inv.taxLabel || "");
+    setTaxRateInput(inv.taxRate ? String(inv.taxRate) : "");
     setShowForm(true); setSelected(null);
   };
 
@@ -131,15 +142,17 @@ export default function InvoicesScreen() {
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
     try {
-      const s = await api.getSettings();
+      const validLines = lines.filter((l) => l.description.trim());
+      const rate = parseFloat(taxRateInput) || 0;
+      const label = taxLabelInput.trim();
       const payload = {
         clientName: clientName.trim(), clientPhone: clientPhone.trim(),
         date, dueDate: dueDate.trim() || undefined,
-        lines: lines.filter((l) => l.description.trim()),
+        lines: validLines,
         notes: notes.trim(),
-        taxLabel: s.taxLabel !== "None" ? (s.taxLabel === "Custom" ? s.taxLabelCustom : s.taxLabel) : undefined,
-        taxRate: s.taxRate || 0,
-        total: calcTotal(lines.filter((l) => l.description.trim()), s.taxRate || 0),
+        taxLabel: rate > 0 && label ? label : (rate > 0 ? "Tax" : undefined),
+        taxRate: rate,
+        total: calcTotal(validLines, rate),
       };
       if (editId) await api.updateInvoice(editId, payload);
       else await api.createInvoice(payload);
@@ -339,9 +352,19 @@ export default function InvoicesScreen() {
                   <Ionicons name="add-outline" size={16} color={theme.color.brandPrimary} />
                   <Text style={{ color: theme.color.brandPrimary, fontSize: 13, fontWeight: "600" }}>Add Line</Text>
                 </Pressable>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.label}>Tax Description</Text>
+                    <TextInput value={taxLabelInput} onChangeText={setTaxLabelInput} placeholder="e.g. GST / VAT / Sales Tax" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Rate %</Text>
+                    <TextInput value={taxRateInput} onChangeText={setTaxRateInput} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  </View>
+                </View>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.color.divider }}>
                   <Text style={{ fontWeight: "700", color: theme.color.onSurface }}>Total</Text>
-                  <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), biz.taxRate || 0).toFixed(2)}</Text>
+                  <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), parseFloat(taxRateInput) || 0).toFixed(2)}</Text>
                 </View>
               </Card>
 

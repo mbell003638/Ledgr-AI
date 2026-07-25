@@ -207,7 +207,8 @@ export default function BillForm() {
             <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
             <TextInput testID="input-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
 
-            <Text style={[styles.hint, { marginTop: 8 }]}>Date: {date}</Text>
+            <Text style={[styles.label, { marginTop: 12 }]}>Date (YYYY-MM-DD)</Text>
+            <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
           </Card>
 
           {error ? <Text style={styles.error} testID="bill-error">{error}</Text> : null}

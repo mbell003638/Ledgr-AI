@@ -102,7 +102,10 @@ export async function getSettings() {
     businessAddress: s.businessAddress ?? '',
     businessPhone: s.businessPhone ?? '',
     businessEmail: s.businessEmail ?? '',
+    bankAccount: s.bankAccount ?? '',
+    upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
+    logo: s.logo ?? '',
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
   };
@@ -622,7 +625,7 @@ export async function creditorsReport(from?: string, to?: string) {
     const totalBilled = supBills.reduce((s: number, b: any) => s + toUsd(b.amount), 0);
     const totalPaid = supPays.reduce((s: number, p: any) => s + toUsd(p.amount), 0);
     const balance = +(totalBilled - totalPaid).toFixed(2);
-    result.push({ supplierId: sup.id, name: sup.name, phone: sup.phone || '', totalBilled: +totalBilled.toFixed(2), totalPaid: +totalPaid.toFixed(2), balance, transactions: [...supBills.map((b: any) => ({ ...b, txType: 'bill' })), ...supPays.map((p: any) => ({ ...p, txType: 'payment' }))].sort((a: any, b: any) => (a.date > b.date ? 1 : -1)) });
+    result.push({ supplierId: sup.id, name: sup.name, phone: sup.phone || '', email: sup.email || '', totalBilled: +totalBilled.toFixed(2), totalPaid: +totalPaid.toFixed(2), balance, transactions: [...supBills.map((b: any) => ({ ...b, txType: 'bill' })), ...supPays.map((p: any) => ({ ...p, txType: 'payment' }))].sort((a: any, b: any) => (a.date > b.date ? 1 : -1)) });
   }
   return result.sort((a, b) => b.balance - a.balance);
 }
@@ -711,7 +714,10 @@ export async function resetAll() {
     businessAddress: s.businessAddress ?? '',
     businessPhone: s.businessPhone ?? '',
     businessEmail: s.businessEmail ?? '',
+    bankAccount: s.bankAccount ?? '',
+    upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
+    logo: s.logo ?? '',
     managerCommissionPct: s.managerCommissionPct ?? 0,
     extraAssets: s.extraAssets ?? [],
     extraLiabilities: s.extraLiabilities ?? [],

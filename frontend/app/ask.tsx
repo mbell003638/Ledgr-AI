@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,11 +12,51 @@ import { getCurrencySymbol } from "@/src/db/local";
 
 type Msg = { role: "user" | "assistant"; text: string };
 
+async function applyAction(action: { type: string; params: any }): Promise<string> {
+  const today = new Date().toISOString().slice(0, 10);
+  const p = action.params || {};
+  switch (action.type) {
+    case "add_expense":
+      await api.createExpense({ category: p.category || "General", amount: p.amount, date: p.date || today, notes: p.notes || "" });
+      return "Expense recorded ✓";
+    case "add_sale":
+      await api.createSale({ amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", notes: p.notes || "" });
+      return "Sale recorded ✓";
+    case "add_bill":
+      await api.createBill({ supplierName: p.supplierName || "Unknown", amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", notes: p.notes || "" });
+      return "Purchase recorded ✓";
+    case "add_debtor":
+      await api.createDebtor({ name: p.name, phone: p.phone || "", notes: p.notes || "" });
+      return `Debtor "${p.name}" added ✓`;
+    case "add_debtor_payment": {
+      const debtors: any[] = await api.listDebtors();
+      const debtor = debtors.find((d: any) => d.name?.toLowerCase() === (p.name || "").toLowerCase());
+      if (!debtor) return `Could not find debtor "${p.name}". Please add them first.`;
+      await api.addDebtorPayment(debtor.id, { amount: p.amount, date: p.date || today, notes: "" });
+      return `Payment from "${p.name}" recorded ✓`;
+    }
+    case "create_invoice": {
+      const amt = Number(p.amount) || 0;
+      await api.createInvoice({
+        clientName: p.clientName,
+        lines: [{ description: p.notes || "Service", qty: 1, rate: amt }],
+        taxRate: 0,
+        total: amt,
+        date: p.date || today,
+        notes: p.notes || "",
+      });
+      return `Invoice for "${p.clientName}" created ✓`;
+    }
+    default:
+      return "Unknown action — no changes made.";
+  }
+}
+
 const SUGGESTIONS = [
   "What was my profit this month?",
+  "How do I create an invoice?",
+  "Record a 500 expense for fuel",
   "Who owes me the most money?",
-  "What are my biggest expenses?",
-  "How much do I owe suppliers?",
 ];
 
 export default function AskBooks() {
@@ -64,8 +104,35 @@ export default function AskBooks() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       const context = await buildContext();
-      const answer = await api.askBooks(q, context);
+      const res: any = await api.askBooks(q, context);
+      const answer = typeof res === "string" ? res : res?.answer || "";
+      const action = typeof res === "string" ? null : res?.action || null;
       setMessages((m) => [...m, { role: "assistant", text: answer }]);
+      if (action && action.type) {
+        // AI proposed a data change — confirm before applying (never auto-write).
+        setTimeout(() => {
+          Alert.alert(
+            "Apply this change?",
+            action.confirm || `${action.type}: ${JSON.stringify(action.params)}`,
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Apply",
+                onPress: async () => {
+                  try {
+                    const result = await applyAction(action);
+                    setMessages((m) => [...m, { role: "assistant", text: result }]);
+                  } catch (err: any) {
+                    setMessages((m) => [...m, { role: "assistant", text: `Couldn't apply that: ${err?.message || "error"}` }]);
+                  } finally {
+                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+                  }
+                },
+              },
+            ],
+          );
+        }, 200);
+      }
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);
     } finally {
