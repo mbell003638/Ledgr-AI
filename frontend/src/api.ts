@@ -1,34 +1,55 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
-import * as ai from '@/src/db/gemini';
+import * as ai from '@/src/db/ai';
+import type { AIConfig, ProviderId } from '@/src/db/ai';
 
-const GEMINI_KEY_STORAGE = 'gemini_api_key';
-const GEMINI_MODEL_STORAGE = 'gemini_model';
+const AI_PROVIDER_KEY = 'ai_provider';
+const AI_API_KEY_KEY  = 'ai_api_key';
+const AI_MODEL_KEY    = 'ai_model';
+const AI_BASE_URL_KEY = 'ai_base_url';
 
-export async function getGeminiKey(): Promise<string> {
-  const local = await AsyncStorage.getItem(GEMINI_KEY_STORAGE);
-  if (local) return local;
-  const s = await db.getSettings();
-  return s.googleApiKey || '';
-}
-export async function setGeminiKey(v: string) {
-  await AsyncStorage.setItem(GEMINI_KEY_STORAGE, v);
+// Legacy keys kept for migration
+const LEGACY_GEMINI_KEY   = 'gemini_api_key';
+const LEGACY_GEMINI_MODEL = 'gemini_model';
+
+export async function getAIConfig(): Promise<AIConfig> {
+  const [provider, apiKey, model, baseUrl, legacyKey, legacyModel] = await Promise.all([
+    AsyncStorage.getItem(AI_PROVIDER_KEY),
+    AsyncStorage.getItem(AI_API_KEY_KEY),
+    AsyncStorage.getItem(AI_MODEL_KEY),
+    AsyncStorage.getItem(AI_BASE_URL_KEY),
+    AsyncStorage.getItem(LEGACY_GEMINI_KEY),
+    AsyncStorage.getItem(LEGACY_GEMINI_MODEL),
+  ]);
+  // Migrate legacy Gemini key on first run
+  const resolvedKey = apiKey ?? legacyKey ?? (await db.getSettings()).googleApiKey ?? '';
+  const resolvedModel = model ?? legacyModel ?? 'gemini-2.0-flash-001';
+  return {
+    provider: (provider as ProviderId) ?? 'gemini',
+    apiKey: resolvedKey,
+    model: resolvedModel,
+    baseUrl: baseUrl ?? undefined,
+  };
 }
 
-export async function getGeminiModel(): Promise<string> {
-  const local = await AsyncStorage.getItem(GEMINI_MODEL_STORAGE);
-  if (local) return local;
-  return 'gemini-2.0-flash-001';
+export async function setAIConfig(cfg: Partial<AIConfig>) {
+  const ops: Promise<void>[] = [];
+  if (cfg.provider !== undefined) ops.push(AsyncStorage.setItem(AI_PROVIDER_KEY, cfg.provider));
+  if (cfg.apiKey  !== undefined) ops.push(AsyncStorage.setItem(AI_API_KEY_KEY,  cfg.apiKey));
+  if (cfg.model   !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY,    cfg.model));
+  if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, cfg.baseUrl));
+  await Promise.all(ops);
 }
-export async function setGeminiModel(v: string) {
-  await AsyncStorage.setItem(GEMINI_MODEL_STORAGE, v);
-}
+
+// Legacy shims so existing screens (voice.tsx, bill-form.tsx) keep compiling
+export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
+export async function setGeminiKey(v: string) { await setAIConfig({ apiKey: v }); }
+export async function getGeminiModel(): Promise<string> { return (await getAIConfig()).model; }
+export async function setGeminiModel(v: string) { await setAIConfig({ model: v }); }
 
 // ---------- reconcile helper (matching logic in JS) ----------
 async function reconcileStatement(imageBase64: string, supplierId: string, mimeType = 'image/jpeg') {
-  const key = await getGeminiKey();
-  const model = await getGeminiModel();
-  const extracted = await ai.reconcileStatementAI(key, model, imageBase64, mimeType);
+  const extracted = await ai.reconcileStatementAI(await getAIConfig(), imageBase64, mimeType);
 
   let ourBills: any[] = [], ourPayments: any[] = [];
   if (supplierId) {
@@ -74,7 +95,7 @@ export const api = {
   // Settings
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
-  testKey: async () => ai.testKey(await getGeminiKey(), await getGeminiModel()),
+  testKey: async () => ai.testKey(await getAIConfig()),
 
   // Suppliers
   listSuppliers: () => db.listSuppliers(),
@@ -146,8 +167,8 @@ export const api = {
   resetAll: () => db.resetAll(),
 
   // AI
-  parseCommand: async (text: string) => ai.parseCommand(await getGeminiKey(), await getGeminiModel(), text),
-  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getGeminiKey(), await getGeminiModel(), imageBase64, mimeType),
-  transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getGeminiKey(), await getGeminiModel(), audioBase64, mimeType),
+  parseCommand: async (text: string) => ai.parseCommand(await getAIConfig(), text),
+  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType),
+  transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') => reconcileStatement(imageBase64, supplierId, mimeType),
 };

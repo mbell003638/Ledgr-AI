@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndic
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
-import { api, getGeminiKey, setGeminiKey, getGeminiModel, setGeminiModel } from "@/src/api";
+import { api, getAIConfig, setAIConfig } from "@/src/api";
+import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 
@@ -11,8 +12,11 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
+  const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [commissionPct, setCommissionPct] = useState("");
   const [openingCapital, setOpeningCapital] = useState("");
   const [partnerNames, setPartnerNames] = useState<string[]>([]);
@@ -28,10 +32,11 @@ export default function SettingsScreen() {
   const load = useCallback(async () => {
     try {
       const s = await api.getSettings();
-      const localKey = await getGeminiKey();
-      const localModel = await getGeminiModel();
-      setKey(localKey || s.googleApiKey || "");
-      setModelName(localModel);
+      const cfg = await getAIConfig();
+      setProvider(cfg.provider);
+      setKey(cfg.apiKey || "");
+      setModelName(cfg.model || "");
+      setBaseUrl(cfg.baseUrl || "");
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
       setPartnerNames(Array.isArray(s.partnerNames) ? s.partnerNames : []);
@@ -56,8 +61,13 @@ export default function SettingsScreen() {
   const save = async () => {
     setSaving(true);
     try {
-      await setGeminiKey(key.trim());
-      await setGeminiModel(modelName.trim() || 'gemini-2.0-flash-001');
+      const meta = PROVIDERS.find((p) => p.id === provider)!;
+      await setAIConfig({
+        provider,
+        apiKey: key.trim(),
+        model: modelName.trim() || meta.defaultModel,
+        baseUrl: baseUrl.trim() || undefined,
+      });
       await api.updateSettings({
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
@@ -80,14 +90,19 @@ export default function SettingsScreen() {
 
   const testKey = async () => {
     setTesting(true);
-    setStatus(null);
+    setTestResult(null);
     try {
-      await setGeminiKey(key.trim());
-      await setGeminiModel(modelName.trim() || 'gemini-2.0-flash-001');
+      const meta = PROVIDERS.find((p) => p.id === provider)!;
+      await setAIConfig({
+        provider,
+        apiKey: key.trim(),
+        model: modelName.trim() || meta.defaultModel,
+        baseUrl: baseUrl.trim() || undefined,
+      });
       const r = await api.testKey();
-      setStatus({ ok: true, msg: `API key works. Reply: ${r.reply}` });
+      setTestResult({ ok: true, msg: `✓ Connected` });
     } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Test failed" });
+      setTestResult({ ok: false, msg: `✗ ${e.message || "Failed"}` });
     } finally {
       setTesting(false);
     }
@@ -158,42 +173,81 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <Card>
-              <Text style={styles.label}>Google Gemini API Key</Text>
-              <Text style={styles.hint}>Used for voice parsing, OCR, and transcription. Get one at aistudio.google.com.</Text>
+              <Text style={styles.label}>AI Provider</Text>
+              <View style={styles.modeRow}>
+                {PROVIDERS.map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => { setProvider(p.id); setModelName(p.defaultModel); setBaseUrl(p.defaultBaseUrl); setTestResult(null); }}
+                    style={[styles.modeBtn, provider === p.id && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, provider === p.id && styles.modeTextActive]} numberOfLines={1}>
+                      {p.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
+              <Text style={styles.hint}>{PROVIDERS.find((p) => p.id === provider)?.keyHint ?? ""}</Text>
               <TextInput
                 testID="input-api-key"
                 value={key}
-                onChangeText={setKey}
-                placeholder="AIza..."
+                onChangeText={(v) => { setKey(v); setTestResult(null); }}
+                placeholder="Paste your API key"
                 placeholderTextColor={theme.color.muted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 secureTextEntry
                 style={styles.input}
               />
-              
-              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>AI Model</Text>
-              <Text style={styles.hint}>e.g. gemini-2.0-flash-001</Text>
+
+              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
               <TextInput
                 testID="input-api-model"
                 value={modelName}
                 onChangeText={setModelName}
-                placeholder="gemini-2.0-flash-001"
+                placeholder={PROVIDERS.find((p) => p.id === provider)?.defaultModel ?? "model name"}
                 placeholderTextColor={theme.color.muted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={styles.input}
               />
 
-              <Pressable
-                testID="btn-test-key"
-                onPress={testKey}
-                disabled={testing || !key}
-                style={({ pressed }) => [styles.secondaryBtn, (pressed || testing) && { opacity: 0.7 }]}
-              >
-                {testing ? <ActivityIndicator color={theme.color.brandPrimary} /> :
-                  <Text style={styles.secondaryText}>Test API Key &amp; Model</Text>}
-              </Pressable>
+              {provider === "custom" && (
+                <>
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
+                  <Text style={styles.hint}>OpenAI-compatible endpoint (e.g. https://my-server.com/v1)</Text>
+                  <TextInput
+                    testID="input-base-url"
+                    value={baseUrl}
+                    onChangeText={setBaseUrl}
+                    placeholder="https://..."
+                    placeholderTextColor={theme.color.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.input}
+                  />
+                </>
+              )}
+
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
+                <Pressable
+                  testID="btn-test-key"
+                  onPress={testKey}
+                  disabled={testing || !key}
+                  style={({ pressed }) => [styles.secondaryBtn, { flex: 0 }, (pressed || testing) && { opacity: 0.7 }]}
+                >
+                  {testing
+                    ? <ActivityIndicator color={theme.color.brandPrimary} />
+                    : <Text style={styles.secondaryText}>Test Connection</Text>}
+                </Pressable>
+                {testResult && (
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>
+                    {testResult.msg}
+                  </Text>
+                )}
+              </View>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
