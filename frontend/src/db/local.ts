@@ -174,6 +174,21 @@ export async function getSupplier(id: string) {
 }
 
 // ---------- Generic CRUD helpers ----------
+// Collections whose records carry a monetary `amount` that must be validated.
+const AMOUNT_COLLECTIONS = new Set<Collection>(['bills', 'sales', 'payments', 'expenses']);
+
+function assertValidEntry(coll: Collection, body: any) {
+  if (!AMOUNT_COLLECTIONS.has(coll)) return;
+  if (body == null || !('amount' in body)) return;
+  const amt = Number(body.amount);
+  if (!Number.isFinite(amt)) {
+    throw new Error('Amount must be a valid number.');
+  }
+  if (amt < 0) {
+    throw new Error('Amount cannot be negative.');
+  }
+}
+
 function makeCrud(coll: Collection) {
   return {
     list: async () => {
@@ -181,6 +196,7 @@ function makeCrud(coll: Collection) {
       return arr.sort((a: any, b: any) => (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
     },
     create: async (body: any) => serialize(async () => {
+      assertValidEntry(coll, body);
       const arr = await readColl<any>(coll);
       const item = { id: uuid(), ...body, created_at: nowIso() };
       arr.push(item);
@@ -188,6 +204,7 @@ function makeCrud(coll: Collection) {
       return item;
     }),
     update: async (id: string, body: any) => serialize(async () => {
+      assertValidEntry(coll, body);
       const arr = await readColl<any>(coll);
       const i = arr.findIndex((x: any) => x.id === id);
       if (i < 0) throw new Error('Not found');
@@ -277,14 +294,17 @@ export async function dashboard() {
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
   const drawings = payments.filter((p: any) => p.type === 'drawing')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
+  const commissionPayments = payments.filter((p: any) => p.type === 'commission_payment')
+    .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
 
   const grossProfit = +(totalSales - totalPurchases).toFixed(2);
   const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
   const netProfit = +(grossProfit - commission - drawings).toFixed(2);
 
-  const liabilities = +(totalPurchases - supplierPayments + commission).toFixed(2);
+  // Accrued commission is a liability until paid; commission payments settle it.
+  const liabilities = +(totalPurchases - supplierPayments + commission - commissionPayments).toFixed(2);
   const inventoryValue = invHistory[0] ? Number(invHistory[0].actualStock) : openingInv;
-  const cash = computeCash(openingCash, totalSales, supplierPayments, drawings);
+  const cash = computeCash(openingCash, totalSales, supplierPayments, drawings, commissionPayments);
 
   // custom (dynamic) assets & liabilities from settings
   const extraAssets = Array.isArray(s.extraAssets) ? s.extraAssets : [];
@@ -311,6 +331,8 @@ export async function dashboard() {
     openingBalance, openingInventory: openingInv, openingCash, closingBalance,
     totalPurchases: +totalPurchases.toFixed(2), totalSales: +totalSales.toFixed(2),
     grossProfit, managerCommissionPct: pct, commission, netProfit,
+    commissionPayments: +commissionPayments.toFixed(2),
+    outstandingCommission: +(commission - commissionPayments).toFixed(2),
     drawings: +drawings.toFixed(2), supplierPayments: +supplierPayments.toFixed(2),
     suppliers: suppliersCount, periodStart, salesTrend,
     extraAssets, extraLiabilities, extraAssetsTotal, extraLiabTotal, totalLiabilities,
@@ -647,31 +669,36 @@ export async function listPeriods() {
   return (await readColl<any>('periods')).sort((a: any, b: any) => (a.closed_at && b.closed_at ? (a.closed_at > b.closed_at ? -1 : a.closed_at < b.closed_at ? 1 : 0) : 0));
 }
 export async function closePeriod(actualStock: number, notes = '') {
-  const d = await dashboard();
-  const now = new Date();
-  const nowDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const period = {
-    id: uuid(), startDate: d.periodStart, endDate: nowDate,
-    openingInventory: d.openingInventory, openingCash: d.openingCash,
-    totalSales: d.totalSales, totalPurchases: d.totalPurchases,
-    grossProfit: d.grossProfit, managerCommissionPct: d.managerCommissionPct,
-    commission: d.commission, drawings: d.drawings, supplierPayments: d.supplierPayments,
-    netProfit: d.netProfit, closingInventory: actualStock, closingCash: d.cash,
-    notes, closed_at: nowIso(),
-  };
-  const periods = await readColl<any>('periods');
-  periods.push(period);
-  await writeColl('periods', periods);
+  return serialize(async () => {
+    const d = await dashboard();
+    const now = new Date();
+    const nowDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const period = {
+      id: uuid(), startDate: d.periodStart, endDate: nowDate,
+      openingInventory: d.openingInventory, openingCash: d.openingCash,
+      totalSales: d.totalSales, totalPurchases: d.totalPurchases,
+      grossProfit: d.grossProfit, managerCommissionPct: d.managerCommissionPct,
+      commission: d.commission, drawings: d.drawings, supplierPayments: d.supplierPayments,
+      netProfit: d.netProfit, closingInventory: actualStock, closingCash: d.cash,
+      notes, closed_at: nowIso(),
+    };
+    const periods = await readColl<any>('periods');
+    periods.push(period);
+    await writeColl('periods', periods);
 
-  const inv = { id: uuid(), date: nowDate, expectedStock: d.inventoryValue, actualStock, variance: +(actualStock - d.inventoryValue).toFixed(2), notes: `Period close: ${d.periodStart} → ${nowDate}`, created_at: nowIso() };
-  const invs = await readColl<any>('inventoryChecks');
-  invs.push(inv);
-  await writeColl('inventoryChecks', invs);
+    const inv = { id: uuid(), date: nowDate, expectedStock: d.inventoryValue, actualStock, variance: +(actualStock - d.inventoryValue).toFixed(2), notes: `Period close: ${d.periodStart} → ${nowDate}`, created_at: nowIso() };
+    const invs = await readColl<any>('inventoryChecks');
+    invs.push(inv);
+    await writeColl('inventoryChecks', invs);
 
-  const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-  const nextStart = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-  await updateSettings({ currentPeriodStart: nextStart, openingInventory: actualStock, openingCash: d.cash });
-  return period;
+    // The new period starts TODAY, not tomorrow. dashboard() filters date >= periodStart
+    // with no upper bound, so a transaction dated today entered right after the close is
+    // correctly picked up by the new period. Using tomorrow created a "dead zone" where
+    // same-day post-close entries were excluded from the new period AND already frozen out
+    // of the archived snapshot — silently vanishing from every report.
+    await updateSettings({ currentPeriodStart: nowDate, openingInventory: actualStock, openingCash: d.cash });
+    return period;
+  });
 }
 
 // ---------- Backup / Restore / Reset ----------
@@ -686,6 +713,19 @@ export async function exportBackup() {
   };
 }
 export async function importBackup(data: any) {
+  // Version guard: refuse backups whose schema version is newer than we understand,
+  // so a backup from a future app version can't silently corrupt current data.
+  const SUPPORTED_VERSION = 3;
+  const meta = data && typeof data === 'object' ? data._meta : undefined;
+  if (meta) {
+    if (meta.app && meta.app !== 'ledgr') {
+      throw new Error('This file is not a Ledgr backup.');
+    }
+    const v = Number(meta.version);
+    if (Number.isFinite(v) && v > SUPPORTED_VERSION) {
+      throw new Error(`This backup was made by a newer version of Ledgr (format v${v}). Please update the app before restoring.`);
+    }
+  }
   const setColl = async (name: string, val: any) => { if (Array.isArray(val)) await AsyncStorage.setItem(`ledgr:${name}`, JSON.stringify(val)); };
   await setColl('suppliers', data.suppliers);
   await setColl('bills', data.bills);

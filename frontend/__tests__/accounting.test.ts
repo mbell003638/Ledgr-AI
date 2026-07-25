@@ -120,6 +120,13 @@ describe('computeCash()', () => {
     // 2000 + 5000 - 1500 - 500 = 5000
     expect(computeCash(2000, 5000, 1500, 500)).toBe(5000);
   });
+  it('also subtracts commission payments', () => {
+    // 2000 + 5000 - 1500 - 500 - 300 = 4700
+    expect(computeCash(2000, 5000, 1500, 500, 300)).toBe(4700);
+  });
+  it('commission payments default to 0 when omitted', () => {
+    expect(computeCash(1000, 0, 0, 0)).toBe(1000);
+  });
 });
 
 describe('computeNetWorth()', () => {

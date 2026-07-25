@@ -105,9 +105,9 @@ export function computePnl(input: PnlInput): PnlResult {
   };
 }
 
-/** Cash on hand: opening + sales - supplier payments - drawings. Mirrors dashboard(). */
-export function computeCash(openingCash: number, sales: number, supplierPayments: number, drawings: number): number {
-  return round2(num(openingCash) + num(sales) - num(supplierPayments) - num(drawings));
+/** Cash on hand: opening + sales - supplier payments - drawings - commission payments. Mirrors dashboard(). */
+export function computeCash(openingCash: number, sales: number, supplierPayments: number, drawings: number, commissionPayments = 0): number {
+  return round2(num(openingCash) + num(sales) - num(supplierPayments) - num(drawings) - num(commissionPayments));
 }
 
 /** Net worth: total assets - total liabilities. */

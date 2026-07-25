@@ -7,7 +7,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 
-type PayType = "supplier_payment" | "drawing";
+type PayType = "supplier_payment" | "drawing" | "commission_payment";
 
 export default function PaymentForm() {
   const theme = useTheme();
@@ -89,7 +89,7 @@ export default function PaymentForm() {
           <Card>
             <Text style={styles.label}>Payment Type</Text>
             <View style={styles.segRowFull}>
-              {([["supplier_payment", "Supplier"], ["drawing", "Partner Drawing"]] as const).map(([v, lbl]) => (
+              {([["supplier_payment", "Supplier"], ["drawing", "Drawing"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
                 <Pressable key={v} testID={`ptype-${v}`} onPress={() => setType(v)} style={[styles.segBtnFull, type === v && styles.segBtnActive]}>
                   <Text style={[styles.segText, type === v && styles.segTextActive]}>{lbl}</Text>
                 </Pressable>
