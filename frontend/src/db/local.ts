@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { computeCogs, grossProfit as calcGross, commission as calcCommission, netProfit as calcNet, computeCash } from '../accounting';
 
 /**
  * Ledgr local database (single-user, on-device).
@@ -283,7 +284,7 @@ export async function dashboard() {
 
   const liabilities = +(totalPurchases - supplierPayments + commission).toFixed(2);
   const inventoryValue = invHistory[0] ? Number(invHistory[0].actualStock) : openingInv;
-  const cash = +(openingCash + totalSales - supplierPayments - drawings).toFixed(2);
+  const cash = computeCash(openingCash, totalSales, supplierPayments, drawings);
 
   // custom (dynamic) assets & liabilities from settings
   const extraAssets = Array.isArray(s.extraAssets) ? s.extraAssets : [];
@@ -600,10 +601,10 @@ export async function pnlRange(from: string, to: string) {
 
   // If we have a real closing count, use true COGS; otherwise fall back to purchases as COGS
   // (so profit isn't overstated before the first stock take).
-  const cogs = hasClosingCount ? +(openingStock + purchases - closingStock).toFixed(2) : +purchases.toFixed(2);
-  const grossProfit = +(revenue - cogs).toFixed(2);
-  const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
-  const netProfit = +(grossProfit - commission - totalExpenses - drawings).toFixed(2);
+  const cogs = computeCogs(openingStock, purchases, closingStock, hasClosingCount);
+  const grossProfit = calcGross(revenue, cogs);
+  const commission = calcCommission(grossProfit, pct);
+  const netProfit = calcNet(grossProfit, commission, totalExpenses, drawings);
   return {
     from, to, revenue: +revenue.toFixed(2), purchases: +purchases.toFixed(2),
     openingStock: +openingStock.toFixed(2), closingStock: +closingStock.toFixed(2), hasClosingCount,
