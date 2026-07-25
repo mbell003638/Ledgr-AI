@@ -19,6 +19,7 @@ export default function PaymentForm() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState("");
   const [partnerName, setPartnerName] = useState("");
+  const [partnerOptions, setPartnerOptions] = useState<string[]>([]);
   const [amount, setAmount] = useState("");
   const currency = "USD";
   const [method, setMethod] = useState("cash");
@@ -34,6 +35,7 @@ export default function PaymentForm() {
       setSuppliers(s);
       if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
       const st = await api.getSettings();
+      setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
       if (editId) {
         const list = await api.listPayments();
         const it = list.find((x: any) => x.id === editId);
@@ -108,6 +110,15 @@ export default function PaymentForm() {
             ) : (
               <>
                 <Text style={[styles.label, { marginTop: 12 }]}>Partner Name</Text>
+                {partnerOptions.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
+                    {partnerOptions.map((p) => (
+                      <Pressable key={p} testID={`partner-chip-${p}`} onPress={() => setPartnerName(p)} style={[styles.chip, partnerName === p && styles.chipActive]}>
+                        <Text style={[styles.chipText, partnerName === p && styles.chipTextActive]}>{p}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
                 <TextInput testID="input-partner-name" value={partnerName} onChangeText={setPartnerName} placeholder="e.g. Amit" placeholderTextColor={theme.color.muted} style={styles.input} />
               </>
             )}

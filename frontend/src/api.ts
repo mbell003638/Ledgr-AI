@@ -110,6 +110,10 @@ export const api = {
   pnl: () => db.pnl(),
   balanceSheet: () => db.balanceSheet(),
   trialBalance: () => db.trialBalance(),
+  capitalStatement: () => db.capitalStatement(),
+  drawingsHistory: () => db.drawingsHistory(),
+  monthlyProfitTrend: (months?: number) => db.monthlyProfitTrend(months),
+  assetDistribution: () => db.assetDistribution(),
   monthlySummary: (m: string) => db.monthlySummary(m),
   dailySummary: (d: string) => db.dailySummary(d),
 

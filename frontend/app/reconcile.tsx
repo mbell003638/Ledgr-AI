@@ -53,6 +53,22 @@ export default function Reconcile() {
     await runReconcile(res.assets[0].base64!, res.assets[0].mimeType || "image/jpeg");
   };
 
+  const uploadPdf = async () => {
+    try {
+      const DocumentPicker = await import("expo-document-picker");
+      const FileSystem = await import("expo-file-system");
+      const res = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
+      if (res.canceled || !res.assets?.[0]) return;
+      const uri = res.assets[0].uri;
+      const file = new FileSystem.File(uri);
+      const b64 = file.base64Sync();
+      setPhoto("");
+      await runReconcile(b64, "application/pdf");
+    } catch (e: any) {
+      setError(e.message || "Could not read PDF");
+    }
+  };
+
   const importMissing = async (e: any) => {
     if (!supplierId) return;
     try {
@@ -98,8 +114,12 @@ export default function Reconcile() {
               <Text style={styles.actionText}>Scan</Text>
             </Pressable>
             <Pressable testID="btn-upload-stmt" onPress={upload} disabled={busy} style={[styles.actionBtn, { flex: 1, backgroundColor: theme.color.brandSecondary }]}>
-              <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-              <Text style={styles.actionText}>Upload</Text>
+              <Ionicons name="image-outline" size={18} color="#fff" />
+              <Text style={styles.actionText}>Image</Text>
+            </Pressable>
+            <Pressable testID="btn-upload-pdf" onPress={uploadPdf} disabled={busy} style={[styles.actionBtn, { flex: 1, backgroundColor: theme.color.brandTertiary || theme.color.brandSecondary }]}>
+              <Ionicons name="document-outline" size={18} color="#fff" />
+              <Text style={styles.actionText}>PDF</Text>
             </Pressable>
           </View>
           {photo ? <Image source={{ uri: `data:image/jpeg;base64,${photo}` }} style={styles.preview} /> : null}
@@ -165,7 +185,7 @@ export default function Reconcile() {
                 <View key={o.id} style={[styles.row, { borderLeftColor: theme.color.error }]}>
                   <Ionicons name="close-circle" size={18} color={theme.color.error} />
                   <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={styles.rowTitle}>{shortDate(o.date)} • {fmt(o.amount, o.currency)}</Text>
+                    <Text style={styles.rowTitle}>{shortDate(o.date)} • {fmt(o.amount)}</Text>
                     <Text style={styles.rowSub}>{o.notes || o.invoiceNo || o.reference || "—"}</Text>
                   </View>
                 </View>

@@ -14,6 +14,10 @@ export default function SettingsScreen() {
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
   const [commissionPct, setCommissionPct] = useState("");
+  const [openingCapital, setOpeningCapital] = useState("");
+  const [partnerNames, setPartnerNames] = useState<string[]>([]);
+  const [extraAssets, setExtraAssets] = useState<{ name: string; amount: string }[]>([]);
+  const [extraLiabilities, setExtraLiabilities] = useState<{ name: string; amount: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -29,6 +33,20 @@ export default function SettingsScreen() {
       setKey(localKey || s.googleApiKey || "");
       setModelName(localModel);
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
+      setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
+      setPartnerNames(Array.isArray(s.partnerNames) ? s.partnerNames : []);
+      setExtraAssets(
+        (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
+          name: String(a?.name ?? ""),
+          amount: a?.amount != null ? String(a.amount) : "",
+        }))
+      );
+      setExtraLiabilities(
+        (Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({
+          name: String(l?.name ?? ""),
+          amount: l?.amount != null ? String(l.amount) : "",
+        }))
+      );
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -43,6 +61,14 @@ export default function SettingsScreen() {
       await api.updateSettings({
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+        openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
+        partnerNames: partnerNames.map((n) => n.trim()).filter(Boolean),
+        extraAssets: extraAssets
+          .map((a) => ({ name: a.name.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
+          .filter((a) => a.name),
+        extraLiabilities: extraLiabilities
+          .map((l) => ({ name: l.name.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
+          .filter((l) => l.name),
       });
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
@@ -107,6 +133,21 @@ export default function SettingsScreen() {
       setStatus({ ok: false, msg: e.message || "Reset failed" });
     } finally { setResetting(false); }
   };
+
+  const updatePartner = (i: number, v: string) =>
+    setPartnerNames((prev) => prev.map((n, idx) => (idx === i ? v : n)));
+  const addPartner = () => setPartnerNames((prev) => [...prev, ""]);
+  const removePartner = (i: number) => setPartnerNames((prev) => prev.filter((_, idx) => idx !== i));
+
+  const updateAsset = (i: number, field: "name" | "amount", v: string) =>
+    setExtraAssets((prev) => prev.map((a, idx) => (idx === i ? { ...a, [field]: v } : a)));
+  const addAsset = () => setExtraAssets((prev) => [...prev, { name: "", amount: "" }]);
+  const removeAsset = (i: number) => setExtraAssets((prev) => prev.filter((_, idx) => idx !== i));
+
+  const updateLiability = (i: number, field: "name" | "amount", v: string) =>
+    setExtraLiabilities((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: v } : l)));
+  const addLiability = () => setExtraLiabilities((prev) => [...prev, { name: "", amount: "" }]);
+  const removeLiability = (i: number) => setExtraLiabilities((prev) => prev.filter((_, idx) => idx !== i));
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -224,6 +265,123 @@ export default function SettingsScreen() {
                 placeholder="e.g. 10"
                 placeholderTextColor={theme.color.muted}
               />
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Opening Capital (combined)</Text>
+              <Text style={styles.hint}>Total initial investment by all partners (USD).</Text>
+              <TextInput
+                testID="input-opening-capital"
+                value={openingCapital}
+                onChangeText={setOpeningCapital}
+                keyboardType="decimal-pad"
+                style={styles.input}
+                placeholder="e.g. 5000"
+                placeholderTextColor={theme.color.muted}
+              />
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Partners</Text>
+              <Text style={styles.hint}>Names used to attribute drawings. Add or remove partners as needed.</Text>
+              {partnerNames.map((name, i) => (
+                <View key={`partner-${i}`} style={styles.entryRow}>
+                  <TextInput
+                    testID={`input-partner-${i}`}
+                    value={name}
+                    onChangeText={(v) => updatePartner(i, v)}
+                    placeholder="Partner name"
+                    placeholderTextColor={theme.color.muted}
+                    autoCapitalize="words"
+                    style={[styles.input, styles.entryInput]}
+                  />
+                  <Pressable
+                    testID={`btn-remove-partner-${i}`}
+                    onPress={() => removePartner(i)}
+                    style={styles.removeBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable testID="btn-add-partner" onPress={addPartner} style={styles.addBtn}>
+                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                <Text style={styles.addText}>Add Partner</Text>
+              </Pressable>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Custom Assets</Text>
+              <Text style={styles.hint}>Extra assets to include on the balance sheet (e.g. Van, Equipment).</Text>
+              {extraAssets.map((a, i) => (
+                <View key={`asset-${i}`} style={styles.entryRow}>
+                  <TextInput
+                    testID={`input-asset-name-${i}`}
+                    value={a.name}
+                    onChangeText={(v) => updateAsset(i, "name", v)}
+                    placeholder="Name"
+                    placeholderTextColor={theme.color.muted}
+                    style={[styles.input, styles.entryInput]}
+                  />
+                  <TextInput
+                    testID={`input-asset-amount-${i}`}
+                    value={a.amount}
+                    onChangeText={(v) => updateAsset(i, "amount", v)}
+                    keyboardType="decimal-pad"
+                    placeholder="Amount"
+                    placeholderTextColor={theme.color.muted}
+                    style={[styles.input, styles.entryAmount]}
+                  />
+                  <Pressable
+                    testID={`btn-remove-asset-${i}`}
+                    onPress={() => removeAsset(i)}
+                    style={styles.removeBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable testID="btn-add-asset" onPress={addAsset} style={styles.addBtn}>
+                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                <Text style={styles.addText}>Add Asset</Text>
+              </Pressable>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Custom Liabilities</Text>
+              <Text style={styles.hint}>Extra liabilities to include on the balance sheet (e.g. Loan, Rent due).</Text>
+              {extraLiabilities.map((l, i) => (
+                <View key={`liability-${i}`} style={styles.entryRow}>
+                  <TextInput
+                    testID={`input-liability-name-${i}`}
+                    value={l.name}
+                    onChangeText={(v) => updateLiability(i, "name", v)}
+                    placeholder="Name"
+                    placeholderTextColor={theme.color.muted}
+                    style={[styles.input, styles.entryInput]}
+                  />
+                  <TextInput
+                    testID={`input-liability-amount-${i}`}
+                    value={l.amount}
+                    onChangeText={(v) => updateLiability(i, "amount", v)}
+                    keyboardType="decimal-pad"
+                    placeholder="Amount"
+                    placeholderTextColor={theme.color.muted}
+                    style={[styles.input, styles.entryAmount]}
+                  />
+                  <Pressable
+                    testID={`btn-remove-liability-${i}`}
+                    onPress={() => removeLiability(i)}
+                    style={styles.removeBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable testID="btn-add-liability" onPress={addLiability} style={styles.addBtn}>
+                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                <Text style={styles.addText}>Add Liability</Text>
+              </Pressable>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md, borderColor: theme.color.error }}>
@@ -348,4 +506,20 @@ function makeStyles(theme: any) { return StyleSheet.create({
   resetCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
   resetConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
   resetConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  entryRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  entryInput: { flex: 1 },
+  entryAmount: { width: 110 },
+  removeBtn: {
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.brandPrimary, marginTop: theme.spacing.md,
+  },
+  addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
 }); }

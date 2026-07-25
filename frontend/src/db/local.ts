@@ -62,6 +62,10 @@ export async function getSettings() {
     currentPeriodStart: s.currentPeriodStart ?? '1970-01-01',
     openingInventory: s.openingInventory ?? 0.0,
     openingCash: s.openingCash ?? 0.0,
+    openingCapital: s.openingCapital ?? 0.0,
+    partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'],
+    extraAssets: Array.isArray(s.extraAssets) ? s.extraAssets : [],
+    extraLiabilities: Array.isArray(s.extraLiabilities) ? s.extraLiabilities : [],
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
@@ -238,10 +242,18 @@ export async function dashboard() {
   const liabilities = +(totalPurchases - supplierPayments + commission).toFixed(2);
   const inventoryValue = invHistory[0] ? Number(invHistory[0].actualStock) : openingInv;
   const cash = +(openingCash + totalSales - supplierPayments - drawings).toFixed(2);
-  const assets = +(cash + inventoryValue).toFixed(2);
+
+  // custom (dynamic) assets & liabilities from settings
+  const extraAssets = Array.isArray(s.extraAssets) ? s.extraAssets : [];
+  const extraLiabilities = Array.isArray(s.extraLiabilities) ? s.extraLiabilities : [];
+  const extraAssetsTotal = +extraAssets.reduce((sum: number, a: any) => sum + (Number(a.amount) || 0), 0).toFixed(2);
+  const extraLiabTotal = +extraLiabilities.reduce((sum: number, l: any) => sum + (Number(l.amount) || 0), 0).toFixed(2);
+
+  const assets = +(cash + inventoryValue + extraAssetsTotal).toFixed(2);
+  const totalLiabilities = +(liabilities + extraLiabTotal).toFixed(2);
   const openingBalance = +(openingCash + openingInv).toFixed(2);
   const closingBalance = +assets.toFixed(2);
-  const netWorth = +(assets - liabilities).toFixed(2);
+  const netWorth = +(assets - totalLiabilities).toFixed(2);
 
   const trend: Record<string, number> = {};
   for (const x of sales) {
@@ -258,6 +270,8 @@ export async function dashboard() {
     grossProfit, managerCommissionPct: pct, commission, netProfit,
     drawings: +drawings.toFixed(2), supplierPayments: +supplierPayments.toFixed(2),
     suppliers: suppliersCount, periodStart, salesTrend,
+    extraAssets, extraLiabilities, extraAssetsTotal, extraLiabTotal, totalLiabilities,
+    openingCapital: Number(s.openingCapital || 0),
   };
 }
 
@@ -273,8 +287,17 @@ export async function pnl() {
 export async function balanceSheet() {
   const d = await dashboard();
   return {
-    assets: { cash: d.cash, inventory: d.inventoryValue, total: d.assets },
-    liabilities: { suppliersPayable: d.liabilities, total: d.liabilities },
+    assets: {
+      cash: d.cash,
+      inventory: d.inventoryValue,
+      extra: d.extraAssets,
+      total: d.assets,
+    },
+    liabilities: {
+      suppliersPayable: d.liabilities,
+      extra: d.extraLiabilities,
+      total: d.totalLiabilities,
+    },
     equity: d.netWorth,
   };
 }
@@ -292,6 +315,83 @@ export async function trialBalance() {
       { account: 'Suppliers Payable', amount: d.liabilities },
     ],
   };
+}
+
+// Partner Capital Statement: combined opening capital + net profit - per-partner drawings
+export async function capitalStatement() {
+  const s = await getSettings();
+  const d = await dashboard();
+  const periodStart = d.periodStart;
+  const payments = (await readColl<any>('payments')).filter((p: any) => (p.date || '') >= periodStart);
+  const drawingPayments = payments.filter((p: any) => p.type === 'drawing');
+
+  const partnerNames: string[] = Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'];
+  // per-partner drawings (match on partnerName, case-insensitive; unmatched -> 'Other')
+  const perPartner: Record<string, number> = {};
+  for (const name of partnerNames) perPartner[name] = 0;
+  let otherDrawings = 0;
+  for (const p of drawingPayments) {
+    const amt = toUsd(p.amount);
+    const pn = (p.partnerName || '').trim();
+    const matched = partnerNames.find((n) => n.toLowerCase() === pn.toLowerCase());
+    if (matched) perPartner[matched] += amt;
+    else otherDrawings += amt;
+  }
+
+  const openingCapital = Number(s.openingCapital || 0);
+  const netProfit = d.netProfit;
+  const totalDrawings = d.drawings;
+  const closingCapital = +(openingCapital + netProfit - totalDrawings).toFixed(2);
+
+  return {
+    openingCapital: +openingCapital.toFixed(2),
+    netProfit,
+    totalDrawings,
+    closingCapital,
+    partners: partnerNames.map((name) => ({ name, drawings: +(perPartner[name] || 0).toFixed(2) })),
+    otherDrawings: +otherDrawings.toFixed(2),
+  };
+}
+
+// Drawings history with partner attribution (most recent first)
+export async function drawingsHistory() {
+  const all = await readColl<any>('payments');
+  const draws = all.filter((p: any) => p.type === 'drawing')
+    .sort((a: any, b: any) => (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
+  return draws.map((p: any) => ({
+    id: p.id,
+    date: p.date,
+    amount: +toUsd(p.amount).toFixed(2),
+    partnerName: p.partnerName || 'Unknown',
+    notes: p.notes || '',
+  }));
+}
+
+// Monthly profit trend for the last N months (chart data)
+export async function monthlyProfitTrend(months = 6) {
+  const now = new Date();
+  const result: { month: string; label: string; profit: number }[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const month = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    const ms = await monthlySummary(month);
+    result.push({ month, label: dt.toLocaleString('en', { month: 'short' }), profit: ms.netProfit });
+  }
+  return result;
+}
+
+// Asset distribution for pie chart
+export async function assetDistribution() {
+  const d = await dashboard();
+  const slices = [
+    { label: 'Cash', value: Math.max(0, d.cash) },
+    { label: 'Inventory', value: Math.max(0, d.inventoryValue) },
+  ];
+  for (const a of d.extraAssets || []) {
+    const v = Number(a.amount) || 0;
+    if (v > 0) slices.push({ label: a.name || 'Other', value: v });
+  }
+  return slices.filter((s) => s.value > 0);
 }
 
 export async function monthlySummary(month: string) {

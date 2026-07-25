@@ -72,6 +72,13 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: theme.spacing.lg,
       borderWidth: 1,
       borderColor: theme.color.border,
+      // Professional elevation and shadow
+      elevation: 2,
+      shadowColor: theme.color.muted,
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 1 },
+      marginVertical: theme.spacing.xs,
     },
     kpi: {
       flex: 1,
@@ -80,6 +87,12 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: theme.spacing.lg,
       borderWidth: 1,
       borderColor: theme.color.border,
+      // Consistent subtle shadow
+      elevation: 1,
+      shadowColor: theme.color.muted,
+      shadowOpacity: 0.06,
+      shadowRadius: 3,
+      shadowOffset: { width: 0, height: 0.5 },
     },
     kpiLabel: { fontSize: 12, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
     kpiValue: { fontSize: 22, fontWeight: "700", color: theme.color.onSurface, marginTop: 6 },

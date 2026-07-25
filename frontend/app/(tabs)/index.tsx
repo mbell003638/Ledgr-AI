@@ -312,6 +312,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
     borderColor: theme.color.border,
     minHeight: 108,
     justifyContent: "space-between",
+    backgroundColor: theme.color.surfaceSecondary,
+    marginVertical: theme.spacing.xs,
+    elevation: 1,
+    shadowColor: theme.color.muted,
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
   },
   tileIcon: {
     width: 40, height: 40, borderRadius: 20,
