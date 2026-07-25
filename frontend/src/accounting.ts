@@ -15,47 +15,43 @@
  *   Capital      = OpeningCapital + NetProfit - Drawings
  */
 
+import { num as moneyNum, round2 as m2, sumMoney, addMoney, subMoney, pctOf } from './money';
+
 /** Coerce any value to a finite number, defaulting to 0 (mirrors toUsd in local.ts). */
-export function num(v: any): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
+export const num = moneyNum;
 
-/** Round to 2 decimal places the same way local.ts does (+x.toFixed(2)). */
-export function round2(n: number): number {
-  return +num(n).toFixed(2);
-}
+/** Round to the nearest cent using drift-safe integer-cent math. */
+export const round2 = m2;
 
-/** Sum a list of {amount} records (or raw numbers) safely. */
+/** Sum a list of {amount} records (or raw numbers) safely (drift-safe). */
 export function sumAmounts(items: Array<{ amount?: any } | number> | null | undefined): number {
-  if (!Array.isArray(items)) return 0;
-  return items.reduce<number>((s, it) => s + num(typeof it === 'number' ? it : it?.amount), 0);
+  return sumMoney(items);
 }
 
 /** Periodic-inventory cost of goods sold. Falls back to purchases when no closing count exists. */
 export function computeCogs(opening: number, purchases: number, closing: number, hasClosingCount: boolean): number {
   return hasClosingCount
-    ? round2(num(opening) + num(purchases) - num(closing))
+    ? subMoney(addMoney(num(opening), num(purchases)), num(closing))
     : round2(num(purchases));
 }
 
 export function grossProfit(sales: number, cogs: number): number {
-  return round2(num(sales) - num(cogs));
+  return subMoney(num(sales), num(cogs));
 }
 
 /** Commission only accrues on positive gross profit. */
 export function commission(gross: number, pct: number): number {
   const g = num(gross);
-  return g > 0 ? round2(g * num(pct) / 100) : 0;
+  return g > 0 ? pctOf(g, num(pct)) : 0;
 }
 
 export function netProfit(gross: number, commissionAmt: number, expenses: number, drawings: number): number {
-  return round2(num(gross) - num(commissionAmt) - num(expenses) - num(drawings));
+  return subMoney(num(gross), num(commissionAmt), num(expenses), num(drawings));
 }
 
 /** Closing capital for the partner capital statement. */
 export function closingCapital(openingCapital: number, netProfitAmt: number, totalDrawings: number): number {
-  return round2(num(openingCapital) + num(netProfitAmt) - num(totalDrawings));
+  return subMoney(addMoney(num(openingCapital), num(netProfitAmt)), num(totalDrawings));
 }
 
 /** Equal split of net profit across N partners (guards against divide-by-zero). */
@@ -107,10 +103,10 @@ export function computePnl(input: PnlInput): PnlResult {
 
 /** Cash on hand: opening + sales - supplier payments - drawings - commission payments. Mirrors dashboard(). */
 export function computeCash(openingCash: number, sales: number, supplierPayments: number, drawings: number, commissionPayments = 0): number {
-  return round2(num(openingCash) + num(sales) - num(supplierPayments) - num(drawings) - num(commissionPayments));
+  return subMoney(addMoney(num(openingCash), num(sales)), num(supplierPayments), num(drawings), num(commissionPayments));
 }
 
 /** Net worth: total assets - total liabilities. */
 export function computeNetWorth(assets: number, liabilities: number): number {
-  return round2(num(assets) - num(liabilities));
+  return subMoney(num(assets), num(liabilities));
 }

@@ -28,8 +28,8 @@ describe('num()', () => {
 });
 
 describe('round2()', () => {
-  it('rounds to 2 decimals', () => {
-    expect(round2(1.005)).toBeCloseTo(1.0, 2); // JS float edge, matches +toFixed(2)
+  it('rounds to 2 decimals (drift-safe, half away from zero)', () => {
+    expect(round2(1.005)).toBe(1.01); // integer-cent math rounds the .005 edge up
     expect(round2(10.126)).toBe(10.13);
     expect(round2(10)).toBe(10);
   });
