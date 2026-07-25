@@ -18,7 +18,7 @@ const BIZ_TYPES: { key: BizType; label: string; icon: string; desc: string; taxL
   { key: "vendor", label: "Vendor / Trader", icon: "cart-outline", desc: "Market stall, wholesale, distribution", taxLabel: "GST" },
 ];
 
-const CURRENCIES = ["USD", "INR", "GBP", "EUR", "AED", "NGN", "KES", "ZAR", "BDT", "PKR"];
+const CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED", "CAD", "AUD", "NGN", "KES", "ZAR", "BDT", "PKR", "PHP", "MXN", "BRL"];
 
 export default function Onboarding() {
   const theme = useTheme();

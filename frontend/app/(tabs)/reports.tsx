@@ -183,7 +183,7 @@ export default function ReportsScreen() {
       <ScreenHeader title="Reports" subtitle="Financial statements" />
 
       {/* Date range presets */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 44, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 6, paddingVertical: 6 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 48, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 8, paddingVertical: 8 }}>
         {RANGE_PRESETS.map((p) => (
           <Pressable key={p} onPress={() => applyPreset(p)} style={[styles.seg, rangePresetSel === p && styles.segActive]}>
             <Text style={[styles.segText, rangePresetSel === p && styles.segTextActive]}>{p}</Text>
@@ -499,11 +499,11 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   segScroll: { maxHeight: 56, flexGrow: 0 },
   segRow: {
-    flexDirection: "row", paddingHorizontal: theme.spacing.lg, gap: 8,
+    flexDirection: "row", paddingHorizontal: theme.spacing.lg, gap: 10,
     paddingVertical: theme.spacing.sm,
   },
   seg: {
-    paddingVertical: 8, paddingHorizontal: 16, borderRadius: theme.radius.md,
+    paddingVertical: 10, paddingHorizontal: 18, borderRadius: theme.radius.md,
     backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: "transparent",
   },
   segActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },

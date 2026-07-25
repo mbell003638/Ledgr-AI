@@ -22,6 +22,9 @@ export default function SettingsScreen() {
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [commissionPct, setCommissionPct] = useState("");
   const [openingCapital, setOpeningCapital] = useState("");
+  const [openingCash, setOpeningCash] = useState("");
+  const [openingInventory, setOpeningInventory] = useState("");
+  const [periodStart, setPeriodStart] = useState("");
   const [partnerNames, setPartnerNames] = useState<string[]>([]);
   const [extraAssets, setExtraAssets] = useState<{ name: string; amount: string }[]>([]);
   const [extraLiabilities, setExtraLiabilities] = useState<{ name: string; amount: string }[]>([]);
@@ -48,6 +51,9 @@ export default function SettingsScreen() {
       setBaseUrl(cfg.baseUrl || "");
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
+      setOpeningCash(s.openingCash ? String(s.openingCash) : "");
+      setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
+      setPeriodStart(s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : "");
       setPartnerNames(Array.isArray(s.partnerNames) ? s.partnerNames : []);
       setExtraAssets(
         (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
@@ -95,6 +101,9 @@ export default function SettingsScreen() {
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
+        openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
+        openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
+        currentPeriodStart: periodStart.trim() || "1970-01-01",
         partnerNames: partnerNames.map((n) => n.trim()).filter(Boolean),
         extraAssets: extraAssets
           .map((a) => ({ name: a.name.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
@@ -373,6 +382,48 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Opening Balances</Text>
+              <Text style={styles.hint}>Cash-in-hand and stock value at the start of your books. Used as the base for Cash and Inventory.</Text>
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Opening Cash</Text>
+              <TextInput
+                testID="input-opening-cash"
+                value={openingCash}
+                onChangeText={setOpeningCash}
+                keyboardType="decimal-pad"
+                style={styles.input}
+                placeholder="e.g. 2000 (cash at home / till)"
+                placeholderTextColor={theme.color.muted}
+              />
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Opening Inventory Value</Text>
+              <TextInput
+                testID="input-opening-inventory"
+                value={openingInventory}
+                onChangeText={setOpeningInventory}
+                keyboardType="decimal-pad"
+                style={styles.input}
+                placeholder="e.g. 15000 (stock on hand)"
+                placeholderTextColor={theme.color.muted}
+              />
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Current Period Start (YYYY-MM-DD)</Text>
+              <Text style={styles.hint}>Reports and the dashboard count entries on/after this date. Leave blank to show ALL entries (recommended if figures look missing).</Text>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <TextInput
+                  testID="input-period-start"
+                  value={periodStart}
+                  onChangeText={setPeriodStart}
+                  autoCapitalize="none"
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Blank = all data"
+                  placeholderTextColor={theme.color.muted}
+                />
+                <Pressable testID="btn-clear-period" onPress={() => setPeriodStart("")} style={styles.addBtn}>
+                  <Ionicons name="refresh-outline" size={18} color={theme.color.brandPrimary} />
+                  <Text style={styles.addText}>Show All</Text>
+                </Pressable>
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Partners</Text>
               <Text style={styles.hint}>Names used to attribute drawings. Add or remove partners as needed.</Text>
               {partnerNames.map((name, i) => (
@@ -527,14 +578,14 @@ export default function SettingsScreen() {
             <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Currency</Text>
               <Text style={styles.hint}>Used across all reports and entries.</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
                 {CURRENCIES.map((c) => (
                   <Pressable
                     key={c.code}
                     onPress={() => setCurrency(c.code)}
-                    style={[styles.modeBtn, currency === c.code && styles.modeBtnActive, { paddingHorizontal: 10 }]}
+                    style={[styles.currencyChip, currency === c.code && styles.currencyChipActive]}
                   >
-                    <Text style={[styles.modeText, currency === c.code && styles.modeTextActive]}>{c.symbol} {c.code}</Text>
+                    <Text style={[styles.currencyChipText, currency === c.code && styles.currencyChipTextActive]}>{c.symbol} {c.code}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -683,6 +734,15 @@ function makeStyles(theme: any) { return StyleSheet.create({
   modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   modeTextActive: { color: theme.color.onBrandPrimary },
+  currencyChip: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+    minWidth: 88,
+  },
+  currencyChipActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  currencyChipText: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+  currencyChipTextActive: { color: theme.color.onBrandPrimary },
   backupRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.md },
   backupBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,

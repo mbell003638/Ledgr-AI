@@ -87,6 +87,8 @@ function ThemedStack() {
         <Stack.Screen name="bill-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="supplier-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="sale-form" options={{ presentation: "modal" }} />
+        <Stack.Screen name="sales" options={{ presentation: "card" }} />
+        <Stack.Screen name="assets" options={{ presentation: "card" }} />
         <Stack.Screen name="payment-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="inventory-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
