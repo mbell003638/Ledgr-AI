@@ -52,6 +52,9 @@ export default function DebtorsScreen() {
   const [addNotes, setAddNotes] = useState("");
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState("");
+  // Edit an existing debtor (reuses the add fields; editId != null = edit mode).
+  const [editId, setEditId] = useState<string | null>(null);
+  const [deletingDebtor, setDeletingDebtor] = useState(false);
 
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState("");
@@ -145,11 +148,63 @@ export default function DebtorsScreen() {
     if (!addName.trim()) { setAddError("Name is required"); return; }
     setAddSaving(true); setAddError("");
     try {
-      await api.createDebtor({ name: addName.trim(), phone: addPhone.trim(), email: addEmail.trim(), notes: addNotes.trim() });
-      setShowAdd(false); setAddName(""); setAddPhone(""); setAddEmail(""); setAddNotes("");
+      const payload = { name: addName.trim(), phone: addPhone.trim(), email: addEmail.trim(), notes: addNotes.trim() };
+      if (editId) {
+        await api.updateDebtor(editId, payload);
+        // Keep the open detail view in sync with the edit.
+        setSelected((prev) => (prev && prev.id === editId ? { ...prev, ...payload } : prev));
+      } else {
+        await api.createDebtor(payload);
+      }
+      setShowAdd(false); setEditId(null);
+      setAddName(""); setAddPhone(""); setAddEmail(""); setAddNotes("");
       await load();
     } catch (e: any) { setAddError(e.message); }
     finally { setAddSaving(false); }
+  };
+
+  // Open the form pre-filled to edit an existing customer.
+  const openEdit = (d: Debtor) => {
+    setEditId(d.id);
+    setAddName(d.name || "");
+    setAddPhone(d.phone || "");
+    setAddEmail((d as any).email || "");
+    setAddNotes((d as any).notes || "");
+    setAddError("");
+    setShowAdd(true);
+  };
+
+  // Delete a customer. Blocked if they still owe money, to protect the books;
+  // the user must settle/clear the balance first.
+  const deleteDebtor = (d: Debtor) => {
+    const bal = d.balance ?? 0;
+    if (Math.abs(bal) > 0.009) {
+      Alert.alert(
+        "Can't delete yet",
+        `${d.name} still has an outstanding balance of ${currency}${bal.toFixed(2)}. Settle or clear it first (record payment / credit note), then delete.`,
+      );
+      return;
+    }
+    Alert.alert(
+      "Delete customer?",
+      `Remove ${d.name}? This cannot be undone. Any linked invoice history stays in Invoices.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete", style: "destructive",
+          onPress: async () => {
+            setDeletingDebtor(true);
+            try {
+              await api.deleteDebtor(d.id);
+              setSelected(null);
+              await load();
+            } catch (e: any) {
+              Alert.alert("Delete failed", e.message || "Could not delete");
+            } finally { setDeletingDebtor(false); }
+          },
+        },
+      ],
+    );
   };
 
   const recordPayment = async () => {
@@ -195,8 +250,10 @@ export default function DebtorsScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerBar}>
           <Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
-          <Text style={styles.headerTitle}>Debtor Detail</Text>
-          <View style={{ width: 26 }} />
+          <Text style={styles.headerTitle}>Customer Detail</Text>
+          <Pressable testID="btn-edit-debtor" onPress={() => openEdit(selected)} hitSlop={10}>
+            <Ionicons name="create-outline" size={24} color={theme.color.brandPrimary} />
+          </Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
           <Card>
@@ -264,6 +321,14 @@ export default function DebtorsScreen() {
                   <Text style={styles.actionText}>Email Reminder</Text>
                 </Pressable>
               ) : null}
+              <Pressable testID="btn-delete-debtor" onPress={() => deleteDebtor(selected)} disabled={deletingDebtor} style={[styles.actionBtn, { backgroundColor: theme.color.error }]}>
+                {deletingDebtor ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Ionicons name="trash-outline" size={16} color="#fff" />
+                    <Text style={styles.actionText}>Delete Customer</Text>
+                  </>
+                )}
+              </Pressable>
             </View>
           </Card>
 
@@ -404,8 +469,8 @@ export default function DebtorsScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <View style={styles.modalHeader}>
-                <Text style={styles.headerTitle}>Add Debtor</Text>
-                <Pressable onPress={() => setShowAdd(false)}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
+                <Text style={styles.headerTitle}>{editId ? "Edit Customer" : "Add Customer"}</Text>
+                <Pressable onPress={() => { setShowAdd(false); setEditId(null); }}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
               </View>
               <Text style={styles.label}>Name *</Text>
               <TextInput value={addName} onChangeText={setAddName} placeholder="Full name" placeholderTextColor={theme.color.muted} style={styles.input} />

@@ -186,3 +186,42 @@ describe('migrateFromAsyncStorage — non-destructive one-time import', () => {
     }
   });
 });
+
+describe('concurrent writes (resetAll regression)', () => {
+  // Reproduces the "cannot start a transaction within a transaction" crash:
+  // resetAll() fires many writeColl() through Promise.all on one connection.
+  // The tx mutex must serialize them so BEGINs never nest.
+  it('runs many overlapping writeColl calls without nesting BEGIN', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const colls: (typeof COLLECTIONS[number])[] = [
+        'sales', 'bills', 'payments', 'expenses', 'debtors',
+        'invoices', 'quotes', 'receipts', 'cashEntries', 'suppliers',
+      ];
+      // Fire them ALL at once — this is exactly what resetAll does.
+      await expect(
+        Promise.all(colls.map((c) => writeColl(runner, c, [{ id: `${c}-1`, date: '2026-01-01', amount: 1 }])))
+      ).resolves.toBeDefined();
+      // Every collection got its row (serialized, not lost).
+      for (const c of colls) {
+        expect(await readColl(runner, c)).toHaveLength(1);
+      }
+    } finally {
+      close();
+    }
+  });
+
+  it('a failing write does not wedge the queue for later writes', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      // Writing to a non-existent table rejects; the next write must still work.
+      await expect(writeColl(runner, 'not_a_table' as any, [{ id: 'x' }])).rejects.toBeDefined();
+      await writeColl(runner, 'sales', [{ id: 's-after', date: '2026-01-01', amount: 5 }]);
+      expect(await readColl(runner, 'sales')).toHaveLength(1);
+    } finally {
+      close();
+    }
+  });
+});

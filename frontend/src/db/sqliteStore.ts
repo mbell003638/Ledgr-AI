@@ -11,6 +11,21 @@
 
 import { SqlRunner, CollectionName, initSchema } from './schema';
 
+/**
+ * Transaction mutex. SQLite (via expo-sqlite) uses a SINGLE connection, so two
+ * overlapping BEGIN…COMMIT blocks throw "cannot start a transaction within a
+ * transaction". Callers like resetAll() fire many writeColl() calls through
+ * Promise.all(); without serialization their BEGINs interleave and crash.
+ * We chain every transactional write onto one promise so they run one-at-a-time.
+ */
+let txChain: Promise<any> = Promise.resolve();
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const next = txChain.then(fn, fn);
+  // Keep the chain alive but swallow errors so one failure can't wedge the queue.
+  txChain = next.catch(() => {});
+  return next;
+}
+
 /** Read every record in a collection as parsed objects. */
 export async function readColl<T = any>(db: SqlRunner, coll: CollectionName): Promise<T[]> {
   const rows = await db.all<{ data: string }>(`SELECT data FROM ${coll}`);
@@ -30,23 +45,26 @@ export async function readColl<T = any>(db: SqlRunner, coll: CollectionName): Pr
  * Replace the entire contents of a collection with `arr`, atomically.
  * Mirrors writeColl(coll, arr) semantics from the AsyncStorage layer (full
  * overwrite), but wrapped in a transaction so a mid-write failure can't leave
- * the table half-updated.
+ * the table half-updated. Serialized via runExclusive so concurrent callers
+ * (e.g. resetAll's Promise.all) never nest BEGIN statements.
  */
 export async function writeColl<T = any>(db: SqlRunner, coll: CollectionName, arr: T[]): Promise<void> {
-  await db.exec('BEGIN');
-  try {
-    await db.run(`DELETE FROM ${coll}`);
-    for (const item of arr) {
-      const rec: any = item;
-      const id = rec?.id != null ? String(rec.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const date = rec?.date != null ? String(rec.date) : (rec?.created_at != null ? String(rec.created_at) : null);
-      await db.run(`INSERT INTO ${coll}(id, date, data) VALUES(?, ?, ?)`, [id, date, JSON.stringify(rec)]);
+  return runExclusive(async () => {
+    await db.exec('BEGIN');
+    try {
+      await db.run(`DELETE FROM ${coll}`);
+      for (const item of arr) {
+        const rec: any = item;
+        const id = rec?.id != null ? String(rec.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const date = rec?.date != null ? String(rec.date) : (rec?.created_at != null ? String(rec.created_at) : null);
+        await db.run(`INSERT INTO ${coll}(id, date, data) VALUES(?, ?, ?)`, [id, date, JSON.stringify(rec)]);
+      }
+      await db.exec('COMMIT');
+    } catch (e) {
+      try { await db.exec('ROLLBACK'); } catch { /* nothing to roll back */ }
+      throw e;
     }
-    await db.exec('COMMIT');
-  } catch (e) {
-    await db.exec('ROLLBACK');
-    throw e;
-  }
+  });
 }
 
 /** Read the settings document (single JSON row under key 'main'). */
