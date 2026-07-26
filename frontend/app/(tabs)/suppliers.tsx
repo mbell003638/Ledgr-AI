@@ -29,7 +29,7 @@ export default function SuppliersScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerRow}>
-        <ScreenHeader title="Partners" subtitle={`${items.length} supplier${items.length === 1 ? "" : "s"}`} />
+        <ScreenHeader title="Parties" subtitle={`${items.length} supplier${items.length === 1 ? "" : "s"}`} />
         <Pressable
           testID="btn-add-supplier"
           onPress={() => router.push("/supplier-form")}

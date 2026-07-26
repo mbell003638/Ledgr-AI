@@ -25,8 +25,23 @@ type Invoice = {
   total: number; paidAt?: string;
 };
 
+// Robust line accessors: older invoices (from the quick sale form) stored the
+// unit price under `price` instead of `rate`, and some rows may be missing
+// numbers entirely. Coerce everything to a safe number so rendering can never
+// crash on `.toFixed` of undefined.
+const lineRate = (l: any): number => Number(l?.rate ?? l?.price ?? 0) || 0;
+const lineQty = (l: any): number => Number(l?.qty ?? 1) || 0;
+const lineAmt = (l: any): number => lineQty(l) * lineRate(l);
+const invTotal = (inv: any): number => {
+  const t = Number(inv?.total);
+  if (Number.isFinite(t)) return t;
+  const sub = (inv?.lines || []).reduce((s: number, l: any) => s + lineAmt(l), 0);
+  const rate = Number(inv?.taxRate) || 0;
+  return +(sub + sub * rate / 100).toFixed(2);
+};
+
 function calcTotal(lines: InvoiceLine[], taxRate = 0) {
-  const sub = lines.reduce((s, l) => s + l.qty * l.rate, 0);
+  const sub = lines.reduce((s, l) => s + lineAmt(l), 0);
   return +(sub + sub * taxRate / 100).toFixed(2);
 }
 
@@ -40,14 +55,15 @@ function escapeHtml(v: any): string {
 // invoice (0 when none / walk-in). balanceDue = prevBalance + this invoice total
 // − any amount already paid on this invoice.
 function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0) {
-  const sub = inv.lines.reduce((s, l) => s + l.qty * l.rate, 0);
+  const sub = inv.lines.reduce((s, l) => s + lineAmt(l), 0);
   const tax = inv.taxRate ? +(sub * inv.taxRate / 100).toFixed(2) : 0;
-  const paidOnThis = inv.status === "paid" ? inv.total : 0;
+  const invT = invTotal(inv);
+  const paidOnThis = inv.status === "paid" ? invT : 0;
   const carry = +(prevBalance || 0).toFixed(2);
-  const balanceDue = +(carry + inv.total - paidOnThis).toFixed(2);
-  const money = (n: number) => `${sym}${n.toFixed(2)}`;
+  const balanceDue = +(carry + invT - paidOnThis).toFixed(2);
+  const money = (n: number) => `${sym}${(Number(n) || 0).toFixed(2)}`;
   const rows = inv.lines.map((l, i) =>
-    `<tr><td style="text-align:center">${i + 1}</td><td>${escapeHtml(l.description)}</td><td style="text-align:center">${l.qty}</td><td style="text-align:right">${money(l.rate)}</td><td style="text-align:right">${money(l.qty * l.rate)}</td></tr>`
+    `<tr><td style="text-align:center">${i + 1}</td><td>${escapeHtml(l.description)}</td><td style="text-align:center">${lineQty(l)}</td><td style="text-align:right">${money(lineRate(l))}</td><td style="text-align:right">${money(lineAmt(l))}</td></tr>`
   ).join("");
   const meta = [
     [`Invoice Date`, inv.date],
@@ -99,7 +115,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0) {
     <table class="totals">
       <tr><td class="k">Sub Total</td><td class="v">${money(sub)}</td></tr>
       ${tax > 0 ? `<tr><td class="k">${escapeHtml(inv.taxLabel || "Tax")} (${inv.taxRate}%)</td><td class="v">${money(tax)}</td></tr>` : ""}
-      <tr class="grand"><td class="k">Invoice Total</td><td class="v">${money(inv.total)}</td></tr>
+      <tr class="grand"><td class="k">Invoice Total</td><td class="v">${money(invT)}</td></tr>
       ${carry !== 0 ? `<tr class="carry"><td class="k">Previous Balance (carried fwd)</td><td class="v">${money(carry)}</td></tr>` : ""}
       ${paidOnThis > 0 ? `<tr><td class="k">Payment Made</td><td class="v" style="color:#c0392b">(-) ${money(paidOnThis)}</td></tr>` : ""}
       <tr class="due"><td class="k">Balance Due</td><td class="v">${money(balanceDue)}</td></tr>
@@ -220,7 +236,7 @@ export default function InvoicesScreen() {
         );
         if (match) {
           const st = await api.getDebtorStatement(match.id);
-          const thisInvoiceOpen = inv.status === "paid" ? 0 : inv.total;
+          const thisInvoiceOpen = inv.status === "paid" ? 0 : invTotal(inv);
           prevBalance = +((st.balance || 0) - thisInvoiceOpen).toFixed(2);
           if (prevBalance < 0) prevBalance = 0;
         }
@@ -234,7 +250,7 @@ export default function InvoicesScreen() {
 
   const shareWhatsApp = (inv: Invoice) => {
     const phone = (inv.clientPhone || "").replace(/\D/g, "");
-    const msg = `Hi ${inv.clientName}, please find your invoice ${inv.invoiceNumber} for ${currSym}${inv.total.toFixed(2)} dated ${inv.date}.${inv.dueDate ? ` Due: ${inv.dueDate}.` : ""}${biz.paymentDetails ? `\nPayment: ${biz.paymentDetails}` : ""}`;
+    const msg = `Hi ${inv.clientName}, please find your invoice ${inv.invoiceNumber} for ${currSym}${invTotal(inv).toFixed(2)} dated ${inv.date}.${inv.dueDate ? ` Due: ${inv.dueDate}.` : ""}${biz.paymentDetails ? `\nPayment: ${biz.paymentDetails}` : ""}`;
     Linking.openURL(`whatsapp://send?phone=${phone}&text=${encodeURIComponent(msg)}`).catch(() => {});
   };
 
@@ -274,7 +290,7 @@ export default function InvoicesScreen() {
 
   // Detail view
   if (selected) {
-    const sub = selected.lines.reduce((s, l) => s + l.qty * l.rate, 0);
+    const sub = selected.lines.reduce((s, l) => s + lineAmt(l), 0);
     const tax = selected.taxRate ? +(sub * selected.taxRate / 100).toFixed(2) : 0;
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -305,14 +321,14 @@ export default function InvoicesScreen() {
             {selected.lines.map((l, i) => (
               <View key={i} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: theme.color.divider }}>
                 <Text style={{ flex: 1, fontSize: 13, color: theme.color.onSurface }}>{l.description}</Text>
-                <Text style={{ fontSize: 13, color: theme.color.muted, marginHorizontal: 8 }}>{l.qty} × {currSym}{l.rate.toFixed(2)}</Text>
-                <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{(l.qty * l.rate).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, color: theme.color.muted, marginHorizontal: 8 }}>{lineQty(l)} × {currSym}{lineRate(l).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{lineAmt(l).toFixed(2)}</Text>
               </View>
             ))}
             {tax > 0 && <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}><Text style={styles.sub}>{selected.taxLabel} ({selected.taxRate}%)</Text><Text style={styles.sub}>{currSym}{tax.toFixed(2)}</Text></View>}
             <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8, borderTopWidth: 2, borderTopColor: theme.color.brandPrimary, marginTop: 4 }}>
               <Text style={{ fontWeight: "700", fontSize: 15, color: theme.color.onSurface }}>Total</Text>
-              <Text style={{ fontWeight: "700", fontSize: 18, color: theme.color.brandPrimary }}>{currSym}{selected.total.toFixed(2)}</Text>
+              <Text style={{ fontWeight: "700", fontSize: 18, color: theme.color.brandPrimary }}>{currSym}{invTotal(selected).toFixed(2)}</Text>
             </View>
           </Card>
 
@@ -369,7 +385,7 @@ export default function InvoicesScreen() {
               <Text style={styles.sub}>{inv.invoiceNumber} · {shortDate(inv.date)}{inv.dueDate ? ` · Due ${shortDate(inv.dueDate)}` : ""}</Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
-              <Text style={{ fontWeight: "700", fontSize: 15, color: theme.color.onSurface }}>{currSym}{inv.total.toFixed(2)}</Text>
+              <Text style={{ fontWeight: "700", fontSize: 15, color: theme.color.onSurface }}>{currSym}{invTotal(inv).toFixed(2)}</Text>
               <View style={[styles.badge, { backgroundColor: inv.status === "paid" ? "#d4edda" : "#fff3cd" }]}>
                 <Text style={{ fontSize: 10, fontWeight: "700", color: inv.status === "paid" ? "#155724" : "#856404" }}>{inv.status.toUpperCase()}</Text>
               </View>
@@ -424,9 +440,9 @@ export default function InvoicesScreen() {
                     <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={styles.input} />
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
                       <TextInput value={String(l.qty)} onChangeText={(v) => updateLine(i, "qty", v)} keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
-                      <TextInput value={String(l.rate)} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 2 }]} />
+                      <TextInput value={String(l.rate ?? "")} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 2 }]} />
                       <View style={{ justifyContent: "center", flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{(l.qty * l.rate).toFixed(2)}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{lineAmt(l).toFixed(2)}</Text>
                       </View>
                     </View>
                     {lines.length > 1 && (

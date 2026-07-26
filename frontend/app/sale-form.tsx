@@ -65,8 +65,9 @@ export default function SaleForm() {
           clientName: customerName.trim(),
           clientPhone: customerPhone.trim(),
           date,
-          lines: [{ description: notes.trim() || "Sale", qty: 1, price: amt }],
+          lines: [{ description: notes.trim() || "Sale", qty: 1, rate: amt }],
           total: amt,
+          taxRate: 0,
           notes: notes.trim() || undefined,
         });
       }
