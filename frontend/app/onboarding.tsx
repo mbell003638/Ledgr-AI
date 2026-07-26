@@ -29,7 +29,9 @@ export default function Onboarding() {
   const [bizType, setBizType] = useState<BizType | null>(null);
   const [bizName, setBizName] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const [lockEnabled, setLockEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
+  const LAST_STEP = 3;
 
   const finish = async () => {
     if (!bizType || !bizName.trim()) return;
@@ -41,6 +43,7 @@ export default function Onboarding() {
         currency,
         taxLabel: preset.taxLabel,
         taxRate: 0,
+        lockEnabled,
         hasOnboarded: true,
         businessType: bizType,
       });
@@ -53,7 +56,7 @@ export default function Onboarding() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Progress dots */}
       <View style={styles.dots}>
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <View key={i} style={[styles.dot, step === i && styles.dotActive]} />
         ))}
       </View>
@@ -106,6 +109,40 @@ export default function Onboarding() {
             </View>
           </View>
         )}
+
+        {step === 3 && (
+          <View>
+            <Text style={styles.title}>Protect your books?</Text>
+            <Text style={styles.sub}>
+              Use your phone's fingerprint, face or PIN to lock sensitive actions like deleting or
+              resetting data. There's no separate password to remember — it uses your device lock.
+            </Text>
+            <View style={{ marginTop: theme.spacing.xl, gap: 10 }}>
+              <Pressable
+                onPress={() => setLockEnabled(true)}
+                style={[styles.card, lockEnabled && styles.cardSelected]}
+              >
+                <Ionicons name="lock-closed-outline" size={28} color={lockEnabled ? theme.color.brandPrimary : theme.color.muted} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.cardLabel, lockEnabled && { color: theme.color.brandPrimary }]}>Yes, enable app lock</Text>
+                  <Text style={styles.cardDesc}>Ask for fingerprint / face / PIN on sensitive actions</Text>
+                </View>
+                {lockEnabled && <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} />}
+              </Pressable>
+              <Pressable
+                onPress={() => setLockEnabled(false)}
+                style={[styles.card, !lockEnabled && styles.cardSelected]}
+              >
+                <Ionicons name="lock-open-outline" size={28} color={!lockEnabled ? theme.color.brandPrimary : theme.color.muted} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.cardLabel, !lockEnabled && { color: theme.color.brandPrimary }]}>No, skip for now</Text>
+                  <Text style={styles.cardDesc}>You can turn this on later in Settings</Text>
+                </View>
+                {!lockEnabled && <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} />}
+              </Pressable>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -118,13 +155,13 @@ export default function Onboarding() {
         <Pressable
           onPress={() => {
             if (step === 0 && !bizType) return;
-            if (step < 2) setStep((s) => s + 1);
+            if (step < LAST_STEP) setStep((s) => s + 1);
             else finish();
           }}
           disabled={saving || (step === 0 && !bizType)}
           style={[styles.nextBtn, (saving || (step === 0 && !bizType)) && { opacity: 0.5 }]}
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < 2 ? "Continue" : "Get Started"}</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Get Started"}</Text>}
         </Pressable>
       </View>
     </SafeAreaView>

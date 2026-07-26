@@ -2,6 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
+import {
+  listBooks as beListBooks,
+  activeBookId as beActiveBookId,
+  setActiveBook as beSetActiveBook,
+  createBook as beCreateBook,
+  renameBook as beRenameBook,
+  deleteBook as beDeleteBook,
+  type BookMeta,
+} from '@/src/db/backend';
 
 const AI_PROVIDER_KEY = 'ai_provider';
 const AI_API_KEY_KEY  = 'ai_api_key';
@@ -113,6 +122,14 @@ export const api = {
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
   testKey: async () => ai.testKey(await getAIConfig()),
+
+  // Books (separate isolated accounts, e.g. Shop vs Technician)
+  listBooks: (): Promise<BookMeta[]> => beListBooks(),
+  activeBookId: (): string => beActiveBookId(),
+  setActiveBook: (id: string) => beSetActiveBook(id),
+  createBook: (name: string, businessType?: string) => beCreateBook(name, businessType),
+  renameBook: (id: string, name: string) => beRenameBook(id, name),
+  deleteBook: (id: string) => beDeleteBook(id),
 
   // Suppliers
   listSuppliers: () => db.listSuppliers(),

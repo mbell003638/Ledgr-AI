@@ -524,18 +524,42 @@ export async function capitalStatement() {
     const pn = (p.partnerName || '').trim().toLowerCase();
     if (pn in perInvestorDrawings) perInvestorDrawings[pn] += toUsd(p.amount);
   }
-  // Split net profit equally across investors (or partners) for share display.
+  // Profit share per member. If ANY member has an explicit profitSharePct set,
+  // we honour those percentages (and split the remaining % equally among the
+  // members who left theirs blank). If NONE set a %, we fall back to an equal
+  // split across all members — i.e. behaviour is unchanged when no % entered.
   const shareCount = investorsRaw.length || partnerNames.length || 1;
-  const profitShare = +(netProfit / shareCount).toFixed(2);
+  const equalShare = +(netProfit / shareCount).toFixed(2);
+
+  const explicitPctTotal = investorsRaw.reduce(
+    (sum: number, inv: any) => sum + (Number(inv?.profitSharePct) > 0 ? Number(inv.profitSharePct) : 0),
+    0
+  );
+  const anyExplicitPct = investorsRaw.some((inv: any) => Number(inv?.profitSharePct) > 0);
+  const membersWithoutPct = investorsRaw.filter((inv: any) => !(Number(inv?.profitSharePct) > 0)).length;
+  const remainderPctEach = anyExplicitPct && membersWithoutPct > 0
+    ? Math.max(0, (100 - explicitPctTotal)) / membersWithoutPct
+    : 0;
+
+  const shareFor = (inv: any): number => {
+    if (!anyExplicitPct) return equalShare; // unchanged default
+    const pct = Number(inv?.profitSharePct) > 0
+      ? Number(inv.profitSharePct)
+      : remainderPctEach;
+    return +(netProfit * (pct / 100)).toFixed(2);
+  };
+
   const investors = investorsRaw.map((inv: any) => {
     const name = (inv?.name || '').trim();
     const contributed = +toUsd(inv?.amount).toFixed(2);
     const drawings = +(perInvestorDrawings[name.toLowerCase()] || 0).toFixed(2);
+    const profitShare = shareFor(inv);
     return {
       id: inv?.id || name,
       name,
       contributed,
       date: inv?.date || '',
+      profitSharePct: Number(inv?.profitSharePct) > 0 ? Number(inv.profitSharePct) : null,
       profitShare,
       // Each investor's standing balance = their capital + their profit share − their drawings.
       balance: +(contributed + profitShare - drawings).toFixed(2),

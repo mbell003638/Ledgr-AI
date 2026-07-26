@@ -26,9 +26,15 @@ export default function SettingsScreen() {
   const [openingCash, setOpeningCash] = useState("");
   const [openingInventory, setOpeningInventory] = useState("");
   const [periodStart, setPeriodStart] = useState("");
-  const [partnerNames, setPartnerNames] = useState<string[]>([]);
-  const [extraAssets, setExtraAssets] = useState<{ name: string; amount: string }[]>([]);
-  const [extraLiabilities, setExtraLiabilities] = useState<{ name: string; amount: string }[]>([]);
+  // Members = the owners/investors who put in capital and share profit.
+  // Each: { name, amount (investment), profitSharePct (optional) }.
+  const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
+  const [lockEnabled, setLockEnabled] = useState(false);
+  // Books = separate isolated accounts (e.g. Shop, Technician).
+  const [books, setBooks] = useState<{ id: string; name: string; businessType?: string }[]>([]);
+  const [activeBook, setActiveBookState] = useState("default");
+  const [newBookName, setNewBookName] = useState("");
+  const [addingBook, setAddingBook] = useState(false);
   const [currency, setCurrency] = useState("USD");
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
@@ -57,19 +63,25 @@ export default function SettingsScreen() {
       setOpeningCash(s.openingCash ? String(s.openingCash) : "");
       setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
       setPeriodStart(s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : "");
-      setPartnerNames(Array.isArray(s.partnerNames) ? s.partnerNames : []);
-      setExtraAssets(
-        (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
-          name: String(a?.name ?? ""),
-          amount: a?.amount != null ? String(a.amount) : "",
-        }))
-      );
-      setExtraLiabilities(
-        (Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({
-          name: String(l?.name ?? ""),
-          amount: l?.amount != null ? String(l.amount) : "",
-        }))
-      );
+      // Members: prefer the structured investors[]; fall back to legacy partnerNames[].
+      const inv = Array.isArray(s.investors) ? s.investors : [];
+      if (inv.length) {
+        setMembers(inv.map((m: any) => ({
+          name: String(m?.name ?? ""),
+          amount: m?.amount != null && m.amount !== 0 ? String(m.amount) : "",
+          profitSharePct: m?.profitSharePct != null && m.profitSharePct !== 0 ? String(m.profitSharePct) : "",
+        })));
+      } else {
+        const names = Array.isArray(s.partnerNames) ? s.partnerNames : [];
+        setMembers(names.map((n: string) => ({ name: String(n), amount: "", profitSharePct: "" })));
+      }
+      setLockEnabled(!!s.lockEnabled);
+      // Load the list of books (accounts) + which one is active.
+      try {
+        const bks = await api.listBooks();
+        setBooks(bks);
+        setActiveBookState(api.activeBookId());
+      } catch { /* books optional */ }
       setCurrency(s.currency || "USD");
       setTaxLabel((s.taxLabel as TaxLabel) || "None");
       setTaxLabelCustom(s.taxLabelCustom || "");
@@ -109,13 +121,18 @@ export default function SettingsScreen() {
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
         currentPeriodStart: periodStart.trim() || "1970-01-01",
-        partnerNames: partnerNames.map((n) => n.trim()).filter(Boolean),
-        extraAssets: extraAssets
-          .map((a) => ({ name: a.name.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
-          .filter((a) => a.name),
-        extraLiabilities: extraLiabilities
-          .map((l) => ({ name: l.name.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
-          .filter((l) => l.name),
+        // Members → both the structured investors[] AND legacy partnerNames[]
+        // (kept in sync so drawings attribution + older code keep working).
+        investors: members
+          .map((m) => ({
+            id: m.name.trim(),
+            name: m.name.trim(),
+            amount: m.amount.trim() ? parseFloat(m.amount) : 0,
+            profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0,
+          }))
+          .filter((m) => m.name),
+        partnerNames: members.map((m) => m.name.trim()).filter(Boolean),
+        lockEnabled,
         currency,
         taxLabel,
         taxLabelCustom: taxLabelCustom.trim(),
@@ -200,20 +217,46 @@ export default function SettingsScreen() {
     } finally { setResetting(false); }
   };
 
-  const updatePartner = (i: number, v: string) =>
-    setPartnerNames((prev) => prev.map((n, idx) => (idx === i ? v : n)));
-  const addPartner = () => setPartnerNames((prev) => [...prev, ""]);
-  const removePartner = (i: number) => setPartnerNames((prev) => prev.filter((_, idx) => idx !== i));
+  const updateMember = (i: number, field: "name" | "amount" | "profitSharePct", v: string) =>
+    setMembers((prev) => prev.map((m, idx) => (idx === i ? { ...m, [field]: v } : m)));
+  const addMember = () => setMembers((prev) => [...prev, { name: "", amount: "", profitSharePct: "" }]);
+  const removeMember = (i: number) => setMembers((prev) => prev.filter((_, idx) => idx !== i));
 
-  const updateAsset = (i: number, field: "name" | "amount", v: string) =>
-    setExtraAssets((prev) => prev.map((a, idx) => (idx === i ? { ...a, [field]: v } : a)));
-  const addAsset = () => setExtraAssets((prev) => [...prev, { name: "", amount: "" }]);
-  const removeAsset = (i: number) => setExtraAssets((prev) => prev.filter((_, idx) => idx !== i));
-
-  const updateLiability = (i: number, field: "name" | "amount", v: string) =>
-    setExtraLiabilities((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: v } : l)));
-  const addLiability = () => setExtraLiabilities((prev) => [...prev, { name: "", amount: "" }]);
-  const removeLiability = (i: number) => setExtraLiabilities((prev) => prev.filter((_, idx) => idx !== i));
+  const switchBook = async (id: string) => {
+    if (id === activeBook) return;
+    await api.setActiveBook(id);
+    setActiveBookState(id);
+    setStatus({ ok: true, msg: "Switched account. Reloading…" });
+    await load();
+  };
+  const addBook = async () => {
+    if (!newBookName.trim()) return;
+    setAddingBook(true);
+    try {
+      const meta = await api.createBook(newBookName.trim());
+      setNewBookName("");
+      const bks = await api.listBooks();
+      setBooks(bks);
+      // Immediately switch into the new account so the user can set it up.
+      await switchBook(meta.id);
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Could not create account" });
+    } finally { setAddingBook(false); }
+  };
+  const removeBook = async (id: string) => {
+    const ok = await requireAuth("Confirm to delete this account");
+    if (!ok) return;
+    try {
+      await api.deleteBook(id);
+      const bks = await api.listBooks();
+      setBooks(bks);
+      setActiveBookState(api.activeBookId());
+      setStatus({ ok: true, msg: "Account deleted." });
+      await load();
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Could not delete account" });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -224,6 +267,50 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <Card>
+              <Text style={styles.label}>Accounts</Text>
+              <Text style={styles.hint}>
+                Keep separate books for different businesses (e.g. your Shop and your Technician
+                work). Each account has its own data, settings and reports. Switch anytime — nothing
+                is mixed.
+              </Text>
+              {books.map((b) => (
+                <View key={b.id} style={[styles.bookRow, b.id === activeBook && styles.bookRowActive]}>
+                  <Ionicons
+                    name={b.id === activeBook ? "radio-button-on" : "radio-button-off"}
+                    size={18}
+                    color={b.id === activeBook ? theme.color.brandPrimary : theme.color.muted}
+                  />
+                  <Pressable style={{ flex: 1 }} onPress={() => switchBook(b.id)} testID={`book-${b.id}`}>
+                    <Text style={styles.bookName}>{b.name}{b.id === activeBook ? "  (active)" : ""}</Text>
+                  </Pressable>
+                  {b.id !== "default" && (
+                    <Pressable onPress={() => removeBook(b.id)} testID={`btn-remove-book-${b.id}`}>
+                      <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+              <View style={[styles.entryRow, { marginTop: theme.spacing.md }]}>
+                <TextInput
+                  testID="input-new-book"
+                  value={newBookName}
+                  onChangeText={setNewBookName}
+                  placeholder="New account name (e.g. Technician)"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, styles.entryInput]}
+                />
+                <Pressable testID="btn-add-book" onPress={addBook} disabled={addingBook || !newBookName.trim()} style={styles.addBtn}>
+                  {addingBook ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
+                    <>
+                      <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                      <Text style={styles.addText}>Add</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>AI Provider</Text>
               <View style={styles.modeRow}>
                 {PROVIDERS.map((p) => (
@@ -392,17 +479,64 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Opening Capital (combined)</Text>
-              <Text style={styles.hint}>Total initial investment by all partners (USD).</Text>
-              <TextInput
-                testID="input-opening-capital"
-                value={openingCapital}
-                onChangeText={setOpeningCapital}
-                keyboardType="decimal-pad"
-                style={styles.input}
-                placeholder="e.g. 5000"
-                placeholderTextColor={theme.color.muted}
-              />
+              <Text style={styles.label}>Members</Text>
+              <Text style={styles.hint}>
+                The owners/investors in this business. Add each person's name and (optionally) their
+                investment and profit-share %. Leave investment/share blank to keep it simple — if no
+                shares are set, profit is split equally. Drawings are matched to these names.
+              </Text>
+              {members.map((m, i) => (
+                <View key={`member-${i}`} style={styles.memberCard}>
+                  <View style={styles.entryRow}>
+                    <TextInput
+                      testID={`input-member-name-${i}`}
+                      value={m.name}
+                      onChangeText={(v) => updateMember(i, "name", v)}
+                      placeholder="Name"
+                      placeholderTextColor={theme.color.muted}
+                      autoCapitalize="words"
+                      style={[styles.input, styles.entryInput]}
+                    />
+                    <Pressable
+                      testID={`btn-remove-member-${i}`}
+                      onPress={() => removeMember(i)}
+                      style={styles.removeBtn}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                    </Pressable>
+                  </View>
+                  <View style={[styles.entryRow, { marginTop: 8 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.subLabel}>Investment (optional)</Text>
+                      <TextInput
+                        testID={`input-member-amount-${i}`}
+                        value={m.amount}
+                        onChangeText={(v) => updateMember(i, "amount", v)}
+                        keyboardType="decimal-pad"
+                        placeholder="e.g. 5000"
+                        placeholderTextColor={theme.color.muted}
+                        style={styles.input}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.subLabel}>Profit Share % (optional)</Text>
+                      <TextInput
+                        testID={`input-member-share-${i}`}
+                        value={m.profitSharePct}
+                        onChangeText={(v) => updateMember(i, "profitSharePct", v)}
+                        keyboardType="decimal-pad"
+                        placeholder="e.g. 50"
+                        placeholderTextColor={theme.color.muted}
+                        style={styles.input}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+              <Pressable testID="btn-add-member" onPress={addMember} style={styles.addBtn}>
+                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                <Text style={styles.addText}>Add Member</Text>
+              </Pressable>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
@@ -448,105 +582,25 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Partners</Text>
-              <Text style={styles.hint}>Names used to attribute drawings. Add or remove partners as needed.</Text>
-              {partnerNames.map((name, i) => (
-                <View key={`partner-${i}`} style={styles.entryRow}>
-                  <TextInput
-                    testID={`input-partner-${i}`}
-                    value={name}
-                    onChangeText={(v) => updatePartner(i, v)}
-                    placeholder="Partner name"
-                    placeholderTextColor={theme.color.muted}
-                    autoCapitalize="words"
-                    style={[styles.input, styles.entryInput]}
-                  />
-                  <Pressable
-                    testID={`btn-remove-partner-${i}`}
-                    onPress={() => removePartner(i)}
-                    style={styles.removeBtn}
-                  >
-                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                  </Pressable>
-                </View>
-              ))}
-              <Pressable testID="btn-add-partner" onPress={addPartner} style={styles.addBtn}>
-                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-                <Text style={styles.addText}>Add Partner</Text>
-              </Pressable>
-            </Card>
-
-            <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Custom Assets</Text>
-              <Text style={styles.hint}>Extra assets to include on the balance sheet (e.g. Van, Equipment).</Text>
-              {extraAssets.map((a, i) => (
-                <View key={`asset-${i}`} style={styles.entryRow}>
-                  <TextInput
-                    testID={`input-asset-name-${i}`}
-                    value={a.name}
-                    onChangeText={(v) => updateAsset(i, "name", v)}
-                    placeholder="Name"
-                    placeholderTextColor={theme.color.muted}
-                    style={[styles.input, styles.entryInput]}
-                  />
-                  <TextInput
-                    testID={`input-asset-amount-${i}`}
-                    value={a.amount}
-                    onChangeText={(v) => updateAsset(i, "amount", v)}
-                    keyboardType="decimal-pad"
-                    placeholder="Amount"
-                    placeholderTextColor={theme.color.muted}
-                    style={[styles.input, styles.entryAmount]}
-                  />
-                  <Pressable
-                    testID={`btn-remove-asset-${i}`}
-                    onPress={() => removeAsset(i)}
-                    style={styles.removeBtn}
-                  >
-                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                  </Pressable>
-                </View>
-              ))}
-              <Pressable testID="btn-add-asset" onPress={addAsset} style={styles.addBtn}>
-                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-                <Text style={styles.addText}>Add Asset</Text>
-              </Pressable>
-            </Card>
-
-            <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Custom Liabilities</Text>
-              <Text style={styles.hint}>Extra liabilities to include on the balance sheet (e.g. Loan, Rent due).</Text>
-              {extraLiabilities.map((l, i) => (
-                <View key={`liability-${i}`} style={styles.entryRow}>
-                  <TextInput
-                    testID={`input-liability-name-${i}`}
-                    value={l.name}
-                    onChangeText={(v) => updateLiability(i, "name", v)}
-                    placeholder="Name"
-                    placeholderTextColor={theme.color.muted}
-                    style={[styles.input, styles.entryInput]}
-                  />
-                  <TextInput
-                    testID={`input-liability-amount-${i}`}
-                    value={l.amount}
-                    onChangeText={(v) => updateLiability(i, "amount", v)}
-                    keyboardType="decimal-pad"
-                    placeholder="Amount"
-                    placeholderTextColor={theme.color.muted}
-                    style={[styles.input, styles.entryAmount]}
-                  />
-                  <Pressable
-                    testID={`btn-remove-liability-${i}`}
-                    onPress={() => removeLiability(i)}
-                    style={styles.removeBtn}
-                  >
-                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                  </Pressable>
-                </View>
-              ))}
-              <Pressable testID="btn-add-liability" onPress={addLiability} style={styles.addBtn}>
-                <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-                <Text style={styles.addText}>Add Liability</Text>
+              <Text style={styles.label}>Security — App Lock</Text>
+              <Text style={styles.hint}>
+                Use your phone's fingerprint / face / PIN to protect sensitive actions
+                (delete, reset, edit). There's no separate password to remember. If your
+                phone has no lock set up, this has no effect.
+              </Text>
+              <Pressable
+                testID="btn-toggle-lock"
+                onPress={() => setLockEnabled((v) => !v)}
+                style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}
+              >
+                <Ionicons
+                  name={lockEnabled ? "lock-closed" : "lock-open-outline"}
+                  size={18}
+                  color={lockEnabled ? theme.color.onBrandPrimary : theme.color.onSurface}
+                />
+                <Text style={[styles.lockToggleText, lockEnabled && { color: theme.color.onBrandPrimary }]}>
+                  {lockEnabled ? "App Lock ON" : "App Lock OFF"}
+                </Text>
               </Pressable>
             </Card>
 
@@ -582,8 +636,8 @@ export default function SettingsScreen() {
                 { label: "Email", key: "businessEmail", placeholder: "you@example.com" },
                 { label: "Tax Reg. No (TRN / GSTIN / VAT)", key: "taxRegNo", placeholder: "Shown on invoices" },
                 { label: "Bank Account / IBAN / Interac", key: "bankAccount", placeholder: "Acct no, IBAN, or Interac email" },
-                { label: "UPI ID", key: "upiId", placeholder: "name@upi" },
-                { label: "Other Payment Details / Link", key: "paymentDetails", placeholder: "PayPal, payment link, cheque payable to…" },
+                { label: "Payment ID / Link", key: "upiId", placeholder: "Interac, UPI ID, PayPal or payment link" },
+                { label: "Other Payment Details", key: "paymentDetails", placeholder: "Cheque payable to…, notes, alt. link" },
               ].map(({ label, key, placeholder }) => (
                 <View key={key}>
                   <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{label}</Text>
@@ -790,6 +844,24 @@ function makeStyles(theme: any) { return StyleSheet.create({
   entryRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   entryInput: { flex: 1 },
   entryAmount: { width: 110 },
+  memberCard: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, marginTop: theme.spacing.md },
+  subLabel: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+  lockToggle: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+    marginTop: theme.spacing.md,
+  },
+  lockToggleOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  lockToggleText: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+  bookRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+    marginTop: theme.spacing.sm,
+  },
+  bookRowActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+  bookName: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
   removeBtn: {
     marginTop: theme.spacing.md,
     padding: theme.spacing.sm,
