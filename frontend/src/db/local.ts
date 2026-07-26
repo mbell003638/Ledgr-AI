@@ -25,6 +25,12 @@ const KEYS = {
   expenses: 'ledgr:expenses',
   debtors: 'ledgr:debtors',
   invoices: 'ledgr:invoices',
+  quotes: 'ledgr:quotes',
+  receipts: 'ledgr:receipts',
+  creditNotes: 'ledgr:creditNotes',
+  debitNotes: 'ledgr:debitNotes',
+  deliveryNotes: 'ledgr:deliveryNotes',
+  cashEntries: 'ledgr:cashEntries',
 } as const;
 
 export type Collection = keyof typeof KEYS;
@@ -97,7 +103,12 @@ export async function getSettings() {
     openingInventory: s.openingInventory ?? 0.0,
     openingCash: s.openingCash ?? 0.0,
     openingCapital: s.openingCapital ?? 0.0,
+    // Per-investor capital contributions: [{ id, name, amount, date }].
+    // openingCapital (above) is kept as a fallback/legacy combined figure.
+    investors: Array.isArray(s.investors) ? s.investors : [],
     partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'],
+    // Security: hashed device-lock preference for destructive actions.
+    lockEnabled: s.lockEnabled ?? false,
     extraAssets: Array.isArray(s.extraAssets) ? s.extraAssets : [],
     extraLiabilities: Array.isArray(s.extraLiabilities) ? s.extraLiabilities : [],
     currency: s.currency ?? 'USD',
@@ -108,12 +119,16 @@ export async function getSettings() {
     businessAddress: s.businessAddress ?? '',
     businessPhone: s.businessPhone ?? '',
     businessEmail: s.businessEmail ?? '',
+    taxRegNo: s.taxRegNo ?? '',
     bankAccount: s.bankAccount ?? '',
     upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
     logo: s.logo ?? '',
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
+    // Revenue recognition: 'cash' = revenue when money received (cash sales +
+    // receipts); 'accrual' = revenue when billed (cash sales + invoices raised).
+    accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
@@ -279,6 +294,57 @@ export async function deleteInventory(id: string) {
   });
 }
 
+// ---------- Cash Book (manual cash in/out ledger) ----------
+// A running ledger of manual cash movements the user records directly, on top
+// of the cash implied by sales/payments. direction: 'in' (capital injection,
+// owner deposit, cash received) or 'out' (cash withdrawn, petty spend).
+export type CashDirection = 'in' | 'out';
+
+export async function listCashEntries() {
+  return (await readColl<any>('cashEntries')).sort((a: any, b: any) =>
+    (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
+}
+export async function createCashEntry(e: { amount: number; direction: CashDirection; date: string; notes?: string }) {
+  return serialize(async () => {
+    const amt = Number(e.amount);
+    if (!Number.isFinite(amt) || amt < 0) throw new Error('Amount must be a valid non-negative number.');
+    if (e.direction !== 'in' && e.direction !== 'out') throw new Error('Direction must be in or out.');
+    const items = await readColl<any>('cashEntries');
+    const item = { id: uuid(), amount: amt, direction: e.direction, date: e.date, notes: e.notes || '', created_at: nowIso() };
+    items.push(item);
+    await writeColl('cashEntries', items);
+    return item;
+  });
+}
+export async function updateCashEntry(id: string, e: any) {
+  return serialize(async () => {
+    if (e && 'amount' in e) {
+      const amt = Number(e.amount);
+      if (!Number.isFinite(amt) || amt < 0) throw new Error('Amount must be a valid non-negative number.');
+    }
+    const items = await readColl<any>('cashEntries');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Cash entry not found');
+    items[idx] = { ...items[idx], ...e };
+    await writeColl('cashEntries', items);
+    return items[idx];
+  });
+}
+export async function deleteCashEntry(id: string) {
+  return serialize(async () => {
+    const items = (await readColl<any>('cashEntries')).filter((x: any) => x.id !== id);
+    await writeColl('cashEntries', items);
+    return { ok: true };
+  });
+}
+/** Net manual cash adjustment (sum of ins − sum of outs) on/after periodStart. */
+export async function manualCashNet(periodStart: string): Promise<number> {
+  const entries = (await readColl<any>('cashEntries')).filter((e: any) => (e.date || '') >= periodStart);
+  const ins = entries.filter((e: any) => e.direction === 'in').reduce((s: number, e: any) => s + toUsd(e.amount), 0);
+  const outs = entries.filter((e: any) => e.direction === 'out').reduce((s: number, e: any) => s + toUsd(e.amount), 0);
+  return +(ins - outs).toFixed(2);
+}
+
 // ---------- Dashboard ----------
 export async function dashboard() {
   const s = await getSettings();
@@ -290,17 +356,45 @@ export async function dashboard() {
   const bills = (await readColl<any>('bills')).filter((b: any) => (b.date || '') >= periodStart);
   const sales = (await readColl<any>('sales')).filter((x: any) => (x.date || '') >= periodStart);
   const payments = (await readColl<any>('payments')).filter((p: any) => (p.date || '') >= periodStart);
+  const invoicesAll = (await readColl<any>('invoices')).filter((i: any) => (i.date || '') >= periodStart);
+  const receiptsAll = (await readColl<any>('receipts')).filter((r: any) => (r.date || '') >= periodStart);
+  const creditNotesAll = (await readColl<any>('creditNotes')).filter((c: any) => (c.date || '') >= periodStart);
+  const debitNotesAll = (await readColl<any>('debitNotes')).filter((c: any) => (c.date || '') >= periodStart);
   const invHistory = (await readColl<any>('inventoryChecks')).filter((i: any) => (i.date || '') >= periodStart).sort((a: any, b: any) => (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
   const suppliersCount = (await readColl<any>('suppliers')).length;
 
   const totalPurchases = bills.reduce((sum: number, b: any) => sum + toUsd(b.amount), 0);
-  const totalSales = sales.reduce((sum: number, x: any) => sum + toUsd(x.amount), 0);
+  // Cash sales = the `sales` collection (walk-in / cash-sale receipts). This drives
+  // the literal cash-on-hand calc and must NOT include credit/invoice revenue.
+  const cashSalesTotal = sales.reduce((sum: number, x: any) => sum + toUsd(x.amount), 0);
+  // Revenue for P&L depends on the accounting basis:
+  //   accrual → cash sales + invoices raised (billed, regardless of collection)
+  //   cash    → cash sales + amounts actually received against invoices (receipts)
+  const invoiceRevenue = invoicesAll.reduce((sum: number, i: any) => sum + toUsd(i.total), 0);
+  const receiptInvoiceRevenue = receiptsAll
+    .filter((r: any) => r.mode === 'against_invoice')
+    .reduce((sum: number, r: any) => sum + toUsd(r.amount), 0);
+  const isAccrual = s.accountingBasis === 'accrual';
+  // Credit notes reduce revenue (returns/discounts); debit notes add to it.
+  // These are receivable adjustments so they only affect ACCRUAL revenue.
+  const creditNoteTotal = creditNotesAll.reduce((sum: number, c: any) => sum + toUsd(c.amount), 0);
+  const debitNoteTotal = debitNotesAll.reduce((sum: number, c: any) => sum + toUsd(c.amount), 0);
+  const accrualRevenue = cashSalesTotal + invoiceRevenue - creditNoteTotal + debitNoteTotal;
+  const totalSales = +((isAccrual ? accrualRevenue : cashSalesTotal + receiptInvoiceRevenue)).toFixed(2);
   const supplierPayments = payments.filter((p: any) => p.type === 'supplier_payment')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
   const drawings = payments.filter((p: any) => p.type === 'drawing')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
   const commissionPayments = payments.filter((p: any) => p.type === 'commission_payment')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
+
+  // Manual cash book adjustments (in − out) recorded directly by the user.
+  // Note: receipts against invoices/advances write cash-IN rows here, so money
+  // received on credit sales flows into cash without touching cashSalesTotal.
+  const cashEntriesAll = (await readColl<any>('cashEntries')).filter((e: any) => (e.date || '') >= periodStart);
+  const cashInTotal = cashEntriesAll.filter((e: any) => e.direction === 'in').reduce((sum: number, e: any) => sum + toUsd(e.amount), 0);
+  const cashOutTotal = cashEntriesAll.filter((e: any) => e.direction === 'out').reduce((sum: number, e: any) => sum + toUsd(e.amount), 0);
+  const manualCash = +(cashInTotal - cashOutTotal).toFixed(2);
 
   const grossProfit = +(totalSales - totalPurchases).toFixed(2);
   const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
@@ -309,7 +403,9 @@ export async function dashboard() {
   // Accrued commission is a liability until paid; commission payments settle it.
   const liabilities = +(totalPurchases - supplierPayments + commission - commissionPayments).toFixed(2);
   const inventoryValue = invHistory[0] ? Number(invHistory[0].actualStock) : openingInv;
-  const cash = computeCash(openingCash, totalSales, supplierPayments, drawings, commissionPayments);
+  // Cash on hand uses ONLY literal cash sales (not accrual revenue); receipts
+  // against invoices already contribute via the manualCash (cashEntries) term.
+  const cash = +(computeCash(openingCash, cashSalesTotal, supplierPayments, drawings, commissionPayments) + manualCash).toFixed(2);
 
   // custom (dynamic) assets & liabilities from settings
   const extraAssets = Array.isArray(s.extraAssets) ? s.extraAssets : [];
@@ -340,8 +436,11 @@ export async function dashboard() {
     outstandingCommission: +(commission - commissionPayments).toFixed(2),
     drawings: +drawings.toFixed(2), supplierPayments: +supplierPayments.toFixed(2),
     suppliers: suppliersCount, periodStart, salesTrend,
+    manualCashIn: +cashInTotal.toFixed(2), manualCashOut: +cashOutTotal.toFixed(2), manualCash,
     extraAssets, extraLiabilities, extraAssetsTotal, extraLiabTotal, totalLiabilities,
     openingCapital: Number(s.openingCapital || 0),
+    accountingBasis: isAccrual ? 'accrual' : 'cash',
+    cashSalesTotal: +cashSalesTotal.toFixed(2), invoiceRevenue: +invoiceRevenue.toFixed(2),
   };
 }
 
@@ -411,13 +510,47 @@ export async function capitalStatement() {
   const openingCapital = Number(s.openingCapital || 0);
   const netProfit = d.netProfit;
   const totalDrawings = d.drawings;
-  const closingCapital = +(openingCapital + netProfit - totalDrawings).toFixed(2);
+
+  // Per-investor capital: sum of individual contributions. Falls back to the
+  // legacy combined openingCapital when no investors are defined.
+  const investorsRaw: any[] = Array.isArray((s as any).investors) ? (s as any).investors : [];
+  const investorContribTotal = investorsRaw.reduce((sum: number, inv: any) => sum + toUsd(inv?.amount), 0);
+  const totalCapital = investorsRaw.length ? +investorContribTotal.toFixed(2) : +openingCapital.toFixed(2);
+
+  // Attribute drawings to investors by name (case-insensitive), like partners.
+  const perInvestorDrawings: Record<string, number> = {};
+  for (const inv of investorsRaw) perInvestorDrawings[(inv?.name || '').trim().toLowerCase()] = 0;
+  for (const p of drawingPayments) {
+    const pn = (p.partnerName || '').trim().toLowerCase();
+    if (pn in perInvestorDrawings) perInvestorDrawings[pn] += toUsd(p.amount);
+  }
+  // Split net profit equally across investors (or partners) for share display.
+  const shareCount = investorsRaw.length || partnerNames.length || 1;
+  const profitShare = +(netProfit / shareCount).toFixed(2);
+  const investors = investorsRaw.map((inv: any) => {
+    const name = (inv?.name || '').trim();
+    const contributed = +toUsd(inv?.amount).toFixed(2);
+    const drawings = +(perInvestorDrawings[name.toLowerCase()] || 0).toFixed(2);
+    return {
+      id: inv?.id || name,
+      name,
+      contributed,
+      date: inv?.date || '',
+      profitShare,
+      // Each investor's standing balance = their capital + their profit share − their drawings.
+      balance: +(contributed + profitShare - drawings).toFixed(2),
+    };
+  });
+
+  const closingCapital = +(totalCapital + netProfit - totalDrawings).toFixed(2);
 
   return {
-    openingCapital: +openingCapital.toFixed(2),
+    openingCapital: +totalCapital.toFixed(2),
+    combinedOpeningCapital: +openingCapital.toFixed(2),
     netProfit,
     totalDrawings,
     closingCapital,
+    investors,
     partners: partnerNames.map((name) => ({ name, drawings: +(perPartner[name] || 0).toFixed(2) })),
     otherDrawings: +otherDrawings.toFixed(2),
   };
@@ -563,7 +696,29 @@ export async function deleteExpense(id: string) {
 
 // ---------- Debtors ----------
 export async function listDebtors() {
-  return (await readColl<any>('debtors')).sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
+  const [debtors, creditNotes, debitNotes] = await Promise.all([
+    readColl<any>('debtors'), readColl<any>('creditNotes'), readColl<any>('debitNotes'),
+  ]);
+  // Compute real balances: totalInvoiced from the debtor's invoice refs,
+  // totalPaid from recorded payments. Credit notes reduce what the customer owes
+  // (returns/discounts); debit notes increase it (extra charges). Both are tied
+  // to a debtor by debtorId.
+  return debtors
+    .map((d: any) => {
+      const totalInvoiced = (d.invoices || []).reduce((s: number, i: any) => s + toUsd(i.amount), 0);
+      const totalPaid = (d.payments || []).reduce((s: number, p: any) => s + toUsd(p.amount), 0);
+      const totalCredited = creditNotes.filter((c: any) => c.debtorId === d.id).reduce((s: number, c: any) => s + toUsd(c.amount), 0);
+      const totalDebited = debitNotes.filter((c: any) => c.debtorId === d.id).reduce((s: number, c: any) => s + toUsd(c.amount), 0);
+      return {
+        ...d,
+        totalInvoiced: +totalInvoiced.toFixed(2),
+        totalPaid: +totalPaid.toFixed(2),
+        totalCredited: +totalCredited.toFixed(2),
+        totalDebited: +totalDebited.toFixed(2),
+        balance: +(totalInvoiced + totalDebited - totalPaid - totalCredited).toFixed(2),
+      };
+    })
+    .sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
 }
 export async function createDebtor(d: any) {
   return serialize(async () => {
@@ -603,15 +758,92 @@ export async function addDebtorPayment(debtorId: string, payment: { amount: numb
   });
 }
 
+/**
+ * Full customer statement: invoices + payments merged into one chronological
+ * ledger with a running balance. This is what powers the debtor detail screen
+ * so the customer's billing history (not just payments) is visible.
+ */
+export async function getDebtorStatement(debtorId: string) {
+  const [debtors, creditNotes, debitNotes] = await Promise.all([
+    readColl<any>('debtors'), readColl<any>('creditNotes'), readColl<any>('debitNotes'),
+  ]);
+  const d = debtors.find((x: any) => x.id === debtorId);
+  if (!d) throw new Error('Debtor not found');
+  const invoiceRows = (d.invoices || []).map((i: any) => ({
+    kind: 'invoice' as const,
+    id: i.id,
+    date: (i.date || '').slice(0, 10),
+    ref: i.invoiceNumber || '',
+    status: i.status || 'unpaid',
+    debit: toUsd(i.amount),   // increases what they owe
+    credit: 0,
+  }));
+  const paymentRows = (d.payments || []).map((p: any) => ({
+    kind: 'payment' as const,
+    id: p.id,
+    date: (p.date || '').slice(0, 10),
+    ref: p.notes || 'Payment',
+    status: 'paid',
+    debit: 0,
+    credit: toUsd(p.amount),  // reduces what they owe
+  }));
+  // Credit notes (returns/discounts) reduce the balance; debit notes increase it.
+  const creditRows = creditNotes.filter((c: any) => c.debtorId === debtorId).map((c: any) => ({
+    kind: 'credit_note' as const,
+    id: c.id,
+    date: (c.date || '').slice(0, 10),
+    ref: c.noteNumber || 'Credit Note',
+    status: c.reason || 'credit',
+    debit: 0,
+    credit: toUsd(c.amount),
+  }));
+  const debitRows = debitNotes.filter((c: any) => c.debtorId === debtorId).map((c: any) => ({
+    kind: 'debit_note' as const,
+    id: c.id,
+    date: (c.date || '').slice(0, 10),
+    ref: c.noteNumber || 'Debit Note',
+    status: c.reason || 'debit',
+    debit: toUsd(c.amount),
+    credit: 0,
+  }));
+  const rows = [...invoiceRows, ...paymentRows, ...creditRows, ...debitRows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let running = 0;
+  const ledger = rows.map((r) => {
+    running += r.debit - r.credit;
+    return { ...r, balance: +running.toFixed(2) };
+  });
+  const totalInvoiced = invoiceRows.reduce((s: number, r: any) => s + r.debit, 0);
+  const totalPaid = paymentRows.reduce((s: number, r: any) => s + r.credit, 0);
+  const totalCredited = creditRows.reduce((s: number, r: any) => s + r.credit, 0);
+  const totalDebited = debitRows.reduce((s: number, r: any) => s + r.debit, 0);
+  return {
+    id: d.id,
+    name: d.name,
+    phone: d.phone || '',
+    email: d.email || '',
+    ledger,
+    totalInvoiced: +totalInvoiced.toFixed(2),
+    totalPaid: +totalPaid.toFixed(2),
+    totalCredited: +totalCredited.toFixed(2),
+    totalDebited: +totalDebited.toFixed(2),
+    balance: +(totalInvoiced + totalDebited - totalPaid - totalCredited).toFixed(2),
+  };
+}
+
 // ---------- Date-range reports ----------
 export async function pnlRange(from: string, to: string) {
   const s = await getSettings();
   const pct = Number(s.managerCommissionPct || 0);
   const inRange = (d: string) => (d || '').slice(0, 10) >= from && (d || '').slice(0, 10) <= to;
-  const [bills, sales, payments, expenses, invChecks] = await Promise.all([
-    readColl<any>('bills'), readColl<any>('sales'), readColl<any>('payments'), readColl<any>('expenses'), readColl<any>('inventoryChecks'),
+  const [bills, sales, payments, expenses, invChecks, invoices, receipts] = await Promise.all([
+    readColl<any>('bills'), readColl<any>('sales'), readColl<any>('payments'), readColl<any>('expenses'), readColl<any>('inventoryChecks'), readColl<any>('invoices'), readColl<any>('receipts'),
   ]);
-  const revenue = sales.filter((x: any) => inRange(x.date)).reduce((s: number, x: any) => s + toUsd(x.amount), 0);
+  // Revenue basis (mirrors dashboard): accrual = cash sales + invoices raised;
+  // cash = cash sales + amounts received against invoices (receipts).
+  const cashSales = sales.filter((x: any) => inRange(x.date)).reduce((s: number, x: any) => s + toUsd(x.amount), 0);
+  const invoiceRevenue = invoices.filter((i: any) => inRange(i.date)).reduce((s: number, i: any) => s + toUsd(i.total), 0);
+  const receiptRevenue = receipts.filter((r: any) => inRange(r.date) && r.mode === 'against_invoice').reduce((s: number, r: any) => s + toUsd(r.amount), 0);
+  const revenue = s.accountingBasis === 'accrual' ? cashSales + invoiceRevenue : cashSales + receiptRevenue;
   const purchases = bills.filter((b: any) => inRange(b.date)).reduce((s: number, b: any) => s + toUsd(b.amount), 0);
   const totalExpenses = expenses.filter((e: any) => inRange(e.date)).reduce((s: number, e: any) => s + toUsd(e.amount), 0);
   const drawings = payments.filter((p: any) => inRange(p.date) && p.type === 'drawing').reduce((s: number, p: any) => s + toUsd(p.amount), 0);
@@ -708,19 +940,19 @@ export async function closePeriod(actualStock: number, notes = '') {
 
 // ---------- Backup / Restore / Reset ----------
 export async function exportBackup() {
-  const [suppliers, bills, sales, payments, inventoryChecks, periods, settings, expenses, debtors, invoices] = await Promise.all([
-    readColl('suppliers'), readColl('bills'), readColl('sales'), readColl('payments'), readColl('inventoryChecks'), readColl('periods'), readSettings(), readColl('expenses'), readColl('debtors'), readColl('invoices'),
+  const [suppliers, bills, sales, payments, inventoryChecks, periods, settings, expenses, debtors, invoices, quotes, receipts, creditNotes, debitNotes, deliveryNotes, cashEntries] = await Promise.all([
+    readColl('suppliers'), readColl('bills'), readColl('sales'), readColl('payments'), readColl('inventoryChecks'), readColl('periods'), readSettings(), readColl('expenses'), readColl('debtors'), readColl('invoices'), readColl('quotes'), readColl('receipts'), readColl('creditNotes'), readColl('debitNotes'), readColl('deliveryNotes'), readColl('cashEntries'),
   ]);
   return {
     suppliers, bills, sales, payments, inventoryChecks, periods, settings,
-    expenses, debtors, invoices,
-    _meta: { app: 'ledgr', version: 3, exportedAt: nowIso() },
+    expenses, debtors, invoices, quotes, receipts, creditNotes, debitNotes, deliveryNotes, cashEntries,
+    _meta: { app: 'ledgr', version: 8, exportedAt: nowIso() },
   };
 }
 export async function importBackup(data: any) {
   // Version guard: refuse backups whose schema version is newer than we understand,
   // so a backup from a future app version can't silently corrupt current data.
-  const SUPPORTED_VERSION = 3;
+  const SUPPORTED_VERSION = 8;
   const meta = data && typeof data === 'object' ? data._meta : undefined;
   if (meta) {
     if (meta.app && meta.app !== 'ledgr') {
@@ -741,6 +973,12 @@ export async function importBackup(data: any) {
   await setColl('expenses', data.expenses);
   await setColl('debtors', data.debtors);
   await setColl('invoices', data.invoices);
+  await setColl('quotes', data.quotes);
+  await setColl('receipts', data.receipts);
+  await setColl('creditNotes', data.creditNotes);
+  await setColl('debitNotes', data.debitNotes);
+  await setColl('deliveryNotes', data.deliveryNotes);
+  await setColl('cashEntries', data.cashEntries);
   if (data.settings && typeof data.settings === 'object') {
     await writeSettings({ ...(await readSettings()), ...data.settings });
   }
@@ -760,6 +998,7 @@ export async function resetAll() {
     businessAddress: s.businessAddress ?? '',
     businessPhone: s.businessPhone ?? '',
     businessEmail: s.businessEmail ?? '',
+    taxRegNo: s.taxRegNo ?? '',
     bankAccount: s.bankAccount ?? '',
     upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
@@ -767,8 +1006,11 @@ export async function resetAll() {
     managerCommissionPct: s.managerCommissionPct ?? 0,
     extraAssets: s.extraAssets ?? [],
     extraLiabilities: s.extraLiabilities ?? [],
+    investors: Array.isArray(s.investors) ? s.investors : [],
+    lockEnabled: s.lockEnabled ?? false,
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
+    accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
   };
   await Promise.all([
     backendClearColl('suppliers'),
@@ -780,6 +1022,12 @@ export async function resetAll() {
     backendClearColl('expenses'),
     backendClearColl('debtors'),
     backendClearColl('invoices'),
+    backendClearColl('quotes'),
+    backendClearColl('receipts'),
+    backendClearColl('creditNotes'),
+    backendClearColl('debitNotes'),
+    backendClearColl('deliveryNotes'),
+    backendClearColl('cashEntries'),
   ]);
   await writeSettings({ ...keep, currentPeriodStart: '1970-01-01', openingInventory: 0, openingCash: 0 });
   return { ok: true };
@@ -812,7 +1060,7 @@ export async function createInvoice(inv: any) {
       const norm = (s: string) => s.trim().toLowerCase();
       let idx = debtors.findIndex((d: any) => norm(d.name) === norm(inv.clientName));
       if (idx === -1) {
-        debtors.push({ id: uuid(), name: inv.clientName.trim(), phone: inv.clientPhone || '', payments: [], invoices: [], created_at: nowIso() });
+        debtors.push({ id: uuid(), name: inv.clientName.trim(), phone: inv.clientPhone || '', payments: [], invoices: [], autoCreated: true, created_at: nowIso() });
         idx = debtors.length - 1;
       }
       if (!Array.isArray(debtors[idx].invoices)) debtors[idx].invoices = [];
@@ -837,7 +1085,10 @@ export async function deleteInvoice(id: string) {
     const items = await readColl<any>('invoices');
     await writeColl('invoices', items.filter((x: any) => x.id !== id));
   });
-  // Remove the invoice reference from any debtor's ledger.
+  // Remove the invoice reference from any debtor's ledger. If that leaves an
+  // auto-created debtor completely empty (no invoices, no payments), remove the
+  // stray debtor too — otherwise deleting an invoice left a ghost customer with
+  // no entries and no way to delete it.
   await serialize(async () => {
     const debtors = await readColl<any>('debtors');
     let changed = false;
@@ -847,7 +1098,10 @@ export async function deleteInvoice(id: string) {
         changed = true;
       }
     }
-    if (changed) await writeColl('debtors', debtors);
+    const pruned = debtors.filter(
+      (d: any) => !(d.autoCreated && (d.invoices || []).length === 0 && (d.payments || []).length === 0),
+    );
+    if (changed || pruned.length !== debtors.length) await writeColl('debtors', pruned);
   });
   return { ok: true };
 }
@@ -875,3 +1129,636 @@ export async function overdueInvoices() {
   const all = await readColl<any>('invoices');
   return all.filter((inv: any) => inv.status === 'unpaid' && inv.dueDate && inv.dueDate < today);
 }
+
+// ---------- Receipts (money actually received) ----------
+// A receipt is the settlement counterpart to an invoice. Three modes:
+//   cash_sale       — walk-in paid on the spot; no prior invoice. Also creates a
+//                     `sales` revenue record so cash sales show in revenue/P&L.
+//   against_invoice — settles one or more outstanding invoices (full or partial)
+//                     via allocations[]; posts a payment onto the debtor ledger.
+//   advance         — money received before an invoice exists; sits as a credit
+//                     on the debtor until later allocated.
+// EVERY receipt writes a Cash Book IN row, so money received always reaches cash.
+export type ReceiptMode = 'cash_sale' | 'against_invoice' | 'advance';
+
+export async function listReceipts() {
+  return (await readColl<any>('receipts')).sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+
+/** Total already received against an invoice, summed across all receipt allocations. */
+export async function invoicePaidAmount(invoiceId: string): Promise<number> {
+  const receipts = await readColl<any>('receipts');
+  let paid = 0;
+  for (const r of receipts) {
+    for (const a of (r.allocations || [])) {
+      if (a.invoiceId === invoiceId) paid += toUsd(a.amountApplied);
+    }
+  }
+  return +paid.toFixed(2);
+}
+
+/** Derive an invoice's status from what's been received against it. */
+function deriveInvoiceStatus(total: number, paid: number): 'unpaid' | 'partial' | 'paid' {
+  const t = +toUsd(total).toFixed(2);
+  const p = +toUsd(paid).toFixed(2);
+  if (p <= 0) return 'unpaid';
+  if (p + 0.005 >= t) return 'paid';
+  return 'partial';
+}
+
+/** Recompute + persist status for the given invoice ids (and their debtor refs). */
+async function syncInvoiceStatuses(invoiceIds: string[]) {
+  if (!invoiceIds.length) return;
+  const receipts = await readColl<any>('receipts');
+  const paidByInv: Record<string, number> = {};
+  for (const r of receipts) {
+    for (const a of (r.allocations || [])) {
+      paidByInv[a.invoiceId] = (paidByInv[a.invoiceId] || 0) + toUsd(a.amountApplied);
+    }
+  }
+  const invoices = await readColl<any>('invoices');
+  let invChanged = false;
+  for (const inv of invoices) {
+    if (!invoiceIds.includes(inv.id)) continue;
+    const status = deriveInvoiceStatus(inv.total, paidByInv[inv.id] || 0);
+    if (inv.status !== status) {
+      inv.status = status;
+      inv.paidAt = status === 'paid' ? nowIso() : undefined;
+      invChanged = true;
+    }
+  }
+  if (invChanged) await writeColl('invoices', invoices);
+  // Mirror status onto the debtor's invoice refs so statements read correctly.
+  const debtors = await readColl<any>('debtors');
+  let debChanged = false;
+  for (const d of debtors) {
+    for (const ref of (d.invoices || [])) {
+      if (invoiceIds.includes(ref.id)) {
+        const status = deriveInvoiceStatus(ref.amount, paidByInv[ref.id] || 0);
+        if (ref.status !== status) { ref.status = status; debChanged = true; }
+      }
+    }
+  }
+  if (debChanged) await writeColl('debtors', debtors);
+}
+
+export async function createReceipt(r: {
+  mode: ReceiptMode;
+  date: string;
+  amount: number;
+  debtorId?: string | null;
+  clientName?: string;
+  allocations?: { invoiceId: string; amountApplied: number }[];
+  lines?: { description: string; qty: number; rate: number }[];
+  taxRate?: number;
+  method?: string;
+  notes?: string;
+}) {
+  const amt = Number(r.amount);
+  if (!Number.isFinite(amt) || amt < 0) throw new Error('Receipt amount must be a valid non-negative number.');
+  const allocations = Array.isArray(r.allocations) ? r.allocations.filter((a) => a && a.invoiceId) : [];
+  const allocTotal = allocations.reduce((s, a) => s + toUsd(a.amountApplied), 0);
+  if (allocTotal - amt > 0.005) throw new Error('Allocated amount exceeds the receipt total.');
+
+  // Step 1: create the receipt record with its own RCPT-#### series.
+  const receipt = await serialize(async () => {
+    const items = await readColl<any>('receipts');
+    const maxSeq = items.reduce((m: number, it: any) => {
+      const match = /RCPT-(\d+)/.exec(it.receiptNumber || '');
+      return match ? Math.max(m, parseInt(match[1], 10)) : m;
+    }, 0);
+    const taxRate = Number(r.taxRate) || 0;
+    const taxAmount = taxRate > 0 ? +(amt - amt / (1 + taxRate / 100)).toFixed(2) : 0;
+    const item = {
+      id: uuid(),
+      receiptNumber: `RCPT-${String(maxSeq + 1).padStart(4, '0')}`,
+      mode: r.mode,
+      date: r.date,
+      amount: +amt.toFixed(2),
+      debtorId: r.debtorId || null,
+      clientName: (r.clientName || '').trim(),
+      allocations,
+      lines: Array.isArray(r.lines) ? r.lines : [],
+      taxRate,
+      taxAmount,
+      method: r.method || 'cash',
+      notes: r.notes || '',
+      created_at: nowIso(),
+    };
+    items.push(item);
+    await writeColl('receipts', items);
+    return item;
+  });
+
+  // Step 2: record where the money landed in cash.
+  //  - cash_sale: handled via the `sales` record in Step 3 (dashboard cash already
+  //    derives from sales), so writing a Cash Book row too would double-count.
+  //  - against_invoice / advance: invoice revenue isn't in `sales`, so we post a
+  //    Cash Book IN row here — this is the bridge that makes received money reach cash.
+  if (r.mode !== 'cash_sale') {
+    await serialize(async () => {
+      const cash = await readColl<any>('cashEntries');
+      cash.push({
+        id: uuid(), amount: +amt.toFixed(2), direction: 'in', date: r.date,
+        notes: `Receipt ${receipt.receiptNumber}${receipt.clientName ? ` — ${receipt.clientName}` : ''}`,
+        receiptId: receipt.id, created_at: nowIso(),
+      });
+      await writeColl('cashEntries', cash);
+    });
+  }
+
+  // Step 3: cash sale → also record revenue in `sales`.
+  if (r.mode === 'cash_sale') {
+    await serialize(async () => {
+      const sales = await readColl<any>('sales');
+      sales.push({ id: uuid(), amount: +amt.toFixed(2), date: r.date, receiptId: receipt.id, notes: `Cash sale ${receipt.receiptNumber}`, created_at: nowIso() });
+      await writeColl('sales', sales);
+    });
+  }
+
+  // Step 4: against_invoice / advance → post payment onto the debtor ledger.
+  if ((r.mode === 'against_invoice' || r.mode === 'advance') && r.debtorId) {
+    await serialize(async () => {
+      const debtors = await readColl<any>('debtors');
+      const idx = debtors.findIndex((d: any) => d.id === r.debtorId);
+      if (idx !== -1) {
+        debtors[idx].payments = [...(debtors[idx].payments || []), {
+          id: uuid(), amount: +amt.toFixed(2), date: r.date,
+          notes: r.mode === 'advance' ? `Advance ${receipt.receiptNumber}` : `Receipt ${receipt.receiptNumber}`,
+          receiptId: receipt.id, created_at: nowIso(),
+        }];
+        await writeColl('debtors', debtors);
+      }
+    });
+  }
+
+  // Step 5: recompute status of any invoices this receipt settled.
+  await syncInvoiceStatuses(allocations.map((a) => a.invoiceId));
+  return receipt;
+}
+
+export async function deleteReceipt(id: string) {
+  const receipts = await readColl<any>('receipts');
+  const receipt = receipts.find((x: any) => x.id === id);
+  if (!receipt) return { ok: true };
+  const affectedInvoices = (receipt.allocations || []).map((a: any) => a.invoiceId);
+
+  await serialize(async () => {
+    await writeColl('receipts', (await readColl<any>('receipts')).filter((x: any) => x.id !== id));
+  });
+  // Reverse the Cash Book row, the cash-sale revenue row, and the debtor payment.
+  await serialize(async () => {
+    await writeColl('cashEntries', (await readColl<any>('cashEntries')).filter((c: any) => c.receiptId !== id));
+  });
+  await serialize(async () => {
+    await writeColl('sales', (await readColl<any>('sales')).filter((s: any) => s.receiptId !== id));
+  });
+  await serialize(async () => {
+    const debtors = await readColl<any>('debtors');
+    let changed = false;
+    for (const d of debtors) {
+      if (Array.isArray(d.payments) && d.payments.some((p: any) => p.receiptId === id)) {
+        d.payments = d.payments.filter((p: any) => p.receiptId !== id);
+        changed = true;
+      }
+    }
+    if (changed) await writeColl('debtors', debtors);
+  });
+  await syncInvoiceStatuses(affectedInvoices);
+  return { ok: true };
+}
+
+// ---------- Advances / Deposits ----------
+// An advance is a receipt with mode 'advance' whose money was already taken in
+// (cash row + debtor payment) at receive time, but which is NOT yet tied to any
+// invoice. Its allocations[] start empty; the UNALLOCATED remainder is the
+// customer's advance CREDIT. Later we "apply" that credit to an invoice by
+// appending an allocation to the SAME advance receipt — this does NOT move cash
+// again (that already happened); it only ties the money to the invoice so the
+// invoice status derives to partial/paid.
+
+/** How much advance credit a customer still has available (received but unallocated). */
+export async function getAdvanceCredit(debtorId: string): Promise<number> {
+  const receipts = await readColl<any>('receipts');
+  let credit = 0;
+  for (const r of receipts) {
+    if (r.mode !== 'advance' || r.debtorId !== debtorId) continue;
+    const allocated = (r.allocations || []).reduce((s: number, a: any) => s + toUsd(a.amountApplied), 0);
+    credit += toUsd(r.amount) - allocated;
+  }
+  return +credit.toFixed(2);
+}
+
+/** List a customer's advance receipts with their remaining (unapplied) amount. */
+export async function listAdvances(debtorId: string) {
+  const receipts = await readColl<any>('receipts');
+  return receipts
+    .filter((r: any) => r.mode === 'advance' && r.debtorId === debtorId)
+    .map((r: any) => {
+      const allocated = (r.allocations || []).reduce((s: number, a: any) => s + toUsd(a.amountApplied), 0);
+      return { ...r, allocated: +allocated.toFixed(2), remaining: +(toUsd(r.amount) - allocated).toFixed(2) };
+    })
+    .sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+
+/**
+ * Apply a customer's existing advance credit to an invoice. Draws from that
+ * customer's advance receipts (oldest first) up to `amount` (defaults to the
+ * lesser of available credit and the invoice's open balance). Appends allocations
+ * to the advance receipts — NO new cash/debtor-payment is created (the money was
+ * already received when the advance was taken).
+ */
+export async function applyAdvanceToInvoice(debtorId: string, invoiceId: string, amount?: number) {
+  const invoices = await readColl<any>('invoices');
+  const inv = invoices.find((i: any) => i.id === invoiceId);
+  if (!inv) throw new Error('Invoice not found');
+  const alreadyPaid = await invoicePaidAmount(invoiceId);
+  const open = +(toUsd(inv.total) - alreadyPaid).toFixed(2);
+  if (open <= 0) throw new Error('This invoice is already fully paid.');
+  const credit = await getAdvanceCredit(debtorId);
+  if (credit <= 0) throw new Error('This customer has no advance credit to apply.');
+
+  let toApply = amount != null ? +Number(amount).toFixed(2) : Math.min(credit, open);
+  toApply = Math.min(toApply, credit, open);
+  if (toApply <= 0) throw new Error('Nothing to apply.');
+
+  await serialize(async () => {
+    const receipts = await readColl<any>('receipts');
+    // Advance receipts for this debtor, oldest first, that still have remaining credit.
+    const advances = receipts
+      .filter((r: any) => r.mode === 'advance' && r.debtorId === debtorId)
+      .sort((a: any, b: any) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    let remaining = toApply;
+    for (const r of advances) {
+      if (remaining <= 0) break;
+      const allocated = (r.allocations || []).reduce((s: number, a: any) => s + toUsd(a.amountApplied), 0);
+      const avail = +(toUsd(r.amount) - allocated).toFixed(2);
+      if (avail <= 0) continue;
+      const take = Math.min(avail, remaining);
+      r.allocations = [...(r.allocations || []), { invoiceId, amountApplied: +take.toFixed(2) }];
+      remaining = +(remaining - take).toFixed(2);
+    }
+    await writeColl('receipts', receipts);
+  });
+  await syncInvoiceStatuses([invoiceId]);
+  return { ok: true, applied: toApply };
+}
+
+
+// ---------- Quotes / Estimates ----------
+// A quote is a NON-POSTING proposal: it has no ledger effect (no revenue, no
+// debtor, no cash) until it is CONVERTED into an invoice. Statuses:
+//   draft | sent | accepted | expired | converted
+// On convert we call createInvoice (which does all the debtor wiring) and stamp
+// the quote with convertedInvoiceId so it can't be converted twice.
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'converted';
+
+export async function listQuotes() {
+  return (await readColl<any>('quotes')).sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+
+export async function createQuote(q: {
+  clientName: string;
+  clientPhone?: string;
+  date: string;
+  validUntil?: string;
+  lines: { description: string; qty: number; rate: number }[];
+  taxRate?: number;
+  taxLabel?: string;
+  notes?: string;
+  status?: QuoteStatus;
+}) {
+  return serialize(async () => {
+    const items = await readColl<any>('quotes');
+    const maxSeq = items.reduce((m: number, it: any) => {
+      const match = /QUO-(\d+)/.exec(it.quoteNumber || '');
+      return match ? Math.max(m, parseInt(match[1], 10)) : m;
+    }, 0);
+    const lines = Array.isArray(q.lines) ? q.lines : [];
+    const sub = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
+    const taxRate = Number(q.taxRate) || 0;
+    const total = +(sub + sub * taxRate / 100).toFixed(2);
+    const item = {
+      id: uuid(),
+      quoteNumber: `QUO-${String(maxSeq + 1).padStart(4, '0')}`,
+      clientName: (q.clientName || '').trim(),
+      clientPhone: q.clientPhone || '',
+      date: q.date,
+      validUntil: q.validUntil || '',
+      lines,
+      taxRate,
+      taxLabel: q.taxLabel || '',
+      notes: q.notes || '',
+      total,
+      status: q.status || 'draft',
+      convertedInvoiceId: null,
+      created_at: nowIso(),
+    };
+    items.push(item);
+    await writeColl('quotes', items);
+    return item;
+  });
+}
+
+export async function updateQuote(id: string, q: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('quotes');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Quote not found');
+    // Recompute total if lines/tax changed.
+    const merged = { ...items[idx], ...q };
+    if (q.lines || q.taxRate !== undefined) {
+      const lines = Array.isArray(merged.lines) ? merged.lines : [];
+      const sub = lines.reduce((s: number, l: any) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
+      const taxRate = Number(merged.taxRate) || 0;
+      merged.total = +(sub + sub * taxRate / 100).toFixed(2);
+    }
+    items[idx] = merged;
+    await writeColl('quotes', items);
+    return items[idx];
+  });
+}
+
+export async function deleteQuote(id: string) {
+  return serialize(async () => {
+    const items = await readColl<any>('quotes');
+    await writeColl('quotes', items.filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+
+/** Set a quote's status (draft/sent/accepted/expired). Convert uses convertQuoteToInvoice. */
+export async function setQuoteStatus(id: string, status: QuoteStatus) {
+  return updateQuote(id, { status });
+}
+
+/**
+ * Convert an accepted quote into a real invoice. Idempotent-guarded: a quote that
+ * already has convertedInvoiceId throws, so the same quote can't post twice.
+ */
+export async function convertQuoteToInvoice(id: string, opts?: { date?: string; dueDate?: string }) {
+  const quotes = await readColl<any>('quotes');
+  const q = quotes.find((x: any) => x.id === id);
+  if (!q) throw new Error('Quote not found');
+  if (q.convertedInvoiceId) throw new Error('This quote has already been converted to an invoice.');
+
+  // createInvoice does all the debtor find-or-create + ledger wiring.
+  const invoice = await createInvoice({
+    clientName: q.clientName,
+    clientPhone: q.clientPhone,
+    date: opts?.date || new Date().toISOString().slice(0, 10),
+    dueDate: opts?.dueDate,
+    lines: q.lines,
+    taxRate: q.taxRate,
+    taxLabel: q.taxLabel,
+    total: q.total,
+    notes: q.notes ? `${q.notes} (from ${q.quoteNumber})` : `From ${q.quoteNumber}`,
+  });
+
+  await updateQuote(id, { status: 'converted', convertedInvoiceId: invoice.id });
+  return invoice;
+}
+
+// ---------- Credit / Debit Notes ----------
+// A CREDIT note reduces what a customer owes (sales return, overcharge, or a
+// post-sale DISCOUNT given later). A DEBIT note increases it (extra charge,
+// under-billing). Both are tied to a debtor (and optionally a specific invoice).
+// They post NO cash — they are pure receivable adjustments — and are folded into
+// the debtor balance/statement (see listDebtors / getDebtorStatement) and, for a
+// credit note, reduce accrual revenue in dashboard/pnlRange.
+export type NoteReason = 'discount' | 'return' | 'correction' | 'other';
+
+async function createNote(coll: 'creditNotes' | 'debitNotes', prefix: string, n: {
+  debtorId: string;
+  invoiceId?: string | null;
+  clientName?: string;
+  date: string;
+  amount: number;
+  taxRate?: number;
+  reason?: NoteReason;
+  notes?: string;
+}) {
+  const amt = Number(n.amount);
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Note amount must be a valid positive number.');
+  if (!n.debtorId) throw new Error('A customer is required for the note.');
+  return serialize(async () => {
+    const items = await readColl<any>(coll);
+    const maxSeq = items.reduce((m: number, it: any) => {
+      const match = new RegExp(`${prefix}-(\\d+)`).exec(it.noteNumber || '');
+      return match ? Math.max(m, parseInt(match[1], 10)) : m;
+    }, 0);
+    const taxRate = Number(n.taxRate) || 0;
+    const taxAmount = taxRate > 0 ? +(amt - amt / (1 + taxRate / 100)).toFixed(2) : 0;
+    const item = {
+      id: uuid(),
+      noteNumber: `${prefix}-${String(maxSeq + 1).padStart(4, '0')}`,
+      debtorId: n.debtorId,
+      invoiceId: n.invoiceId || null,
+      clientName: (n.clientName || '').trim(),
+      date: n.date,
+      amount: +amt.toFixed(2),
+      taxRate,
+      taxAmount,
+      reason: n.reason || 'other',
+      notes: n.notes || '',
+      created_at: nowIso(),
+    };
+    items.push(item);
+    await writeColl(coll, items);
+    return item;
+  });
+}
+
+export async function listCreditNotes(debtorId?: string) {
+  const items = await readColl<any>('creditNotes');
+  const filtered = debtorId ? items.filter((c: any) => c.debtorId === debtorId) : items;
+  return filtered.sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+export async function listDebitNotes(debtorId?: string) {
+  const items = await readColl<any>('debitNotes');
+  const filtered = debtorId ? items.filter((c: any) => c.debtorId === debtorId) : items;
+  return filtered.sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+export async function createCreditNote(n: Parameters<typeof createNote>[2]) {
+  return createNote('creditNotes', 'CN', n);
+}
+export async function createDebitNote(n: Parameters<typeof createNote>[2]) {
+  return createNote('debitNotes', 'DN', n);
+}
+export async function deleteCreditNote(id: string) {
+  return serialize(async () => {
+    await writeColl('creditNotes', (await readColl<any>('creditNotes')).filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+export async function deleteDebitNote(id: string) {
+  return serialize(async () => {
+    await writeColl('debitNotes', (await readColl<any>('debitNotes')).filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+
+// ---------- Delivery Notes / Challans ----------
+// A delivery note (challan) documents GOODS MOVEMENT — items handed over to a
+// customer — when the value/invoice follows separately. It posts NOTHING to the
+// ledger (no revenue, no cash, no receivable): it is a movement record only,
+// often legally required to transport goods (e.g. under GST). Optionally links
+// to an invoice once one is raised. Status: pending | delivered.
+export type DeliveryStatus = 'pending' | 'delivered';
+
+export async function listDeliveryNotes() {
+  return (await readColl<any>('deliveryNotes')).sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+}
+export async function createDeliveryNote(n: {
+  clientName: string;
+  clientPhone?: string;
+  debtorId?: string | null;
+  invoiceId?: string | null;
+  date: string;
+  items: { description: string; qty: number }[];
+  vehicleNo?: string;
+  status?: DeliveryStatus;
+  notes?: string;
+}) {
+  if (!n.clientName || !n.clientName.trim()) throw new Error('A customer name is required.');
+  return serialize(async () => {
+    const items = await readColl<any>('deliveryNotes');
+    const maxSeq = items.reduce((m: number, it: any) => {
+      const match = /DC-(\d+)/.exec(it.noteNumber || '');
+      return match ? Math.max(m, parseInt(match[1], 10)) : m;
+    }, 0);
+    const item = {
+      id: uuid(),
+      noteNumber: `DC-${String(maxSeq + 1).padStart(4, '0')}`,
+      clientName: n.clientName.trim(),
+      clientPhone: n.clientPhone || '',
+      debtorId: n.debtorId || null,
+      invoiceId: n.invoiceId || null,
+      date: n.date,
+      items: Array.isArray(n.items) ? n.items.filter((i) => i.description || i.qty) : [],
+      vehicleNo: n.vehicleNo || '',
+      status: n.status || 'pending',
+      notes: n.notes || '',
+      created_at: nowIso(),
+    };
+    items.push(item);
+    await writeColl('deliveryNotes', items);
+    return item;
+  });
+}
+export async function updateDeliveryNote(id: string, n: any) {
+  return serialize(async () => {
+    const items = await readColl<any>('deliveryNotes');
+    const idx = items.findIndex((x: any) => x.id === id);
+    if (idx === -1) throw new Error('Delivery note not found');
+    items[idx] = { ...items[idx], ...n };
+    await writeColl('deliveryNotes', items);
+    return items[idx];
+  });
+}
+export async function deleteDeliveryNote(id: string) {
+  return serialize(async () => {
+    await writeColl('deliveryNotes', (await readColl<any>('deliveryNotes')).filter((x: any) => x.id !== id));
+    return { ok: true };
+  });
+}
+
+// ---------- Enhanced reports ----------
+
+/**
+ * Tax report (GST/VAT) for a date range. Output tax = tax collected on invoices
+ * (accrual) or on receipts (cash), plus cash-sale receipt tax, minus tax reversed
+ * by credit notes, plus tax added by debit notes. Input tax on purchases is shown
+ * separately (bills don't carry a tax split today, so it's a best-effort estimate
+ * using the settings taxRate). Net = output − input.
+ */
+export async function taxReport(from: string, to: string) {
+  const s = await getSettings();
+  const inRange = (d: string) => (d || '').slice(0, 10) >= from && (d || '').slice(0, 10) <= to;
+  const [invoices, receipts, creditNotes, debitNotes, bills] = await Promise.all([
+    readColl<any>('invoices'), readColl<any>('receipts'), readColl<any>('creditNotes'), readColl<any>('debitNotes'), readColl<any>('bills'),
+  ]);
+  const taxOf = (gross: number, rate: number) => rate > 0 ? +(gross - gross / (1 + rate / 100)).toFixed(2) : 0;
+
+  const isAccrual = s.accountingBasis === 'accrual';
+  // Output tax source depends on basis.
+  let outputBase = 0, outputTax = 0;
+  if (isAccrual) {
+    for (const i of invoices.filter((x: any) => inRange(x.date))) {
+      const rate = Number(i.taxRate) || 0;
+      outputBase += toUsd(i.total); outputTax += taxOf(toUsd(i.total), rate);
+    }
+  } else {
+    for (const r of receipts.filter((x: any) => inRange(x.date))) {
+      const rate = Number(r.taxRate) || 0;
+      outputBase += toUsd(r.amount); outputTax += taxOf(toUsd(r.amount), rate || Number(s.taxRate) || 0);
+    }
+  }
+  // Credit notes reduce output tax; debit notes add to it.
+  let cnTax = 0, dnTax = 0;
+  for (const c of creditNotes.filter((x: any) => inRange(x.date))) cnTax += toUsd(c.taxAmount) || taxOf(toUsd(c.amount), Number(c.taxRate) || Number(s.taxRate) || 0);
+  for (const c of debitNotes.filter((x: any) => inRange(x.date))) dnTax += toUsd(c.taxAmount) || taxOf(toUsd(c.amount), Number(c.taxRate) || Number(s.taxRate) || 0);
+  const netOutputTax = +(outputTax - cnTax + dnTax).toFixed(2);
+
+  // Input tax (best-effort): assume bills are tax-inclusive at the standard rate.
+  const rate = Number(s.taxRate) || 0;
+  let inputBase = 0, inputTax = 0;
+  for (const b of bills.filter((x: any) => inRange(x.date))) {
+    inputBase += toUsd(b.amount); inputTax += taxOf(toUsd(b.amount), rate);
+  }
+  return {
+    from, to, taxLabel: s.taxLabel || 'Tax', taxRate: rate, basis: isAccrual ? 'accrual' : 'cash',
+    outputBase: +outputBase.toFixed(2), outputTax: +outputTax.toFixed(2),
+    creditNoteTax: +cnTax.toFixed(2), debitNoteTax: +dnTax.toFixed(2),
+    netOutputTax,
+    inputBase: +inputBase.toFixed(2), inputTax: +inputTax.toFixed(2),
+    netTaxPayable: +(netOutputTax - inputTax).toFixed(2),
+  };
+}
+
+/**
+ * Sales register: every revenue document in the range (cash sales, invoices) with
+ * totals, so the user has a line-by-line list of what was sold.
+ */
+export async function salesRegister(from: string, to: string) {
+  const inRange = (d: string) => (d || '').slice(0, 10) >= from && (d || '').slice(0, 10) <= to;
+  const [sales, invoices] = await Promise.all([readColl<any>('sales'), readColl<any>('invoices')]);
+  const rows: any[] = [];
+  for (const x of sales.filter((s: any) => inRange(s.date))) {
+    rows.push({ date: (x.date || '').slice(0, 10), type: 'Cash Sale', ref: x.notes || '', party: '', amount: +toUsd(x.amount).toFixed(2) });
+  }
+  for (const i of invoices.filter((x: any) => inRange(x.date))) {
+    rows.push({ date: (i.date || '').slice(0, 10), type: 'Invoice', ref: i.invoiceNumber || '', party: i.clientName || '', amount: +toUsd(i.total).toFixed(2), status: i.status });
+  }
+  rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const total = +rows.reduce((s, r) => s + r.amount, 0).toFixed(2);
+  const cashTotal = +rows.filter((r) => r.type === 'Cash Sale').reduce((s, r) => s + r.amount, 0).toFixed(2);
+  const invoiceTotal = +rows.filter((r) => r.type === 'Invoice').reduce((s, r) => s + r.amount, 0).toFixed(2);
+  return { from, to, rows, total, cashTotal, invoiceTotal, count: rows.length };
+}
+
+/**
+ * Receipts register: all money actually received in the range, grouped by method
+ * (cash/card/bank/upi) and mode — a simple collections/cash-in view.
+ */
+export async function receiptsRegister(from: string, to: string) {
+  const inRange = (d: string) => (d || '').slice(0, 10) >= from && (d || '').slice(0, 10) <= to;
+  const receipts = (await readColl<any>('receipts')).filter((r: any) => inRange(r.date));
+  const rows = receipts.map((r: any) => ({
+    date: (r.date || '').slice(0, 10), ref: r.receiptNumber || '', party: r.clientName || 'Walk-in',
+    mode: r.mode, method: r.method || 'cash', amount: +toUsd(r.amount).toFixed(2),
+  })).sort((a: any, b: any) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const byMethod: Record<string, number> = {};
+  const byMode: Record<string, number> = {};
+  for (const r of rows) {
+    byMethod[r.method] = +((byMethod[r.method] || 0) + r.amount).toFixed(2);
+    byMode[r.mode] = +((byMode[r.mode] || 0) + r.amount).toFixed(2);
+  }
+  const total = +rows.reduce((s: number, r: any) => s + r.amount, 0).toFixed(2);
+  return { from, to, rows, byMethod, byMode, total, count: rows.length };
+}
+
+
+
+
+

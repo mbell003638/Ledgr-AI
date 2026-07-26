@@ -67,6 +67,8 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="employee-report"
           options={{
+            // Removed from the bottom bar — now reachable from Reports → Staff Report.
+            href: null,
             title: "Staff",
             tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" size={size} color={color} />,
             tabBarButtonTestID: "tab-staff",

@@ -10,6 +10,7 @@ import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
+import { requireAuth } from "@/src/utils/lock";
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -32,9 +33,10 @@ export default function SettingsScreen() {
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
   const [taxRate, setTaxRate] = useState("");
-  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", bankAccount: "", upiId: "", paymentDetails: "" });
+  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "" });
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -50,6 +52,7 @@ export default function SettingsScreen() {
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
+      setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
       setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
       setOpeningCash(s.openingCash ? String(s.openingCash) : "");
       setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
@@ -76,6 +79,7 @@ export default function SettingsScreen() {
         businessAddress: s.businessAddress || "",
         businessPhone: s.businessPhone || "",
         businessEmail: s.businessEmail || "",
+        taxRegNo: s.taxRegNo || "",
         bankAccount: s.bankAccount || "",
         upiId: s.upiId || "",
         paymentDetails: s.paymentDetails || "",
@@ -100,6 +104,7 @@ export default function SettingsScreen() {
       await api.updateSettings({
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+        accountingBasis,
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
@@ -354,6 +359,25 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>Accounting Basis</Text>
+              <Text style={styles.hint}>Cash = revenue counts when money is received (cash sales + receipts). Accrual = revenue counts when billed (cash sales + invoices raised).</Text>
+              <View style={styles.modeRow}>
+                {(["cash", "accrual"] as const).map((b) => (
+                  <Pressable
+                    key={b}
+                    testID={`basis-${b}`}
+                    onPress={() => setAccountingBasis(b)}
+                    style={[styles.modeBtn, accountingBasis === b && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, accountingBasis === b && styles.modeTextActive]}>
+                      {b === "cash" ? "Cash Basis" : "Accrual Basis"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Manager Commission %</Text>
               <Text style={styles.hint}>% of Gross Profit paid to the shop manager. Leave blank if none.</Text>
               <TextInput
@@ -556,6 +580,7 @@ export default function SettingsScreen() {
                 { label: "Address", key: "businessAddress", placeholder: "Street, City" },
                 { label: "Phone", key: "businessPhone", placeholder: "+1 555 000 0000" },
                 { label: "Email", key: "businessEmail", placeholder: "you@example.com" },
+                { label: "Tax Reg. No (TRN / GSTIN / VAT)", key: "taxRegNo", placeholder: "Shown on invoices" },
                 { label: "Bank Account / IBAN / Interac", key: "bankAccount", placeholder: "Acct no, IBAN, or Interac email" },
                 { label: "UPI ID", key: "upiId", placeholder: "name@upi" },
                 { label: "Other Payment Details / Link", key: "paymentDetails", placeholder: "PayPal, payment link, cheque payable to…" },

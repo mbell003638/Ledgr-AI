@@ -38,12 +38,18 @@ export const COLLECTIONS = [
   'expenses',
   'debtors',
   'invoices',
+  'quotes',
+  'receipts',
+  'creditNotes',
+  'debitNotes',
+  'deliveryNotes',
+  'cashEntries',
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number];
 
 /** Current on-device schema version (bump when table shapes change). */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Full DDL. Every collection table is (id, date, data) with an index on date.

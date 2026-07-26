@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { LineChart, PieChart } from "react-native-gifted-charts";
 import { Linking } from "react-native";
 import * as Print from "expo-print";
@@ -13,7 +13,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 
-const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors"] as const;
+const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
 type Seg = typeof SEGMENTS[number];
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
@@ -38,6 +38,7 @@ const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&l
 export default function ReportsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const router = useRouter();
   const [seg, setSeg] = useState<Seg>("Summary");
   const [dash, setDash] = useState<any>(null);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -50,6 +51,9 @@ export default function ReportsScreen() {
   const [assetDist, setAssetDist] = useState<any[]>([]);
   const [creditors, setCreditors] = useState<any[]>([]);
   const [debtors, setDebtors] = useState<any[]>([]);
+  const [taxRep, setTaxRep] = useState<any>(null);
+  const [salesReg, setSalesReg] = useState<any>(null);
+  const [receiptsReg, setReceiptsReg] = useState<any>(null);
   const [currSym, setCurrSym] = useState("$");
   const [bizName, setBizName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -73,17 +77,19 @@ export default function ReportsScreen() {
       const s = await api.getSettings();
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
-      const [dl, pd, p, b, t, c, dh, pt, ad, cr, dr] = await Promise.all([
+      const [dl, pd, p, b, t, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
         api.dashboard(), api.listPeriods(),
         api.pnlRange(from, to), api.balanceSheet(), api.trialBalance(),
         api.capitalStatement(), api.drawingsHistory(),
         api.monthlyProfitTrend(6), api.assetDistribution(),
         api.creditorsReport(from, to), api.debtorsReport(from, to),
+        api.taxReport(from, to), api.salesRegister(from, to), api.receiptsRegister(from, to),
       ]);
       setDash(dl); setPeriods(pd);
       setPnl(p); setBs(b); setTb(t); setCap(c); setDraws(dh);
       setProfitTrend(pt); setAssetDist(ad);
       setCreditors(cr); setDebtors(dr);
+      setTaxRep(tx); setSalesReg(sr); setReceiptsReg(rr);
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, [from, to]);
@@ -143,6 +149,33 @@ export default function ReportsScreen() {
       body = draws.map((d) => `${d.partnerName} ${shortDate(d.date)}: ${fmt(d.amount)}`).join("\n") || "No drawings.";
     } else if (seg === "Trial" && tb) {
       body = ["Debits", ...tb.debits.map((d: any) => `  ${d.account}: ${fmt(d.amount)}`), "Credits", ...tb.credits.map((c: any) => `  ${c.account}: ${fmt(c.amount)}`)].join("\n");
+    } else if (seg === "Tax" && taxRep) {
+      body = [
+        `— ${taxRep.taxLabel} (${taxRep.taxRate}%) · ${taxRep.basis} basis`,
+        `Output tax base: ${fmt(taxRep.outputBase)}`,
+        `Output tax: ${fmt(taxRep.outputTax)}`,
+        `Less credit notes: ${fmt(taxRep.creditNoteTax)}`,
+        `Add debit notes: ${fmt(taxRep.debitNoteTax)}`,
+        `Net output tax: ${fmt(taxRep.netOutputTax)}`,
+        `Input tax (purchases): ${fmt(taxRep.inputTax)}`,
+        `Net tax payable: ${fmt(taxRep.netTaxPayable)}`,
+      ].join("\n");
+    } else if (seg === "Sales Reg" && salesReg) {
+      body = [
+        `Cash sales: ${fmt(salesReg.cashTotal)}`,
+        `Invoiced: ${fmt(salesReg.invoiceTotal)}`,
+        `Total: ${fmt(salesReg.total)} (${salesReg.count} entries)`,
+        `—`,
+        ...salesReg.rows.map((r: any) => `${shortDate(r.date)} ${r.type} ${r.ref}${r.party ? ` ${r.party}` : ""}: ${fmt(r.amount)}`),
+      ].join("\n");
+    } else if (seg === "Receipts" && receiptsReg) {
+      body = [
+        `Total received: ${fmt(receiptsReg.total)} (${receiptsReg.count})`,
+        `— By method`,
+        ...Object.entries(receiptsReg.byMethod).map(([k, v]) => `${k}: ${fmt(v as number)}`),
+        `— Entries`,
+        ...receiptsReg.rows.map((r: any) => `${shortDate(r.date)} ${r.ref} ${r.party} (${r.method}): ${fmt(r.amount)}`),
+      ].join("\n");
     }
     return `${head}\n${body}\n\n— Sent from Ledgr`;
   };
@@ -180,7 +213,17 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Reports" subtitle="Financial statements" />
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg }}>
+        <ScreenHeader title="Reports" subtitle="Financial statements" />
+        <Pressable
+          testID="btn-staff-report"
+          onPress={() => router.push("/(tabs)/employee-report")}
+          style={({ pressed }) => [styles.staffBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="briefcase-outline" size={16} color={theme.color.brandPrimary} />
+          <Text style={styles.staffBtnText}>Staff</Text>
+        </Pressable>
+      </View>
 
       {/* Date range presets */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 48, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 8, paddingVertical: 8 }}>
@@ -479,6 +522,63 @@ export default function ReportsScreen() {
             </Card>
           )}
 
+          {seg === "Tax" && taxRep && (
+            <Card testID="report-tax">
+              <Text style={styles.rTitle}>{taxRep.taxLabel} Report</Text>
+              <Text style={styles.hint}>{from} → {to} · {taxRep.taxRate}% · {taxRep.basis} basis</Text>
+              <RowKV label="Output tax base" value={fmt(taxRep.outputBase)} theme={theme} styles={styles} />
+              <RowKV label="Output tax collected" value={fmt(taxRep.outputTax)} theme={theme} styles={styles} />
+              <RowKV label="Less: credit notes" value={fmt(taxRep.creditNoteTax)} theme={theme} styles={styles} />
+              <RowKV label="Add: debit notes" value={fmt(taxRep.debitNoteTax)} theme={theme} styles={styles} />
+              <RowKV label="Net output tax" value={fmt(taxRep.netOutputTax)} strong theme={theme} styles={styles} />
+              <View style={styles.divider} />
+              <RowKV label="Input tax (purchases)" value={fmt(taxRep.inputTax)} theme={theme} styles={styles} />
+              <RowKV label="Net tax payable" value={fmt(taxRep.netTaxPayable)} strong big theme={theme} styles={styles} />
+              <Text style={styles.hint}>Input tax is estimated from purchase totals at the standard rate.</Text>
+            </Card>
+          )}
+
+          {seg === "Sales Reg" && salesReg && (
+            <Card testID="report-salesreg">
+              <Text style={styles.rTitle}>Sales Register</Text>
+              <Text style={styles.hint}>{from} → {to} · {salesReg.count} entries</Text>
+              <RowKV label="Cash sales" value={fmt(salesReg.cashTotal)} theme={theme} styles={styles} />
+              <RowKV label="Invoiced" value={fmt(salesReg.invoiceTotal)} theme={theme} styles={styles} />
+              <RowKV label="Total" value={fmt(salesReg.total)} strong big theme={theme} styles={styles} />
+              <View style={styles.divider} />
+              {salesReg.rows.length === 0 ? (
+                <Text style={styles.empty}>No sales in this range.</Text>
+              ) : salesReg.rows.map((r: any, i: number) => (
+                <View key={i} style={styles.kv}>
+                  <Text style={styles.kvLabel}>{shortDate(r.date)} · {r.type}{r.ref ? ` · ${r.ref}` : ""}{r.party ? ` · ${r.party}` : ""}</Text>
+                  <Text style={styles.kvValue}>{fmt(r.amount)}</Text>
+                </View>
+              ))}
+            </Card>
+          )}
+
+          {seg === "Receipts" && receiptsReg && (
+            <Card testID="report-receiptsreg">
+              <Text style={styles.rTitle}>Receipts Register</Text>
+              <Text style={styles.hint}>{from} → {to} · {receiptsReg.count} receipts</Text>
+              <RowKV label="Total received" value={fmt(receiptsReg.total)} strong big theme={theme} styles={styles} />
+              <View style={styles.divider} />
+              <Text style={[styles.hint, { fontWeight: "700" }]}>By method</Text>
+              {Object.entries(receiptsReg.byMethod).map(([k, v]) => (
+                <RowKV key={k} label={k.toUpperCase()} value={fmt(v as number)} theme={theme} styles={styles} />
+              ))}
+              <View style={styles.divider} />
+              {receiptsReg.rows.length === 0 ? (
+                <Text style={styles.empty}>No receipts in this range.</Text>
+              ) : receiptsReg.rows.map((r: any, i: number) => (
+                <View key={i} style={styles.kv}>
+                  <Text style={styles.kvLabel}>{shortDate(r.date)} · {r.ref} · {r.party} ({r.method})</Text>
+                  <Text style={styles.kvValue}>{fmt(r.amount)}</Text>
+                </View>
+              ))}
+            </Card>
+          )}
+
           <View style={{ height: 120 }} />
         </ScrollView>
       )}
@@ -497,6 +597,8 @@ function RowKV({ label, value, strong, big, danger, theme, styles }: { label: st
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
+  staffBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
+  staffBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   segScroll: { maxHeight: 56, flexGrow: 0 },
   segRow: {
     flexDirection: "row", paddingHorizontal: theme.spacing.lg, gap: 10,

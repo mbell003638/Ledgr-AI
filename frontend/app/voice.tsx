@@ -89,6 +89,29 @@ export default function VoiceModal() {
         });
       } else if (parsed.intent === "sale") {
         await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary });
+      } else if (parsed.intent === "receipt") {
+        const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
+        const method = parsed.method || "cash";
+        let debtorId: string | null = null;
+        let allocations: { invoiceId: string; amountApplied: number }[] = [];
+        if (mode !== "cash_sale" && parsed.customerName) {
+          const debtors = await api.listDebtors();
+          const match = debtors.find((d: any) => d.name.toLowerCase().includes(parsed.customerName.toLowerCase()));
+          if (match) debtorId = match.id;
+          else { const c = await api.createDebtor({ name: parsed.customerName }); debtorId = c.id; }
+          // Auto-allocate an against_invoice receipt to this customer's oldest unpaid invoice.
+          if (mode === "against_invoice") {
+            const invs = (await api.listInvoices())
+              .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsed.customerName.toLowerCase()))
+              .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
+            if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
+          }
+        }
+        await api.createReceipt({
+          mode, date, amount: parsed.amount, method,
+          debtorId, clientName: parsed.customerName || "",
+          allocations, notes: parsed.notes || parsed.summary,
+        });
       } else if (parsed.intent === "supplier_payment") {
         let sid = "";
         if (parsed.supplierName) {

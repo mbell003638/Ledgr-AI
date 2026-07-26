@@ -48,15 +48,32 @@ export async function getGeminiModel(): Promise<string> { return (await getAICon
 export async function setGeminiModel(v: string) { await setAIConfig({ model: v }); }
 
 // ---------- reconcile helper (matching logic in JS) ----------
-async function reconcileStatement(imageBase64: string, supplierId: string, mimeType = 'image/jpeg') {
+// Works for BOTH a supplier (compare their statement to our bills/payments) and a
+// customer/debtor (compare their statement to our invoices/receipts). `party`
+// selects which ledger side to pull; `partyId` is the supplier or debtor id.
+async function reconcileStatement(
+  imageBase64: string,
+  partyId: string,
+  mimeType = 'image/jpeg',
+  party: 'supplier' | 'customer' = 'supplier',
+) {
   const extracted = await ai.reconcileStatementAI(await getAIConfig(), imageBase64, mimeType);
 
+  // Pull our side of the ledger. For a customer, an invoice is a "bill" (debit /
+  // what they owe) and a receipt/payment is a "payment" (credit).
   let ourBills: any[] = [], ourPayments: any[] = [];
-  if (supplierId) {
+  if (partyId && party === 'customer') {
+    const debtors = await db.listDebtors();
+    const d = debtors.find((x: any) => x.id === partyId);
+    if (d) {
+      ourBills = (d.invoices || []).map((i: any) => ({ ...i, amount: i.amount, date: i.date, reference: i.invoiceNumber }));
+      ourPayments = (d.payments || []).map((p: any) => ({ ...p, amount: p.amount, date: p.date }));
+    }
+  } else if (partyId) {
     const all = await db.listBills();
-    ourBills = all.filter((b: any) => b.supplierId === supplierId);
+    ourBills = all.filter((b: any) => b.supplierId === partyId);
     const pays = await db.listPayments();
-    ourPayments = pays.filter((p: any) => p.supplierId === supplierId && p.type === 'supplier_payment');
+    ourPayments = pays.filter((p: any) => p.supplierId === partyId && p.type === 'supplier_payment');
   }
 
   const daysBetween = (a: string, b: string) => {
@@ -88,7 +105,7 @@ async function reconcileStatement(imageBase64: string, supplierId: string, mimeT
     const found = stmtRefs.some((r: any) => r.date === o.date && r.amount && Math.abs(r.amount - oAmt) / Math.max(r.amount, 1) <= 0.01);
     if (!found) extra.push(o);
   }
-  return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, supplierId };
+  return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, partyId, party, supplierId: party === 'supplier' ? partyId : undefined };
 }
 
 export const api = {
@@ -125,6 +142,12 @@ export const api = {
   expectedInventory: () => db.expectedInventory(),
   createInventory: (i: any) => db.createInventory(i),
   deleteInventory: (id: string) => db.deleteInventory(id),
+
+  // Cash Book (manual cash in/out ledger)
+  listCashEntries: () => db.listCashEntries(),
+  createCashEntry: (e: any) => db.createCashEntry(e),
+  updateCashEntry: (id: string, e: any) => db.updateCashEntry(id, e),
+  deleteCashEntry: (id: string) => db.deleteCashEntry(id),
 
   // Dashboard & reports
   dashboard: () => db.dashboard(),
@@ -170,7 +193,7 @@ export const api = {
   parseCommand: async (text: string) => ai.parseCommand(await getAIConfig(), text),
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType),
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
-  reconcileStatement: (imageBase64: string, supplierId: string, mimeType = 'image/jpeg') => reconcileStatement(imageBase64, supplierId, mimeType),
+  reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
 
   // Expenses
@@ -185,6 +208,7 @@ export const api = {
   updateDebtor: (id: string, d: any) => db.updateDebtor(id, d),
   deleteDebtor: (id: string) => db.deleteDebtor(id),
   addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
+  getDebtorStatement: (id: string) => db.getDebtorStatement(id),
 
   // Date-range reports
   pnlRange: (from: string, to: string) => db.pnlRange(from, to),
@@ -198,4 +222,42 @@ export const api = {
   deleteInvoice: (id: string) => db.deleteInvoice(id),
   markInvoicePaid: (id: string) => db.markInvoicePaid(id),
   overdueInvoices: () => db.overdueInvoices(),
+
+  // Receipts (money actually received)
+  listReceipts: () => db.listReceipts(),
+  createReceipt: (r: any) => db.createReceipt(r),
+  deleteReceipt: (id: string) => db.deleteReceipt(id),
+  invoicePaidAmount: (invoiceId: string) => db.invoicePaidAmount(invoiceId),
+
+  // Advances / Deposits (advance receipts applied to invoices later)
+  getAdvanceCredit: (debtorId: string) => db.getAdvanceCredit(debtorId),
+  listAdvances: (debtorId: string) => db.listAdvances(debtorId),
+  applyAdvanceToInvoice: (debtorId: string, invoiceId: string, amount?: number) => db.applyAdvanceToInvoice(debtorId, invoiceId, amount),
+
+  // Quotes / Estimates (non-posting until converted)
+  listQuotes: () => db.listQuotes(),
+  createQuote: (q: any) => db.createQuote(q),
+  updateQuote: (id: string, q: any) => db.updateQuote(id, q),
+  deleteQuote: (id: string) => db.deleteQuote(id),
+  setQuoteStatus: (id: string, status: any) => db.setQuoteStatus(id, status),
+  convertQuoteToInvoice: (id: string, opts?: any) => db.convertQuoteToInvoice(id, opts),
+
+  // Credit / Debit Notes (post-sale adjustments: discounts, returns, extra charges)
+  listCreditNotes: (debtorId?: string) => db.listCreditNotes(debtorId),
+  listDebitNotes: (debtorId?: string) => db.listDebitNotes(debtorId),
+  createCreditNote: (n: any) => db.createCreditNote(n),
+  createDebitNote: (n: any) => db.createDebitNote(n),
+  deleteCreditNote: (id: string) => db.deleteCreditNote(id),
+  deleteDebitNote: (id: string) => db.deleteDebitNote(id),
+
+  // Delivery Notes / Challans (goods movement, no ledger posting)
+  listDeliveryNotes: () => db.listDeliveryNotes(),
+  createDeliveryNote: (n: any) => db.createDeliveryNote(n),
+  updateDeliveryNote: (id: string, n: any) => db.updateDeliveryNote(id, n),
+  deleteDeliveryNote: (id: string) => db.deleteDeliveryNote(id),
+
+  // Enhanced reports
+  taxReport: (from: string, to: string) => db.taxReport(from, to),
+  salesRegister: (from: string, to: string) => db.salesRegister(from, to),
+  receiptsRegister: (from: string, to: string) => db.receiptsRegister(from, to),
 };

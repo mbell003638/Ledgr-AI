@@ -89,6 +89,7 @@ function ThemedStack() {
         <Stack.Screen name="supplier-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="sale-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="sales" options={{ presentation: "card" }} />
+        <Stack.Screen name="cashbook" options={{ presentation: "card" }} />
         <Stack.Screen name="assets" options={{ presentation: "card" }} />
         <Stack.Screen name="payment-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="inventory-form" options={{ presentation: "modal" }} />
@@ -96,6 +97,9 @@ function ThemedStack() {
         <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
         <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
         <Stack.Screen name="invoices" options={{ presentation: "card" }} />
+        <Stack.Screen name="quotes" options={{ presentation: "card" }} />
+        <Stack.Screen name="delivery-notes" options={{ presentation: "card" }} />
+        <Stack.Screen name="receipts" options={{ presentation: "card" }} />
         <Stack.Screen name="expenses" options={{ presentation: "card" }} />
         <Stack.Screen name="debtors" options={{ presentation: "card" }} />
         <Stack.Screen name="daybook" options={{ presentation: "card" }} />

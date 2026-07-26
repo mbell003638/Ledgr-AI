@@ -27,9 +27,13 @@ type Dash = {
 const TILES = [
   { key: "bills", label: "Purchases", icon: "receipt-outline", route: "/bills", color: "#D6E5DB" },
   { key: "sales", label: "Sales", icon: "trending-up-outline", route: "/sales", color: "#F3E4C8" },
+  { key: "receipts", label: "Receipts", icon: "receipt-outline", route: "/receipts", color: "#F0E4D0" },
   { key: "payments", label: "Payments", icon: "cash-outline", route: "/payment-form", color: "#E8DAD0" },
+  { key: "cashbook", label: "Cash Book", icon: "swap-vertical-outline", route: "/cashbook", color: "#DCE8DC" },
   { key: "suppliers", label: "Creditors", icon: "people-outline", route: "/suppliers", color: "#DCE4E0" },
   { key: "invoices", label: "Invoices", icon: "document-text-outline", route: "/invoices", color: "#D8E4F0" },
+  { key: "quotes", label: "Quotes", icon: "pricetags-outline", route: "/quotes", color: "#E0E8F0" },
+  { key: "delivery", label: "Delivery Notes", icon: "cube-outline", route: "/delivery-notes", color: "#DCE4DC" },
   { key: "debtors", label: "Debtors", icon: "person-add-outline", route: "/debtors", color: "#E6DCE4" },
   { key: "expenses", label: "Expenses", icon: "wallet-outline", route: "/expenses", color: "#E4D8D8" },
   { key: "inventory", label: "Inventory", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
@@ -46,11 +50,11 @@ const TILES = [
 // so Inventory is irrelevant. Pure service personas also lean on Invoices+Debtors over
 // supplier Purchases/Creditors, so those are de-emphasised for the lightest personas.
 const HIDDEN_TILES: Record<string, string[]> = {
-  service: ["inventory"],
-  salon: ["inventory"],
+  service: ["inventory", "delivery"],
+  salon: ["inventory", "delivery"],
   handyman: ["inventory"],
-  it_consultant: ["inventory", "bills", "suppliers"],
-  freelancer: ["inventory", "bills", "suppliers"],
+  it_consultant: ["inventory", "bills", "suppliers", "delivery"],
+  freelancer: ["inventory", "bills", "suppliers", "delivery"],
   // shop / vendor: show everything (default)
 };
 
@@ -249,14 +253,14 @@ export default function Dashboard() {
               </Pressable>
             </Card>
 
-            {/* KPI row */}
+            {/* KPI row — tap to open the underlying entries */}
             <View style={styles.kpiRow}>
-              <KpiTile label="Sales" value={fmt(dash?.totalSales)} testID="kpi-sales" />
-              <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} testID="kpi-purchases" />
+              <KpiTile label="Sales" value={fmt(dash?.totalSales)} testID="kpi-sales" onPress={() => router.push("/sales")} />
+              <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} testID="kpi-purchases" onPress={() => router.push("/bills")} />
             </View>
             <View style={styles.kpiRow}>
-              <KpiTile label="Cash" value={fmt(dash?.cash)} testID="kpi-cash" />
-              <KpiTile label="Inventory" value={fmt(dash?.inventoryValue)} testID="kpi-inventory" />
+              <KpiTile label="Cash" value={fmt(dash?.cash)} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
+              <KpiTile label="Inventory" value={fmt(dash?.inventoryValue)} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
             </View>
 
             {/* Apps grid */}

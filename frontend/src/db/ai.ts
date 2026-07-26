@@ -238,13 +238,16 @@ export async function testKey(cfg: AIConfig) {
 const PARSE_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['bill', 'sale', 'supplier_payment', 'drawing', 'inventory', 'unknown'] },
+    intent: { type: 'string', enum: ['bill', 'sale', 'receipt', 'supplier_payment', 'drawing', 'inventory', 'unknown'] },
     date: { type: 'string' },
     amount: { type: 'number' },
     currency: { type: 'string', enum: ['USD'] },
     supplierName: { type: 'string' },
+    customerName: { type: 'string' },
     partnerName: { type: 'string' },
     paymentType: { type: 'string', enum: ['cash', 'credit'] },
+    receiptMode: { type: 'string', enum: ['cash_sale', 'against_invoice', 'advance'] },
+    method: { type: 'string', enum: ['cash', 'card', 'bank', 'upi'] },
     notes: { type: 'string' },
     summary: { type: 'string' },
   },
@@ -255,10 +258,14 @@ export async function parseCommand(cfg: AIConfig, text: string) {
   const today = new Date().toISOString().slice(0, 10);
   const prompt =
     `Today is ${today}. Parse this shop accounting voice command into JSON. ` +
-    "Intents: 'bill' (vendor purchase), 'sale' (customer revenue), 'supplier_payment' (paying a supplier), " +
-    "'drawing' (partner withdrawal), 'inventory' (stock count). " +
+    "Intents: 'bill' (vendor purchase), 'sale' (customer revenue — a plain cash sale), " +
+    "'receipt' (money RECEIVED from a customer — e.g. 'received 500 from Ali', 'Ali paid his invoice', 'took 200 advance from Sara'), " +
+    "'supplier_payment' (paying a supplier), 'drawing' (partner withdrawal), 'inventory' (stock count). " +
+    "For a 'receipt', also set receiptMode: 'cash_sale' (walk-in paid now, no customer owed), " +
+    "'against_invoice' (settling what a named customer already owes), or 'advance' (money before any invoice). " +
+    "Set customerName when a customer is named, and method (cash/card/bank/upi) if stated. " +
     'Use ISO date YYYY-MM-DD. All amounts are in USD. ' +
-    "Provide a short human summary. Fields: intent, date, amount, currency, supplierName, partnerName, paymentType, notes, summary. " +
+    "Provide a short human summary. Fields: intent, date, amount, currency, supplierName, customerName, partnerName, paymentType, receiptMode, method, notes, summary. " +
     'Command: ' + text;
   const out = await call(cfg, prompt, [], PARSE_SCHEMA);
   return parseJson(out);
@@ -344,8 +351,14 @@ const APP_GUIDE =
   "- Dashboard (Home): cash, inventory value, net worth, sales, purchases, profit at a glance.\n" +
   "- Purchases (Bills): record what you buy from suppliers/vendors (cash or credit).\n" +
   "- Sales: record customer revenue.\n" +
+  "- Receipts: record money actually received. Three kinds — Cash Sale (walk-in paid now), " +
+  "Against Invoice (settles what a customer owes, full or partial), and Advance (money before an invoice). " +
+  "Every receipt updates cash; against-invoice receipts also update the customer's balance and mark the invoice paid/partial.\n" +
   "- Invoices: create invoices, share as PDF or on WhatsApp, mark paid. An invoice automatically " +
   "creates/updates a Debtor (the customer who owes you).\n" +
+  "- Quotes/Estimates: create a price quote (no ledger effect); when the customer accepts, convert it to an invoice in one tap.\n" +
+  "- Credit/Debit Notes: from a customer's Debtor screen, give a post-sale discount or record a return (credit note, lowers their balance) or add an extra charge (debit note). No cash moves.\n" +
+  "- Delivery Notes/Challans: record goods handed to a customer (quantity only, no prices); share as PDF. No ledger effect.\n" +
   "- Debtors: who owes you money; record payments; send WhatsApp reminders.\n" +
   "- Creditors: suppliers you owe; running balances; WhatsApp reminders.\n" +
   "- Expenses: day-to-day costs by category.\n" +
@@ -368,6 +381,8 @@ const ACTION_SPEC =
   "- add_debtor: { name, phone?, notes? }\n" +
   "- add_debtor_payment: { name, amount, date? }\n" +
   "- create_invoice: { clientName, amount, date?, notes? }\n" +
+  "- create_receipt: { amount, mode ('cash_sale'|'against_invoice'|'advance'), customerName?, date?, method? ('cash'|'card'|'bank'|'upi'), notes? }\n" +
+  "- create_quote: { clientName, amount, date?, notes? }\n" +
   "Dates are YYYY-MM-DD; default to today if unspecified. Never invent amounts — if a required field is " +
   "missing, ask for it in 'answer' and set action to null.";
 
@@ -380,7 +395,7 @@ const ASK_SCHEMA = {
       properties: {
         type: {
           type: 'string',
-          enum: ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice'],
+          enum: ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote'],
         },
         params: { type: 'object' },
         confirm: { type: 'string' }, // one-line human summary to show before applying

@@ -1,11 +1,11 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
@@ -25,12 +25,25 @@ type Debtor = {
 
 export default function DebtorsScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [currency, setCurrency] = useState("$");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Debtor | null>(null);
+  const [advanceCredit, setAdvanceCredit] = useState(0);
+  const [statement, setStatement] = useState<any>(null);
+  const [showApply, setShowApply] = useState(false);
+  const [openInvoices, setOpenInvoices] = useState<{ id: string; invoiceNumber: string; total: number; open: number }[]>([]);
+  const [applyBusy, setApplyBusy] = useState(false);
+  // Credit/Debit note modal
+  const [noteKind, setNoteKind] = useState<"credit" | "debit" | null>(null);
+  const [noteAmount, setNoteAmount] = useState("");
+  const [noteReason, setNoteReason] = useState<"discount" | "return" | "correction" | "other">("discount");
+  const [noteNotes, setNoteNotes] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteError, setNoteError] = useState("");
 
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState("");
@@ -64,6 +77,69 @@ export default function DebtorsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Load advance credit when a debtor detail is shown
+  useEffect(() => {
+    if (selected?.id) {
+      api.getAdvanceCredit(selected.id).then(setAdvanceCredit).catch(() => setAdvanceCredit(0));
+      api.getDebtorStatement(selected.id).then(setStatement).catch(() => setStatement(null));
+    } else {
+      setAdvanceCredit(0);
+      setStatement(null);
+    }
+  }, [selected?.id, selected]);
+
+  // Build the list of this customer's open (unpaid/partial) invoices, with the
+  // remaining balance on each, so a deposit can be applied to one.
+  const openApplyModal = async () => {
+    if (!selected) return;
+    try {
+      const all = await api.listInvoices();
+      const mine = (all as any[]).filter((i) => (i.clientName || "").trim().toLowerCase() === selected.name.trim().toLowerCase() && i.status !== "paid");
+      const withOpen = await Promise.all(mine.map(async (i) => {
+        const paid = await api.invoicePaidAmount(i.id);
+        return { id: i.id, invoiceNumber: i.invoiceNumber, total: Number(i.total) || 0, open: +((Number(i.total) || 0) - paid).toFixed(2) };
+      }));
+      setOpenInvoices(withOpen.filter((i) => i.open > 0));
+      setShowApply(true);
+    } catch (e) { console.warn(e); }
+  };
+
+  const applyDepositTo = async (invoiceId: string) => {
+    if (!selected) return;
+    setApplyBusy(true);
+    try {
+      await api.applyAdvanceToInvoice(selected.id, invoiceId);
+      setShowApply(false);
+      // Refresh credit + debtor list
+      const [credit] = await Promise.all([api.getAdvanceCredit(selected.id), load()]);
+      setAdvanceCredit(credit);
+    } catch (e: any) {
+      Alert.alert("Cannot apply", e?.message || "Failed to apply deposit.");
+    } finally { setApplyBusy(false); }
+  };
+
+  const openNote = (kind: "credit" | "debit") => {
+    setNoteKind(kind); setNoteAmount(""); setNoteReason(kind === "credit" ? "discount" : "correction"); setNoteNotes(""); setNoteError("");
+  };
+  const saveNote = async () => {
+    if (!selected || !noteKind) return;
+    const amt = parseFloat(noteAmount);
+    if (!amt || amt <= 0) { setNoteError("Enter a valid amount."); return; }
+    setNoteBusy(true); setNoteError("");
+    try {
+      const payload = { debtorId: selected.id, clientName: selected.name, date: new Date().toISOString().slice(0, 10), amount: amt, reason: noteReason, notes: noteNotes.trim() };
+      if (noteKind === "credit") await api.createCreditNote(payload);
+      else await api.createDebitNote(payload);
+      setNoteKind(null);
+      await load();
+      // Refresh selected balance from fresh list
+      const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+      if (fresh) setSelected(fresh);
+    } catch (e: any) {
+      setNoteError(e?.message || "Failed to save note.");
+    } finally { setNoteBusy(false); }
+  };
 
   const saveDebtor = async () => {
     if (!addName.trim()) { setAddError("Name is required"); return; }
@@ -147,12 +223,34 @@ export default function DebtorsScreen() {
                   <Text style={styles.smLabel}>Paid</Text>
                   <Text style={styles.smVal}>{currency}{(selected.totalPaid ?? 0).toFixed(2)}</Text>
                 </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={styles.smLabel}>Deposit</Text>
+                  <Text style={[styles.smVal, { color: advanceCredit > 0 ? theme.color.success : theme.color.muted }]}>{currency}{advanceCredit.toFixed(2)}</Text>
+                </View>
               </View>
             </View>
             <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => { setPayAmount(""); setPayDate(new Date().toISOString().slice(0, 10)); setPayNotes(""); setPayError(""); setShowPay(true); }} style={styles.actionBtn}>
                 <Ionicons name="cash-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Record Payment</Text>
+              </Pressable>
+              {advanceCredit > 0 ? (
+                <Pressable onPress={openApplyModal} style={[styles.actionBtn, { backgroundColor: theme.color.success }]}>
+                  <Ionicons name="wallet-outline" size={16} color="#fff" />
+                  <Text style={styles.actionText}>Apply Deposit</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => router.push(`/reconcile?customerId=${selected.id}` as any)} style={[styles.actionBtn, { backgroundColor: theme.color.brandSecondary }]}>
+                <Ionicons name="git-compare-outline" size={16} color="#fff" />
+                <Text style={styles.actionText}>Compare Statement</Text>
+              </Pressable>
+              <Pressable onPress={() => openNote("credit")} style={[styles.actionBtn, { backgroundColor: "#B06A3B" }]}>
+                <Ionicons name="pricetag-outline" size={16} color="#fff" />
+                <Text style={styles.actionText}>Give Discount / Credit</Text>
+              </Pressable>
+              <Pressable onPress={() => openNote("debit")} style={[styles.actionBtn, { backgroundColor: "#7A5A2A" }]}>
+                <Ionicons name="add-circle-outline" size={16} color="#fff" />
+                <Text style={styles.actionText}>Add Charge / Debit</Text>
               </Pressable>
               {selected.phone ? (
                 <Pressable onPress={() => sendWhatsApp(selected)} style={[styles.actionBtn, { backgroundColor: "#25D366" }]}>
@@ -169,19 +267,26 @@ export default function DebtorsScreen() {
             </View>
           </Card>
 
-          <Text style={styles.section}>Payments</Text>
-          {(selected.payments || []).length === 0 ? (
-            <Text style={styles.empty}>No payments recorded yet.</Text>
-          ) : [...(selected.payments || [])].sort((a, b) => (a.date < b.date ? 1 : -1)).map((p) => (
-            <View key={p.id} style={styles.timelineRow}>
-              <View style={[styles.timelineDot, { backgroundColor: theme.color.success }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tlTitle}>Payment • {shortDate(p.date)}</Text>
-                {p.notes ? <Text style={styles.tlSub}>{p.notes}</Text> : null}
+          <Text style={styles.section}>Statement</Text>
+          {(!statement || statement.ledger.length === 0) ? (
+            <Text style={styles.empty}>No transactions yet.</Text>
+          ) : [...statement.ledger].reverse().map((r: any) => {
+            const isCredit = r.credit > 0;
+            const label = r.kind === "invoice" ? "Invoice" : r.kind === "payment" ? "Payment" : r.kind === "credit_note" ? "Credit Note" : r.kind === "debit_note" ? "Debit Note" : "Entry";
+            const dotColor = r.kind === "invoice" || r.kind === "debit_note" ? theme.color.error : theme.color.success;
+            return (
+              <View key={`${r.kind}-${r.id}`} style={styles.timelineRow}>
+                <View style={[styles.timelineDot, { backgroundColor: dotColor }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tlTitle}>{label} • {shortDate(r.date)}{r.ref ? ` • ${r.ref}` : ""}</Text>
+                  <Text style={styles.tlSub}>Balance: {currency}{Number(r.balance).toFixed(2)}{r.status && r.kind !== "invoice" ? ` • ${r.status}` : ""}</Text>
+                </View>
+                <Text style={[styles.tlAmount, { color: isCredit ? theme.color.success : theme.color.error }]}>
+                  {isCredit ? "−" : "+"}{currency}{Number(isCredit ? r.credit : r.debit).toFixed(2)}
+                </Text>
               </View>
-              <Text style={[styles.tlAmount, { color: theme.color.success }]}>{currency}{Number(p.amount).toFixed(2)}</Text>
-            </View>
-          ))}
+            );
+          })}
           <View style={{ height: 60 }} />
         </ScrollView>
 
@@ -202,6 +307,60 @@ export default function DebtorsScreen() {
                 {payError ? <Text style={styles.error}>{payError}</Text> : null}
                 <Pressable onPress={recordPayment} disabled={paySaving} style={({ pressed }) => [styles.saveBtn, (pressed || paySaving) && { opacity: 0.85 }]}>
                   {paySaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Payment</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal visible={showApply} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.headerTitle}>Apply Deposit ({currency}{advanceCredit.toFixed(2)})</Text>
+                <Pressable onPress={() => setShowApply(false)}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
+              </View>
+              <Text style={styles.tlSub}>Pick an open invoice to apply this customer&apos;s deposit credit to.</Text>
+              {openInvoices.length === 0 ? (
+                <Text style={styles.empty}>No open invoices to apply to.</Text>
+              ) : openInvoices.map((inv) => (
+                <Pressable key={inv.id} onPress={() => applyDepositTo(inv.id)} disabled={applyBusy} style={styles.applyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tlTitle}>{inv.invoiceNumber}</Text>
+                    <Text style={styles.tlSub}>Open: {currency}{inv.open.toFixed(2)} of {currency}{inv.total.toFixed(2)}</Text>
+                  </View>
+                  <Ionicons name="arrow-forward-circle" size={22} color={theme.color.brandPrimary} />
+                </Pressable>
+              ))}
+              {applyBusy ? <ActivityIndicator color={theme.color.brandPrimary} style={{ marginTop: 10 }} /> : null}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={noteKind !== null} transparent animationType="slide">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalBox}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.headerTitle}>{noteKind === "credit" ? "Credit Note (reduce balance)" : "Debit Note (add charge)"}</Text>
+                  <Pressable onPress={() => setNoteKind(null)}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
+                </View>
+                <Text style={styles.tlSub}>{noteKind === "credit" ? "A discount or return — lowers what the customer owes. No cash moves." : "An extra charge — raises what the customer owes. No cash moves."}</Text>
+                <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
+                <TextInput value={noteAmount} onChangeText={setNoteAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <Text style={[styles.label, { marginTop: 12 }]}>Reason</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  {(noteKind === "credit" ? ["discount", "return", "correction", "other"] : ["correction", "other"]).map((r) => (
+                    <Pressable key={r} onPress={() => setNoteReason(r as any)} style={[styles.reasonChip, noteReason === r && styles.reasonChipActive]}>
+                      <Text style={[styles.reasonChipText, noteReason === r && { color: "#fff" }]}>{r}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
+                <TextInput value={noteNotes} onChangeText={setNoteNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 50 }]} multiline />
+                {noteError ? <Text style={styles.error}>{noteError}</Text> : null}
+                <Pressable onPress={saveNote} disabled={noteBusy} style={({ pressed }) => [styles.saveBtn, (pressed || noteBusy) && { opacity: 0.85 }]}>
+                  {noteBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{noteKind === "credit" ? "Save Credit Note" : "Save Debit Note"}</Text>}
                 </Pressable>
               </View>
             </View>
@@ -289,6 +448,10 @@ function makeStyles(theme: any) {
     section: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface, marginTop: theme.spacing.lg, marginBottom: theme.spacing.md },
     empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.lg },
     timelineRow: { flexDirection: "row", alignItems: "center", backgroundColor: theme.color.surfaceSecondary, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginBottom: theme.spacing.sm, gap: theme.spacing.md },
+    applyRow: { flexDirection: "row", alignItems: "center", backgroundColor: theme.color.surface, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.sm, gap: theme.spacing.md },
+    reasonChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+    reasonChipActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    reasonChipText: { fontSize: 12, fontWeight: "600", color: theme.color.onSurface, textTransform: "capitalize" },
     timelineDot: { width: 10, height: 10, borderRadius: 5 },
     tlTitle: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     tlSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },

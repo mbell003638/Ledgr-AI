@@ -47,6 +47,37 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
       });
       return `Invoice for "${p.clientName}" created ✓`;
     }
+    case "create_receipt": {
+      const amt = Number(p.amount) || 0;
+      const mode = ["cash_sale", "against_invoice", "advance"].includes(p.mode) ? p.mode : (p.customerName ? "against_invoice" : "cash_sale");
+      let debtorId: string | null = null;
+      let allocations: { invoiceId: string; amountApplied: number }[] = [];
+      if (mode !== "cash_sale" && p.customerName) {
+        const debtors = await api.listDebtors();
+        const match = debtors.find((d: any) => (d.name || "").toLowerCase().includes(String(p.customerName).toLowerCase()));
+        if (match) debtorId = match.id;
+        else { const c = await api.createDebtor({ name: p.customerName }); debtorId = c.id; }
+        if (mode === "against_invoice") {
+          const invs = (await api.listInvoices())
+            .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(String(p.customerName).toLowerCase()))
+            .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
+          if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: amt }];
+        }
+      }
+      await api.createReceipt({ mode, amount: amt, date: p.date || today, method: p.method || "cash", debtorId, clientName: p.customerName || "", allocations, notes: p.notes || "" });
+      return `Receipt for ${amt.toFixed(2)} recorded ✓`;
+    }
+    case "create_quote": {
+      const amt = Number(p.amount) || 0;
+      await api.createQuote({
+        clientName: p.clientName,
+        lines: [{ description: p.notes || "Service", qty: 1, rate: amt }],
+        taxRate: 0,
+        date: p.date || today,
+        notes: p.notes || "",
+      });
+      return `Quote for "${p.clientName}" created ✓`;
+    }
     default:
       return "Unknown action — no changes made.";
   }

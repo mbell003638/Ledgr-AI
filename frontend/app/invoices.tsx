@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
@@ -35,43 +36,74 @@ function escapeHtml(v: any): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function buildHtml(inv: Invoice, biz: any, sym: string) {
+// prevBalance = customer's outstanding balance carried forward from BEFORE this
+// invoice (0 when none / walk-in). balanceDue = prevBalance + this invoice total
+// − any amount already paid on this invoice.
+function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0) {
   const sub = inv.lines.reduce((s, l) => s + l.qty * l.rate, 0);
   const tax = inv.taxRate ? +(sub * inv.taxRate / 100).toFixed(2) : 0;
-  const rows = inv.lines.map((l) =>
-    `<tr><td>${escapeHtml(l.description)}</td><td style="text-align:center">${l.qty}</td><td style="text-align:right">${sym}${l.rate.toFixed(2)}</td><td style="text-align:right">${sym}${(l.qty * l.rate).toFixed(2)}</td></tr>`
+  const paidOnThis = inv.status === "paid" ? inv.total : 0;
+  const carry = +(prevBalance || 0).toFixed(2);
+  const balanceDue = +(carry + inv.total - paidOnThis).toFixed(2);
+  const money = (n: number) => `${sym}${n.toFixed(2)}`;
+  const rows = inv.lines.map((l, i) =>
+    `<tr><td style="text-align:center">${i + 1}</td><td>${escapeHtml(l.description)}</td><td style="text-align:center">${l.qty}</td><td style="text-align:right">${money(l.rate)}</td><td style="text-align:right">${money(l.qty * l.rate)}</td></tr>`
   ).join("");
+  const meta = [
+    [`Invoice Date`, inv.date],
+    inv.dueDate ? [`Due Date`, inv.dueDate] : null,
+    [`Status`, inv.status.toUpperCase()],
+  ].filter(Boolean) as [string, string][];
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
     body{font-family:sans-serif;padding:32px;color:#1a1a1a;font-size:14px}
-    h1{font-size:28px;color:#1C4030;margin:0}
-    .biz{color:#555;font-size:13px;margin-top:4px}
-    .row{display:flex;justify-content:space-between;margin-top:24px}
+    h1{font-size:22px;color:#1C4030;margin:0}
+    .title{font-size:26px;color:#555;font-weight:700;letter-spacing:1px}
+    .biz{color:#555;font-size:12px;margin-top:4px;line-height:1.5}
+    .row{display:flex;justify-content:space-between;margin-top:28px;gap:24px}
     .label{font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.5px}
-    .val{font-size:15px;font-weight:600;margin-top:2px}
+    .val{font-size:14px;font-weight:600;margin-top:2px}
+    .meta div{margin-bottom:6px}
     table{width:100%;border-collapse:collapse;margin-top:24px}
-    th{background:#1C4030;color:#fff;padding:8px;text-align:left;font-size:12px}
-    td{padding:8px;border-bottom:1px solid #eee;font-size:13px}
-    .total-row td{font-weight:700;font-size:15px;border-top:2px solid #1C4030}
-    .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:${inv.status === "paid" ? "#d4edda" : "#fff3cd"};color:${inv.status === "paid" ? "#155724" : "#856404"}}
+    th{background:#2b2b2b;color:#fff;padding:9px 8px;text-align:left;font-size:12px}
+    td{padding:9px 8px;border-bottom:1px solid #eee;font-size:13px}
+    .totals{margin-top:18px;margin-left:auto;width:60%}
+    .totals td{border:none;padding:5px 8px}
+    .totals .k{text-align:right;color:#555}
+    .totals .v{text-align:right;font-weight:600;width:120px}
+    .grand td{font-weight:700;font-size:15px;border-top:2px solid #2b2b2b}
+    .due{background:#f2f2f2}
+    .due td{font-weight:700;font-size:16px;color:#1C4030}
+    .carry td{color:#a15c00}
+    .badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;background:${inv.status === "paid" ? "#d4edda" : "#fff3cd"};color:${inv.status === "paid" ? "#155724" : "#856404"}}
     .notes{margin-top:24px;font-size:12px;color:#555}
     .payment{margin-top:16px;font-size:12px;color:#1C4030;font-weight:600}
   </style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div style="display:flex;align-items:center;gap:12px">
-        ${biz.logo ? `<img src="${biz.logo}" style="width:56px;height:56px;border-radius:8px;object-fit:cover"/>` : ""}
-        <div><h1>${escapeHtml(biz.businessName || "Invoice")}</h1><div class="biz">${escapeHtml([biz.businessAddress, biz.businessPhone, biz.businessEmail].filter(Boolean).join(" · "))}</div></div>
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        ${biz.logo ? `<img src="${biz.logo}" style="width:64px;height:64px;border-radius:8px;object-fit:cover"/>` : ""}
+        <div><h1>${escapeHtml(biz.businessName || "Invoice")}</h1><div class="biz">${escapeHtml([biz.businessAddress, biz.businessPhone, biz.businessEmail].filter(Boolean).join("<br/>")).replace(/&lt;br\/&gt;/g, "<br/>")}</div>${biz.taxRegNo ? `<div class="biz">TRN / Tax No: ${escapeHtml(biz.taxRegNo)}</div>` : ""}</div>
       </div>
-      <div style="text-align:right"><div class="label">Invoice</div><div class="val">${inv.invoiceNumber}</div><div style="margin-top:8px"><span class="badge">${inv.status.toUpperCase()}</span></div></div>
+      <div style="text-align:right">
+        <div class="title">TAX INVOICE</div>
+        <div class="val" style="margin-top:6px">${inv.invoiceNumber}</div>
+        <div style="margin-top:6px"><span class="badge">${inv.status.toUpperCase()}</span></div>
+        <div style="margin-top:10px"><span class="label">Balance Due</span><div class="val" style="font-size:18px;color:#1C4030">${money(balanceDue)}</div></div>
+      </div>
     </div>
     <div class="row">
       <div><div class="label">Bill To</div><div class="val">${escapeHtml(inv.clientName)}</div>${inv.clientPhone ? `<div style="font-size:12px;color:#555">${escapeHtml(inv.clientPhone)}</div>` : ""}</div>
-      <div style="text-align:right"><div class="label">Date</div><div class="val">${inv.date}</div>${inv.dueDate ? `<div class="label" style="margin-top:8px">Due</div><div class="val">${inv.dueDate}</div>` : ""}</div>
+      <div class="meta" style="text-align:right">${meta.map(([k, v]) => `<div><span class="label">${k} :</span> <span class="val" style="display:inline">${escapeHtml(v)}</span></div>`).join("")}</div>
     </div>
-    <table><thead><tr><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
-    <tbody>${rows}
-    ${tax > 0 ? `<tr><td colspan="3" style="text-align:right">${escapeHtml(inv.taxLabel || "Tax")} (${inv.taxRate}%)</td><td style="text-align:right">${sym}${tax.toFixed(2)}</td></tr>` : ""}
-    <tr class="total-row"><td colspan="3" style="text-align:right">Total</td><td style="text-align:right">${sym}${inv.total.toFixed(2)}</td></tr>
-    </tbody></table>
+    <table><thead><tr><th style="text-align:center">#</th><th>Item &amp; Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <table class="totals">
+      <tr><td class="k">Sub Total</td><td class="v">${money(sub)}</td></tr>
+      ${tax > 0 ? `<tr><td class="k">${escapeHtml(inv.taxLabel || "Tax")} (${inv.taxRate}%)</td><td class="v">${money(tax)}</td></tr>` : ""}
+      <tr class="grand"><td class="k">Invoice Total</td><td class="v">${money(inv.total)}</td></tr>
+      ${carry !== 0 ? `<tr class="carry"><td class="k">Previous Balance (carried fwd)</td><td class="v">${money(carry)}</td></tr>` : ""}
+      ${paidOnThis > 0 ? `<tr><td class="k">Payment Made</td><td class="v" style="color:#c0392b">(-) ${money(paidOnThis)}</td></tr>` : ""}
+      <tr class="due"><td class="k">Balance Due</td><td class="v">${money(balanceDue)}</td></tr>
+    </table>
     ${inv.notes ? `<div class="notes">Notes: ${escapeHtml(inv.notes)}</div>` : ""}
     ${(biz.bankAccount || biz.upiId || biz.paymentDetails) ? `<div class="payment">Payment details:${biz.bankAccount ? `<br/>Bank / Interac: ${escapeHtml(biz.bankAccount)}` : ""}${biz.upiId ? `<br/>UPI: ${escapeHtml(biz.upiId)}` : ""}${biz.paymentDetails ? `<br/>${escapeHtml(biz.paymentDetails)}` : ""}</div>` : ""}
   </body></html>`;
@@ -96,6 +128,7 @@ export default function InvoicesScreen() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
   const [lines, setLines] = useState<InvoiceLine[]>([{ description: "", qty: 1, rate: 0 }]);
+  const [ocrBusy, setOcrBusy] = useState(false);
   const [notes, setNotes] = useState("");
   const [taxLabelInput, setTaxLabelInput] = useState("");
   const [taxRateInput, setTaxRateInput] = useState("");
@@ -176,7 +209,23 @@ export default function InvoicesScreen() {
 
   const sharePdf = async (inv: Invoice) => {
     try {
-      const html = buildHtml(inv, biz, currSym);
+      // Carry-forward = the customer's outstanding balance from every OTHER
+      // invoice/payment, i.e. their statement balance minus this invoice's own
+      // contribution. 0 for walk-ins with no debtor record.
+      let prevBalance = 0;
+      try {
+        const debtors = await api.listDebtors();
+        const match = (debtors as any[]).find(
+          (d) => (d.name || "").trim().toLowerCase() === (inv.clientName || "").trim().toLowerCase(),
+        );
+        if (match) {
+          const st = await api.getDebtorStatement(match.id);
+          const thisInvoiceOpen = inv.status === "paid" ? 0 : inv.total;
+          prevBalance = +((st.balance || 0) - thisInvoiceOpen).toFixed(2);
+          if (prevBalance < 0) prevBalance = 0;
+        }
+      } catch { /* no debtor / statement — treat as walk-in, carry 0 */ }
+      const html = buildHtml(inv, biz, currSym, prevBalance);
       const { uri } = await Print.printToFileAsync({ html });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${inv.invoiceNumber}` });
@@ -191,6 +240,34 @@ export default function InvoicesScreen() {
 
   const updateLine = (i: number, field: keyof InvoiceLine, val: string) => {
     setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: field === "description" ? val : parseFloat(val) || 0 } : l));
+  };
+
+  // Scan / upload a document → OCR → prefill client name + a line item with the total.
+  const runInvoiceOcr = async (base64: string, mimeType: string) => {
+    setOcrBusy(true);
+    try {
+      const r = await api.ocrReceipt(base64, mimeType);
+      if (r.supplierName && !clientName) setClientName(r.supplierName);
+      if (r.date) setDate(r.date);
+      if (r.amount) {
+        setLines([{ description: r.invoiceNo ? `Ref ${r.invoiceNo}` : "Scanned item", qty: 1, rate: Number(r.amount) || 0 }]);
+      }
+    } catch (e) { console.warn(e); }
+    finally { setOcrBusy(false); }
+  };
+  const scanInvoice = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (res.canceled || !res.assets[0].base64) return;
+    await runInvoiceOcr(res.assets[0].base64!, res.assets[0].mimeType || "image/jpeg");
+  };
+  const uploadInvoiceImg = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (res.canceled || !res.assets[0].base64) return;
+    await runInvoiceOcr(res.assets[0].base64!, res.assets[0].mimeType || "image/jpeg");
   };
 
   if (loading) return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /></SafeAreaView>;
@@ -313,6 +390,17 @@ export default function InvoicesScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
               <Card>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                  <Pressable onPress={scanInvoice} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandPrimary, paddingVertical: 10, borderRadius: theme.radius.md }}>
+                    <Ionicons name="camera-outline" size={16} color="#fff" />
+                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Scan</Text>
+                  </Pressable>
+                  <Pressable onPress={uploadInvoiceImg} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandSecondary, paddingVertical: 10, borderRadius: theme.radius.md }}>
+                    <Ionicons name="image-outline" size={16} color="#fff" />
+                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Upload</Text>
+                  </Pressable>
+                </View>
+                {ocrBusy ? <Text style={{ fontSize: 12, color: theme.color.muted, marginBottom: 8 }}>Reading document…</Text> : null}
                 <Text style={styles.label}>Client Name *</Text>
                 <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
                 <Text style={[styles.label, { marginTop: 12 }]}>Client Phone</Text>

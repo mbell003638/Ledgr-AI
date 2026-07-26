@@ -13,7 +13,9 @@ export default function Reconcile() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const { supplierId } = useLocalSearchParams<{ supplierId: string }>();
+  const { supplierId, customerId } = useLocalSearchParams<{ supplierId?: string; customerId?: string }>();
+  const party: "supplier" | "customer" = customerId ? "customer" : "supplier";
+  const partyId = customerId || supplierId;
   const [supplier, setSupplier] = useState<any>(null);
   const [photo, setPhoto] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -21,14 +23,17 @@ export default function Reconcile() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!supplierId) return;
-    api.getSupplier(supplierId).then(setSupplier).catch(() => {});
-  }, [supplierId]);
+    if (party === "customer" && customerId) {
+      api.listDebtors().then((list: any[]) => setSupplier(list.find((d) => d.id === customerId) || null)).catch(() => {});
+    } else if (supplierId) {
+      api.getSupplier(supplierId).then(setSupplier).catch(() => {});
+    }
+  }, [supplierId, customerId, party]);
 
   const runReconcile = async (base64: string, mime: string) => {
     setBusy(true); setError(""); setResult(null);
     try {
-      const r = await api.reconcileStatement(base64, supplierId!, mime);
+      const r = await api.reconcileStatement(base64, partyId!, mime, party);
       setResult(r);
     } catch (e: any) {
       setError(e.message || "Failed");
@@ -70,23 +75,44 @@ export default function Reconcile() {
   };
 
   const importMissing = async (e: any) => {
-    if (!supplierId) return;
+    if (!partyId) return;
     try {
+      if (party === "customer") {
+        // Customer statement: a "bill" line = an invoice they owe; a "payment"
+        // line = money they paid (record as an against-invoice/advance receipt).
+        if (e.type === "payment") {
+          await api.createReceipt({
+            mode: "advance", amount: e.amount, date: e.date, method: "cash",
+            debtorId: partyId, clientName: supplier?.name || "",
+            notes: e.description || "From reconciliation",
+          });
+        } else {
+          await api.createInvoice({
+            clientName: supplier?.name || "Customer",
+            lines: [{ description: e.description || "From reconciliation", qty: 1, rate: e.amount }],
+            taxRate: 0, total: e.amount, date: e.date, notes: e.reference || "",
+          });
+        }
+        const r = await api.reconcileStatement(photo, partyId, "image/jpeg", "customer");
+        setResult(r);
+        return;
+      }
       const st = await api.getSettings();
+      void st;
       if (e.type === "bill" || !e.type) {
         await api.createBill({
-          supplierId, date: e.date, amount: e.amount, currency: "USD",
+          supplierId: partyId, date: e.date, amount: e.amount, currency: "USD",
           paymentType: "credit", invoiceNo: e.reference || "", notes: e.description || "From reconciliation",
         });
       } else {
         await api.createPayment({
           date: e.date, amount: e.amount, currency: "USD",
-          type: "supplier_payment", supplierId, method: "cash",
+          type: "supplier_payment", supplierId: partyId, method: "cash",
           reference: e.reference || "", notes: e.description || "From reconciliation",
         });
       }
       // Refresh
-      const r = await api.reconcileStatement(photo, supplierId, "image/jpeg");
+      const r = await api.reconcileStatement(photo, partyId, "image/jpeg", "supplier");
       setResult(r);
     } catch (err: any) { setError(err.message); }
   };
@@ -106,7 +132,7 @@ export default function Reconcile() {
         <Card>
           <Text style={styles.name} testID="recon-supplier-name">{supplier?.name || "Loading…"}</Text>
           <Text style={styles.hint}>
-            Photograph or upload the supplier&apos;s statement. AI extracts each line item and compares against your Ledgr records.
+            Photograph or upload the {party === "customer" ? "customer's" : "supplier's"} statement. AI extracts each line item and compares against your Ledgr records.
           </Text>
           <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.md }}>
             <Pressable testID="btn-scan-stmt" onPress={scan} disabled={busy} style={[styles.actionBtn, { flex: 1 }]}>

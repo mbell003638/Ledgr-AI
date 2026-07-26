@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
+import { View, Text, StyleSheet, ViewStyle, StyleProp, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 
 export function ScreenHeader({ title, subtitle, testID }: { title: string; subtitle?: string; testID?: string }) {
@@ -23,14 +24,29 @@ export function Card({ children, style, testID }: { children: React.ReactNode; s
   );
 }
 
-export function KpiTile({ label, value, hint, testID }: { label: string; value: string; hint?: string; testID?: string }) {
+export function KpiTile({ label, value, hint, testID, onPress }: { label: string; value: string; hint?: string; testID?: string; onPress?: () => void }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  return (
-    <View style={styles.kpi} testID={testID}>
+  const content = (
+    <>
       <Text style={styles.kpiLabel}>{label}</Text>
       <Text style={styles.kpiValue}>{value}</Text>
       {hint ? <Text style={styles.kpiHint}>{hint}</Text> : null}
+    </>
+  );
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} testID={testID} style={({ pressed }: { pressed: boolean }) => [styles.kpi, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}>
+        {content}
+        <View style={{ position: "absolute", top: 10, right: 10 }}>
+          <Ionicons name="chevron-forward" size={14} color={theme.color.muted} />
+        </View>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.kpi} testID={testID}>
+      {content}
     </View>
   );
 }

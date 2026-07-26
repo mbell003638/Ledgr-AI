@@ -472,4 +472,32 @@ Local dev scripts (`package.json`): `start` (`expo start`), `android`, `ios`, `w
 
 ---
 
-*End of blueprint. Source of truth: the `frontend/` tree — `src/db/local.ts` (825 lines), `src/db/ai.ts` (426), `src/api.ts` (201), plus the `app/` screens.*
+## Roadmap: Accounting document completeness (CA-audit, ranked)
+
+Confirmed by CA gap-analysis. Build order, verify (tsc + jest) between each:
+1. **Receipts** — DONE. `receipts` collection, 3 modes, Cash Book bridge, derived invoice status, RCPT-####.
+2. **Invoice revenue → P&L** — DONE. `settings.accountingBasis` cash/accrual toggle, basis-aware dashboard + pnlRange.
+3. **Quote/Estimate** — DONE. `quotes` (QUO-####), non-posting, converts to invoice.
+4. **Advance/Deposit receipts** — DONE. `advance` mode + getAdvanceCredit/applyAdvanceToInvoice (no double-count), debtor "Apply Deposit" UI.
+5. **Credit/Debit Notes** — DONE. `creditNotes`/`debitNotes` (CN-/DN-####), fold into debtor balance+statement+accrual revenue, debtor-screen UI.
+6. **Delivery Note/Challan** — DONE. `deliveryNotes` (DC-####), goods movement, no ledger, PDF challan.
+
+Cross-cutting (DONE): scan-to-entry (camera/image) on receipts+invoices; customer statement compare (reconcile party='customer'); voice+AI actions (create_receipt/create_quote) + app-guide coverage.
+
+Enhanced reporting (DONE): Tax report (GST/VAT output−input), Sales Register, Receipts Register — new segments in reports.tsx.
+
+Backup format at v8. Test suite: 86 passing across 11 suites.
+
+## Roadmap: Multiple Books (multi-account) — deferred track, non-destructive
+
+Two distinct needs:
+- **Multi-persona (one business, mixed activity):** change `settings.businessType` → `businessTypes: string[]`; dashboard `HIDDEN_TILES` becomes a UNION across selected personas. Same money pot, one P&L.
+- **Multiple Books (separate sets of accounts, e.g. 2 retail points):** namespace storage. The ONLY seam is the key prefix in `backend.ts` (`ledgr:${c}` → `ledgr:${bookId}:${c}`, and `ledgr:settings` → `ledgr:${bookId}:settings`) + SQLite table/column. `local.ts` (all accounting logic) needs NO change — it only talks through the 4 backend primitives.
+  - Phase 1: add `activeBook.ts` (default `"default"`); namespace keys; non-destructive migration adopts existing `ledgr:*` data as the "default" book. App behaves identically — shippable.
+  - Phase 2: Books registry at `ledgr:__books__` `[{id,name,businessType,currency,createdAt}]`; Settings → "My Books" (new/rename/switch/delete biometric-gated); header book switcher; per-book backup/restore.
+  - Phase 3 (optional): "All Books" consolidated dashboard; per-book logo/taxRegNo.
+  - Rule of thumb: same money pot → multi-persona (one book); separate P&L → separate Books.
+
+---
+
+*End of blueprint. Source of truth: the `frontend/` tree — `src/db/local.ts`, `src/db/ai.ts`, `src/api.ts`, plus the `app/` screens.*
