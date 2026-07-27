@@ -20,6 +20,12 @@ export type V2AccountTotal = Pick<V2Account, 'id' | 'bookId' | 'code' | 'name' |
   normalBalance: number;
 };
 
+export type V2ReportDetail = {
+  journalId: string; sourceId?: string; date: string; memo: string;
+  accountId: string; accountCode: string; accountName: string; accountType: V2AccountType;
+  partyId?: string; debit: number; credit: number;
+};
+
 export type V2ReconciliationError = {
   code:
     | 'JOURNAL_UNBALANCED'
@@ -38,6 +44,8 @@ export type V2Reports = {
   from?: string;
   to?: string;
   journalCount: number;
+  /** Journal-line detail, already restricted to the requested date range. */
+  details: V2ReportDetail[];
   trialBalance: {
     accounts: V2AccountTotal[];
     totals: { debit: number; credit: number; difference: number };
@@ -97,6 +105,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     (entry) => entry.bookId === options.bookId && isInRange(entry, options),
   );
   const errors: V2ReconciliationError[] = [];
+  const details: V2ReportDetail[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
 
@@ -130,6 +139,10 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       } else {
         accountTotal.debit += debit;
         accountTotal.credit += credit;
+        const account = accountsById.get(line.accountId)!;
+        details.push({ journalId: journal.id, sourceId: journal.sourceId, date: journal.date,
+          memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
+          accountName: account.name, accountType: account.type, partyId: line.partyId, debit, credit });
       }
     }
     const difference = cents(journalDebit - journalCredit);
@@ -195,6 +208,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     from: options.from,
     to: options.to,
     journalCount: journals.length,
+    details,
     trialBalance: {
       accounts: accountTotals,
       totals: { debit: totalDebit, credit: totalCredit, difference: trialDifference },

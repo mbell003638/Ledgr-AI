@@ -19,7 +19,7 @@ export type RetailPartnershipConfig = {
   shopkeeperName?: string;
   shopkeeperSalaryExpenseAccount?: string;
   commissionPct: number;
-  members: { name: string; openingContribution: number; profitSharePct: number }[];
+  members: { id?: string; name: string; openingContribution: number; profitSharePct: number }[];
   inventoryCadence: 'irregular' | 'monthly' | 'quarterly' | 'annual';
 };
 

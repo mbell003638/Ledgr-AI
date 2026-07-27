@@ -3,6 +3,8 @@ import { V2SqlRepository } from './repository';
 import { V2CloseBooksRepository, type CloseBooksResult } from './closeBooksRepository';
 import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
 import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense } from './postings';
+import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
+import { V2DocumentService } from './documentService';
 import type { V2PaymentMethod, V2PartyRole } from './types';
 
 type AnyRecord = Record<string, any>;
@@ -10,7 +12,7 @@ const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'cash';
 const amount = (value: any) => Number(value);
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-const stablePartyId = (role: V2PartyRole, input: AnyRecord) => String(input[role === 'customer' ? 'debtorId' : 'supplierId'] || `v2:${role}:${normalized(input[role === 'customer' ? 'clientName' : 'supplierName'])}`);
+const stablePartyId = (role: V2PartyRole, input: AnyRecord) => String(input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'] || `v2:${role}:${normalized(input[role === 'customer' ? 'clientName' : 'supplierName'])}`);
 
 export type V2ActiveContext = { bookId: string; periodId: string };
 export type V2CloseBooksAppInput = { actualStock: number; openingInventory: number; commissionPct: number; notes?: string };
@@ -22,7 +24,8 @@ const endOfMonth = (date: string) => { const d = new Date(`${date}T00:00:00.000Z
 /** The application boundary for normal transaction writes. Legacy collections are not touched here. */
 export class V2AppService {
   readonly repo: V2SqlRepository;
-  constructor(readonly db: SqlRunner) { this.repo = new V2SqlRepository(db); }
+  readonly documents: V2DocumentService;
+  constructor(readonly db: SqlRunner) { this.repo = new V2SqlRepository(db); this.documents = new V2DocumentService(this.repo); }
 
   async activeContext(date?: string): Promise<V2ActiveContext | null> {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
@@ -33,7 +36,7 @@ export class V2AppService {
 
   private async party(input: AnyRecord, role: V2PartyRole, bookId: string) {
     const id = stablePartyId(role, input);
-    const name = String(input[role === 'customer' ? 'clientName' : 'supplierName'] || id).trim() || id;
+    const name = String(input[role === 'customer' ? 'clientName' : 'supplierName'] || input.partyId || id).trim() || id;
     const existing = await this.db.first('SELECT id FROM v2_parties WHERE id=? AND book_id=?', [id, bookId]);
     if (!existing) await this.repo.createParty({ id, bookId, name, phone: input.clientPhone || input.phone, email: input.email, roles: [role] });
     else {
@@ -71,6 +74,40 @@ export class V2AppService {
   async createPayment(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'supplier', c.bookId); return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) }); }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
 
+  async ownsSource(id: string, type?: string) {
+    const row = await this.db.first('SELECT id FROM v2_sources WHERE id=?' + (type ? ' AND type=?' : ''), type ? [id, type] : [id]);
+    return Boolean(row);
+  }
+
+  async deleteReceipt(id: string) { return this.documents.deleteReceipt(id); }
+  async deleteInvoice(id: string) { return this.documents.reverseSource(id, 'invoice', 'Delete invoice', true); }
+  async deleteExpense(id: string) { return this.documents.reverseSource(id, 'expense', 'Delete expense', true); }
+  async deletePayment(id: string) { return this.documents.reverseSource(id, 'supplier_payment', 'Delete supplier payment', true); }
+  async updateExpense(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'expense', 'Edit expense'); return this.createExpense(input); }
+  async updatePayment(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'supplier_payment', 'Edit supplier payment'); return this.createPayment(input); }
+  async updateInvoice(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'invoice', 'Edit invoice'); return this.createInvoice(input); }
+  async updateReceipt(id: string, input: AnyRecord) {
+    const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return this.documents.editReceipt(id, { ...input, ...c, date: String(input.date), amount: amount(input.amount), method: method(input.method) });
+  }
+  async markInvoicePaid(id: string, input: AnyRecord = {}) {
+    const date = input.date || new Date().toISOString().slice(0, 10);
+    const c = await this.activeContext(date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return this.documents.markInvoicePaid(id, { periodId: c.periodId, date, method: method(input.method) });
+  }
+
+  async getActiveBookConfig() {
+    const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
+    return new V2BookConfigRepository(this.db).getBookConfig(active.value);
+  }
+
+  async updateActiveBookConfig(update: V2BookConfigUpdate) {
+    const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book');
+    return new V2BookConfigRepository(this.db).updateBookConfig(active.value, update);
+  }
+
   async closeBooks(input: V2CloseBooksAppInput): Promise<V2CloseBooksAppResult> {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book');
@@ -97,6 +134,18 @@ export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
   type WriteName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
   const route = (name: WriteName) => async (payload: AnyRecord) => (await v2.activeContext(payload.date)) ? v2[name](payload) : legacy[name](payload);
   return { createSale: route('createSale'), createInvoice: route('createInvoice'), createReceipt: route('createReceipt'), createBill: route('createBill'), createPayment: route('createPayment'), createExpense: route('createExpense') };
+}
+
+export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
+  const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => (await v2.ownsSource(id, type)) ? v2[name](id, payload) : legacy[name](id, payload);
+  const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => (await v2.ownsSource(id, type)) ? v2[name](id) : legacy[name](id);
+  return {
+    updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
+    updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
+    updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
+    updatePayment: update('updatePayment', 'supplier_payment'), deletePayment: remove('deletePayment', 'supplier_payment'),
+    markInvoicePaid: async (id: string, payload: AnyRecord = {}) => (await v2.ownsSource(id, 'invoice')) ? v2.markInvoicePaid(id, payload) : legacy.markInvoicePaid(id),
+  };
 }
 
 export function createCloseBooksRouter(v2: V2AppService, legacy: (actualStock: number, notes: string) => Promise<any>) {

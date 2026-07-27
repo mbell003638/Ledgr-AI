@@ -1,6 +1,6 @@
 import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book } from '../src/accountingV2/appBootstrap';
-import { V2AppService, createAppWriteRouter } from '../src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter } from '../src/accountingV2/appService';
 
 describe('V2 application write integration', () => {
   async function setup() {
@@ -57,6 +57,34 @@ describe('V2 application write integration', () => {
       await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
       await expect(router.createSale({ date: '2026-07-01', amount: 9 })).resolves.toEqual({ legacy: { date: '2026-07-01', amount: 9 } });
       expect(legacy.createSale).toHaveBeenCalledTimes(1);
+    } finally { close(); }
+  });
+
+  it('routes receipt delete and edit through the V2 document service at the app boundary', async () => {
+    const { runner, close, service } = await setup();
+    const legacy = { updateReceipt: jest.fn(), deleteReceipt: jest.fn(), markInvoicePaid: jest.fn() };
+    const router = createAppMutationRouter(service, legacy);
+    try {
+      const receipt = await service.createReceipt({ date: '2026-07-03', amount: 15, debtorId: 'customer', clientName: 'Customer', method: 'cash' });
+      const edited = await router.updateReceipt(receipt.source.id, { date: '2026-07-04', amount: 20, debtorId: 'customer', method: 'bank' });
+      expect(edited.replacement.source.metadata.method).toBe('bank');
+      expect(legacy.updateReceipt).not.toHaveBeenCalled();
+      await router.deleteReceipt(edited.replacement.source.id);
+      expect(legacy.deleteReceipt).not.toHaveBeenCalled();
+      expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.replacement.source.id])).toEqual({ deleted: 1 });
+    } finally { close(); }
+  });
+
+  it('routes invoice mark-paid through V2 and posts the remaining balance', async () => {
+    const { close, service } = await setup();
+    const legacy = { markInvoicePaid: jest.fn() };
+    const router = createAppMutationRouter(service, legacy);
+    try {
+      const invoice = await service.createInvoice({ date: '2026-07-02', total: 40, clientName: 'Customer', debtorId: 'customer' });
+      const result = await router.markInvoicePaid(invoice.source.id, { date: '2026-07-05', method: 'bank' });
+      expect(result.source.type).toBe('receipt');
+      expect(legacy.markInvoicePaid).not.toHaveBeenCalled();
+      expect(await service.repo.invoiceOpen(invoice.source.id)).toBe(0);
     } finally { close(); }
   });
 });

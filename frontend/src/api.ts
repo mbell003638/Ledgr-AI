@@ -2,9 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
-import { V2BookConfigRepository } from '@/src/accountingV2/bookConfigRepository';
+import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import {
   listBooks as beListBooks,
@@ -130,6 +130,13 @@ async function createTransaction(name: AppCreateName, payload: any) {
   return writes[name](payload);
 }
 
+async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment', ...args: any[]) {
+  const runner = activeSqlRunner();
+    const dbFn = (db as any)[name];
+    if (!runner) return dbFn(...args);
+    return (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
+}
+
 export const api = {
   // Persistent V2 runtime services are available after storage initialization.
   v2: () => {
@@ -155,6 +162,16 @@ export const api = {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2BookConfigRepository(runner).setActivePersona(bookId, type);
+  },
+  getV2BookConfig: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).getActiveBookConfig();
+  },
+  updateV2BookConfig: async (config: V2BookConfigUpdate) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).updateActiveBookConfig(config);
   },
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
@@ -196,8 +213,8 @@ export const api = {
 
   listPayments: () => db.listPayments(),
   createPayment: (p: any) => createTransaction('createPayment', p),
-  updatePayment: (id: string, p: any) => db.updatePayment(id, p),
-  deletePayment: (id: string) => db.deletePayment(id),
+  updatePayment: (id: string, p: any) => mutateTransaction('updatePayment', id, p),
+  deletePayment: (id: string) => mutateTransaction('deletePayment', id),
 
   // Inventory
   listInventory: () => db.listInventory(),
@@ -268,8 +285,8 @@ export const api = {
   // Expenses
   listExpenses: () => db.listExpenses(),
   createExpense: (e: any) => createTransaction('createExpense', e),
-  updateExpense: (id: string, e: any) => db.updateExpense(id, e),
-  deleteExpense: (id: string) => db.deleteExpense(id),
+  updateExpense: (id: string, e: any) => mutateTransaction('updateExpense', id, e),
+  deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
 
   // Debtors
   listDebtors: () => db.listDebtors(),
@@ -289,15 +306,16 @@ export const api = {
   // Invoices
   listInvoices: () => db.listInvoices(),
   createInvoice: (inv: any) => createTransaction('createInvoice', inv),
-  updateInvoice: (id: string, inv: any) => db.updateInvoice(id, inv),
-  deleteInvoice: (id: string) => db.deleteInvoice(id),
-  markInvoicePaid: (id: string) => db.markInvoicePaid(id),
+  updateInvoice: (id: string, inv: any) => mutateTransaction('updateInvoice', id, inv),
+  deleteInvoice: (id: string) => mutateTransaction('deleteInvoice', id),
+  markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, input || {}),
   overdueInvoices: () => db.overdueInvoices(),
 
   // Receipts (money actually received)
   listReceipts: () => db.listReceipts(),
   createReceipt: (r: any) => createTransaction('createReceipt', r),
-  deleteReceipt: (id: string) => db.deleteReceipt(id),
+  updateReceipt: (id: string, input: any) => mutateTransaction('updateReceipt', id, input),
+  deleteReceipt: (id: string) => mutateTransaction('deleteReceipt', id),
   invoicePaidAmount: (invoiceId: string) => db.invoicePaidAmount(invoiceId),
 
   // Advances / Deposits (advance receipts applied to invoices later)

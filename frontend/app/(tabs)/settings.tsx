@@ -81,6 +81,16 @@ export default function SettingsScreen() {
         const names = Array.isArray(s.partnerNames) ? s.partnerNames : [];
         setMembers(names.map((n: string) => ({ name: String(n), amount: "", profitSharePct: "" })));
       }
+      try {
+        const v2 = await api.getV2BookConfig();
+        if (v2) {
+          setAccountingBasis(v2.basis);
+          setSelectedPersonas(v2.selectedPersonas);
+          setActivePersona(v2.activePersona);
+          setCommissionPct(v2.retailPartnership.commissionPct ? String(v2.retailPartnership.commissionPct) : "");
+          setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
+        }
+      } catch { /* legacy settings remain the fallback until V2 is available */ }
       setLockEnabled(!!s.lockEnabled);
       // Load the list of books (accounts) + which one is active.
       try {

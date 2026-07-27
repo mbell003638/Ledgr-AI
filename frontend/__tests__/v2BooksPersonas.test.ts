@@ -108,4 +108,67 @@ describe('V2BookConfigRepository — persistent books and persona isolation', ()
       expect((await repo.getBookConfig('book-a')).selectedPersonas).toEqual(['retail']);
     } finally { close(); }
   });
+
+  it('persists basis, style, personas, partnership config, and normalized members together', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const repo = new V2BookConfigRepository(runner);
+      await repo.createBook(defaultBook('book-a', 'Alpha'), ['custom']);
+
+      await repo.updateBookConfig('book-a', {
+        basis: 'cash',
+        style: 'retail_partnership',
+        selectedPersonas: ['retail', 'wholesale'],
+        activePersona: 'wholesale',
+        retailPartnership: {
+          enabled: true,
+          commissionPct: 7.5,
+          inventoryCadence: 'monthly',
+          members: [
+            { id: 'owner-a', name: '  Alice  ', openingContribution: 1200.129, profitSharePct: 60 },
+            { id: 'owner-b', name: 'Bob', openingContribution: 800, profitSharePct: 40 },
+          ],
+        },
+      });
+
+      const reloaded = new V2BookConfigRepository(runner);
+      await expect(reloaded.getBookConfig('book-a')).resolves.toEqual({
+        bookId: 'book-a', basis: 'cash', style: 'retail_partnership',
+        selectedPersonas: ['retail', 'wholesale'], activePersona: 'wholesale',
+        retailPartnership: {
+          enabled: true, commissionPct: 7.5, inventoryCadence: 'monthly',
+          members: [
+            { id: 'owner-a', name: 'Alice', openingContribution: 1200.13, profitSharePct: 60 },
+            { id: 'owner-b', name: 'Bob', openingContribution: 800, profitSharePct: 40 },
+          ],
+        },
+      });
+      expect(await runner.all('SELECT id,book_id,name,opening_contribution,current_capital,profit_share_pct FROM v2_members ORDER BY id')).toEqual([
+        { id: 'book-a:member:owner-a', book_id: 'book-a', name: 'Alice', opening_contribution: 1200.13, current_capital: 1200.13, profit_share_pct: 60 },
+        { id: 'book-a:member:owner-b', book_id: 'book-a', name: 'Bob', opening_contribution: 800, current_capital: 800, profit_share_pct: 40 },
+      ]);
+    } finally { close(); }
+  });
+
+  it('rolls back the complete settings update when a normalized member write fails', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const repo = new V2BookConfigRepository(runner);
+      await repo.createBook(defaultBook('book-a', 'Alpha'), ['custom']);
+      await runner.exec(`CREATE TRIGGER fail_settings_member BEFORE INSERT ON v2_members
+        BEGIN SELECT RAISE(FAIL, 'injected settings member failure'); END;`);
+
+      await expect(repo.updateBookConfig('book-a', {
+        basis: 'cash', style: 'retail_partnership', selectedPersonas: ['retail'], activePersona: 'retail',
+        retailPartnership: { enabled: true, commissionPct: 10, inventoryCadence: 'annual', members: [{ name: 'Owner', openingContribution: 1, profitSharePct: 100 }] },
+      })).rejects.toThrow(/injected settings member failure/);
+
+      await expect(repo.getBookConfig('book-a')).resolves.toMatchObject({
+        basis: 'accrual', style: 'standard', selectedPersonas: ['custom'], activePersona: 'custom',
+      });
+      expect(await runner.all('SELECT id FROM v2_members')).toEqual([]);
+    } finally { close(); }
+  });
 });

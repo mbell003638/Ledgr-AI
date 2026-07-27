@@ -14,8 +14,16 @@ export type StoredPersona = {
 
 type BookRow = { id: string; name: string; style: V2Book['style']; basis: V2Book['basis']; created_at: string };
 type PersonaRow = { id: string; book_id: string; type: PersonaId; enabled: number; active: number; config: string };
+type MemberRow = { id: string; name: string; opening_contribution: number; profit_share_pct: number };
+
+export type V2BookConfigUpdate = Pick<V2BookConfig, 'style' | 'basis' | 'selectedPersonas' | 'activePersona'> & {
+  retailPartnership: V2BookConfig['retailPartnership'];
+};
 
 const personaId = (bookId: string, type: PersonaId) => `${bookId}:persona:${type}`;
+const memberKey = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'member';
+const memberId = (bookId: string, value: string) => `${bookId}:member:${memberKey(value)}`;
+const cents = (value: number) => Math.round(value * 100) / 100;
 
 export class V2BookConfigRepository {
   constructor(readonly db: SqlRunner) {}
@@ -77,10 +85,53 @@ export class V2BookConfigRepository {
     const personas = await this.listPersonas(bookId, false);
     const active = personas.find((item) => item.active) || personas[0];
     if (!active) throw new Error('Book has no enabled persona');
+    const activeConfig = active.config;
+    const members = await this.db.all<MemberRow>('SELECT id,name,opening_contribution,profit_share_pct FROM v2_members WHERE book_id = ? ORDER BY id', [bookId]);
     return {
       ...defaultBookConfig(bookId), style: book.style, basis: book.basis,
       selectedPersonas: personas.map((item) => item.type), activePersona: active.type,
+      retailPartnership: {
+        enabled: Boolean(activeConfig.retailPartnershipEnabled ?? book.style === 'retail_partnership'),
+        commissionPct: Number(activeConfig.commissionPct || 0),
+        inventoryCadence: this.inventoryCadence(activeConfig.inventoryCadence),
+        ...(typeof activeConfig.shopkeeperName === 'string' ? { shopkeeperName: activeConfig.shopkeeperName } : {}),
+        ...(typeof activeConfig.shopkeeperSalaryExpenseAccount === 'string' ? { shopkeeperSalaryExpenseAccount: activeConfig.shopkeeperSalaryExpenseAccount } : {}),
+        members: members.map((member) => ({
+          id: member.id.startsWith(`${bookId}:member:`) ? member.id.slice(`${bookId}:member:`.length) : member.id,
+          name: member.name, openingContribution: cents(Number(member.opening_contribution)), profitSharePct: Number(member.profit_share_pct),
+        })),
+      },
     };
+  }
+
+  async updateBookConfig(bookId: string, update: V2BookConfigUpdate): Promise<V2BookConfig> {
+    this.validateUpdate(update);
+    const selected = [...new Set(update.selectedPersonas)];
+    return this.tx(async () => {
+      await this.requireBook(bookId);
+      await this.db.run('UPDATE v2_books SET style = ?, basis = ? WHERE id = ?', [update.style, update.basis, bookId]);
+      await this.db.run('UPDATE v2_personas SET enabled = 0, active = 0 WHERE book_id = ?', [bookId]);
+      const personaConfig = JSON.stringify({
+        retailPartnershipEnabled: update.retailPartnership.enabled,
+        commissionPct: update.retailPartnership.commissionPct,
+        inventoryCadence: update.retailPartnership.inventoryCadence,
+        ...(update.retailPartnership.shopkeeperName ? { shopkeeperName: update.retailPartnership.shopkeeperName } : {}),
+        ...(update.retailPartnership.shopkeeperSalaryExpenseAccount ? { shopkeeperSalaryExpenseAccount: update.retailPartnership.shopkeeperSalaryExpenseAccount } : {}),
+      });
+      for (const type of selected) {
+        const existing = await this.db.first<{ id: string }>('SELECT id FROM v2_personas WHERE book_id = ? AND type = ?', [bookId, type]);
+        if (existing) await this.db.run('UPDATE v2_personas SET enabled = 1, active = ?, config = ? WHERE id = ?', [type === update.activePersona ? 1 : 0, personaConfig, existing.id]);
+        else await this.db.run('INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?)', [personaId(bookId, type), bookId, type, 1, type === update.activePersona ? 1 : 0, personaConfig]);
+      }
+      await this.db.run('DELETE FROM v2_members WHERE book_id = ?', [bookId]);
+      for (const member of update.retailPartnership.members) {
+        const id = memberId(bookId, member.id || member.name);
+        const contribution = cents(member.openingContribution);
+        await this.db.run('INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
+          [id, bookId, member.name.trim(), contribution, contribution, member.profitSharePct]);
+      }
+      return this.getBookConfig(bookId);
+    });
   }
 
   async addPersona(bookId: string, type: PersonaId, config?: Record<string, unknown>): Promise<void> {
@@ -119,6 +170,20 @@ export class V2BookConfigRepository {
         await this.db.run('UPDATE v2_personas SET active = 1 WHERE id = ?', [fallback!.id]);
       }
     });
+  }
+
+  private validateUpdate(update: V2BookConfigUpdate): void {
+    if (!update.selectedPersonas.length || !update.selectedPersonas.includes(update.activePersona)) throw new Error('Active persona must be selected');
+    if (!Number.isFinite(update.retailPartnership.commissionPct) || update.retailPartnership.commissionPct < 0 || update.retailPartnership.commissionPct > 100) throw new Error('Commission percentage must be between 0 and 100');
+    for (const member of update.retailPartnership.members) {
+      if (!member.name.trim()) throw new Error('Member name is required');
+      if (!Number.isFinite(member.openingContribution) || member.openingContribution < 0) throw new Error('Opening contribution must be a finite non-negative amount');
+      if (!Number.isFinite(member.profitSharePct) || member.profitSharePct < 0 || member.profitSharePct > 100) throw new Error('Profit share must be between 0 and 100');
+    }
+  }
+
+  private inventoryCadence(value: unknown): V2BookConfig['retailPartnership']['inventoryCadence'] {
+    return value === 'monthly' || value === 'quarterly' || value === 'annual' ? value : 'irregular';
   }
 
   private async requireBook(bookId: string): Promise<void> {
