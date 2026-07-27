@@ -225,6 +225,8 @@ export const api = {
   updateDebtor: (id: string, d: any) => db.updateDebtor(id, d),
   deleteDebtor: (id: string) => db.deleteDebtor(id),
   addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
+  deleteDebtorPayment: (debtorId: string, paymentId: string) => db.deleteDebtorPayment(debtorId, paymentId),
+  updateDebtorPayment: (debtorId: string, paymentId: string, u: any) => db.updateDebtorPayment(debtorId, paymentId, u),
   getDebtorStatement: (id: string) => db.getDebtorStatement(id),
 
   // Date-range reports

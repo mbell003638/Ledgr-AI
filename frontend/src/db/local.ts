@@ -771,14 +771,98 @@ export async function deleteDebtor(id: string) {
   });
 }
 export async function addDebtorPayment(debtorId: string, payment: { amount: number; date: string; notes?: string }) {
-  return serialize(async () => {
-    const items = await readColl<any>('debtors');
-    const idx = items.findIndex((x: any) => x.id === debtorId);
-    if (idx === -1) throw new Error('Debtor not found');
-    const p = { id: uuid(), ...payment, created_at: nowIso() };
-    items[idx].payments = [...(items[idx].payments || []), p];
-    await writeColl('debtors', items);
-    return items[idx];
+  // Find the debtor to get their name and open invoices.
+  const debtors = await readColl<any>('debtors');
+  const debtor = debtors.find((d: any) => d.id === debtorId);
+  if (!debtor) throw new Error('Debtor not found');
+
+  // Find open invoices for this customer, oldest first, and auto-allocate.
+  const invoices = await readColl<any>('invoices');
+  const norm = (s: string) => (s || '').trim().toLowerCase();
+  const openInvoices = invoices
+    .filter((i: any) =>
+      norm(i.clientName) === norm(debtor.name) && i.status !== 'paid'
+    )
+    .sort((a: any, b: any) => (a.date > b.date ? 1 : -1)); // oldest first
+
+  let remaining = +Number(payment.amount).toFixed(2);
+  const allocations: { invoiceId: string; amountApplied: number }[] = [];
+
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break;
+    const alreadyPaid = await invoicePaidAmount(inv.id);
+    const open = +(+Number(inv.total).toFixed(2) - alreadyPaid).toFixed(2);
+    if (open <= 0.005) continue;
+    const applied = Math.min(remaining, open);
+    allocations.push({ invoiceId: inv.id, amountApplied: +applied.toFixed(2) });
+    remaining = +(+remaining - applied).toFixed(2);
+  }
+
+  // If no open invoices, treat as an advance against the debtor.
+  const mode: ReceiptMode = allocations.length > 0 ? 'against_invoice' : 'advance';
+
+  return createReceipt({
+    mode,
+    date: payment.date,
+    amount: +Number(payment.amount).toFixed(2),
+    debtorId,
+    clientName: debtor.name,
+    allocations,
+    notes: payment.notes || (mode === 'advance' ? 'Advance payment' : 'Payment received'),
+  });
+}
+
+/** Delete a payment from a debtor's ledger. If linked to a receipt, cascades
+ * to delete receipt + cash entry + sales entry. Legacy payments (no receiptId)
+ * are cleaned from the debtor array only. */
+export async function deleteDebtorPayment(debtorId: string, paymentId: string) {
+  const debtors = await readColl<any>('debtors');
+  const debtor = debtors.find((d: any) => d.id === debtorId);
+  if (!debtor) throw new Error('Debtor not found');
+  const payment = (debtor.payments || []).find((p: any) => p.id === paymentId);
+  if (!payment) return { ok: true };
+
+  if (payment.receiptId) {
+    await deleteReceipt(payment.receiptId);
+  } else {
+    await serialize(async () => {
+      const items = await readColl<any>('debtors');
+      const idx = items.findIndex((d: any) => d.id === debtorId);
+      if (idx !== -1) {
+        items[idx].payments = (items[idx].payments || []).filter((p: any) => p.id !== paymentId);
+        await writeColl('debtors', items);
+      }
+    });
+  }
+  return { ok: true };
+}
+
+/** Update a debtor payment amount/date/notes by replacing the old receipt with
+ * a new one (or updating legacy records in-place). */
+export async function updateDebtorPayment(debtorId: string, paymentId: string, update: { amount?: number; date?: string; notes?: string }) {
+  const debtors = await readColl<any>('debtors');
+  const debtor = debtors.find((d: any) => d.id === debtorId);
+  if (!debtor) throw new Error('Debtor not found');
+  const payment = (debtor.payments || []).find((p: any) => p.id === paymentId);
+  if (!payment) throw new Error('Payment not found');
+
+  if (!payment.receiptId) {
+    return serialize(async () => {
+      const items = await readColl<any>('debtors');
+      const idx = items.findIndex((d: any) => d.id === debtorId);
+      const p = (items[idx].payments || []).find((x: any) => x.id === paymentId);
+      if (p) Object.assign(p, update);
+      await writeColl('debtors', items);
+      return items[idx];
+    });
+  }
+
+  await deleteReceipt(payment.receiptId);
+  const amt = update.amount ?? payment.amount;
+  return addDebtorPayment(debtorId, {
+    amount: amt,
+    date: update.date ?? payment.date,
+    notes: update.notes !== undefined ? update.notes : payment.notes,
   });
 }
 
@@ -1130,23 +1214,29 @@ export async function deleteInvoice(id: string) {
   return { ok: true };
 }
 export async function markInvoicePaid(id: string) {
-  const updated = await updateInvoice(id, { status: 'paid', paidAt: nowIso() });
-  // Sync to debtor ledger: mark the invoice paid and record a matching payment
-  // so the outstanding balance reflects the settlement.
-  await serialize(async () => {
-    const debtors = await readColl<any>('debtors');
-    let changed = false;
-    for (const d of debtors) {
-      const inv = (d.invoices || []).find((i: any) => i.id === id);
-      if (inv && inv.status !== 'paid') {
-        inv.status = 'paid';
-        d.payments = [...(d.payments || []), { id: uuid(), amount: inv.amount, date: new Date().toISOString().slice(0, 10), notes: `Invoice ${inv.invoiceNumber} paid`, created_at: nowIso() }];
-        changed = true;
-      }
-    }
-    if (changed) await writeColl('debtors', debtors);
+  const invoices = await readColl<any>('invoices');
+  const inv = invoices.find((i: any) => i.id === id);
+  if (!inv) throw new Error('Invoice not found');
+  if (inv.status === 'paid') return inv;
+
+  // Find the debtor linked to this invoice (by name match).
+  const debtors = await readColl<any>('debtors');
+  const norm = (s: string) => (s || '').trim().toLowerCase();
+  const debtor = debtors.find((d: any) =>
+    (d.invoices || []).some((i: any) => i.id === id)
+  );
+
+  // Route through createReceipt which handles:
+  //   receipt record + cash entry IN + debtor payment + invoice status sync
+  return createReceipt({
+    mode: 'against_invoice',
+    date: new Date().toISOString().slice(0, 10),
+    amount: inv.total,
+    debtorId: debtor?.id || null,
+    clientName: inv.clientName,
+    allocations: [{ invoiceId: id, amountApplied: inv.total }],
+    notes: `Invoice ${inv.invoiceNumber} paid`,
   });
-  return updated;
 }
 export async function overdueInvoices() {
   const today = new Date().toISOString().slice(0, 10);

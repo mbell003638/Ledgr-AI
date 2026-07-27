@@ -213,10 +213,11 @@ export default function DebtorsScreen() {
     if (!amt || amt <= 0) { setPayError("Enter a valid amount"); return; }
     setPaySaving(true); setPayError("");
     try {
-      const updated = await api.addDebtorPayment(selected.id, { amount: amt, date: payDate, notes: payNotes.trim() });
-      const totalInvoiced = (updated as any).totalInvoiced ?? selected.totalInvoiced ?? 0;
-      const totalPaid = ((updated as any).payments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
-      setSelected({ ...updated, totalInvoiced, totalPaid, balance: +(totalInvoiced - totalPaid).toFixed(2) });
+      await api.addDebtorPayment(selected.id, { amount: amt, date: payDate, notes: payNotes.trim() });
+      // addDebtorPayment now returns a Receipt, not a Debtor. Re-fetch the
+      // debtor to get the updated ledger.
+      const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+      if (fresh) setSelected(fresh);
       setShowPay(false); setPayAmount(""); setPayNotes("");
       await load();
     } catch (e: any) { setPayError(e.message); }
