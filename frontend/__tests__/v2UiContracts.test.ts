@@ -61,6 +61,32 @@ describe('V2 UI contracts', () => {
     expect(reports).toContain('/custom-report');
   });
 
+  it('Settings saves authoritative V2 book, persona, and member configuration', () => {
+    const source = readApp('(tabs)/settings.tsx');
+    const saveStart = source.indexOf('const save = async () =>');
+    const saveEnd = source.indexOf('\n  const pickLogo', saveStart);
+    const save = source.slice(saveStart, saveEnd);
+
+    expect(save).toContain('api.updateV2BookConfig');
+    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?selectedPersonas/);
+    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?activePersona/);
+    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?retailPartnership/);
+    expect(save).toContain('openingContribution');
+    expect(save).toContain('profitSharePct');
+  });
+
+  it('wires TransactionDetail into core production transaction screens with all action callbacks', () => {
+    for (const screen of ['sales.tsx', 'invoices.tsx', 'receipts.tsx', '(tabs)/bills.tsx']) {
+      const source = readApp(screen);
+      expect(source).toContain('TransactionDetail');
+      expect(source).toContain('onEdit=');
+      expect(source).toContain('onReversalDelete=');
+      expect(source).toContain('onShare=');
+      expect(source).toContain('onPrint=');
+      expect(source).toContain('onMore=');
+    }
+  });
+
   it('provides a shared accessible TransactionDetail action contract', () => {
     const source = readSource('src/components/TransactionDetail.tsx');
 

@@ -13,6 +13,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
+import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { getCurrencySymbol } from "@/src/db/local";
 
 type InvoiceLine = { description: string; qty: number; rate: number };
@@ -248,6 +249,10 @@ export default function InvoicesScreen() {
     } catch (e: any) { console.warn(e); }
   };
 
+  const printInvoice = async (inv: Invoice) => {
+    await Print.printAsync({ html: buildHtml(inv, biz, currSym) });
+  };
+
   const shareWhatsApp = (inv: Invoice) => {
     const phone = (inv.clientPhone || "").replace(/\D/g, "");
     const msg = `Hi ${inv.clientName}, please find your invoice ${inv.invoiceNumber} for ${currSym}${invTotal(inv).toFixed(2)} dated ${inv.date}.${inv.dueDate ? ` Due: ${inv.dueDate}.` : ""}${biz.paymentDetails ? `\nPayment: ${biz.paymentDetails}` : ""}`;
@@ -300,6 +305,15 @@ export default function InvoicesScreen() {
           <Pressable onPress={() => openEdit(selected)}><Ionicons name="create-outline" size={22} color={theme.color.brandPrimary} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+          <TransactionDetail
+            title={selected.invoiceNumber}
+            subtitle={`${selected.clientName} • ${shortDate(selected.date)}`}
+            onEdit={() => openEdit(selected)}
+            onReversalDelete={() => deleteInv(selected.id)}
+            onShare={() => sharePdf(selected)}
+            onPrint={() => printInvoice(selected)}
+            onMore={() => selected.status === "unpaid" ? markPaid(selected.id) : shareWhatsApp(selected)}
+          >
           <Card>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View>
@@ -333,6 +347,7 @@ export default function InvoicesScreen() {
           </Card>
 
           {selected.notes ? <Card style={{ marginTop: theme.spacing.md }}><Text style={styles.sub}>{selected.notes}</Text></Card> : null}
+          </TransactionDetail>
 
           <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.md, flexWrap: "wrap" }}>
             <Pressable onPress={() => sharePdf(selected)} style={[styles.actionBtn, { flex: 1 }]}>

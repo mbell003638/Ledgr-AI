@@ -129,6 +129,22 @@ export default function SettingsScreen() {
         model: modelName.trim() || meta.defaultModel,
         baseUrl: baseUrl.trim() || undefined,
       });
+      try {
+        await api.updateV2BookConfig({
+          basis: accountingBasis,
+          style: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
+          selectedPersonas,
+          activePersona,
+          retailPartnership: {
+            enabled: selectedPersonas.includes("retail"),
+            commissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+            inventoryCadence: "irregular",
+            members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
+          },
+        });
+      } catch (e: any) {
+        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
       await api.updateSettings({
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,

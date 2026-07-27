@@ -17,10 +17,10 @@ async function partyWithRole(repo: V2SqlRepository, bookId: string, partyId: str
 }
 async function customer(repo: V2SqlRepository, bookId: string, partyId: string) { return partyWithRole(repo, bookId, partyId, 'customer'); }
 
-export async function postCashSale(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; amount: number; method?: V2PaymentMethod; reference?: string }) {
+export async function postCashSale(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; amount: number; method?: V2PaymentMethod; reference?: string; metadata?: Record<string, unknown> }) {
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const method = input.method || 'cash';
-  const source: V2Source = { id: uid('cash_sale'), bookId: input.bookId, type: 'cash_sale', date: input.date, reference: input.reference, metadata: { total: amount, method } };
+  const source: V2Source = { id: uid('cash_sale'), bookId: input.bookId, type: 'cash_sale', date: input.date, reference: input.reference, metadata: { total: amount, method, ...(input.metadata || {}) } };
   const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Cash sale', lines: [
     { accountId: `${input.bookId}:account:${paymentCode(method)}`, debit: amount, credit: 0 },
     { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
@@ -62,9 +62,9 @@ export async function postReceipt(repo: V2SqlRepository, input: { bookId: string
   return { source, journal, allocated, advance };
 }
 
-export async function postPurchase(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; date:string; amount:number; method?:V2PaymentMethod }) {
+export async function postPurchase(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; date:string; amount:number; method?:V2PaymentMethod; metadata?:Record<string, unknown> }) {
   const amount=cents(input.amount); if(!Number.isFinite(amount)||amount<=0) throw new Error('Amount must be positive'); await partyWithRole(repo,input.bookId,input.partyId,'supplier');
-  const source:V2Source={id:uid(input.method?'cash_purchase':'credit_purchase'),bookId:input.bookId,type:input.method?'cash_purchase':'credit_purchase',date:input.date,metadata:{partyId:input.partyId,total:amount,method:input.method}};
+  const source:V2Source={id:uid(input.method?'cash_purchase':'credit_purchase'),bookId:input.bookId,type:input.method?'cash_purchase':'credit_purchase',date:input.date,metadata:{partyId:input.partyId,total:amount,method:input.method,...(input.metadata || {})}};
   const journal=await repo.postSourceJournal(source,{bookId:input.bookId,periodId:input.periodId,date:input.date,memo:'Purchase',lines:[{accountId:`${input.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`,partyId:input.partyId,debit:amount,credit:0},{accountId:`${input.bookId}:account:${input.method?paymentCode(input.method):V2_ACCOUNT_CODES.AP}`,partyId:input.partyId,debit:0,credit:amount}]}); return {source,journal};
 }
 export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:string;periodId:string;partyId:string;date:string;amount:number;method:V2PaymentMethod}){

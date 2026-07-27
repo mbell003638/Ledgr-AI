@@ -87,4 +87,37 @@ describe('V2 application write integration', () => {
       expect(await service.repo.invoiceOpen(invoice.source.id)).toBe(0);
     } finally { close(); }
   });
+
+  it('routes cash sale edit/delete through V2 reversal and repost without legacy calls', async () => {
+    const { runner, close, service } = await setup();
+    const legacy = { updateSale: jest.fn(), deleteSale: jest.fn() };
+    const router = createAppMutationRouter(service, legacy);
+    try {
+      const sale = await service.createSale({ date: '2026-07-10', amount: 25, method: 'card', notes: 'old' });
+      const edited = await router.updateSale(sale.source.id, { date: '2026-07-11', amount: 40, method: 'bank', notes: 'new' });
+      expect(edited.source.type).toBe('cash_sale');
+      expect(edited.source.metadata).toMatchObject({ total: 40, method: 'bank', notes: 'new' });
+      expect(legacy.updateSale).not.toHaveBeenCalled();
+      expect(await runner.first("SELECT json_extract(metadata,'$.reversed') AS reversed FROM v2_sources WHERE id=?", [sale.source.id])).toEqual({ reversed: 1 });
+      await router.deleteSale(edited.source.id);
+      expect(legacy.deleteSale).not.toHaveBeenCalled();
+      expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
+    } finally { close(); }
+  });
+
+  it('routes purchase/bill edit/delete through V2 reversal and repost', async () => {
+    const { runner, close, service } = await setup();
+    const legacy = { updateBill: jest.fn(), deleteBill: jest.fn() };
+    const router = createAppMutationRouter(service, legacy);
+    try {
+      const bill = await service.createBill({ date: '2026-07-10', amount: 25, supplierId: 'supplier-1', supplierName: 'Supply Co', paymentType: 'cash', method: 'cash', invoiceNo: 'A', notes: 'old' });
+      const edited = await router.updateBill(bill.source.id, { date: '2026-07-11', amount: 40, supplierId: 'supplier-1', supplierName: 'Supply Co', paymentType: 'credit', invoiceNo: 'B', notes: 'new' });
+      expect(edited.source.type).toBe('credit_purchase');
+      expect(edited.source.metadata).toMatchObject({ total: 40, invoiceNo: 'B', notes: 'new' });
+      expect(legacy.updateBill).not.toHaveBeenCalled();
+      await router.deleteBill(edited.source.id);
+      expect(legacy.deleteBill).not.toHaveBeenCalled();
+      expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
+    } finally { close(); }
+  });
 });

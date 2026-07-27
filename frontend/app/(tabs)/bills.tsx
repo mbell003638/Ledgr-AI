@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,6 +7,8 @@ import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, Empty } from "@/src/components/UI";
+import { TransactionDetail } from "@/src/components/TransactionDetail";
+import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 
 export default function BillsScreen() {
   const theme = useTheme();
@@ -16,6 +18,7 @@ export default function BillsScreen() {
   const [suppliers, setSuppliers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selected, setSelected] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +36,32 @@ export default function BillsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const documentFor = (bill: any) => ({ title: "Vendor Bill", subtitle: shortDate(bill.date), rows: [
+    ["Supplier", suppliers[bill.supplierId] || "Unknown supplier"], ["Amount", fmt(bill.amount, bill.currency)],
+    ["Payment", bill.paymentType], ["Invoice #", bill.invoiceNo || "—"], ["Notes", bill.notes || "—"],
+  ] as Array<[string, unknown]> });
+  const reverseBill = (bill: any) => Alert.alert("Reverse / Delete Bill", "This creates the appropriate V2 reversal and removes the bill from active records.", [
+    { text: "Cancel", style: "cancel" },
+    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteBill(bill.id); setSelected(null); await load(); } },
+  ]);
+
+  if (selected) return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.headerRow}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable></View>
+      <ScrollView contentContainerStyle={styles.list}>
+        <TransactionDetail
+          title={suppliers[selected.supplierId] || "Vendor Bill"}
+          subtitle={`${fmt(selected.amount, selected.currency)} • ${shortDate(selected.date)}`}
+          onEdit={() => router.push({ pathname: "/bill-form", params: { id: selected.id } })}
+          onReversalDelete={() => reverseBill(selected)}
+          onShare={() => shareTransaction(documentFor(selected))}
+          onPrint={() => printTransaction(documentFor(selected))}
+          onMore={() => Alert.alert("Bill details", selected.notes || selected.invoiceNo || "No additional details")}
+        ><Text style={styles.cardSub}>{selected.paymentType === "cash" ? "Cash" : "Credit"}{selected.invoiceNo ? ` • #${selected.invoiceNo}` : ""}</Text></TransactionDetail>
+      </ScrollView>
+    </SafeAreaView>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -65,7 +94,7 @@ export default function BillsScreen() {
           renderItem={({ item }) => (
             <Pressable
               testID={`bill-${item.id}`}
-              onPress={() => router.push({ pathname: "/bill-form", params: { id: item.id } })}
+              onPress={() => setSelected(item)}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
             >
               <View style={{ flex: 1 }}>

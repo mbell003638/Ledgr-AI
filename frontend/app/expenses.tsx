@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -8,6 +8,8 @@ import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { fmt, shortDate } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
+import { TransactionDetail } from "@/src/components/TransactionDetail";
+import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -19,6 +21,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [currencySymbol, setCurrencySymbol] = useState("$");
   const [editing, setEditing] = useState<Expense | "new" | null>(null);
+  const [selected, setSelected] = useState<Expense | null>(null);
 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState("");
@@ -70,6 +73,31 @@ export default function Expenses() {
     finally { setDeleting(false); }
   };
 
+  const reverseExpense = (expense: Expense) => Alert.alert("Reverse / Delete Expense", "This creates the appropriate V2 reversal and removes the expense from active records.", [
+    { text: "Cancel", style: "cancel" },
+    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteExpense(expense.id); setSelected(null); await load(); } },
+  ]);
+  const documentFor = (expense: Expense) => ({ title: `Expense: ${expense.category}`, subtitle: shortDate(expense.date), rows: [
+    ["Amount", fmt(expense.amount, currencySymbol)], ["Notes", expense.notes || "—"],
+  ] as Array<[string, unknown]> });
+
+  if (selected) return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.headerBar}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable><Text style={styles.headerTitle}>Expense</Text><View style={{ width: 26 }} /></View>
+      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+        <TransactionDetail
+          title={selected.category}
+          subtitle={`${fmt(selected.amount, currencySymbol)} • ${shortDate(selected.date)}`}
+          onEdit={() => { setSelected(null); openEdit(selected); }}
+          onReversalDelete={() => reverseExpense(selected)}
+          onShare={() => shareTransaction(documentFor(selected))}
+          onPrint={() => printTransaction(documentFor(selected))}
+          onMore={() => Alert.alert("Expense details", selected.notes || "No additional notes")}
+        ><Text style={{ color: theme.color.muted }}>{selected.notes || "No notes"}</Text></TransactionDetail>
+      </ScrollView>
+    </SafeAreaView>
+  );
+
   if (editing !== null) {
     const isEdit = editing !== "new";
     return (
@@ -119,7 +147,7 @@ export default function Expenses() {
         contentContainerStyle={{ padding: theme.spacing.lg }}
         ListEmptyComponent={<Text style={{ color: theme.color.muted, textAlign: "center", marginTop: 40 }}>No expenses yet</Text>}
         renderItem={({ item }) => (
-          <Pressable onPress={() => openEdit(item)} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginBottom: theme.spacing.sm }]}>
+          <Pressable onPress={() => setSelected(item)} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginBottom: theme.spacing.sm }]}>
             <Card>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <View style={{ flex: 1 }}>

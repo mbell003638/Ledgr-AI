@@ -30,8 +30,8 @@ export default function SaleForm() {
 
   useEffect(() => {
     (async () => {
-      await api.getSettings();
-      if (editId) {
+  const isV2 = await api.v2BookVersion(api.activeBookId()).catch(() => null);
+      if (isV2 === 2) {
         const list = await api.listSales();
         const it = list.find((x: any) => x.id === editId);
         if (it) { setAmount(String(it.amount)); setNotes(it.notes || ""); setDate(it.date); }

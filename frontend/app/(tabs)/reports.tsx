@@ -62,6 +62,7 @@ export default function ReportsScreen() {
   const [rangePresetSel, setRangePresetSel] = useState("This Month");
   const [from, setFrom] = useState(() => rangePreset("This Month").from);
   const [to, setTo] = useState(() => rangePreset("This Month").to);
+  const [reportSource, setReportSource] = useState<"v2" | "legacy">("legacy");
 
   const fmt = useCallback((n: number | null | undefined) => fmtBase(n, currSym), [currSym]);
 
@@ -78,16 +79,55 @@ export default function ReportsScreen() {
       const s = await api.getSettings();
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
-      const [dl, pd, p, b, t, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
-        api.dashboard(), api.listPeriods(),
-        api.pnlRange(from, to), api.balanceSheet(), api.trialBalance(),
+      const [core, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
+        v2ReportsOrFallback({ from, to }, async () => ({
+          dash: await api.dashboard(),
+          pnl: await api.pnlRange(from, to),
+          balanceSheet: await api.balanceSheet(),
+          trialBalance: await api.trialBalance(),
+        })),
+        api.listPeriods(),
         api.capitalStatement(), api.drawingsHistory(),
         api.monthlyProfitTrend(6), api.assetDistribution(),
         api.creditorsReport(from, to), api.debtorsReport(from, to),
         api.taxReport(from, to), api.salesRegister(from, to), api.receiptsRegister(from, to),
       ]);
-      setDash(dl); setPeriods(pd);
-      setPnl(p); setBs(b); setTb(t); setCap(c); setDraws(dh);
+      setReportSource(core.source);
+      if (core.source === "v2") {
+        const report = core.report;
+        setDash({
+          totalSales: report.profitAndLoss.revenue,
+          totalPurchases: report.profitAndLoss.expenses,
+          grossProfit: report.profitAndLoss.netProfit,
+          netProfit: report.profitAndLoss.netProfit,
+          cash: report.balanceSheet.assets,
+          inventoryValue: 0,
+          netWorth: report.balanceSheet.equity + report.balanceSheet.currentEarnings,
+          liabilities: report.balanceSheet.liabilities,
+          suppliers: 0,
+        });
+        setPnl({
+          revenue: report.profitAndLoss.revenue,
+          cogs: report.profitAndLoss.expenses,
+          grossProfit: report.profitAndLoss.netProfit,
+          managerCommissionPct: 0,
+          commission: 0,
+          drawings: 0,
+          netProfit: report.profitAndLoss.netProfit,
+        });
+        setBs({
+          assets: { cash: report.balanceSheet.assets, inventory: 0, extra: [], total: report.balanceSheet.assets },
+          liabilities: { suppliersPayable: report.balanceSheet.liabilities, extra: [], total: report.balanceSheet.liabilities },
+          equity: report.balanceSheet.equity + report.balanceSheet.currentEarnings,
+        });
+        setTb({
+          debits: report.trialBalance.accounts.filter((a) => a.debit > 0).map((a) => ({ account: a.name, amount: a.debit })),
+          credits: report.trialBalance.accounts.filter((a) => a.credit > 0).map((a) => ({ account: a.name, amount: a.credit })),
+        });
+      } else {
+        setDash(core.report.dash); setPnl(core.report.pnl); setBs(core.report.balanceSheet); setTb(core.report.trialBalance);
+      }
+      setPeriods(pd); setCap(c); setDraws(dh);
       setProfitTrend(pt); setAssetDist(ad);
       setCreditors(cr); setDebtors(dr);
       setTaxRep(tx); setSalesReg(sr); setReceiptsReg(rr);
@@ -283,9 +323,9 @@ export default function ReportsScreen() {
           {seg === "Summary" && dash && (
             <>
               <Card testID="report-summary-live">
-                <Text style={styles.rTitle}>Live — Current Period</Text>
+                <Text style={styles.rTitle}>{reportSource === "v2" ? "V2 — Journal Report" : "Live — Current Period"}</Text>
                 <RowKV label="Sales" value={fmt(dash.totalSales)} theme={theme} styles={styles} />
-                <RowKV label="Purchases" value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
+                <RowKV label={reportSource === "v2" ? "Expenses" : "Purchases"} value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
                 <RowKV label="Gross Profit" value={fmt(dash.grossProfit)} strong theme={theme} styles={styles} />
                 <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
                 <View style={styles.divider} />
@@ -326,7 +366,7 @@ export default function ReportsScreen() {
               <Card testID="report-pnl">
                 <Text style={styles.rTitle}>Profit &amp; Loss</Text>
                 <RowKV label="Revenue" value={fmt(pnl.revenue)} theme={theme} styles={styles} />
-                <RowKV label="Cost of Goods Sold" value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
+                <RowKV label={reportSource === "v2" ? "Expenses" : "Cost of Goods Sold"} value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
                 <RowKV label="Gross Profit" value={fmt(pnl.grossProfit)} strong theme={theme} styles={styles} />
                 {pnl.managerCommissionPct > 0 && (
                   <RowKV label={`Manager Commission (${pnl.managerCommissionPct}%)`} value={`- ${fmt(pnl.commission)}`} theme={theme} styles={styles} />

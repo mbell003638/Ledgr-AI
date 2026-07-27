@@ -130,7 +130,7 @@ async function createTransaction(name: AppCreateName, payload: any) {
   return writes[name](payload);
 }
 
-async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment', ...args: any[]) {
+async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill', ...args: any[]) {
   const runner = activeSqlRunner();
     const dbFn = (db as any)[name];
     if (!runner) return dbFn(...args);
@@ -200,16 +200,26 @@ export const api = {
   getSupplier: (id: string) => db.getSupplier(id),
   deleteSupplier: (id: string) => db.deleteSupplier(id),
 
-  // Bills / Sales / Payments
-  listBills: () => db.listBills(),
+  listBills: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return db.listBills();
+    const service = new V2AppService(runner);
+    return (await service.activeContext()) ? service.listBills() : db.listBills();
+  },
   createBill: (b: any) => createTransaction('createBill', b),
-  updateBill: (id: string, b: any) => db.updateBill(id, b),
-  deleteBill: (id: string) => db.deleteBill(id),
+  updateBill: (id: string, b: any) => mutateTransaction('updateBill', id, b),
+  deleteBill: (id: string) => mutateTransaction('deleteBill', id),
 
-  listSales: () => db.listSales(),
+  listSales: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return db.listSales();
+    const service = new V2AppService(runner);
+    const rows = await service.listSalesAndInvoices();
+    return (await service.activeContext()) ? rows.filter((x: any) => x.type === 'cash_sale') : db.listSales();
+  },
   createSale: (s: any) => createTransaction('createSale', s),
-  updateSale: (id: string, s: any) => db.updateSale(id, s),
-  deleteSale: (id: string) => db.deleteSale(id),
+  updateSale: (id: string, s: any) => mutateTransaction('updateSale', id, s),
+  deleteSale: (id: string) => mutateTransaction('deleteSale', id),
 
   listPayments: () => db.listPayments(),
   createPayment: (p: any) => createTransaction('createPayment', p),

@@ -1,4 +1,5 @@
 import { activeBookId, activeSqlRunner } from '../db/backend';
+import { accountingBookVersion } from './appBootstrap';
 import { V2SqlRepository } from './repository';
 import { V2CloseBooksRepository } from './closeBooksRepository';
 import { persistentV2ReportsOrFallback } from './persistentReports';
@@ -6,13 +7,18 @@ import type { V2ReportOptions } from './reports';
 import * as postings from './postings';
 
 /** Report bridge for screens: use the active normalized V2 book when present, otherwise load legacy reports. */
-export function v2ReportsOrFallback<TLegacy>(
+export async function v2ReportsOrFallback<TLegacy>(
   options: Omit<V2ReportOptions, 'bookId'> & { bookId?: string },
   legacy: () => Promise<TLegacy>,
 ) {
+  const runner = activeSqlRunner();
+  const bookId = options.bookId || activeBookId();
+  // The screen must only opt into V2 for a bootstrapped/versioned book. A
+  // partially migrated SQLite database remains on the proven legacy path.
+  if (!runner || await accountingBookVersion(runner, bookId) == null) return { source: 'legacy' as const, report: await legacy() };
   return persistentV2ReportsOrFallback(
-    activeSqlRunner(),
-    { ...options, bookId: options.bookId || activeBookId() },
+    runner,
+    { ...options, bookId },
     legacy,
   );
 }

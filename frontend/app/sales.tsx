@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
+import { TransactionDetail } from "@/src/components/TransactionDetail";
+import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 
 export default function SalesScreen() {
   const theme = useTheme();
@@ -17,6 +19,7 @@ export default function SalesScreen() {
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selected, setSelected] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,6 +37,34 @@ export default function SalesScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const total = sales.reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+
+  const documentFor = (sale: any) => ({
+    title: "Sale",
+    subtitle: shortDate(sale.date),
+    rows: [["Amount", fmt(sale.amount, currSym)], ["Notes", sale.notes || "—"]] as Array<[string, unknown]>,
+  });
+
+  const reverseSale = (sale: any) => Alert.alert("Reverse / Delete Sale", "This creates the appropriate V2 reversal and removes the sale from active records.", [
+    { text: "Cancel", style: "cancel" },
+    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteSale(sale.id); setSelected(null); await load(); } },
+  ]);
+
+  if (selected) return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.headerRow}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable></View>
+      <ScrollView contentContainerStyle={styles.list}>
+        <TransactionDetail
+          title={fmt(selected.amount, currSym)}
+          subtitle={`Sale • ${shortDate(selected.date)}`}
+          onEdit={() => router.push({ pathname: "/sale-form", params: { id: selected.id } })}
+          onReversalDelete={() => reverseSale(selected)}
+          onShare={() => shareTransaction(documentFor(selected))}
+          onPrint={() => printTransaction(documentFor(selected))}
+          onMore={() => Alert.alert("Sale details", selected.notes || "No additional notes")}
+        ><Text style={styles.cardSub}>{selected.notes || "No notes"}</Text></TransactionDetail>
+      </ScrollView>
+    </SafeAreaView>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -66,7 +97,7 @@ export default function SalesScreen() {
           renderItem={({ item }) => (
             <Pressable
               testID={`sale-${item.id}`}
-              onPress={() => router.push({ pathname: "/sale-form", params: { id: item.id } })}
+              onPress={() => setSelected(item)}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
             >
               <View style={{ flex: 1 }}>

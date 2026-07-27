@@ -10,6 +10,8 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
+import { TransactionDetail } from "@/src/components/TransactionDetail";
+import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 
 type Mode = "cash_sale" | "against_invoice" | "advance";
 type Receipt = {
@@ -41,6 +43,7 @@ export default function ReceiptsScreen() {
   const [taxRate, setTaxRate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selected, setSelected] = useState<Receipt | null>(null);
 
   // form state
   const [formOpen, setFormOpen] = useState(false);
@@ -151,6 +154,33 @@ export default function ReceiptsScreen() {
     ]);
   };
 
+  const openEdit = (r: Receipt) => {
+    setMode(r.mode); setAmount(String(r.amount)); setDate(r.date); setClientName(r.clientName || "");
+    setDebtorId(r.debtorId || null); setMethod(r.method || "cash"); setNotes(r.notes || "");
+    setSelected(null); setFormOpen(true);
+  };
+  const documentFor = (r: Receipt) => ({ title: `Receipt ${r.receiptNumber}`, subtitle: MODE_LABEL[r.mode], rows: [
+    ["Customer", r.clientName || "Walk-in"], ["Date", shortDate(r.date)], ["Amount", `${currSym}${Number(r.amount).toFixed(2)}`],
+    ["Method", r.method || "—"], ["Notes", r.notes || "—"],
+  ] as Array<[string, unknown]> });
+
+  if (selected) return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={styles.headerBar}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable><Text style={styles.headerTitle}>Receipt</Text><View style={{ width: 26 }} /></View>
+      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+        <TransactionDetail
+          title={selected.receiptNumber}
+          subtitle={`${MODE_LABEL[selected.mode]} • ${currSym}${Number(selected.amount).toFixed(2)}`}
+          onEdit={() => openEdit(selected)}
+          onReversalDelete={() => remove(selected)}
+          onShare={() => shareTransaction(documentFor(selected))}
+          onPrint={() => printTransaction(documentFor(selected))}
+          onMore={() => Alert.alert("Receipt details", selected.notes || `${selected.method || "Unknown"} payment`)}
+        ><Text style={styles.rowSub}>{selected.clientName || "Walk-in"} • {shortDate(selected.date)}</Text></TransactionDetail>
+      </ScrollView>
+    </SafeAreaView>
+  );
+
   if (loading) {
     return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /></SafeAreaView>;
   }
@@ -172,7 +202,7 @@ export default function ReceiptsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
         ListEmptyComponent={<Empty icon={<Ionicons name="receipt-outline" size={40} color={theme.color.muted} />} title="No receipts yet" hint="Tap + to record money received." />}
         renderItem={({ item }) => (
-          <Pressable onLongPress={() => remove(item)} style={styles.row}>
+          <Pressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.mode === "cash_sale" ? "#DCE8DC" : item.mode === "advance" ? "#F0E4D0" : "#D8E4F0" }]}>
               <Ionicons name={item.mode === "cash_sale" ? "cart-outline" : item.mode === "advance" ? "arrow-down-circle-outline" : "document-text-outline"} size={18} color={theme.color.brandPrimary} />
             </View>
