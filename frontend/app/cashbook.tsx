@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Refresh
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { confirmAction } from "@/src/utils/alerts";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -80,15 +81,15 @@ export default function CashBookScreen() {
     // Deleting a cash record is sensitive — gate behind device lock.
     const ok = await requireAuth("Authenticate to delete this cash entry");
     if (!ok) return;
-    Alert.alert("Delete entry?", "This cash movement will be removed.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete", style: "destructive", onPress: async () => {
-          try { await api.deleteCashEntry(e.id); load(); }
-          catch (err: any) { Alert.alert("Error", err.message || "Failed"); }
-        },
+    confirmAction(
+      "Delete entry?",
+      "This cash movement will be removed.",
+      async () => {
+        try { await api.deleteCashEntry(e.id); load(); }
+        catch (err: any) { Alert.alert("Error", err.message || "Failed"); }
       },
-    ]);
+      "Delete"
+    );
   };
 
   return (

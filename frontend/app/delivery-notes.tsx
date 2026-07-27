@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { confirmAction } from "@/src/utils/alerts";
 import { useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -135,10 +136,12 @@ export default function DeliveryNotesScreen() {
   };
 
   const remove = (n: DeliveryNote) => {
-    Alert.alert("Delete Delivery Note", `Delete ${n.noteNumber}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { await api.deleteDeliveryNote(n.id); setSelected(null); await load(); } },
-    ]);
+    confirmAction(
+      "Delete Delivery Note",
+      `Delete ${n.noteNumber}?`,
+      async () => { await api.deleteDeliveryNote(n.id); setSelected(null); await load(); },
+      "Delete"
+    );
   };
 
   const sharePdf = async (n: DeliveryNote) => {

@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { confirmAction } from "@/src/utils/alerts";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -159,19 +160,19 @@ export default function QuotesScreen() {
   };
 
   const convert = (q: Quote) => {
-    Alert.alert("Convert to Invoice", `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds them to Debtors.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Convert", onPress: async () => {
-          try {
-            await api.convertQuoteToInvoice(q.id, { date: new Date().toISOString().slice(0, 10) });
-            setSelected(null);
-            await load();
-            Alert.alert("Done", "Invoice created. Find it in Invoices.");
-          } catch (e: any) { Alert.alert("Cannot convert", e?.message || "Failed."); }
-        },
+    confirmAction(
+      "Convert to Invoice",
+      `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds them to Debtors.`,
+      async () => {
+        try {
+          await api.convertQuoteToInvoice(q.id, { date: new Date().toISOString().slice(0, 10) });
+          setSelected(null);
+          await load();
+          Alert.alert("Done", "Invoice created. Find it in Invoices.");
+        } catch (e: any) { Alert.alert("Cannot convert", e?.message || "Failed."); }
       },
-    ]);
+      "Convert"
+    );
   };
 
   const setStatus = async (q: Quote, status: string) => {
@@ -179,10 +180,12 @@ export default function QuotesScreen() {
   };
 
   const remove = (q: Quote) => {
-    Alert.alert("Delete Quote", `Delete ${q.quoteNumber}?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { await api.deleteQuote(q.id); setSelected(null); await load(); } },
-    ]);
+    confirmAction(
+      "Delete Quote",
+      `Delete ${q.quoteNumber}?`,
+      async () => { await api.deleteQuote(q.id); setSelected(null); await load(); },
+      "Delete"
+    );
   };
 
   const sharePdf = async (q: Quote) => {

@@ -9,6 +9,7 @@ import { api } from "@/src/api";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
+import { confirmAction } from "@/src/utils/alerts";
 
 export default function BillsScreen() {
   const theme = useTheme();
@@ -41,10 +42,12 @@ export default function BillsScreen() {
     ["Supplier", suppliers[bill.supplierId] || "Unknown supplier"], ["Amount", fmt(bill.amount, bill.currency)],
     ["Payment", bill.paymentType], ["Invoice #", bill.invoiceNo || "—"], ["Notes", bill.notes || "—"],
   ] as Array<[string, unknown]> });
-  const reverseBill = (bill: any) => Alert.alert("Reverse / Delete Bill", "This creates the appropriate V2 reversal and removes the bill from active records.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteBill(bill.id); setSelected(null); await load(); } },
-  ]);
+  const reverseBill = (bill: any) => confirmAction(
+    "Reverse / Delete Bill",
+    "This creates the appropriate V2 reversal and removes the bill from active records.",
+    async () => { await api.deleteBill(bill.id); setSelected(null); await load(); },
+    "Reverse / Delete"
+  );
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

@@ -10,6 +10,7 @@ import { fmt, shortDate } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
+import { confirmAction } from "@/src/utils/alerts";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -73,10 +74,12 @@ export default function Expenses() {
     finally { setDeleting(false); }
   };
 
-  const reverseExpense = (expense: Expense) => Alert.alert("Reverse / Delete Expense", "This creates the appropriate V2 reversal and removes the expense from active records.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteExpense(expense.id); setSelected(null); await load(); } },
-  ]);
+  const reverseExpense = (expense: Expense) => confirmAction(
+    "Reverse / Delete Expense",
+    "This creates the appropriate V2 reversal and removes the expense from active records.",
+    async () => { await api.deleteExpense(expense.id); setSelected(null); await load(); },
+    "Reverse / Delete"
+  );
   const documentFor = (expense: Expense) => ({ title: `Expense: ${expense.category}`, subtitle: shortDate(expense.date), rows: [
     ["Amount", fmt(expense.amount, currencySymbol)], ["Notes", expense.notes || "—"],
   ] as Array<[string, unknown]> });

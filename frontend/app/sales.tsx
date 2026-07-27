@@ -10,6 +10,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
+import { confirmAction } from "@/src/utils/alerts";
 
 export default function SalesScreen() {
   const theme = useTheme();
@@ -44,10 +45,12 @@ export default function SalesScreen() {
     rows: [["Amount", fmt(sale.amount, currSym)], ["Notes", sale.notes || "—"]] as Array<[string, unknown]>,
   });
 
-  const reverseSale = (sale: any) => Alert.alert("Reverse / Delete Sale", "This creates the appropriate V2 reversal and removes the sale from active records.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Reverse / Delete", style: "destructive", onPress: async () => { await api.deleteSale(sale.id); setSelected(null); await load(); } },
-  ]);
+  const reverseSale = (sale: any) => confirmAction(
+    "Reverse / Delete Sale",
+    "This creates the appropriate V2 reversal and removes the sale from active records.",
+    async () => { await api.deleteSale(sale.id); setSelected(null); await load(); },
+    "Reverse / Delete"
+  );
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

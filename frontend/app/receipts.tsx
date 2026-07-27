@@ -8,6 +8,7 @@ import { shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
+import { confirmAction } from "@/src/utils/alerts";
 import { Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
@@ -142,16 +143,19 @@ export default function ReceiptsScreen() {
   };
 
   const remove = (r: Receipt) => {
-    Alert.alert("Delete Receipt", `Delete ${r.receiptNumber}? This reverses its cash, sales and debtor entries.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete", style: "destructive", onPress: async () => {
-          const ok = await requireAuth("Confirm delete receipt");
-          if (!ok) return;
-          try { await api.deleteReceipt(r.id); await load(); } catch (e) { console.warn(e); }
-        },
-      },
-    ]);
+    confirmAction(
+      "Delete Receipt",
+      `Delete ${r.receiptNumber}? This reverses its cash, sales and debtor entries.`,
+      async () => {
+        const ok = await requireAuth("Confirm delete receipt");
+        if (!ok) return;
+        try {
+          await api.deleteReceipt(r.id);
+          if (selected?.id === r.id) setSelected(null);
+          await load();
+        } catch (e: any) { Alert.alert("Error", e?.message || "Delete failed"); }
+      }
+    );
   };
 
   const openEdit = (r: Receipt) => {
