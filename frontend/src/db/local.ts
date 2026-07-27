@@ -126,6 +126,9 @@ export async function getSettings() {
     logo: s.logo ?? '',
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
+    selectedPersonas: Array.isArray(s.selectedPersonas) ? s.selectedPersonas : ['custom'],
+    activePersona: s.activePersona ?? 'custom',
+    accountingStyle: s.accountingStyle ?? 'standard',
     // Revenue recognition: 'cash' = revenue when money received (cash sales +
     // receipts); 'accrual' = revenue when billed (cash sales + invoices raised).
     accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
@@ -823,6 +826,9 @@ export async function deleteDebtorPayment(debtorId: string, paymentId: string) {
   if (!payment) return { ok: true };
 
   if (payment.receiptId) {
+    const receipts = await readColl<any>('receipts');
+    const receipt = receipts.find((r: any) => r.id === payment.receiptId);
+    if (!receipt || receipt.debtorId !== debtorId) throw new Error('Linked receipt does not belong to this customer');
     await deleteReceipt(payment.receiptId);
   } else {
     await serialize(async () => {
@@ -857,13 +863,76 @@ export async function updateDebtorPayment(debtorId: string, paymentId: string, u
     });
   }
 
+  const receipts = await readColl<any>('receipts');
+  const receipt = receipts.find((r: any) => r.id === payment.receiptId);
+  if (!receipt || receipt.debtorId !== debtorId) throw new Error('Linked receipt does not belong to this customer');
+
+  // Snapshot every collection touched by deleteReceipt/createReceipt. If any
+  // persistence step fails, restoring these snapshots removes partial replacement
+  // artifacts as well as restoring the original receipt and all side effects.
+  const [beforeCash, beforeSales, beforeDebtors, beforeInvoices] = await Promise.all([
+    readColl<any>('cashEntries'), readColl<any>('sales'), readColl<any>('debtors'), readColl<any>('invoices'),
+  ]);
+  const originalState = {
+    receipts: receipts.map((x: any) => ({ ...x })),
+    cashEntries: beforeCash.map((x: any) => ({ ...x })),
+    sales: beforeSales.map((x: any) => ({ ...x })),
+    debtors: beforeDebtors.map((x: any) => ({ ...x, payments: Array.isArray(x.payments) ? x.payments.map((p: any) => ({ ...p })) : x.payments, invoices: Array.isArray(x.invoices) ? x.invoices.map((i: any) => ({ ...i })) : x.invoices })),
+    invoices: beforeInvoices.map((x: any) => ({ ...x })),
+  };
+
   await deleteReceipt(payment.receiptId);
   const amt = update.amount ?? payment.amount;
-  return addDebtorPayment(debtorId, {
-    amount: amt,
-    date: update.date ?? payment.date,
-    notes: update.notes !== undefined ? update.notes : payment.notes,
-  });
+  const date = update.date ?? payment.date;
+  const notes = update.notes !== undefined ? update.notes : (receipt.notes || payment.notes);
+  const amount = +Number(amt).toFixed(2);
+  let remaining = amount;
+  const allocations: { invoiceId: string; amountApplied: number }[] = [];
+  for (const allocation of (receipt.allocations || [])) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, toUsd(allocation.amountApplied));
+    if (applied > 0) allocations.push({ invoiceId: allocation.invoiceId, amountApplied: +applied.toFixed(2) });
+    remaining = +(remaining - applied).toFixed(2);
+  }
+
+  // If an edited receipt exceeds its preserved invoice allocations, represent the
+  // remainder as customer advance credit rather than silently leaving it outside
+  // the debtor ledger.
+  const allocatedTotal = allocations.reduce((sum, a) => sum + a.amountApplied, 0);
+  const replacementMode: ReceiptMode = receipt.mode === 'advance' || amount > allocatedTotal + 0.005 ? 'advance' : receipt.mode;
+
+  // Preserve the original allocation order and receipt metadata. A smaller edit
+  // trims allocations in that order; a larger edit keeps the excess as advance
+  // credit instead of silently moving it to another invoice.
+  try {
+    return await createReceipt({
+      mode: replacementMode,
+      date,
+      amount,
+      debtorId,
+      clientName: receipt.clientName || debtor.name,
+      allocations,
+      lines: receipt.lines,
+      taxRate: receipt.taxRate,
+      method: receipt.method,
+      notes,
+    });
+  } catch (error) {
+    try {
+      await serialize(async () => {
+        await writeColl('receipts', originalState.receipts);
+        await writeColl('cashEntries', originalState.cashEntries);
+        await writeColl('sales', originalState.sales);
+        await writeColl('debtors', originalState.debtors);
+        await writeColl('invoices', originalState.invoices);
+      });
+    } catch (rollbackError: any) {
+      const originalMessage = error instanceof Error ? error.message : String(error);
+      const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      throw new Error(`Payment update failed (${originalMessage}); restoring the original posting also failed (${rollbackMessage}).`);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -872,8 +941,8 @@ export async function updateDebtorPayment(debtorId: string, paymentId: string, u
  * so the customer's billing history (not just payments) is visible.
  */
 export async function getDebtorStatement(debtorId: string) {
-  const [debtors, creditNotes, debitNotes] = await Promise.all([
-    readColl<any>('debtors'), readColl<any>('creditNotes'), readColl<any>('debitNotes'),
+  const [debtors, creditNotes, debitNotes, receipts] = await Promise.all([
+    readColl<any>('debtors'), readColl<any>('creditNotes'), readColl<any>('debitNotes'), readColl<any>('receipts'),
   ]);
   const d = debtors.find((x: any) => x.id === debtorId);
   if (!d) throw new Error('Debtor not found');
@@ -886,15 +955,20 @@ export async function getDebtorStatement(debtorId: string) {
     debit: toUsd(i.amount),   // increases what they owe
     credit: 0,
   }));
-  const paymentRows = (d.payments || []).map((p: any) => ({
-    kind: 'payment' as const,
-    id: p.id,
-    date: (p.date || '').slice(0, 10),
-    ref: p.notes || 'Payment',
-    status: 'paid',
-    debit: 0,
-    credit: toUsd(p.amount),  // reduces what they owe
-  }));
+  const paymentRows = (d.payments || []).map((p: any) => {
+    const receipt = p.receiptId ? receipts.find((r: any) => r.id === p.receiptId && r.debtorId === debtorId) : null;
+    return {
+      kind: 'payment' as const,
+      id: p.id,
+      receiptId: p.receiptId,
+      date: (p.date || '').slice(0, 10),
+      ref: receipt?.notes || p.notes || 'Payment',
+      method: receipt?.method || 'cash',
+      status: 'paid',
+      debit: 0,
+      credit: toUsd(p.amount),  // reduces what they owe
+    };
+  });
   // Credit notes (returns/discounts) reduce the balance; debit notes increase it.
   const creditRows = creditNotes.filter((c: any) => c.debtorId === debtorId).map((c: any) => ({
     kind: 'credit_note' as const,

@@ -95,6 +95,7 @@ function ThemedStack() {
         <Stack.Screen name="inventory-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
         <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
+        <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
         <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
         <Stack.Screen name="invoices" options={{ presentation: "card" }} />
         <Stack.Screen name="quotes" options={{ presentation: "card" }} />

@@ -9,6 +9,7 @@ import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { executeV2AiAction, validateV2AiAction, type V2AiValidationResult } from "@/src/accountingV2/aiActions";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -22,6 +23,7 @@ export default function VoiceModal() {
   const [parsed, setParsed] = useState<any>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [validatedAction, setValidatedAction] = useState<V2AiValidationResult | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -55,7 +57,19 @@ export default function VoiceModal() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
       const p = await api.parseCommand(txt);
+      const validation = validateV2AiAction({
+        source: "voice", intent: "create_payment",
+        partyId: p.supplierName || p.customerName || p.partnerName || "Voice transaction",
+        date: p.date || new Date().toISOString().slice(0, 10), amount: Number(p.amount),
+        method: ["cash", "bank", "card", "mobile", "other"].includes(p.method) ? p.method : "cash",
+        direction: p.intent === "sale" || p.intent === "receipt" ? "received" : "paid",
+      });
+      if (!validation.ok || validation.action.access !== "write") {
+        const errors = validation.ok ? ["action is not a write"] : validation.errors;
+        throw new Error(`Invalid voice action: ${errors.join("; ")}`);
+      }
       setParsed(p);
+      setValidatedAction(validation);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -70,6 +84,8 @@ export default function VoiceModal() {
       const date = parsed.date || new Date().toISOString().slice(0, 10);
       const currency = "USD";
 
+      if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
+      await executeV2AiAction(validatedAction, { confirmed: true }, async () => {
       if (parsed.intent === "bill") {
         // find or create supplier
         let sid = "";
@@ -137,6 +153,7 @@ export default function VoiceModal() {
       } else {
         throw new Error("Could not determine intent. Please try again.");
       }
+      });
       router.back();
     } catch (e: any) {
       setError(e.message || "Save failed");
@@ -145,7 +162,7 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setError("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
   };
 
   return (

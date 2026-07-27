@@ -9,6 +9,7 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
+import { executeV2AiAction, validateV2AiAction } from "@/src/accountingV2/aiActions";
 
 type Msg = { role: "user" | "assistant"; text: string };
 
@@ -140,29 +141,40 @@ export default function AskBooks() {
       const action = typeof res === "string" ? null : res?.action || null;
       setMessages((m) => [...m, { role: "assistant", text: answer }]);
       if (action && action.type) {
-        // AI proposed a data change — confirm before applying (never auto-write).
-        setTimeout(() => {
-          Alert.alert(
-            "Apply this change?",
-            action.confirm || `${action.type}: ${JSON.stringify(action.params)}`,
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Apply",
-                onPress: async () => {
-                  try {
-                    const result = await applyAction(action);
-                    setMessages((m) => [...m, { role: "assistant", text: result }]);
-                  } catch (err: any) {
-                    setMessages((m) => [...m, { role: "assistant", text: `Couldn't apply that: ${err?.message || "error"}` }]);
-                  } finally {
-                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-                  }
-                },
+        const v2Action = validateV2AiAction({
+          source: "ai", intent: "create_payment",
+          partyId: action.params?.clientName || action.params?.supplierName || action.params?.name || "AI action",
+          date: action.params?.date || new Date().toISOString().slice(0, 10),
+          amount: Number(action.params?.amount),
+          method: ["cash", "bank", "card", "mobile", "other"].includes(action.params?.method) ? action.params.method : "cash",
+          direction: action.type === "add_sale" || action.type === "create_receipt" || action.type === "add_debtor_payment" ? "received" : "paid",
+        });
+        if (!v2Action.ok || v2Action.action.access !== "write") {
+          const errors = v2Action.ok ? ["action is not a write"] : v2Action.errors;
+          setMessages((m) => [...m, { role: "assistant", text: `I couldn't validate that change: ${errors.join("; ")}` }]);
+          return;
+        }
+        const confirmationPreview = v2Action.action.confirmation.preview;
+        Alert.alert(
+          "Apply this change?",
+          confirmationPreview,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Apply",
+              onPress: async () => {
+                try {
+                  const result = await executeV2AiAction(v2Action, { confirmed: true }, () => applyAction(action));
+                  setMessages((m) => [...m, { role: "assistant", text: result }]);
+                } catch (err: any) {
+                  setMessages((m) => [...m, { role: "assistant", text: `Couldn't apply that: ${err?.message || "error"}` }]);
+                } finally {
+                  setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+                }
               },
-            ],
-          );
-        }, 200);
+            },
+          ],
+        );
       }
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);

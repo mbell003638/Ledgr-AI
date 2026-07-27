@@ -216,12 +216,12 @@ export default function ReportsScreen() {
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg }}>
         <ScreenHeader title="Reports" subtitle="Financial statements" />
         <Pressable
-          testID="btn-staff-report"
-          onPress={() => router.push("/(tabs)/employee-report")}
-          style={({ pressed }) => [styles.staffBtn, pressed && { opacity: 0.85 }]}
+          testID="btn-custom-report"
+          onPress={() => router.push("/custom-report")}
+          style={({ pressed }) => [styles.customReportBtn, pressed && { opacity: 0.85 }]}
         >
-          <Ionicons name="briefcase-outline" size={16} color={theme.color.brandPrimary} />
-          <Text style={styles.staffBtnText}>Staff</Text>
+          <Ionicons name="options-outline" size={16} color={theme.color.brandPrimary} />
+          <Text style={styles.customReportBtnText}>Custom Report</Text>
         </Pressable>
       </View>
 
@@ -597,8 +597,8 @@ function RowKV({ label, value, strong, big, danger, theme, styles }: { label: st
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
-  staffBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
-  staffBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
+  customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
+  customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   segScroll: { maxHeight: 56, flexGrow: 0 },
   segRow: {
     flexDirection: "row", paddingHorizontal: theme.spacing.lg, gap: 10,

@@ -56,6 +56,9 @@ export default function DebtorsScreen() {
   const [editId, setEditId] = useState<string | null>(null);
   const [deletingDebtor, setDeletingDebtor] = useState(false);
 
+  // Payment editor (statement row → edit/delete, same interaction model as Sales).
+  const [editingPayment, setEditingPayment] = useState<any | null>(null);
+
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
@@ -66,11 +69,14 @@ export default function DebtorsScreen() {
   const load = useCallback(async () => {
     try {
       const [raw, settings] = await Promise.all([api.listDebtors(), api.getSettings()]);
-      const enriched = (raw as Debtor[]).map((d) => {
-        const totalInvoiced = (d as any).totalInvoiced ?? 0;
-        const totalPaid = (d.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
-        return { ...d, totalInvoiced, totalPaid, balance: +(totalInvoiced - totalPaid).toFixed(2) };
-      });
+      // The database is authoritative because it includes invoices, payments,
+      // credit notes and debit notes. Do not overwrite its balance in the UI.
+      const enriched = (raw as Debtor[]).map((d) => ({
+        ...d,
+        totalInvoiced: Number((d as any).totalInvoiced) || 0,
+        totalPaid: Number((d as any).totalPaid) || 0,
+        balance: Number((d as any).balance) || 0,
+      }));
       setDebtors(enriched);
       const sym = (settings as any).currency ?? "USD";
       const symMap: Record<string, string> = { USD: "$", INR: "₹", EUR: "€", GBP: "£", AED: "د.إ", CAD: "CA$", AUD: "A$", NGN: "₦", KES: "KSh", ZAR: "R", BDT: "৳", PKR: "₨", PHP: "₱", MXN: "MX$", BRL: "R$" };
@@ -205,6 +211,44 @@ export default function DebtorsScreen() {
         },
       ],
     );
+  };
+
+  const savePaymentEdit = async () => {
+    if (!selected || !editingPayment) return;
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) { setPayError("Enter a valid amount"); return; }
+    setPaySaving(true); setPayError("");
+    try {
+      await api.updateDebtorPayment(selected.id, editingPayment.id, { amount, date: payDate, notes: payNotes.trim() });
+      setEditingPayment(null); setPayAmount(""); setPayNotes("");
+      const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+      if (fresh) setSelected(fresh);
+      await load();
+    } catch (e: any) { setPayError(e?.message || "Could not update payment"); }
+    finally { setPaySaving(false); }
+  };
+
+  const deletePayment = (payment: any) => {
+    if (!selected) return;
+    Alert.alert("Delete payment?", "This reverses the receipt, cash movement, debtor balance and invoice allocation.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          await api.deleteDebtorPayment(selected.id, payment.id);
+          const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+          if (fresh) setSelected(fresh);
+          await load();
+        } catch (e: any) { Alert.alert("Delete failed", e?.message || "Could not delete payment"); }
+      } },
+    ]);
+  };
+
+  const openPaymentEdit = (payment: any) => {
+    setEditingPayment(payment);
+    setPayAmount(String(payment.amount ?? ""));
+    setPayDate(payment.date || new Date().toISOString().slice(0, 10));
+    setPayNotes(payment.notes || "");
+    setPayError("");
   };
 
   const recordPayment = async () => {
@@ -350,6 +394,16 @@ export default function DebtorsScreen() {
                 <Text style={[styles.tlAmount, { color: isCredit ? theme.color.success : theme.color.error }]}>
                   {isCredit ? "−" : "+"}{currency}{Number(isCredit ? r.credit : r.debit).toFixed(2)}
                 </Text>
+                {r.kind === "payment" ? (
+                  <View style={styles.rowActions}>
+                    <Pressable accessibilityLabel="Edit payment" hitSlop={8} onPress={() => openPaymentEdit({ id: r.id, amount: r.credit, date: r.date, notes: r.ref })}>
+                      <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
+                    </Pressable>
+                    <Pressable accessibilityLabel="Delete payment" hitSlop={8} onPress={() => deletePayment({ id: r.id })}>
+                      <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             );
           })}
@@ -376,6 +430,19 @@ export default function DebtorsScreen() {
                 </Pressable>
               </View>
             </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal visible={editingPayment !== null} transparent animationType="slide">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <View style={styles.modalOverlay}><View style={styles.modalBox}>
+              <View style={styles.modalHeader}><Text style={styles.headerTitle}>Edit Payment</Text><Pressable onPress={() => setEditingPayment(null)}><Ionicons name="close" size={24} color={theme.color.onSurface}/></Pressable></View>
+              <Text style={styles.label}>Amount</Text><TextInput value={payAmount} onChangeText={setPayAmount} keyboardType="decimal-pad" style={styles.input}/>
+              <Text style={[styles.label,{marginTop:12}]}>Date</Text><TextInput value={payDate} onChangeText={setPayDate} style={styles.input}/>
+              <Text style={[styles.label,{marginTop:12}]}>Notes</Text><TextInput value={payNotes} onChangeText={setPayNotes} style={[styles.input,{minHeight:50}]} multiline/>
+              {payError?<Text style={styles.error}>{payError}</Text>:null}
+              <Pressable onPress={savePaymentEdit} disabled={paySaving} style={styles.saveBtn}>{paySaving?<ActivityIndicator color="#fff"/>:<Text style={styles.saveText}>Update Payment</Text>}</Pressable>
+            </View></View>
           </KeyboardAvoidingView>
         </Modal>
 
@@ -522,6 +589,7 @@ function makeStyles(theme: any) {
     tlTitle: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     tlSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
     tlAmount: { fontSize: 14, fontWeight: "700" },
+    rowActions: { flexDirection: "row", alignItems: "center", gap: 12, marginLeft: 4 },
     label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
     input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
     error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },

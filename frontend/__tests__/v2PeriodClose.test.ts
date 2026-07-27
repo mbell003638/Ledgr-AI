@@ -1,0 +1,6 @@
+import { defaultAccounts, defaultBook, emptyV2Store } from '../src/accountingV2/schema';
+import { V2Ledger } from '../src/accountingV2/ledger';
+import { closeBooks, retailNetProfit } from '../src/accountingV2/periodClose';
+
+test('retail partnership math excludes drawings from net profit', () => { expect(retailNetProfit(1000, 200, 400, 250, 10, 50)).toEqual({ cogs: 350, grossProfit: 650, commission: 65, netProfit: 535 }); });
+test('close books requires shares to total 100 and records one close journal', () => { const l = new V2Ledger(emptyV2Store()); const b = defaultBook('b', 'Shop', 'retail_partnership'); l.createBook(b, defaultAccounts('b')); const members:any[] = [{ id:'m1',bookId:'b',name:'A',openingContribution:100,profitSharePct:50 }, { id:'m2',bookId:'b',name:'B',openingContribution:200,profitSharePct:50 }]; const r = closeBooks(l,'b','p1','2026-03-31',{sales:1000,openingInventory:200,purchases:400,closingInventory:250,commissionPct:10,expenses:50,members}); expect(r.netProfit).toBe(535); expect(l.reconcile('b').balanced).toBe(true); expect(() => closeBooks(l,'b','p1','2026-03-31',{sales:1000,openingInventory:200,purchases:400,closingInventory:250,commissionPct:10,expenses:50,members})).toThrow(/already closed/); });

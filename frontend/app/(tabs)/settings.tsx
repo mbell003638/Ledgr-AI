@@ -11,6 +11,7 @@ import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
+import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -43,6 +44,8 @@ export default function SettingsScreen() {
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
+  const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
+  const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -59,6 +62,9 @@ export default function SettingsScreen() {
       setBaseUrl(cfg.baseUrl || "");
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
+      const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
+      setSelectedPersonas(configuredPersonas);
+      setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
       setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
       setOpeningCash(s.openingCash ? String(s.openingCash) : "");
       setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
@@ -117,6 +123,9 @@ export default function SettingsScreen() {
         googleApiKey: key.trim(),
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
         accountingBasis,
+        selectedPersonas,
+        activePersona,
+        accountingStyle: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
@@ -267,6 +276,35 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <Card>
+              <Text style={styles.label}>Workflows & Persona</Text>
+              <Text style={styles.hint}>Choose the workflows shown in your app. Tap one to make it the active focus.</Text>
+              <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
+                {PERSONAS.map((p) => {
+                  const chosen = selectedPersonas.includes(p.id);
+                  return (
+                    <Pressable
+                      key={p.id}
+                      onPress={() => {
+                        if (chosen && selectedPersonas.length === 1) return;
+                        const next = chosen ? selectedPersonas.filter((id) => id !== p.id) : [...selectedPersonas, p.id];
+                        setSelectedPersonas(next);
+                        if (activePersona === p.id && !chosen) setActivePersona(p.id);
+                        else if (activePersona === p.id && !next.includes(activePersona)) setActivePersona(next[0]);
+                      }}
+                      onLongPress={() => setActivePersona(p.id)}
+                      style={[styles.bookRow, chosen && styles.bookRowActive]}
+                    >
+                      <Ionicons name={chosen ? "checkmark-circle" : "ellipse-outline"} size={20} color={chosen ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>{p.label}{activePersona === p.id ? "  (active)" : ""}</Text><Text style={styles.hint}>{p.description}</Text></View>
+                      <Pressable onPress={() => chosen && setActivePersona(p.id)} hitSlop={8}><Ionicons name="radio-button-on" size={18} color={activePersona === p.id ? theme.color.brandPrimary : theme.color.muted} /></Pressable>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.hint, { marginTop: theme.spacing.sm }]}>Tap and hold a workflow, or use the radio icon, to change the active focus.</Text>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Accounts</Text>
               <Text style={styles.hint}>
                 Keep separate books for different businesses (e.g. your Shop and your Technician

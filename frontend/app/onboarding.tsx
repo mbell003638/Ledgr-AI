@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { PERSONAS, type PersonaId, defaultBookConfig } from "@/src/accountingV2/config";
 
 type BizType = "shop" | "service" | "salon" | "handyman" | "vendor" | "it_consultant" | "freelancer";
 
@@ -27,6 +28,7 @@ export default function Onboarding() {
 
   const [step, setStep] = useState(0);
   const [bizType, setBizType] = useState<BizType | null>(null);
+  const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(['custom']);
   const [bizName, setBizName] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [lockEnabled, setLockEnabled] = useState(false);
@@ -38,6 +40,16 @@ export default function Onboarding() {
     setSaving(true);
     try {
       const preset = BIZ_TYPES.find((b) => b.key === bizType)!;
+      const v2Personas = selectedPersonas.length ? selectedPersonas : ['custom' as PersonaId];
+      const activeBookId = api.activeBookId();
+      if (await api.v2BookVersion(activeBookId) == null) {
+        const year = new Date().getFullYear();
+        await api.initializeV2Book({
+          book: { id: activeBookId, name: bizName.trim(), style: v2Personas.includes('retail') ? 'retail_partnership' : 'standard', basis: 'accrual' },
+          period: { id: `${activeBookId}:period:${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` },
+          personas: v2Personas,
+        });
+      }
       await api.updateSettings({
         businessName: bizName.trim(),
         currency,
@@ -46,6 +58,9 @@ export default function Onboarding() {
         lockEnabled,
         hasOnboarded: true,
         businessType: bizType,
+        selectedPersonas: v2Personas,
+        activePersona: v2Personas[0],
+        accountingStyle: v2Personas.includes('retail') ? 'retail_partnership' : 'standard',
       });
       router.replace("/(tabs)");
     } catch (e) { console.warn(e); }
@@ -65,18 +80,19 @@ export default function Onboarding() {
         {step === 0 && (
           <View>
             <Text style={styles.title}>What kind of business do you run?</Text>
-            <Text style={styles.sub}>We'll set up Ledgr to match your workflow.</Text>
+            <Text style={styles.sub}>Choose one or more workflows. You can add or remove personas later in Settings.</Text>
             <View style={{ marginTop: theme.spacing.lg, gap: 10 }}>
-              {BIZ_TYPES.map((b) => (
-                <Pressable key={b.key} onPress={() => setBizType(b.key)} style={[styles.card, bizType === b.key && styles.cardSelected]}>
-                  <Ionicons name={b.icon as any} size={28} color={bizType === b.key ? theme.color.brandPrimary : theme.color.muted} />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.cardLabel, bizType === b.key && { color: theme.color.brandPrimary }]}>{b.label}</Text>
-                    <Text style={styles.cardDesc}>{b.desc}</Text>
-                  </View>
-                  {bizType === b.key && <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} />}
-                </Pressable>
-              ))}
+              {PERSONAS.map((p) => {
+                const selected = selectedPersonas.includes(p.id);
+                return <Pressable key={p.id} onPress={() => {
+                  setSelectedPersonas((current) => selected ? current.filter((x) => x !== p.id) : [...current.filter((x) => x !== 'custom'), p.id]);
+                  if (!bizType) setBizType(p.id === 'retail' ? 'shop' : p.id === 'salon' ? 'salon' : p.id === 'handyman' ? 'handyman' : p.id === 'vendor' ? 'vendor' : 'service');
+                }} style={[styles.card, selected && styles.cardSelected]}>
+                  <Ionicons name={(p.id === 'retail' ? 'storefront-outline' : p.id === 'it_freelancer' ? 'laptop-outline' : 'briefcase-outline') as any} size={28} color={selected ? theme.color.brandPrimary : theme.color.muted} />
+                  <View style={{ flex: 1, marginLeft: 12 }}><Text style={[styles.cardLabel, selected && { color: theme.color.brandPrimary }]}>{p.label}</Text><Text style={styles.cardDesc}>{p.description}</Text></View>
+                  {selected && <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} />}
+                </Pressable>;
+              })}
             </View>
           </View>
         )}

@@ -114,8 +114,7 @@ export default function InventoryForm() {
               <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
                 <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
                 <Text style={styles.hint}>
-                  Snapshot everything (Sales, Purchases, Gross Profit, Commission, Drawings, Net Profit) as a closed period.
-                  The current inventory value + cash become the OPENING BALANCE for the next period. All new transactions from tomorrow onwards go into a fresh period.
+                  Authoritative V2 close-books uses the current open period, records opening and closing inventory counts, snapshots the journal-derived results (including commission from Settings), and carries the closing inventory into the next period. Legacy close is used only when no versioned V2 book is active.
                 </Text>
                 {!confirmClose ? (
                   <Pressable

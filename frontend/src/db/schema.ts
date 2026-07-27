@@ -1,90 +1,132 @@
 /**
- * SQLite schema + runner contract for the Ledgr data layer (Phase 2B, experimental).
- *
- * Why an abstraction: the app runtime uses `expo-sqlite` (async API) while unit
- * tests use Node's built-in `node:sqlite` (sync API). Both implement the small
- * async `SqlRunner` interface below, so the SAME schema + queries run in both
- * places — the SQL is tested for real, not mocked.
- *
- * Storage model: one table per collection, ONE ROW PER RECORD (not a single JSON
- * blob). Each row keeps its `id` and `date` as real indexed columns for fast
- * range queries, plus the full record as JSON in `data`. This is the concrete
- * improvement over the AsyncStorage single-blob-per-collection design:
- *   - row-level integrity (a corrupt record can't poison the whole collection)
- *   - atomic multi-row writes via transactions
- *   - indexed date lookups instead of full-array scans
+ * SQLite schema + runner contract for the Ledgr data layer.
+ * Legacy collections remain row-per-record JSON tables; V2 uses normalized
+ * tables for books, parties, accounts, periods, sources, journals, and lines.
  */
 
-/** Minimal async DB interface implemented by both expo-sqlite and node:sqlite adapters. */
 export interface SqlRunner {
-  /** Execute one or more statements with no bound params (DDL, PRAGMA, BEGIN/COMMIT). */
   exec(sql: string): Promise<void>;
-  /** Run a single write statement with positional params. */
   run(sql: string, params?: any[]): Promise<void>;
-  /** Return all rows for a query. */
   all<T = any>(sql: string, params?: any[]): Promise<T[]>;
-  /** Return the first row for a query, or null. */
   first<T = any>(sql: string, params?: any[]): Promise<T | null>;
 }
 
-/** Collections that store a list of records (mirror KEYS in local.ts). */
 export const COLLECTIONS = [
-  'suppliers',
-  'bills',
-  'sales',
-  'payments',
-  'inventoryChecks',
-  'periods',
-  'expenses',
-  'debtors',
-  'invoices',
-  'quotes',
-  'receipts',
-  'creditNotes',
-  'debitNotes',
-  'deliveryNotes',
-  'cashEntries',
+  'suppliers', 'bills', 'sales', 'payments', 'inventoryChecks', 'periods', 'expenses',
+  'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
+] as const;
+export type CollectionName = typeof COLLECTIONS[number];
+export const SCHEMA_VERSION = 5;
+
+export const V2_TABLES = [
+  'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
+  'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts',
+  'v2_members', 'v2_close_books',
 ] as const;
 
-export type CollectionName = typeof COLLECTIONS[number];
-
-/** Current on-device schema version (bump when table shapes change). */
-export const SCHEMA_VERSION = 2;
-
-/**
- * Full DDL. Every collection table is (id, date, data) with an index on date.
- * `settings` is a single-row key/value store (one JSON document under 'main').
- * `meta` tracks schema version + whether the AsyncStorage import already ran.
- */
 export function schemaSql(): string {
-  const collTables = COLLECTIONS.map(
-    (c) => `
-    CREATE TABLE IF NOT EXISTS ${c} (
-      id   TEXT PRIMARY KEY,
-      date TEXT,
-      data TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_${c}_date ON ${c}(date);`,
-  ).join('\n');
+  const legacy = COLLECTIONS.map((c) => `
+    CREATE TABLE IF NOT EXISTS ${c} (id TEXT PRIMARY KEY, date TEXT, data TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_${c}_date ON ${c}(date);`).join('\n');
+  return `${legacy}
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
-  return `
-    ${collTables}
-    CREATE TABLE IF NOT EXISTS settings (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS v2_books (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, style TEXT NOT NULL, basis TEXT NOT NULL, created_at TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS v2_personas (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 0, config TEXT NOT NULL DEFAULT '{}',
+      UNIQUE(book_id, type), FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
+    CREATE TABLE IF NOT EXISTS v2_parties (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, phone TEXT, email TEXT, roles TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id)
+    );
+    CREATE TABLE IF NOT EXISTS v2_accounts (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, payment_method TEXT, active INTEGER NOT NULL,
+      UNIQUE(book_id, code), FOREIGN KEY(book_id) REFERENCES v2_books(id)
+    );
+    CREATE TABLE IF NOT EXISTS v2_periods (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL, close_snapshot TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id)
+    );
+    CREATE TABLE IF NOT EXISTS v2_sources (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, type TEXT NOT NULL, date TEXT NOT NULL, reference TEXT, metadata TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id)
+    );
+    CREATE TABLE IF NOT EXISTS v2_journal_entries (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, period_id TEXT NOT NULL, source_id TEXT, date TEXT NOT NULL, memo TEXT NOT NULL, posted_at TEXT NOT NULL, reversal_of TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(reversal_of) REFERENCES v2_journal_entries(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_journal_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, journal_id TEXT NOT NULL, account_id TEXT NOT NULL, party_id TEXT,
+      debit REAL NOT NULL CHECK(typeof(debit) IN ('integer','real') AND debit >= 0),
+      credit REAL NOT NULL CHECK(typeof(credit) IN ('integer','real') AND credit >= 0), memo TEXT,
+      CHECK((debit > 0 AND credit = 0) OR (credit > 0 AND debit = 0)),
+      FOREIGN KEY(journal_id) REFERENCES v2_journal_entries(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(account_id) REFERENCES v2_accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(party_id) REFERENCES v2_parties(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_invoice_allocations (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, invoice_source_id TEXT NOT NULL, receipt_source_id TEXT NOT NULL,
+      amount REAL NOT NULL CHECK(typeof(amount) IN ('integer','real') AND amount > 0), allocated_at TEXT NOT NULL,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(invoice_source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(receipt_source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_inventory_counts (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, period_id TEXT NOT NULL, date TEXT NOT NULL,
+      value REAL NOT NULL CHECK(typeof(value) IN ('integer','real') AND value >= 0),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_members (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL,
+      opening_contribution REAL NOT NULL CHECK(typeof(opening_contribution) IN ('integer','real') AND opening_contribution >= 0),
+      current_capital REAL NOT NULL CHECK(typeof(current_capital) IN ('integer','real')),
+      profit_share_pct REAL NOT NULL CHECK(typeof(profit_share_pct) IN ('integer','real') AND profit_share_pct >= 0 AND profit_share_pct <= 100),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_close_books (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, period_id TEXT NOT NULL, closed_at TEXT NOT NULL, snapshot TEXT NOT NULL, journal_id TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(journal_id) REFERENCES v2_journal_entries(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      UNIQUE(book_id, period_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_v2_journals_book_date ON v2_journal_entries(book_id, date);
+    CREATE INDEX IF NOT EXISTS idx_v2_journal_lines_journal ON v2_journal_lines(journal_id);
+    CREATE INDEX IF NOT EXISTS idx_v2_sources_book_date ON v2_sources(book_id, date);
+    CREATE INDEX IF NOT EXISTS idx_v2_alloc_invoice ON v2_invoice_allocations(invoice_source_id);
   `;
 }
 
-/** Initialise the schema and stamp the version if absent. */
 export async function initSchema(db: SqlRunner): Promise<void> {
+  await db.exec('PRAGMA foreign_keys = ON;');
   await db.exec(schemaSql());
-  const row = await db.first<{ value: string }>(`SELECT value FROM meta WHERE key = 'schema_version'`);
-  if (!row) {
-    await db.run(`INSERT INTO meta(key, value) VALUES('schema_version', ?)`, [String(SCHEMA_VERSION)]);
+  const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
+  if (!personaColumns.some((column) => column.name === 'active')) {
+    await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');
   }
+  const memberColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_members)');
+  if (!memberColumns.some((column) => column.name === 'current_capital')) {
+    await db.exec('ALTER TABLE v2_members ADD COLUMN current_capital REAL NOT NULL DEFAULT 0;');
+    await db.exec('UPDATE v2_members SET current_capital = opening_contribution;');
+  }
+  await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_persona_book_type ON v2_personas(book_id, type);');
+  const booksWithoutActivePersona = await db.all<{ book_id: string }>(`SELECT book_id FROM v2_personas
+    GROUP BY book_id HAVING SUM(CASE WHEN enabled = 1 AND active = 1 THEN 1 ELSE 0 END) = 0
+    AND SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) > 0`);
+  for (const { book_id } of booksWithoutActivePersona) {
+    const firstPersona = await db.first<{ id: string }>('SELECT id FROM v2_personas WHERE book_id = ? AND enabled = 1 ORDER BY rowid LIMIT 1', [book_id]);
+    if (firstPersona) await db.run('UPDATE v2_personas SET active = 1 WHERE id = ?', [firstPersona.id]);
+  }
+  const row = await db.first<{ value: string }>('SELECT value FROM meta WHERE key = \'schema_version\'');
+  if (!row) await db.run('INSERT INTO meta(key, value) VALUES(\'schema_version\', ?)', [String(SCHEMA_VERSION)]);
+  else if (Number(row.value) < SCHEMA_VERSION) await db.run('UPDATE meta SET value = ? WHERE key = \'schema_version\'', [String(SCHEMA_VERSION)]);
 }

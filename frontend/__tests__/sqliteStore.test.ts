@@ -6,7 +6,7 @@
  * migration — the same code paths the app uses via expo-sqlite.
  */
 
-import { initSchema, COLLECTIONS, SCHEMA_VERSION } from '../src/db/schema';
+import { initSchema, COLLECTIONS, SCHEMA_VERSION, V2_TABLES } from '../src/db/schema';
 import {
   readColl,
   writeColl,
@@ -26,6 +26,7 @@ describe('schema', () => {
       );
       const names = tables.map((t) => t.name);
       for (const c of COLLECTIONS) expect(names).toContain(c);
+      for (const table of V2_TABLES) expect(names).toContain(table);
       expect(names).toContain('settings');
       expect(names).toContain('meta');
       const v = await runner.first<{ value: string }>(`SELECT value FROM meta WHERE key='schema_version'`);
@@ -33,6 +34,17 @@ describe('schema', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('V2 referential integrity', () => {
+  it('enforces period, inventory and close-book foreign keys', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      await expect(runner.run("INSERT INTO v2_inventory_counts(id,book_id,period_id,date,value) VALUES('c','missing','p','2026-01-01',1)")).rejects.toBeDefined();
+      await expect(runner.run("INSERT INTO v2_close_books(id,book_id,period_id,closed_at,snapshot) VALUES('x','missing','p','2026-01-01','{}')")).rejects.toBeDefined();
+    } finally { close(); }
   });
 });
 

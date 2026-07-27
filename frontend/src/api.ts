@@ -2,9 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
+import { V2AppService, createAppWriteRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
+import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
+import { V2BookConfigRepository } from '@/src/accountingV2/bookConfigRepository';
+import type { PersonaId } from '@/src/accountingV2/config';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
+  activeSqlRunner,
   setActiveBook as beSetActiveBook,
   createBook as beCreateBook,
   renameBook as beRenameBook,
@@ -117,8 +122,40 @@ async function reconcileStatement(
   return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, partyId, party, supplierId: party === 'supplier' ? partyId : undefined };
 }
 
+type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
+async function createTransaction(name: AppCreateName, payload: any) {
+  const runner = activeSqlRunner();
+  if (!runner) return (db[name] as (value: any) => Promise<any>)(payload);
+  const writes = createAppWriteRouter(new V2AppService(runner), db);
+  return writes[name](payload);
+}
+
 export const api = {
-  // Settings
+  // Persistent V2 runtime services are available after storage initialization.
+  v2: () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return require('@/src/accountingV2/runtime').v2Services();
+  },
+  initializeV2Book: async (options: Parameters<typeof initializeV2Book>[1]) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return initializeV2Book(runner, options);
+  },
+  v2BookVersion: async (bookId: string) => {
+    const runner = activeSqlRunner();
+    return runner ? accountingBookVersion(runner, bookId) : null;
+  },
+  v2Personas: async (bookId: string, includeDisabled = true) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2BookConfigRepository(runner).listPersonas(bookId, includeDisabled);
+  },
+  setV2Persona: async (bookId: string, type: PersonaId) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2BookConfigRepository(runner).setActivePersona(bookId, type);
+  },
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
   testKey: async () => ai.testKey(await getAIConfig()),
@@ -131,6 +168,14 @@ export const api = {
   renameBook: (id: string, name: string) => beRenameBook(id, name),
   deleteBook: (id: string) => beDeleteBook(id),
 
+  listParties: async () => {
+    const runner=activeSqlRunner(); if(!runner)return [];
+    const service=new V2AppService(runner); return (await service.activeContext()) ? service.listParties() : [];
+  },
+  listSalesAndInvoices: async () => {
+    const runner=activeSqlRunner(); if(!runner)return db.listSales();
+    const service=new V2AppService(runner); return (await service.activeContext()) ? service.listSalesAndInvoices() : db.listSales();
+  },
   // Suppliers
   listSuppliers: () => db.listSuppliers(),
   createSupplier: (s: any) => db.createSupplier(s),
@@ -140,17 +185,17 @@ export const api = {
 
   // Bills / Sales / Payments
   listBills: () => db.listBills(),
-  createBill: (b: any) => db.createBill(b),
+  createBill: (b: any) => createTransaction('createBill', b),
   updateBill: (id: string, b: any) => db.updateBill(id, b),
   deleteBill: (id: string) => db.deleteBill(id),
 
   listSales: () => db.listSales(),
-  createSale: (s: any) => db.createSale(s),
+  createSale: (s: any) => createTransaction('createSale', s),
   updateSale: (id: string, s: any) => db.updateSale(id, s),
   deleteSale: (id: string) => db.deleteSale(id),
 
   listPayments: () => db.listPayments(),
-  createPayment: (p: any) => db.createPayment(p),
+  createPayment: (p: any) => createTransaction('createPayment', p),
   updatePayment: (id: string, p: any) => db.updatePayment(id, p),
   deletePayment: (id: string) => db.deletePayment(id),
 
@@ -203,7 +248,14 @@ export const api = {
     return result;
   },
   listPeriods: () => db.listPeriods(),
-  closePeriod: (actualStock: number, notes = '') => db.closePeriod(actualStock, notes),
+  closePeriod: async (actualStock: number, notes = '') => {
+    const runner = activeSqlRunner();
+    if (!runner) return db.closePeriod(actualStock, notes);
+    const service = new V2AppService(runner);
+    const closeBooks = createCloseBooksRouter(service, db.closePeriod);
+    const settings = await db.getSettings();
+    return closeBooks({ actualStock, openingInventory: Number(settings.openingInventory || 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
+  },
   resetAll: () => db.resetAll(),
 
   // AI
@@ -215,7 +267,7 @@ export const api = {
 
   // Expenses
   listExpenses: () => db.listExpenses(),
-  createExpense: (e: any) => db.createExpense(e),
+  createExpense: (e: any) => createTransaction('createExpense', e),
   updateExpense: (id: string, e: any) => db.updateExpense(id, e),
   deleteExpense: (id: string) => db.deleteExpense(id),
 
@@ -236,7 +288,7 @@ export const api = {
 
   // Invoices
   listInvoices: () => db.listInvoices(),
-  createInvoice: (inv: any) => db.createInvoice(inv),
+  createInvoice: (inv: any) => createTransaction('createInvoice', inv),
   updateInvoice: (id: string, inv: any) => db.updateInvoice(id, inv),
   deleteInvoice: (id: string) => db.deleteInvoice(id),
   markInvoicePaid: (id: string) => db.markInvoicePaid(id),
@@ -244,7 +296,7 @@ export const api = {
 
   // Receipts (money actually received)
   listReceipts: () => db.listReceipts(),
-  createReceipt: (r: any) => db.createReceipt(r),
+  createReceipt: (r: any) => createTransaction('createReceipt', r),
   deleteReceipt: (id: string) => db.deleteReceipt(id),
   invoicePaidAmount: (invoiceId: string) => db.invoicePaidAmount(invoiceId),
 

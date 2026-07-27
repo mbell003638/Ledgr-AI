@@ -20,7 +20,7 @@ export default function SalesScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [s, settings] = await Promise.all([api.listSales(), api.getSettings()]);
+      const [s, settings] = await Promise.all([api.listSalesAndInvoices(), api.getSettings()]);
       setSales([...s].sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0)));
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
     } catch (e) {

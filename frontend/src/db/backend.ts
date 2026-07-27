@@ -16,6 +16,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLLECTIONS, CollectionName, SqlRunner } from './schema';
+import { initializeV2Book, accountingBookVersion } from '../accountingV2/appBootstrap';
 import {
   readColl as sqlRead,
   writeColl as sqlWrite,
@@ -73,6 +74,9 @@ export async function loadActiveBook(): Promise<string> {
 export async function setActiveBook(id: string): Promise<void> {
   activeBook = id || DEFAULT_BOOK;
   await AsyncStorage.setItem(ACTIVE_BOOK_KEY, activeBook);
+  if (runner && await accountingBookVersion(runner, activeBook) != null) {
+    await runner.run(`INSERT INTO meta(key,value) VALUES('v2_active_book_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [activeBook]);
+  }
 }
 
 export async function createBook(name: string, businessType?: string): Promise<BookMeta> {
@@ -81,6 +85,10 @@ export async function createBook(name: string, businessType?: string): Promise<B
   const meta: BookMeta = { id, name: name.trim() || 'New Account', businessType };
   books.push(meta);
   await AsyncStorage.setItem(BOOKS_INDEX_KEY, JSON.stringify(books));
+  if (runner) {
+    const year = new Date().getFullYear();
+    await initializeV2Book(runner, { book: { id, name: meta.name, style: 'standard', basis: 'accrual' }, period: { id: `${id}:period:${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` }, personas: ['custom'] });
+  }
   return meta;
 }
 
@@ -108,6 +116,9 @@ let runner: SqlRunner | null = null;
 export function storageMode(): StorageMode {
   return mode;
 }
+
+/** Active SQLite runner for authoritative V2 services. Null in AsyncStorage fallback mode. */
+export function activeSqlRunner(): SqlRunner | null { return runner; }
 
 // ---------- AsyncStorage implementations (default + fallback) ----------
 async function asyncReadColl<T = any>(c: CollectionName): Promise<T[]> {
