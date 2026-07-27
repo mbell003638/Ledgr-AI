@@ -44,6 +44,7 @@ export default function SettingsScreen() {
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
+  const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
   const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
   const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
@@ -51,6 +52,23 @@ export default function SettingsScreen() {
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const updateAccountingStyle = async (style: "retail_partnership" | "standard") => {
+    setAccountingStyle(style);
+    await api.updateSettings({ accountingStyle: style });
+    try {
+      const v2 = await api.getV2BookConfig();
+      if (v2) {
+        await api.updateV2BookConfig({
+          style,
+          basis: v2.basis,
+          selectedPersonas: v2.selectedPersonas,
+          activePersona: v2.activePersona,
+          retailPartnership: v2.retailPartnership,
+        });
+      }
+    } catch { /* v2 update fallback */ }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +80,7 @@ export default function SettingsScreen() {
       setBaseUrl(cfg.baseUrl || "");
       setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
+      setAccountingStyle(s.accountingStyle === "retail_partnership" ? "retail_partnership" : "standard");
       const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
       setSelectedPersonas(configuredPersonas);
       setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
@@ -302,11 +321,39 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <Card>
-              <Text style={styles.label}>Workflows & Persona</Text>
-              <Text style={styles.hint}>Choose the workflows shown in your app. Tap one to make it the active focus.</Text>
-              <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
+              <Text style={styles.label}>Account & Workflows</Text>
+              <Text style={styles.hint}>Switch active account or toggle business workflows.</Text>
+              
+              {/* Active Accounts list */}
+              <View style={{ gap: 6, marginTop: theme.spacing.sm }}>
+                {books.map((b) => (
+                  <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[styles.bookRow, b.id === activeBook && styles.bookRowActive]}>
+                    <Ionicons
+                      name={b.id === activeBook ? "checkmark-circle" : "ellipse-outline"}
+                      size={20}
+                      color={b.id === activeBook ? theme.color.brandPrimary : theme.color.muted}
+                    />
+                    <Text style={[styles.bookName, { flex: 1 }]}>{b.name}</Text>
+                    {b.id === activeBook ? (
+                      <View style={{ backgroundColor: theme.color.brandPrimary + "20", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary }}>Active</Text>
+                      </View>
+                    ) : null}
+                    {b.id !== "default" && (
+                      <Pressable onPress={() => removeBook(b.id)} style={{ marginLeft: 8 }} testID={`btn-remove-book-${b.id}`}>
+                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                      </Pressable>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Compact Workflows chips */}
+              <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 14 }]}>Enabled Workflows</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.xs }}>
                 {PERSONAS.map((p) => {
                   const chosen = selectedPersonas.includes(p.id);
+                  const isActive = activePersona === p.id;
                   return (
                     <Pressable
                       key={p.id}
@@ -314,47 +361,66 @@ export default function SettingsScreen() {
                         if (chosen && selectedPersonas.length === 1) return;
                         const next = chosen ? selectedPersonas.filter((id) => id !== p.id) : [...selectedPersonas, p.id];
                         setSelectedPersonas(next);
-                        if (activePersona === p.id && !chosen) setActivePersona(p.id);
-                        else if (activePersona === p.id && !next.includes(activePersona)) setActivePersona(next[0]);
+                        if (activePersona === p.id && !next.includes(activePersona)) setActivePersona(next[0]);
                       }}
                       onLongPress={() => setActivePersona(p.id)}
-                      style={[styles.bookRow, chosen && styles.bookRowActive]}
+                      style={[{
+                        flexDirection: "row", alignItems: "center", gap: 6,
+                        paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20,
+                        borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                      }, chosen && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}
                     >
-                      <Ionicons name={chosen ? "checkmark-circle" : "ellipse-outline"} size={20} color={chosen ? theme.color.brandPrimary : theme.color.muted} />
-                      <View style={{ flex: 1 }}><Text style={styles.bookName}>{p.label}{activePersona === p.id ? "  (active)" : ""}</Text><Text style={styles.hint}>{p.description}</Text></View>
-                      <Pressable onPress={() => chosen && setActivePersona(p.id)} hitSlop={8}><Ionicons name="radio-button-on" size={18} color={activePersona === p.id ? theme.color.brandPrimary : theme.color.muted} /></Pressable>
+                      <Ionicons name={chosen ? "checkmark-circle" : "ellipse-outline"} size={16} color={chosen ? theme.color.brandPrimary : theme.color.muted} />
+                      <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, chosen && { color: theme.color.brandPrimary }]}>
+                        {p.label}
+                      </Text>
+                      {isActive && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.color.brandPrimary }} />}
                     </Pressable>
                   );
                 })}
               </View>
-              <Text style={[styles.hint, { marginTop: theme.spacing.sm }]}>Tap and hold a workflow, or use the radio icon, to change the active focus.</Text>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Accounts</Text>
-              <Text style={styles.hint}>
-                Keep separate books for different businesses (e.g. your Shop and your Technician
-                work). Each account has its own data, settings and reports. Switch anytime — nothing
-                is mixed.
-              </Text>
-              {books.map((b) => (
-                <View key={b.id} style={[styles.bookRow, b.id === activeBook && styles.bookRowActive]}>
+              <Text style={styles.label}>Accounting Style</Text>
+              <Text style={styles.hint}>Choose how profit, partner stakes, and financial reports are computed.</Text>
+              <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
+                <Pressable
+                  onPress={() => updateAccountingStyle('retail_partnership')}
+                  style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}
+                >
                   <Ionicons
-                    name={b.id === activeBook ? "radio-button-on" : "radio-button-off"}
-                    size={18}
-                    color={b.id === activeBook ? theme.color.brandPrimary : theme.color.muted}
+                    name={accountingStyle === 'retail_partnership' ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={accountingStyle === 'retail_partnership' ? theme.color.brandPrimary : theme.color.muted}
                   />
-                  <Pressable style={{ flex: 1 }} onPress={() => switchBook(b.id)} testID={`book-${b.id}`}>
-                    <Text style={styles.bookName}>{b.name}{b.id === activeBook ? "  (active)" : ""}</Text>
-                  </Pressable>
-                  {b.id !== "default" && (
-                    <Pressable onPress={() => removeBook(b.id)} testID={`btn-remove-book-${b.id}`}>
-                      <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                    </Pressable>
-                  )}
-                </View>
-              ))}
-              <View style={[styles.entryRow, { marginTop: theme.spacing.md }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bookName}>Partner Equity & Profit-Split Accounting</Text>
+                    <Text style={styles.hint}>
+                      50/50 Partner Capital Accounts (Amit & Rahim), periodic physical stock audit, shopkeeper salary & commission % on gross profit, and period close balance carry-forward.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => updateAccountingStyle('standard')}
+                  style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}
+                >
+                  <Ionicons
+                    name={accountingStyle === 'standard' ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={accountingStyle === 'standard' ? theme.color.brandPrimary : theme.color.muted}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bookName}>Standard Entity & Single-Owner Accounting</Text>
+                    <Text style={styles.hint}>
+                      Standard P&L, Balance Sheet, Trial Balance, Accounts Receivable & Payable for general small businesses, freelancers & single owners.
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            </Card>
+            <View style={[styles.entryRow, { marginTop: theme.spacing.md }]}>
                 <TextInput
                   testID="input-new-book"
                   value={newBookName}
@@ -372,7 +438,6 @@ export default function SettingsScreen() {
                   )}
                 </Pressable>
               </View>
-            </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>AI Provider</Text>

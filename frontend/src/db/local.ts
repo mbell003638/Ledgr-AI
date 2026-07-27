@@ -131,7 +131,7 @@ export async function getSettings() {
     accountingStyle: s.accountingStyle ?? 'standard',
     // Revenue recognition: 'cash' = revenue when money received (cash sales +
     // receipts); 'accrual' = revenue when billed (cash sales + invoices raised).
-    accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
+    accountingBasis: s.accountingBasis === 'cash' ? 'cash' : 'accrual',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
@@ -163,8 +163,15 @@ export async function listSuppliers() {
 }
 export async function createSupplier(body: any) {
   return serialize(async () => {
+    const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const name = (body.name || '').trim();
+    if (!name) throw new Error('Supplier name is required');
     const arr = await readColl<any>('suppliers');
-    const item = { id: uuid(), name: body.name, phone: body.phone || '', notes: body.notes || '', created_at: nowIso() };
+    const debtors = await readColl<any>('debtors');
+    if ([...arr, ...debtors].some((x: any) => norm(x.name) === norm(name))) {
+      throw new Error(`A party or supplier named '${name}' already exists in this account.`);
+    }
+    const item = { id: uuid(), name, phone: body.phone || '', notes: body.notes || '', created_at: nowIso() };
     arr.push(item);
     await writeColl('suppliers', arr);
     return item;
@@ -251,7 +258,22 @@ export const createBill = billsCrud.create;
 export const updateBill = billsCrud.update;
 export const deleteBill = billsCrud.remove;
 
-export const listSales = salesCrud.list;
+export async function listSales() {
+  const sales = await readColl<any>('sales');
+  const invoices = await readColl<any>('invoices');
+  const invoiceSales = invoices.map((inv: any) => ({
+    id: inv.id,
+    date: inv.date,
+    amount: Number(inv.total || inv.amount || 0),
+    currency: inv.currency || 'USD',
+    notes: inv.notes || `Credit Sale (${inv.clientName || 'Debtor'})`,
+    type: 'invoice',
+    clientName: inv.clientName,
+    status: inv.status,
+  }));
+  const combined = [...sales, ...invoiceSales];
+  return combined.sort((a: any, b: any) => (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
+}
 export const createSale = salesCrud.create;
 export const updateSale = salesCrud.update;
 export const deleteSale = salesCrud.remove;
@@ -373,17 +395,18 @@ export async function dashboard() {
   // Revenue for P&L depends on the accounting basis:
   //   accrual → cash sales + invoices raised (billed, regardless of collection)
   //   cash    → cash sales + amounts actually received against invoices (receipts)
-  const invoiceRevenue = invoicesAll.reduce((sum: number, i: any) => sum + toUsd(i.total), 0);
+  const invoiceRevenue = invoicesAll.reduce((sum: number, i: any) => sum + toUsd(i.total ?? i.amount ?? 0), 0);
   const receiptInvoiceRevenue = receiptsAll
     .filter((r: any) => r.mode === 'against_invoice')
     .reduce((sum: number, r: any) => sum + toUsd(r.amount), 0);
-  const isAccrual = s.accountingBasis === 'accrual';
+  const isAccrual = s.accountingBasis !== 'cash';
   // Credit notes reduce revenue (returns/discounts); debit notes add to it.
   // These are receivable adjustments so they only affect ACCRUAL revenue.
   const creditNoteTotal = creditNotesAll.reduce((sum: number, c: any) => sum + toUsd(c.amount), 0);
   const debitNoteTotal = debitNotesAll.reduce((sum: number, c: any) => sum + toUsd(c.amount), 0);
   const accrualRevenue = cashSalesTotal + invoiceRevenue - creditNoteTotal + debitNoteTotal;
-  const totalSales = +((isAccrual ? accrualRevenue : cashSalesTotal + receiptInvoiceRevenue)).toFixed(2);
+  const cashRevenue = cashSalesTotal + receiptInvoiceRevenue;
+  const totalSales = +(isAccrual ? accrualRevenue : cashRevenue).toFixed(2);
   const supplierPayments = payments.filter((p: any) => p.type === 'supplier_payment')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
   const drawings = payments.filter((p: any) => p.type === 'drawing')
@@ -416,7 +439,8 @@ export async function dashboard() {
   const extraAssetsTotal = +extraAssets.reduce((sum: number, a: any) => sum + (Number(a.amount) || 0), 0).toFixed(2);
   const extraLiabTotal = +extraLiabilities.reduce((sum: number, l: any) => sum + (Number(l.amount) || 0), 0).toFixed(2);
 
-  const assets = +(cash + inventoryValue + extraAssetsTotal).toFixed(2);
+  const accountsReceivable = +(invoiceRevenue - receiptInvoiceRevenue - creditNoteTotal).toFixed(2);
+  const assets = +(cash + inventoryValue + accountsReceivable + extraAssetsTotal).toFixed(2);
   const totalLiabilities = +(liabilities + extraLiabTotal).toFixed(2);
   const openingBalance = +(openingCash + openingInv).toFixed(2);
   const closingBalance = +assets.toFixed(2);
@@ -431,7 +455,7 @@ export async function dashboard() {
     .map(([date, value]) => ({ date, value: +value.toFixed(2) }));
 
   return {
-    assets, liabilities, netWorth, cash, inventoryValue,
+    assets, liabilities, netWorth, cash, inventoryValue, accountsReceivable,
     openingBalance, openingInventory: openingInv, openingCash, closingBalance,
     totalPurchases: +totalPurchases.toFixed(2), totalSales: +totalSales.toFixed(2),
     grossProfit, managerCommissionPct: pct, commission, netProfit,
@@ -749,8 +773,15 @@ export async function listDebtors() {
 }
 export async function createDebtor(d: any) {
   return serialize(async () => {
+    const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const name = (d.name || '').trim();
+    if (!name) throw new Error('Customer / Party name is required');
     const items = await readColl<any>('debtors');
-    const item = { id: uuid(), created_at: nowIso(), payments: [], ...d };
+    const suppliers = await readColl<any>('suppliers');
+    if ([...items, ...suppliers].some((x: any) => norm(x.name) === norm(name))) {
+      throw new Error(`A party or customer named '${name}' already exists in this account.`);
+    }
+    const item = { id: uuid(), created_at: nowIso(), payments: [], ...d, name };
     items.push(item);
     await writeColl('debtors', items);
     return item;

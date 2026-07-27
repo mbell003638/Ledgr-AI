@@ -59,6 +59,14 @@ export default function DebtorsScreen() {
   // Payment editor (statement row → edit/delete, same interaction model as Sales).
   const [editingPayment, setEditingPayment] = useState<any | null>(null);
 
+  // Invoice editor (statement row → edit/delete).
+  const [editingInvoice, setEditingInvoice] = useState<any | null>(null);
+  const [invAmount, setInvAmount] = useState("");
+  const [invNotes, setInvNotes] = useState("");
+  const [invDate, setInvDate] = useState("");
+  const [invSaving, setInvSaving] = useState(false);
+  const [invError, setInvError] = useState("");
+
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
@@ -180,36 +188,34 @@ export default function DebtorsScreen() {
     setShowAdd(true);
   };
 
-  // Delete a customer. Blocked if they still owe money, to protect the books;
-  // the user must settle/clear the balance first.
-  const deleteDebtor = (d: Debtor) => {
-    const bal = d.balance ?? 0;
-    if (Math.abs(bal) > 0.009) {
-      Alert.alert(
-        "Can't delete yet",
-        `${d.name} still has an outstanding balance of ${currency}${bal.toFixed(2)}. Settle or clear it first (record payment / credit note), then delete.`,
-      );
-      return;
-    }
-    Alert.alert(
-      "Delete customer?",
-      `Remove ${d.name}? This cannot be undone. Any linked invoice history stays in Invoices.`,
-      [
+  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(title, message, [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete", style: "destructive",
-          onPress: async () => {
-            setDeletingDebtor(true);
-            try {
-              await api.deleteDebtor(d.id);
-              setSelected(null);
-              await load();
-            } catch (e: any) {
-              Alert.alert("Delete failed", e.message || "Could not delete");
-            } finally { setDeletingDebtor(false); }
-          },
-        },
-      ],
+        { text: "Delete", style: "destructive", onPress: onConfirm },
+      ]);
+    }
+  };
+
+  // Delete a customer.
+  const deleteDebtor = (d: Debtor) => {
+    confirmAction(
+      "Delete customer?",
+      `Remove ${d.name}? This will remove this customer from your active Debtors list.`,
+      async () => {
+        setDeletingDebtor(true);
+        try {
+          await api.deleteDebtor(d.id);
+          setSelected(null);
+          await load();
+        } catch (e: any) {
+          Alert.alert("Delete failed", e.message || "Could not delete");
+        } finally { setDeletingDebtor(false); }
+      },
     );
   };
 
@@ -230,17 +236,18 @@ export default function DebtorsScreen() {
 
   const deletePayment = (payment: any) => {
     if (!selected) return;
-    Alert.alert("Delete payment?", "This reverses the receipt, cash movement, debtor balance and invoice allocation.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => {
+    confirmAction(
+      "Delete payment?",
+      "This reverses the receipt, cash movement, debtor balance and invoice allocation.",
+      async () => {
         try {
           await api.deleteDebtorPayment(selected.id, payment.id);
           const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
           if (fresh) setSelected(fresh);
           await load();
         } catch (e: any) { Alert.alert("Delete failed", e?.message || "Could not delete payment"); }
-      } },
-    ]);
+      },
+    );
   };
 
   const openPaymentEdit = (payment: any) => {
@@ -249,6 +256,50 @@ export default function DebtorsScreen() {
     setPayDate(payment.date || new Date().toISOString().slice(0, 10));
     setPayNotes(payment.notes || "");
     setPayError("");
+  };
+
+  const openInvoiceEdit = (inv: any) => {
+    setEditingInvoice(inv);
+    setInvAmount(String(inv.debit || inv.amount || ""));
+    setInvDate(inv.date || new Date().toISOString().slice(0, 10));
+    setInvNotes(inv.ref || inv.notes || "");
+    setInvError("");
+  };
+
+  const saveInvoiceEdit = async () => {
+    if (!selected || !editingInvoice) return;
+    const amount = Number(invAmount);
+    if (!Number.isFinite(amount) || amount <= 0) { setInvError("Enter a valid amount"); return; }
+    setInvSaving(true); setInvError("");
+    try {
+      await api.updateInvoice(editingInvoice.id, {
+        clientName: selected.name,
+        date: invDate,
+        total: amount,
+        notes: invNotes.trim(),
+      });
+      setEditingInvoice(null);
+      const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+      if (fresh) setSelected(fresh);
+      await load();
+    } catch (e: any) { setInvError(e?.message || "Could not update invoice"); }
+    finally { setInvSaving(false); }
+  };
+
+  const deleteInvoiceEntry = (inv: any) => {
+    if (!selected) return;
+    confirmAction(
+      "Delete invoice?",
+      "This reverses the invoice entry and updates the debtor balance.",
+      async () => {
+        try {
+          await api.deleteInvoice(inv.id);
+          const fresh = (await api.listDebtors() as Debtor[]).find((x) => x.id === selected.id);
+          if (fresh) setSelected(fresh);
+          await load();
+        } catch (e: any) { Alert.alert("Delete failed", e?.message || "Could not delete invoice"); }
+      },
+    );
   };
 
   const recordPayment = async () => {
@@ -394,21 +445,45 @@ export default function DebtorsScreen() {
                 <Text style={[styles.tlAmount, { color: isCredit ? theme.color.success : theme.color.error }]}>
                   {isCredit ? "−" : "+"}{currency}{Number(isCredit ? r.credit : r.debit).toFixed(2)}
                 </Text>
-                {r.kind === "payment" ? (
-                  <View style={styles.rowActions}>
-                    <Pressable accessibilityLabel="Edit payment" hitSlop={8} onPress={() => openPaymentEdit({ id: r.id, amount: r.credit, date: r.date, notes: r.ref })}>
-                      <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
-                    </Pressable>
-                    <Pressable accessibilityLabel="Delete payment" hitSlop={8} onPress={() => deletePayment({ id: r.id })}>
-                      <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                    </Pressable>
-                  </View>
-                ) : null}
+                <View style={styles.rowActions}>
+                  {r.kind === "invoice" ? (
+                    <>
+                      <Pressable accessibilityLabel="Edit invoice" hitSlop={8} onPress={() => openInvoiceEdit(r)}>
+                        <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
+                      </Pressable>
+                      <Pressable accessibilityLabel="Delete invoice" hitSlop={8} onPress={() => deleteInvoiceEntry(r)}>
+                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                      </Pressable>
+                    </>
+                  ) : r.kind === "payment" ? (
+                    <>
+                      <Pressable accessibilityLabel="Edit payment" hitSlop={8} onPress={() => openPaymentEdit({ id: r.id, amount: r.credit, date: r.date, notes: r.ref })}>
+                        <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
+                      </Pressable>
+                      <Pressable accessibilityLabel="Delete payment" hitSlop={8} onPress={() => deletePayment({ id: r.id })}>
+                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                      </Pressable>
+                    </>
+                  ) : null}
+                </View>
               </View>
             );
           })}
           <View style={{ height: 60 }} />
         </ScrollView>
+
+        <Modal visible={editingInvoice !== null} transparent animationType="slide">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+            <View style={styles.modalOverlay}><View style={styles.modalBox}>
+              <View style={styles.modalHeader}><Text style={styles.headerTitle}>Edit Invoice</Text><Pressable onPress={() => setEditingInvoice(null)}><Ionicons name="close" size={24} color={theme.color.onSurface}/></Pressable></View>
+              <Text style={styles.label}>Amount</Text><TextInput value={invAmount} onChangeText={setInvAmount} keyboardType="decimal-pad" style={styles.input}/>
+              <Text style={[styles.label,{marginTop:12}]}>Date</Text><TextInput value={invDate} onChangeText={setInvDate} style={styles.input}/>
+              <Text style={[styles.label,{marginTop:12}]}>Notes</Text><TextInput value={invNotes} onChangeText={setInvNotes} style={[styles.input,{minHeight:50}]} multiline/>
+              {invError?<Text style={styles.error}>{invError}</Text>:null}
+              <Pressable onPress={saveInvoiceEdit} disabled={invSaving} style={styles.saveBtn}>{invSaving?<ActivityIndicator color="#fff"/>:<Text style={styles.saveText}>Update Invoice</Text>}</Pressable>
+            </View></View>
+          </KeyboardAvoidingView>
+        </Modal>
 
         <Modal visible={showPay} transparent animationType="slide">
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>

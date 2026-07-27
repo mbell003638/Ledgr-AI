@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -36,35 +36,40 @@ export default function Onboarding() {
   const LAST_STEP = 3;
 
   const finish = async () => {
-    if (!bizType || !bizName.trim()) return;
+    const finalBizName = bizName.trim() || "My Business";
+    const finalBizType = bizType || "shop";
     setSaving(true);
     try {
-      const preset = BIZ_TYPES.find((b) => b.key === bizType)!;
+      const preset = BIZ_TYPES.find((b) => b.key === finalBizType) || BIZ_TYPES[0];
       const v2Personas = selectedPersonas.length ? selectedPersonas : ['custom' as PersonaId];
       const activeBookId = api.activeBookId();
       if (await api.v2BookVersion(activeBookId) == null) {
         const year = new Date().getFullYear();
         await api.initializeV2Book({
-          book: { id: activeBookId, name: bizName.trim(), style: v2Personas.includes('retail') ? 'retail_partnership' : 'standard', basis: 'accrual' },
+          book: { id: activeBookId, name: finalBizName, style: v2Personas.includes('retail') ? 'retail_partnership' : 'standard', basis: 'accrual' },
           period: { id: `${activeBookId}:period:${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` },
           personas: v2Personas,
         });
       }
       await api.updateSettings({
-        businessName: bizName.trim(),
+        businessName: finalBizName,
         currency,
         taxLabel: preset.taxLabel,
         taxRate: 0,
         lockEnabled,
         hasOnboarded: true,
-        businessType: bizType,
+        businessType: finalBizType,
         selectedPersonas: v2Personas,
         activePersona: v2Personas[0],
         accountingStyle: v2Personas.includes('retail') ? 'retail_partnership' : 'standard',
       });
       router.replace("/(tabs)");
-    } catch (e) { console.warn(e); }
-    finally { setSaving(false); }
+    } catch (e: any) {
+      console.warn("onboarding finish error:", e);
+      Alert.alert("Onboarding Error", e.message || "Failed to complete onboarding. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

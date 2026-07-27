@@ -224,24 +224,24 @@ export default function InvoicesScreen() {
     setSelected(null);
   };
 
+  const getPrevBalance = async (inv: Invoice) => {
+    let prevBalance = 0;
+    try {
+      const debtors = await api.listDebtors();
+      const match = (debtors as any[]).find((d) => (d.name || "").trim().toLowerCase() === (inv.clientName || "").trim().toLowerCase());
+      if (match) {
+        const st = await api.getDebtorStatement(match.id);
+        const thisInvoiceOpen = inv.status === "paid" ? 0 : invTotal(inv);
+        prevBalance = +((st.balance || 0) - thisInvoiceOpen).toFixed(2);
+        if (prevBalance < 0) prevBalance = 0;
+      }
+    } catch {}
+    return prevBalance;
+  };
+
   const sharePdf = async (inv: Invoice) => {
     try {
-      // Carry-forward = the customer's outstanding balance from every OTHER
-      // invoice/payment, i.e. their statement balance minus this invoice's own
-      // contribution. 0 for walk-ins with no debtor record.
-      let prevBalance = 0;
-      try {
-        const debtors = await api.listDebtors();
-        const match = (debtors as any[]).find(
-          (d) => (d.name || "").trim().toLowerCase() === (inv.clientName || "").trim().toLowerCase(),
-        );
-        if (match) {
-          const st = await api.getDebtorStatement(match.id);
-          const thisInvoiceOpen = inv.status === "paid" ? 0 : invTotal(inv);
-          prevBalance = +((st.balance || 0) - thisInvoiceOpen).toFixed(2);
-          if (prevBalance < 0) prevBalance = 0;
-        }
-      } catch { /* no debtor / statement — treat as walk-in, carry 0 */ }
+      const prevBalance = await getPrevBalance(inv);
       const html = buildHtml(inv, biz, currSym, prevBalance);
       const { uri } = await Print.printToFileAsync({ html });
       const canShare = await Sharing.isAvailableAsync();
@@ -250,7 +250,10 @@ export default function InvoicesScreen() {
   };
 
   const printInvoice = async (inv: Invoice) => {
-    await Print.printAsync({ html: buildHtml(inv, biz, currSym) });
+    try {
+      const prevBalance = await getPrevBalance(inv);
+      await Print.printAsync({ html: buildHtml(inv, biz, currSym, prevBalance) });
+    } catch (e: any) { console.warn(e); }
   };
 
   const shareWhatsApp = (inv: Invoice) => {

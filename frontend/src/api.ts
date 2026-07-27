@@ -6,6 +6,7 @@ import { V2AppService, createAppWriteRouter, createAppMutationRouter, createClos
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
+import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -146,7 +147,9 @@ export const api = {
   },
   initializeV2Book: async (options: Parameters<typeof initializeV2Book>[1]) => {
     const runner = activeSqlRunner();
-    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    if (!runner) {
+      return { bookId: options.book.id, periodId: options.period.id || `${options.book.id}:period`, version: 1 };
+    }
     return initializeV2Book(runner, options);
   },
   v2BookVersion: async (bookId: string) => {
@@ -185,6 +188,35 @@ export const api = {
   renameBook: (id: string, name: string) => beRenameBook(id, name),
   deleteBook: (id: string) => beDeleteBook(id),
 
+  createParty: async (p: any) => {
+    const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const name = (p.name || '').trim();
+    if (!name) throw new Error('Party name is required');
+    const existingDebtors = await db.listDebtors();
+    const existingSuppliers = await db.listSuppliers();
+    if ([...existingDebtors, ...existingSuppliers].some((x: any) => norm(x.name) === norm(name))) {
+      throw new Error(`A party or customer named '${name}' already exists in this account.`);
+    }
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const id = p.id || `party_${Date.now()}`;
+        const roles = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
+        await service.repo.createParty({
+          id,
+          bookId: ctx.bookId,
+          name,
+          phone: p.phone,
+          email: p.email,
+          roles,
+        });
+        return { id, name, phone: p.phone, email: p.email, roles };
+      }
+    }
+    return db.createSupplier({ ...p, name });
+  },
   listParties: async () => {
     const runner=activeSqlRunner(); if(!runner)return [];
     const service=new V2AppService(runner); return (await service.activeContext()) ? service.listParties() : [];
@@ -215,7 +247,7 @@ export const api = {
     if (!runner) return db.listSales();
     const service = new V2AppService(runner);
     const rows = await service.listSalesAndInvoices();
-    return (await service.activeContext()) ? rows.filter((x: any) => x.type === 'cash_sale') : db.listSales();
+    return (await service.activeContext()) ? rows : db.listSales();
   },
   createSale: (s: any) => createTransaction('createSale', s),
   updateSale: (id: string, s: any) => mutateTransaction('updateSale', id, s),
@@ -239,16 +271,104 @@ export const api = {
   deleteCashEntry: (id: string) => db.deleteCashEntry(id),
 
   // Dashboard & reports
-  dashboard: () => db.dashboard(),
-  pnl: () => db.pnl(),
-  balanceSheet: () => db.balanceSheet(),
-  trialBalance: () => db.trialBalance(),
+  dashboard: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        return getV2Dashboard(runner, ctx.bookId);
+      }
+    }
+    return db.dashboard();
+  },
+  pnl: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const d = await getV2Dashboard(runner, ctx.bookId);
+        return {
+          revenue: d.totalSales, cogs: d.totalPurchases, grossProfit: d.grossProfit,
+          managerCommissionPct: d.managerCommissionPct, commission: d.commission,
+          drawings: d.drawings, netProfit: d.netProfit,
+        };
+      }
+    }
+    return db.pnl();
+  },
+  balanceSheet: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const d = await getV2Dashboard(runner, ctx.bookId);
+        return {
+          assets: { cash: d.cash, inventory: d.inventoryValue, total: d.assets },
+          liabilities: { suppliersPayable: d.liabilities, total: d.liabilities },
+          equity: d.netWorth,
+        };
+      }
+    }
+    return db.balanceSheet();
+  },
+  trialBalance: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const d = await getV2Dashboard(runner, ctx.bookId);
+        return {
+          debits: [
+            { account: 'Cash', amount: d.cash },
+            { account: 'Inventory', amount: d.inventoryValue },
+            { account: 'Purchases', amount: d.totalPurchases },
+            { account: 'Drawings', amount: d.drawings },
+          ],
+          credits: [
+            { account: 'Sales Revenue', amount: d.totalSales },
+            { account: 'Accounts Payable', amount: d.liabilities },
+          ],
+        };
+      }
+    }
+    return db.trialBalance();
+  },
   capitalStatement: () => db.capitalStatement(),
   drawingsHistory: () => db.drawingsHistory(),
   monthlyProfitTrend: (months?: number) => db.monthlyProfitTrend(months),
   assetDistribution: () => db.assetDistribution(),
   monthlySummary: (m: string) => db.monthlySummary(m),
-  dailySummary: (d: string) => db.dailySummary(d),
+  dailySummary: async (d: string) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const salesAndInvoices = await service.listSalesAndInvoices();
+        const bills = await service.listBills();
+        const daySales = salesAndInvoices.filter((x: any) => (x.date || '').slice(0, 10) === d);
+        const dayBills = bills.filter((x: any) => (x.date || '').slice(0, 10) === d);
+        const revenue = daySales.reduce((sum: number, x: any) => sum + (Number(x.amount) || 0), 0);
+        const purchases = dayBills.reduce((sum: number, x: any) => sum + (Number(x.amount) || 0), 0);
+        const grossProfit = Math.round((revenue - purchases) * 100) / 100;
+        return {
+          date: d,
+          revenue: Math.round(revenue * 100) / 100,
+          purchases: Math.round(purchases * 100) / 100,
+          grossProfit,
+          netCash: Math.round(revenue * 100) / 100,
+          salesCount: daySales.length,
+          billsCount: dayBills.length,
+          paymentsCount: 0,
+        };
+      }
+    }
+    return db.dailySummary(d);
+  },
 
   // Backup + danger
   exportBackup: async () => {

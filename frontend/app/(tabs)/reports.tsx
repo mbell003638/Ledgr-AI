@@ -164,8 +164,9 @@ export default function ReportsScreen() {
         line("Net Profit", dash.netProfit),
         line("Cash", dash.cash),
         line("Inventory", dash.inventoryValue),
+        line("Outstanding Debtors", dash.accountsReceivable || 0),
         line("Net Worth", dash.netWorth),
-        line("Outstanding Payables", dash.liabilities),
+        line("Creditors", dash.liabilities),
         `Registered Suppliers: ${dash.suppliers}`,
         ``,
         `— LEGACY (closed periods: ${legacy.entries})`,
@@ -266,11 +267,20 @@ export default function ReportsScreen() {
         </Pressable>
       </View>
 
-      {/* Date range presets */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 48, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 8, paddingVertical: 8 }}>
+      {/* Report category segments */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
+        {SEGMENTS.map((s) => (
+          <Pressable key={s} testID={`report-seg-${s}`} onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
+            <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {/* Date range preset filters */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll} contentContainerStyle={styles.dateRow}>
         {RANGE_PRESETS.map((p) => (
-          <Pressable key={p} onPress={() => applyPreset(p)} style={[styles.seg, rangePresetSel === p && styles.segActive]}>
-            <Text style={[styles.segText, rangePresetSel === p && styles.segTextActive]}>{p}</Text>
+          <Pressable key={p} onPress={() => applyPreset(p)} style={[styles.dateChip, rangePresetSel === p && styles.dateChipActive]}>
+            <Text style={[styles.dateChipText, rangePresetSel === p && styles.dateChipTextActive]}>{p}</Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -291,15 +301,6 @@ export default function ReportsScreen() {
           </Pressable>
         </View>
       )}
-
-      {/* Report segments */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
-        {SEGMENTS.map((s) => (
-          <Pressable key={s} testID={`report-seg-${s}`} onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
-            <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
 
       {/* Share bar */}
       <View style={styles.shareBar}>
@@ -331,8 +332,9 @@ export default function ReportsScreen() {
                 <View style={styles.divider} />
                 <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
                 <RowKV label="Inventory Value" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
+                <RowKV label="Outstanding Debtors" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
                 <RowKV label="Net Worth" value={fmt(dash.netWorth)} strong theme={theme} styles={styles} />
-                <RowKV label="Outstanding Payables" value={fmt(dash.liabilities)} theme={theme} styles={styles} danger />
+                <RowKV label="Creditors" value={fmt(dash.liabilities)} theme={theme} styles={styles} danger />
                 <RowKV label="Registered Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
               </Card>
 
@@ -640,18 +642,28 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-  segScroll: { maxHeight: 56, flexGrow: 0 },
+  segScroll: { height: 44, flexGrow: 0, marginTop: theme.spacing.xs },
   segRow: {
-    flexDirection: "row", paddingHorizontal: theme.spacing.lg, gap: 10,
-    paddingVertical: theme.spacing.sm,
+    flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 8,
   },
   seg: {
-    paddingVertical: 10, paddingHorizontal: 18, borderRadius: theme.radius.md,
-    backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: "transparent",
+    paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20,
+    backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
   },
   segActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   segText: { color: theme.color.muted, fontWeight: "600", fontSize: 13 },
   segTextActive: { color: "#fff", fontWeight: "700" },
+  dateScroll: { height: 36, flexGrow: 0, marginVertical: 6 },
+  dateRow: {
+    flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 6,
+  },
+  dateChip: {
+    paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12,
+    backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
+  },
+  dateChipActive: { backgroundColor: theme.color.surfaceTertiary, borderColor: theme.color.brandPrimary },
+  dateChipText: { color: theme.color.muted, fontWeight: "600", fontSize: 11 },
+  dateChipTextActive: { color: theme.color.brandPrimary, fontWeight: "700" },
   customRow: { flexDirection: "row", gap: 8, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, alignItems: "flex-end" },
   customLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "600", marginBottom: 4 },
   customInput: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary },
