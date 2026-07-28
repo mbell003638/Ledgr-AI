@@ -149,29 +149,62 @@ export class V2AppService {
 
 export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
   type WriteName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
-  const route = (name: WriteName) => async (payload: AnyRecord) => (await v2.activeContext(payload.date)) ? v2[name](payload) : legacy[name](payload);
+  const route = (name: WriteName) => async (payload: AnyRecord) => {
+    if (await v2.activeContext(payload.date)) {
+      const v2Res = await v2[name](payload);
+      const injectedPayload = { ...payload, id: v2Res.source?.id };
+      try { await legacy[name](injectedPayload); } catch { /* ignore legacy errors if v2 succeeds */ }
+      return v2Res;
+    }
+    return legacy[name](payload);
+  };
   return { createSale: route('createSale'), createInvoice: route('createInvoice'), createReceipt: route('createReceipt'), createBill: route('createBill'), createPayment: route('createPayment'), createExpense: route('createExpense') };
 }
 
 export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
-  const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => (await v2.ownsSource(id, type)) ? v2[name](id, payload) : legacy[name](id, payload);
-  const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => (await v2.ownsSource(id, type)) ? v2[name](id) : legacy[name](id);
+  const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => {
+    if (await v2.ownsSource(id, type)) {
+      const v2Res = await v2[name](id, payload);
+      try { await legacy[name](id, payload); } catch { /* ignore legacy error */ }
+      return v2Res;
+    }
+    return legacy[name](id, payload);
+  };
+  const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => {
+    if (await v2.ownsSource(id, type)) {
+      const v2Res = await v2[name](id);
+      try { await legacy[name](id); } catch { /* ignore legacy error */ }
+      return v2Res;
+    }
+    return legacy[name](id);
+  };
   return {
     updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
     updateSale: async (id: string, payload: AnyRecord) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      return isV2 ? v2.updateSale(id, payload) : legacy.updateSale(id, payload);
+      if (isV2) { const res = await v2.updateSale(id, payload); try { await legacy.updateSale(id, payload); } catch {} return res; }
+      return legacy.updateSale(id, payload);
     },
     deleteSale: async (id: string) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      return isV2 ? v2.deleteSale(id) : legacy.deleteSale(id);
+      if (isV2) { const res = await v2.deleteSale(id); try { await legacy.deleteSale(id); } catch {} return res; }
+      return legacy.deleteSale(id);
     },
-    updateBill: async (id: string, payload: AnyRecord) => (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) ? v2.updateBill(id, payload) : legacy.updateBill(id, payload),
-    deleteBill: async (id: string) => (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) ? v2.deleteBill(id) : legacy.deleteBill(id),
+    updateBill: async (id: string, payload: AnyRecord) => {
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.updateBill(id, payload); try { await legacy.updateBill(id, payload); } catch {} return res; }
+      return legacy.updateBill(id, payload);
+    },
+    deleteBill: async (id: string) => {
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.deleteBill(id); try { await legacy.deleteBill(id); } catch {} return res; }
+      return legacy.deleteBill(id);
+    },
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: update('updatePayment', 'supplier_payment'), deletePayment: remove('deletePayment', 'supplier_payment'),
-    markInvoicePaid: async (id: string, payload: AnyRecord = {}) => (await v2.ownsSource(id, 'invoice')) ? v2.markInvoicePaid(id, payload) : legacy.markInvoicePaid(id),
+    markInvoicePaid: async (id: string, payload: AnyRecord = {}) => {
+      if (await v2.ownsSource(id, 'invoice')) { const res = await v2.markInvoicePaid(id, payload); try { await legacy.markInvoicePaid(id); } catch {} return res; }
+      return legacy.markInvoicePaid(id);
+    },
   };
 }
 
