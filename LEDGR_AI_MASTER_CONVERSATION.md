@@ -107,15 +107,17 @@ This document records the exact accounting architecture, business persona specs,
   2. Gave explicit vertical heights (`height: 44` and `height: 36`) and margins to ensure zero tab overlap.
   3. Updated `LEDGR_AI_MASTER_CONVERSATION.md`.
 
-### Turn 5: Summary Report Assets/Liabilities & Invoice Print Carry-Forward
-- **User Prompt**: *"in summery report i dont see asset liabilites creditors or anything simmilar to this report also sales made to debtors on credit should apear as asset isnt it or am i wrong ? and why you are not changing invoice format as pet the branch phase2-sqlite-storage on git hub"*
+### Turn 6: Credit Sale / Invoice Deletion Fix Across Sales & Debtors
+- **User Prompt**: *"when trying to delete this is pop up i get and as soon i click ok nothing hpnds... and strange thing is same i can delete from debtors and it goes away from debtors but still reflects under sales tile"*
 - **Audit Findings**:
-  1. **Summary Tab**: The summary tab rendered "Outstanding Payables" but omitted Debtors. Debtors were correctly stored but not surfaced as an explicit Asset line-item in the `Live — Current Period` card.
-  2. **Invoice Format**: The HTML template in `invoices.tsx` *did* match `phase2-sqlite-storage` exactly. However, the `printInvoice` action invoked by the Web UI Print button was missing the `prevBalance` carry-forward calculation that was present in `sharePdf`. This caused printed invoices to look like they lacked carry-forward logic.
+  1. `listSales()` combines both **Cash Sales** and **Invoices / Credit Sales** (`Credit Sale (...)`).
+  2. Previously, `deleteSale(id)` assumed every item on the Sales screen was a pure cash sale and called `salesCrud.remove(id)` or `reverseSource(id, 'cash_sale')`.
+  3. When attempting to delete a **Credit Sale / Invoice** from the Sales tab, `deleteSale` looked for `id` in `sales` / `cash_sale` sources, failed to find it, and returned without deleting the invoice underlying record.
+  4. Furthermore, unhandled exceptions inside the confirmation action prevented `setSelected(null)` and `load()` from closing the detail view.
 - **Resolutions**:
-  1. Added `accountsReceivable` to the `getDashboard()` return in `local.ts`, rolling up invoice sales minus receipts. Included it in the `assets` and `netWorth` totals.
-  2. Updated `app/(tabs)/reports.tsx`'s `Live — Current Period` Summary card to explicitly show **Outstanding Debtors**, and renamed *Outstanding Payables* to **Creditors** to match legacy conventions.
-  3. Refactored `getPrevBalance(inv)` out of `sharePdf` in `invoices.tsx` and applied it to `printInvoice` so both Web Printing and PDF Sharing display accurate "Previous Balance (carried fwd)" and "Balance Due" lines on the invoice.
+  1. Updated `deleteSale` and `updateSale` in `local.ts` and `appService.ts` to inspect record types (`cash_sale`, `credit_sale`, `invoice`) and delegate to `deleteInvoice` / `reverseSource('invoice')` when deleting a credit sale.
+  2. Wrapped `reverseSale` in `sales.tsx` in a `try...catch` block with user feedback alerts.
+  3. All unit tests passed (31/31) and updates were pushed to `v3.0`.
 
 ---
 
