@@ -362,11 +362,10 @@ export default function SupplierDetail() {
         {timeline.length === 0 ? (
           <Text style={styles.empty}>No transactions recorded for this vendor.</Text>
         ) : timeline.map((t) => (
-          <Pressable
+          <View
             key={`${t.kind}-${t.id}`}
             testID={`tl-${t.kind}-${t.id}`}
-            onPress={() => router.push({ pathname: t.kind === "bill" ? "/bill-form" : "/payment-form", params: { id: t.id } })}
-            style={({ pressed }) => [styles.timelineRow, pressed && { opacity: 0.85 }]}
+            style={styles.timelineRow}
           >
             <View style={[styles.timelineDot, { backgroundColor: t.kind === "bill" ? theme.color.error : theme.color.success }]} />
             <View style={{ flex: 1 }}>
@@ -376,7 +375,16 @@ export default function SupplierDetail() {
             <Text style={[styles.tlAmount, { color: t.kind === "bill" ? theme.color.error : theme.color.success }]}>
               {t.kind === "bill" ? "+" : "-"}{fmt(t.amount)}
             </Text>
-          </Pressable>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginLeft: 8 }}>
+              <Pressable
+                accessibilityLabel="Edit"
+                hitSlop={8}
+                onPress={() => router.push({ pathname: t.kind === "bill" ? "/bill-form" : "/payment-form", params: { id: t.id } })}
+              >
+                <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
+              </Pressable>
+            </View>
+          </View>
         ))}
         <View style={{ height: 60 }} />
       </ScrollView>

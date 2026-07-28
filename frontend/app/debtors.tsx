@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
@@ -645,6 +645,14 @@ export default function DebtorsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const { customerId } = useLocalSearchParams<{ customerId?: string }>();
+  useEffect(() => {
+    if (customerId && debtors.length > 0 && !selected) {
+      const found = debtors.find(d => d.id === customerId);
+      if (found) setSelected(found);
+    }
+  }, [customerId, debtors, selected]);
+
   // Load advance credit when a debtor detail is shown
   useEffect(() => {
     if (selected?.id) {
@@ -903,7 +911,7 @@ export default function DebtorsScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerBar}>
-          <Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
+          <Pressable onPress={() => { setSelected(null); router.setParams({ customerId: '' }); }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
           <Text style={styles.headerTitle}>Customer Detail</Text>
           <Pressable testID="btn-edit-debtor" onPress={() => router.push({ pathname: "/party-form", params: { id: selected.id, type: "customer" } } as any)} hitSlop={10}>
             <Ionicons name="create-outline" size={24} color={theme.color.brandPrimary} />

@@ -51,7 +51,7 @@ export default function BillsScreen() {
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerRow}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable></View>
+      <View style={styles.headerRow}><Pressable onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Purchases</Text></Pressable></View>
       <ScrollView contentContainerStyle={styles.list}>
         <TransactionDetail
           title={suppliers[selected.supplierId] || "Vendor Bill"}

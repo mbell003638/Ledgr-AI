@@ -163,7 +163,7 @@ export default function DeliveryNotesScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerBar}>
-          <Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
+          <Pressable onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Delivery Notes</Text></Pressable>
           <Text style={styles.headerTitle}>{selected.noteNumber}</Text>
           <Pressable onPress={() => openEdit(selected)}><Ionicons name="create-outline" size={22} color={theme.color.brandPrimary} /></Pressable>
         </View>
