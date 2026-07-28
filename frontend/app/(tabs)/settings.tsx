@@ -8,26 +8,31 @@ const SectionTitle = ({ title, theme }: any) => (
   <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
 );
 
-const AccordionRow = ({ icon, iconColor, title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
+const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
     <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
-      <Pressable onPress={() => setExpandedKey(isExpanded ? null : title)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 20 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center", marginRight: 14 }}>
-            <Text style={{ fontSize: 16 }}>{icon}</Text>
-          </View>
-          <View style={{ flex: 1, paddingRight: 16 }}>
-            <Text style={{ fontSize: 16, fontWeight: "500", color: theme.color.onSurface }}>{title}</Text>
-            {subtitle && <Text style={{ fontSize: 13, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>}
-          </View>
+      <Pressable onPress={() => setExpandedKey(isExpanded ? null : title)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12 }}>
+        <View style={{ flex: 1, paddingRight: 16 }}>
+          <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }}>{title}</Text>
+          {subtitle && <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>}
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </Pressable>
-      {isExpanded && <View style={{ padding: 20, paddingTop: 0, backgroundColor: "transparent" }}>{children}</View>}
+      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
+
+const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: any) => (
+  <Pressable onPress={onPress} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border }}>
+    <View style={{ flex: 1, paddingRight: 16 }}>
+      <Text style={[{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }, rightElement?.titleStyle]}>{title}</Text>
+      {subtitle && <Text style={[{ fontSize: 12, color: theme.color.muted, marginTop: 4 }, rightElement?.subtitleStyle]}>{subtitle}</Text>}
+    </View>
+    {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
+  </Pressable>
+);
 
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
@@ -399,9 +404,10 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             
-            <SectionTitle title="Account" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="🏢" title="Business Profile" subtitle="Name, Contact, Tax Reg No" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Business Profile</Text>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Manage your basic company info and defaults.</Text>
+              <AccordionRow title="Company Info & Logo" subtitle="Name, Contact, Tax Reg No" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={[styles.label, { fontSize: 13 }]}>Company Logo</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
@@ -449,7 +455,7 @@ export default function SettingsScreen() {
                   <TextInput value={bizProfile.invoiceTerms} onChangeText={(v) => setBizProfile((p) => ({ ...p, invoiceTerms: v }))} placeholder="Payment is due within X days..." placeholderTextColor={theme.color.muted} multiline style={[styles.input, { minHeight: 60 }]} />
                 </View>
               </AccordionRow>
-              <AccordionRow icon="💲" title="Currency & Tax Rates" subtitle="USD, GST/VAT" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Currency & Tax Rates" subtitle="USD, GST/VAT" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.label}>Currency</Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
@@ -474,9 +480,10 @@ export default function SettingsScreen() {
               </AccordionRow>
             </View>
 
-            <SectionTitle title="Preferences" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="✨" title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : "Navy & Gold"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
+              
+              <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : "Navy & Gold"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "light", label: "Emerald Light", icon: "sunny-outline" }, { id: "dark", label: "Emerald Dark", icon: "moon-outline" }, { id: "navy_gold", label: "Black & Gold", icon: "color-palette-outline" }, { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" }, { id: "system", label: "System", icon: "phone-portrait-outline" } ].map((m) => (
                     <Pressable key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
@@ -486,7 +493,7 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               </AccordionRow>
-              <AccordionRow icon="📄" title="Invoice PDF Preset" subtitle="Black & Blue" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Invoice PDF Preset" subtitle="Black & Blue" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "navy_gold", label: "Black & Gold" }, { id: "amoled_blue", label: "Black & Blue" }, { id: "emerald", label: "Classic Emerald" }, { id: "minimal", label: "Clean Minimal" } ].map((t) => (
                     <Pressable key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
@@ -497,18 +504,15 @@ export default function SettingsScreen() {
               </AccordionRow>
             </View>
 
-            <Pressable onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.xl, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", backgroundColor: theme.color.brandPrimary + "15", overflow: "hidden" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 20 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: theme.color.brandPrimary + "25", alignItems: "center", justifyContent: "center", marginRight: 14 }}>
-                    <Ionicons name="settings" size={18} color={theme.color.brandPrimary} />
-                  </View>
-                  <View style={{ flex: 1, paddingRight: 16 }}>
-                    <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary }}>Advanced Settings</Text>
-                    <Text style={{ fontSize: 13, color: theme.color.brandPrimary + "aa", marginTop: 4 }}>AI, Multi-tenant, Backups...</Text>
-                  </View>
+            <Pressable onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>AI config, Workflows, Opening Balances, Backup...</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
+                <View style={{ backgroundColor: theme.color.brandPrimary + "25", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.brandPrimary }}>Open ›</Text>
+                </View>
               </View>
             </Pressable>
 

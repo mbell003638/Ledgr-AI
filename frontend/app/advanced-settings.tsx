@@ -8,26 +8,31 @@ const SectionTitle = ({ title, theme }: any) => (
   <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
 );
 
-const AccordionRow = ({ icon, iconColor, title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
+const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
     <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
-      <Pressable onPress={() => setExpandedKey(isExpanded ? null : title)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 20 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center", marginRight: 14 }}>
-            <Text style={{ fontSize: 16 }}>{icon}</Text>
-          </View>
-          <View style={{ flex: 1, paddingRight: 16 }}>
-            <Text style={{ fontSize: 16, fontWeight: "500", color: theme.color.onSurface }}>{title}</Text>
-            {subtitle && <Text style={{ fontSize: 13, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>}
-          </View>
+      <Pressable onPress={() => setExpandedKey(isExpanded ? null : title)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12 }}>
+        <View style={{ flex: 1, paddingRight: 16 }}>
+          <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }}>{title}</Text>
+          {subtitle && <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>}
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </Pressable>
-      {isExpanded && <View style={{ padding: 20, paddingTop: 0, backgroundColor: "transparent" }}>{children}</View>}
+      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
+
+const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: any) => (
+  <Pressable onPress={onPress} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border }}>
+    <View style={{ flex: 1, paddingRight: 16 }}>
+      <Text style={[{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }, rightElement?.titleStyle]}>{title}</Text>
+      {subtitle && <Text style={[{ fontSize: 12, color: theme.color.muted, marginTop: 4 }, rightElement?.subtitleStyle]}>{subtitle}</Text>}
+    </View>
+    {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
+  </Pressable>
+);
 
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
@@ -404,9 +409,10 @@ export default function AdvancedSettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             
-            <SectionTitle title="System & Workflows" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="📚" title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
+              
+              <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
                   <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
@@ -448,7 +454,7 @@ export default function AdvancedSettingsScreen() {
                   </View>
                 </View>
               </AccordionRow>
-              <AccordionRow icon="⚙" title="Accounting & Workflow" subtitle="Basis, Style, Members" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Accounting & Workflow" subtitle="Basis, Style, Members" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.label}>Accounting Basis</Text>
                   <View style={styles.modeRow}>
@@ -487,7 +493,7 @@ export default function AdvancedSettingsScreen() {
                   <Pressable onPress={addMember} style={styles.addBtn}><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add Member</Text></Pressable>
                 </View>
               </AccordionRow>
-              <AccordionRow icon="⚖" title="Opening Balances" subtitle="Cash & Inventory Start" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Opening Balances" subtitle="Cash & Inventory Start" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.label}>Opening Cash</Text>
                   <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" style={styles.input} placeholder="e.g. 2000" placeholderTextColor={theme.color.muted} />
@@ -502,9 +508,10 @@ export default function AdvancedSettingsScreen() {
               </AccordionRow>
             </View>
 
-            <SectionTitle title="AI & Integrations" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="🧠" title="AI Provider" subtitle="Google Gemini" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your Gemini API access.</Text>
+              <AccordionRow title="AI Provider" subtitle="Google Gemini" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
                     <Pressable onPress={() => { setProvider("gemini"); setModelName("gemini-2.0-flash-001"); setBaseUrl(""); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider === "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider === "gemini" && { color: theme.color.brandPrimary }]}>Google Gemini</Text></Pressable>
@@ -534,9 +541,10 @@ export default function AdvancedSettingsScreen() {
               </AccordionRow>
             </View>
 
-            <SectionTitle title="Security & Data" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="🔒" title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Security & Data</Text>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Protect your sensitive actions and backups.</Text>
+              <AccordionRow title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Use your phone's fingerprint / face / PIN to protect sensitive actions.</Text>
                   <Pressable onPress={() => setLockEnabled((v) => !v)} style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}>
@@ -545,7 +553,7 @@ export default function AdvancedSettingsScreen() {
                   </Pressable>
                 </View>
               </AccordionRow>
-              <AccordionRow icon="💾" title="Backup & Restore" subtitle="Export data to JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Backup & Restore" subtitle="Export data to JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <View style={styles.backupRow}>
                     <Pressable onPress={doExport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
@@ -557,7 +565,8 @@ export default function AdvancedSettingsScreen() {
                   </View>
                 </View>
               </AccordionRow>
-              <AccordionRow icon="⚠" iconColor={theme.color.error} title="Danger Zone" subtitle="Reset all ledgers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Danger Zone"
+                subtitle="Reset all ledgers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key is preserved.</Text>
                   {!confirmReset ? (
