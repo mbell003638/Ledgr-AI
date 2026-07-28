@@ -16,7 +16,7 @@ import { Card } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { getCurrencySymbol } from "@/src/db/local";
 
-type InvoiceLine = { description: string; qty: number; rate: number };
+type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
   id: string; invoiceNumber: string; status: "unpaid" | "paid";
   clientName: string; clientPhone?: string;
@@ -24,6 +24,7 @@ type Invoice = {
   lines: InvoiceLine[];
   notes?: string; taxLabel?: string; taxRate?: number;
   total: number; paidAt?: string;
+  terms?: string;
 };
 
 // Robust line accessors: older invoices (from the quick sale form) stored the
@@ -55,7 +56,7 @@ function escapeHtml(v: any): string {
 // prevBalance = customer's outstanding balance carried forward from BEFORE this
 // invoice (0 when none / walk-in). balanceDue = prevBalance + this invoice total
 // − any amount already paid on this invoice.
-function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0) {
+function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeColors?: any) {
   const sub = inv.lines.reduce((s, l) => s + lineAmt(l), 0);
   const tax = inv.taxRate ? +(sub * inv.taxRate / 100).toFixed(2) : 0;
   const invT = invTotal(inv);
@@ -63,67 +64,185 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0) {
   const carry = +(prevBalance || 0).toFixed(2);
   const balanceDue = +(carry + invT - paidOnThis).toFixed(2);
   const money = (n: number) => `${sym}${(Number(n) || 0).toFixed(2)}`;
+
+  // Map app theme colors to invoice PDF colors.
+  // For Black & Gold: surface=#15161A (dark bg), brandPrimary=#FDBA21 (gold accent).
+  // For Emerald Light: brandPrimary=#1C4030 (dark green), brand=#1C4030.
+  // For Emerald Dark: surface=#0E1210 (dark bg), brandPrimary=#8FB99A (green accent).
+  // The invoice always needs: primary = dark color, accent = bright/gold color.
+  const tc = themeColors || {};
+  const primary = tc.surfaceInverse || tc.surface || "#1e202c";
+  const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
+  const accentText = tc.onBrandPrimary || "#111111";
+
   const rows = inv.lines.map((l, i) =>
-    `<tr><td style="text-align:center">${i + 1}</td><td>${escapeHtml(l.description)}</td><td style="text-align:center">${lineQty(l)}</td><td style="text-align:right">${money(lineRate(l))}</td><td style="text-align:right">${money(lineAmt(l))}</td></tr>`
+    `<tr>
+      <td class="center" style="font-weight:600;color:#888">${String(i + 1).padStart(2, "0")}</td>
+      <td style="font-weight:500">${escapeHtml(l.description)}</td>
+      <td class="right">${money(lineRate(l))}</td>
+      <td class="center">${lineQty(l)} ${l.unit ? escapeHtml(l.unit) : ""}</td>
+      <td class="right" style="font-weight:700">${money(lineAmt(l))}</td>
+    </tr>`
   ).join("");
-  const meta = [
-    [`Invoice Date`, inv.date],
-    inv.dueDate ? [`Due Date`, inv.dueDate] : null,
-    [`Status`, inv.status.toUpperCase()],
-  ].filter(Boolean) as [string, string][];
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-    body{font-family:sans-serif;padding:32px;color:#1a1a1a;font-size:14px}
-    h1{font-size:22px;color:#1C4030;margin:0}
-    .title{font-size:26px;color:#555;font-weight:700;letter-spacing:1px}
-    .biz{color:#555;font-size:12px;margin-top:4px;line-height:1.5}
-    .row{display:flex;justify-content:space-between;margin-top:28px;gap:24px}
-    .label{font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.5px}
-    .val{font-size:14px;font-weight:600;margin-top:2px}
-    .meta div{margin-bottom:6px}
-    table{width:100%;border-collapse:collapse;margin-top:24px}
-    th{background:#2b2b2b;color:#fff;padding:9px 8px;text-align:left;font-size:12px}
-    td{padding:9px 8px;border-bottom:1px solid #eee;font-size:13px}
-    .totals{margin-top:18px;margin-left:auto;width:60%}
-    .totals td{border:none;padding:5px 8px}
-    .totals .k{text-align:right;color:#555}
-    .totals .v{text-align:right;font-weight:600;width:120px}
-    .grand td{font-weight:700;font-size:15px;border-top:2px solid #2b2b2b}
-    .due{background:#f2f2f2}
-    .due td{font-weight:700;font-size:16px;color:#1C4030}
-    .carry td{color:#a15c00}
-    .badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;background:${inv.status === "paid" ? "#d4edda" : "#fff3cd"};color:${inv.status === "paid" ? "#155724" : "#856404"}}
-    .notes{margin-top:24px;font-size:12px;color:#555}
-    .payment{margin-top:16px;font-size:12px;color:#1C4030;font-weight:600}
-  </style></head><body>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div style="display:flex;align-items:flex-start;gap:12px">
-        ${biz.logo ? `<img src="${biz.logo}" style="width:64px;height:64px;border-radius:8px;object-fit:cover"/>` : ""}
-        <div><h1>${escapeHtml(biz.businessName || "Invoice")}</h1><div class="biz">${escapeHtml([biz.businessAddress, biz.businessPhone, biz.businessEmail].filter(Boolean).join("<br/>")).replace(/&lt;br\/&gt;/g, "<br/>")}</div>${biz.taxRegNo ? `<div class="biz">TRN / Tax No: ${escapeHtml(biz.taxRegNo)}</div>` : ""}</div>
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
+    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
+    
+    /* Top Header */
+    .header-row { display: flex; background: ${primary}; color: #fff; padding: 40px 40px 0 40px; height: 120px; }
+    .header-left { flex: 1; }
+    .header-logo { max-height: 60px; max-width: 180px; object-fit: contain; }
+    .header-right { flex: 1; text-align: left; padding-left: 40px; font-size: 11px; line-height: 1.6; }
+    .invoice-to-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .client-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
+    .contact-item { display: flex; align-items: center; margin-bottom: 4px; }
+    .contact-icon { width: 16px; height: 16px; border-radius: 50%; background: ${accent}; color: ${primary}; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; margin-right: 8px; }
+
+    /* Banner Row */
+    .banner-row { display: flex; height: 80px; }
+    .banner-left { flex: 0.9; background: #fff; position: relative; padding: 10px 40px; }
+    .invoice-heading { font-size: 38px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+    .banner-right { flex: 1.1; background: ${accent}; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; position: relative; clip-path: polygon(30px 0, 100% 0, 100% 100%, 0 100%); margin-left: -30px; z-index: 2; }
+    .banner-col { text-align: left; border-left: 2px solid rgba(0,0,0,0.8); padding-left: 15px; }
+    .banner-col:first-child { border-left: none; padding-left: 20px; }
+    .banner-label { font-size: 10px; text-transform: uppercase; font-weight: 700; opacity: 0.8; color: #111; }
+    .banner-val { font-size: 14px; font-weight: 800; margin-top: 4px; color: #111; }
+
+    /* Content */
+    .content { padding: 40px; }
+    
+    /* Table */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+    th { background: ${primary}; color: #ffffff; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 700; }
+    td { padding: 12px 14px; border-bottom: none; color: #333; font-weight: 500; }
+    tr:nth-child(even) td { background: #f3f3f3; }
+    tr:nth-child(odd) td { background: #fff; }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    
+    /* Totals Box */
+    .totals-wrapper { display: flex; justify-content: flex-end; }
+    .totals-box { width: 280px; border-collapse: collapse; font-size: 12px; }
+    .totals-box td { padding: 10px 14px; border: none; }
+    .tot-label { background: ${primary}; color: #ffffff; font-weight: 600; border-bottom: 1px solid #333; }
+    .tot-val { background: ${primary}; color: #ffffff; text-align: right; font-weight: 600; border-bottom: 1px solid #333; }
+    .grand-tot-label { background: ${accent}; color: #111; font-weight: 800; font-size: 13px; text-transform: uppercase; }
+    .grand-tot-val { background: ${accent}; color: #111; text-align: right; font-weight: 800; font-size: 14px; }
+
+    /* Bottom Info & Signature */
+    .bottom-info { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; margin-bottom: 40px; padding: 0 40px; }
+    .payment-methods { font-size: 10px; color: #555; max-width: 320px; }
+    .payment-title { font-weight: 800; color: #111; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 2px solid ${accent}; display: inline-block; padding-bottom: 4px; }
+    .payment-text { margin-top: 8px; line-height: 1.5; font-weight: 500; }
+    .signature-box { text-align: center; width: 180px; }
+    .signature-line { border-bottom: 1px solid #777; margin-bottom: 6px; height: 40px; position: relative; }
+    .signature-text { font-family: 'Brush Script MT', cursive, sans-serif; font-size: 24px; position: absolute; bottom: 2px; width: 100%; text-align: center; color: #333; }
+    .signature-title { font-size: 9px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 1px; }
+
+    /* Footer */
+    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; display: flex; justify-content: space-between; align-items: center; }
+    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .terms-heading { font-weight: 700; color: #fff; margin-bottom: 2px; text-transform: uppercase; font-size: 10px; }
+    .terms-body { color: #aaa; line-height: 1.4; white-space: pre-wrap; font-size: 9px; max-width: 400px; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <div class="header-row">
+      <div class="header-left">
+        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div style="font-size:42px;font-weight:900;">LOGO</div>`}
       </div>
-      <div style="text-align:right">
-        <div class="title">TAX INVOICE</div>
-        <div class="val" style="margin-top:6px">${inv.invoiceNumber}</div>
-        <div style="margin-top:6px"><span class="badge">${inv.status.toUpperCase()}</span></div>
-        <div style="margin-top:10px"><span class="label">Balance Due</span><div class="val" style="font-size:18px;color:#1C4030">${money(balanceDue)}</div></div>
+      <div class="header-right">
+        <div class="invoice-to-title">INVOICE TO</div>
+        <div class="client-name">${escapeHtml(inv.clientName)}</div>
+        ${biz.businessName ? `<div class="contact-item"><span class="contact-icon">C</span>${escapeHtml(biz.businessName)}</div>` : ''}
+        ${inv.clientPhone ? `<div class="contact-item"><span class="contact-icon">P</span>${escapeHtml(inv.clientPhone)}</div>` : ''}
+        ${biz.businessEmail ? `<div class="contact-item"><span class="contact-icon">E</span>${escapeHtml(biz.businessEmail)}</div>` : ''}
+        ${biz.businessAddress ? `<div class="contact-item"><span class="contact-icon">A</span>${escapeHtml(biz.businessAddress)}</div>` : ''}
       </div>
     </div>
-    <div class="row">
-      <div><div class="label">Bill To</div><div class="val">${escapeHtml(inv.clientName)}</div>${inv.clientPhone ? `<div style="font-size:12px;color:#555">${escapeHtml(inv.clientPhone)}</div>` : ""}</div>
-      <div class="meta" style="text-align:right">${meta.map(([k, v]) => `<div><span class="label">${k} :</span> <span class="val" style="display:inline">${escapeHtml(v)}</span></div>`).join("")}</div>
+
+    <div class="banner-row">
+      <div class="banner-left">
+        <h1 class="invoice-heading">INVOICE</h1>
+      </div>
+      <div class="banner-right">
+        <div class="banner-col">
+          <div class="banner-label">Total Due</div>
+          <div class="banner-val">${money(balanceDue)}</div>
+        </div>
+        ${inv.dueDate ? `
+        <div class="banner-col">
+          <div class="banner-label">Due Date</div>
+          <div class="banner-val">${inv.dueDate}</div>
+        </div>` : ''}
+        <div class="banner-col">
+          <div class="banner-label">Invoice No</div>
+          <div class="banner-val">${inv.invoiceNumber}</div>
+        </div>
+      </div>
     </div>
-    <table><thead><tr><th style="text-align:center">#</th><th>Item &amp; Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <table class="totals">
-      <tr><td class="k">Sub Total</td><td class="v">${money(sub)}</td></tr>
-      ${tax > 0 ? `<tr><td class="k">${escapeHtml(inv.taxLabel || "Tax")} (${inv.taxRate}%)</td><td class="v">${money(tax)}</td></tr>` : ""}
-      <tr class="grand"><td class="k">Invoice Total</td><td class="v">${money(invT)}</td></tr>
-      ${carry !== 0 ? `<tr class="carry"><td class="k">Previous Balance (carried fwd)</td><td class="v">${money(carry)}</td></tr>` : ""}
-      ${paidOnThis > 0 ? `<tr><td class="k">Payment Made</td><td class="v" style="color:#c0392b">(-) ${money(paidOnThis)}</td></tr>` : ""}
-      <tr class="due"><td class="k">Balance Due</td><td class="v">${money(balanceDue)}</td></tr>
-    </table>
-    ${inv.notes ? `<div class="notes">Notes: ${escapeHtml(inv.notes)}</div>` : ""}
-    ${(biz.bankAccount || biz.upiId || biz.paymentDetails) ? `<div class="payment">Payment details:${biz.bankAccount ? `<br/>Bank / Interac: ${escapeHtml(biz.bankAccount)}` : ""}${biz.upiId ? `<br/>UPI: ${escapeHtml(biz.upiId)}` : ""}${biz.paymentDetails ? `<br/>${escapeHtml(biz.paymentDetails)}` : ""}</div>` : ""}
-  </body></html>`;
+
+    <div class="content">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px" class="center">SL</th>
+            <th>Item Description</th>
+            <th class="right">Price</th>
+            <th class="center">Quantity</th>
+            <th class="right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+
+      <div class="totals-wrapper">
+        <table class="totals-box">
+          <tr><td class="tot-label">Sub Total</td><td class="tot-val">${money(sub)}</td></tr>
+          ${tax > 0 ? `<tr><td class="tot-label">${escapeHtml(inv.taxLabel || "Vat")} ${inv.taxRate}%</td><td class="tot-val">${money(tax)}</td></tr>` : ""}
+          ${carry !== 0 ? `<tr><td class="tot-label">Previous Balance</td><td class="tot-val">${money(carry)}</td></tr>` : ""}
+          ${paidOnThis > 0 ? `<tr><td class="tot-label">Payment Made</td><td class="tot-val">(-) ${money(paidOnThis)}</td></tr>` : ""}
+          <tr><td class="grand-tot-label">Grand Total</td><td class="grand-tot-val">${money(balanceDue)}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="bottom-info">
+      <div class="payment-methods">
+        <div class="payment-title">PAYMENT METHODS</div>
+        <div class="payment-text">
+          • ${escapeHtml(biz.bankAccount || "Bank Transfer")}<br/>
+          • ${escapeHtml(biz.upiId || "UPI / Digital Payment")}<br/>
+          • ${escapeHtml(biz.paymentDetails || "Cash or Check")}
+        </div>
+      </div>
+      <div class="signature-box">
+        <div class="signature-line">
+           <div class="signature-text">${escapeHtml(biz.businessName || "Signature")}</div>
+        </div>
+        <div class="signature-title">ACCOUNT MANAGER</div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div>
+        <div class="thank-you">Thank you for your business</div>
+        <div class="terms-heading">Terms &amp; Condition</div>
+      </div>
+      <div class="terms-body">${escapeHtml(inv.terms || biz.invoiceTerms || "Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed Lorem ipsum dolor sit amet, consectetuer Lorem ipsum dolor sit amet.")}</div>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 export default function InvoicesScreen() {
@@ -147,6 +266,7 @@ export default function InvoicesScreen() {
   const [lines, setLines] = useState<InvoiceLine[]>([{ description: "", qty: 1, rate: 0 }]);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [notes, setNotes] = useState("");
+  const [terms, setTerms] = useState("");
   const [taxLabelInput, setTaxLabelInput] = useState("");
   const [taxRateInput, setTaxRateInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -168,7 +288,7 @@ export default function InvoicesScreen() {
   const openNew = () => {
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
-    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setFormError("");
+    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setFormError("");
     // Pre-fill tax from global settings; user can override per-invoice.
     const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
     setTaxLabelInput(defLabel);
@@ -181,7 +301,7 @@ export default function InvoicesScreen() {
     setClientName(inv.clientName); setClientPhone(inv.clientPhone || "");
     setDate(inv.date); setDueDate(inv.dueDate || "");
     setLines(inv.lines.length ? inv.lines : [{ description: "", qty: 1, rate: 0 }]);
-    setNotes(inv.notes || ""); setFormError("");
+    setNotes(inv.notes || ""); setTerms(inv.terms || ""); setFormError("");
     setTaxLabelInput(inv.taxLabel || "");
     setTaxRateInput(inv.taxRate ? String(inv.taxRate) : "");
     setShowForm(true); setSelected(null);
@@ -200,6 +320,7 @@ export default function InvoicesScreen() {
         date, dueDate: dueDate.trim() || undefined,
         lines: validLines,
         notes: notes.trim(),
+        terms: terms.trim() || undefined,
         taxLabel: rate > 0 && label ? label : (rate > 0 ? "Tax" : undefined),
         taxRate: rate,
         total: calcTotal(validLines, rate),
@@ -242,7 +363,7 @@ export default function InvoicesScreen() {
   const sharePdf = async (inv: Invoice) => {
     try {
       const prevBalance = await getPrevBalance(inv);
-      const html = buildHtml(inv, biz, currSym, prevBalance);
+      const html = buildHtml(inv, biz, currSym, prevBalance, theme.color);
       const { uri } = await Print.printToFileAsync({ html });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${inv.invoiceNumber}` });
@@ -252,7 +373,7 @@ export default function InvoicesScreen() {
   const printInvoice = async (inv: Invoice) => {
     try {
       const prevBalance = await getPrevBalance(inv);
-      await Print.printAsync({ html: buildHtml(inv, biz, currSym, prevBalance) });
+      await Print.printAsync({ html: buildHtml(inv, biz, currSym, prevBalance, theme.color) });
     } catch (e: any) { console.warn(e); }
   };
 
@@ -263,7 +384,7 @@ export default function InvoicesScreen() {
   };
 
   const updateLine = (i: number, field: keyof InvoiceLine, val: string) => {
-    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: field === "description" ? val : parseFloat(val) || 0 } : l));
+    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: (field === "description" || field === "unit") ? val : parseFloat(val) || 0 } : l));
   };
 
   // Scan / upload a document → OCR → prefill client name + a line item with the total.
@@ -457,10 +578,11 @@ export default function InvoicesScreen() {
                   <View key={i} style={{ marginTop: 10 }}>
                     <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={styles.input} />
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-                      <TextInput value={String(l.qty)} onChangeText={(v) => updateLine(i, "qty", v)} keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
-                      <TextInput value={String(l.rate ?? "")} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 2 }]} />
-                      <View style={{ justifyContent: "center", flex: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{lineAmt(l).toFixed(2)}</Text>
+                      <TextInput value={String(l.qty)} onChangeText={(v) => updateLine(i, "qty", v)} keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
+                      <TextInput value={l.unit || ""} onChangeText={(v) => updateLine(i, "unit", v)} placeholder="Unit (e.g. pcs, box)" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
+                      <TextInput value={String(l.rate ?? "")} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.5 }]} />
+                      <View style={{ justifyContent: "center", flex: 1.1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }} numberOfLines={1} adjustsFontSizeToFit>{currSym}{lineAmt(l).toFixed(2)}</Text>
                       </View>
                     </View>
                     {lines.length > 1 && (
@@ -492,7 +614,9 @@ export default function InvoicesScreen() {
 
               <Card style={{ marginTop: theme.spacing.md }}>
                 <Text style={styles.label}>Notes</Text>
-                <TextInput value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
+                <TextInput value={notes} onChangeText={setNotes} placeholder="Internal or extra notes (optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60, marginBottom: 12 }]} multiline />
+                <Text style={styles.label}>Invoice Terms</Text>
+                <TextInput value={terms} onChangeText={setTerms} placeholder="Terms & Conditions (Optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
               </Card>
 
               {formError ? <Text style={styles.error}>{formError}</Text> : null}

@@ -130,7 +130,7 @@ IDs: `` `${Date.now()}-${Math.random().toString(36).slice(2,10)}` ``. Timestamps
   openingInventory: number,        // default 0
   openingCash: number,             // default 0
   openingCapital: number,          // combined partner investment, default 0
-  partnerNames: string[],          // default ['Amit','Rahim']
+  partnerNames: string[],          // default [] (empty)
   extraAssets: {name:string,amount:number}[],
   extraLiabilities: {name:string,amount:number}[],
   currency: string,                // default 'USD' (15 supported)

@@ -176,7 +176,7 @@ export default function VoiceModal() {
         <Card>
           <Text style={styles.title}>Say a transaction</Text>
           <Text style={styles.hint}>
-            {'e.g., "We paid Rahim supplier 1000 USD on July 17", "Sold 250 today", "Withdrew 500 for Amit"'}
+            {'e.g., "We paid supplier 1000 USD on July 17", "Sold 250 today", "Withdrew 500 for owner"'}
           </Text>
 
           <View style={styles.micArea}>

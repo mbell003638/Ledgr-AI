@@ -64,7 +64,7 @@ export default function SupplierForm() {
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
           <Card>
             <Text style={styles.label}>Name</Text>
-            <TextInput testID="input-supplier-name" value={name} onChangeText={setName} style={styles.input} placeholder="e.g. Rahim Trading" placeholderTextColor={theme.color.muted} />
+            <TextInput testID="input-supplier-name" value={name} onChangeText={setName} style={styles.input} placeholder="e.g. ABC Trading" placeholderTextColor={theme.color.muted} />
             <Text style={[styles.label, { marginTop: 12 }]}>Phone</Text>
             <TextInput testID="input-supplier-phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={styles.input} placeholder="Optional" placeholderTextColor={theme.color.muted} />
             <Text style={[styles.label, { marginTop: 12 }]}>Email</Text>

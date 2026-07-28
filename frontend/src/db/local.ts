@@ -106,7 +106,7 @@ export async function getSettings() {
     // Per-investor capital contributions: [{ id, name, amount, date }].
     // openingCapital (above) is kept as a fallback/legacy combined figure.
     investors: Array.isArray(s.investors) ? s.investors : [],
-    partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'],
+    partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : [],
     // Security: hashed device-lock preference for destructive actions.
     lockEnabled: s.lockEnabled ?? false,
     extraAssets: Array.isArray(s.extraAssets) ? s.extraAssets : [],
@@ -132,6 +132,8 @@ export async function getSettings() {
     // Revenue recognition: 'cash' = revenue when money received (cash sales +
     // receipts); 'accrual' = revenue when billed (cash sales + invoices raised).
     accountingBasis: s.accountingBasis === 'cash' ? 'cash' : 'accrual',
+    invoiceTheme: s.invoiceTheme ?? 'navy_gold',
+    invoiceTerms: s.invoiceTerms ?? '',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
@@ -543,7 +545,7 @@ export async function capitalStatement() {
   const payments = (await readColl<any>('payments')).filter((p: any) => (p.date || '') >= periodStart);
   const drawingPayments = payments.filter((p: any) => p.type === 'drawing');
 
-  const partnerNames: string[] = Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : ['Amit', 'Rahim'];
+  const partnerNames: string[] = Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : [];
   // per-partner drawings (match on partnerName, case-insensitive; unmatched -> 'Other')
   const perPartner: Record<string, number> = {};
   for (const name of partnerNames) perPartner[name] = 0;

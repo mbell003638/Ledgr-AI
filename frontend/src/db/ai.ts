@@ -9,13 +9,13 @@
  * - baseUrl is only needed for 'custom' (any OpenAI-compatible endpoint).
  */
 
-export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'openrouter' | 'custom';
+export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'openrouter' | 'custom' | 'custom_anthropic';
 
 export interface AIConfig {
   provider: ProviderId;
   apiKey: string;
   model: string;
-  baseUrl?: string; // for custom OpenAI-compatible endpoints
+  baseUrl?: string; // for custom OpenAI-compatible or Anthropic-compatible endpoints
 }
 
 export interface ProviderMeta {
@@ -40,26 +40,7 @@ export const PROVIDERS: ProviderMeta[] = [
     supportsAudio: true,
     api: 'gemini',
   },
-  {
-    id: 'openai',
-    label: 'OpenAI (GPT)',
-    defaultBaseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini',
-    keyHint: 'sk-… from platform.openai.com',
-    supportsVision: true,
-    supportsAudio: false,
-    api: 'openai',
-  },
-  {
-    id: 'anthropic',
-    label: 'Anthropic (Claude)',
-    defaultBaseUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-3-5-sonnet-latest',
-    keyHint: 'sk-ant-… from console.anthropic.com',
-    supportsVision: true,
-    supportsAudio: false,
-    api: 'anthropic',
-  },
+
   {
     id: 'openrouter',
     label: 'OpenRouter',
@@ -72,7 +53,7 @@ export const PROVIDERS: ProviderMeta[] = [
   },
   {
     id: 'custom',
-    label: 'Custom (OpenAI-compatible)',
+    label: 'Custom (OpenAI Compatible)',
     defaultBaseUrl: '',
     defaultModel: '',
     keyHint: 'Your endpoint API key',

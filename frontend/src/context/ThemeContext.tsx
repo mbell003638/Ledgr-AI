@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { darkColors, lightColors, spacing, radius, font, ThemeType } from '@/src/theme';
+import { darkColors, lightColors, navyGoldColors, amoledBlueColors, spacing, radius, font, ThemeType } from '@/src/theme';
 
-type Mode = 'light' | 'dark' | 'system';
+type Mode = 'light' | 'dark' | 'navy_gold' | 'amoled_blue' | 'system';
 
 const STORAGE_KEY = 'theme_mode';
 
 type Ctx = {
   theme: ThemeType;
   mode: Mode;
-  effective: 'light' | 'dark';
+  effective: 'light' | 'dark' | 'navy_gold' | 'amoled_blue';
   setMode: (m: Mode) => void;
 };
 
@@ -32,7 +32,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const v = (await AsyncStorage.getItem(STORAGE_KEY)) as Mode | null;
-        if (v === 'light' || v === 'dark' || v === 'system') setModeState(v);
+        if (v === 'light' || v === 'dark' || v === 'navy_gold' || v === 'amoled_blue' || v === 'system') setModeState(v);
       } catch { /* ignore */ }
       finally { setHydrated(true); }
     })();
@@ -46,11 +46,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY, m).catch(() => {});
   };
 
-  const effective: 'light' | 'dark' = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
+  const effective: 'light' | 'dark' | 'navy_gold' | 'amoled_blue' = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
+
+  const colorMap = { light: lightColors, dark: darkColors, navy_gold: navyGoldColors, amoled_blue: amoledBlueColors };
 
   const value = useMemo<Ctx>(() => ({
     theme: {
-      color: effective === 'dark' ? darkColors : lightColors,
+      color: colorMap[effective],
       spacing, radius, font,
     },
     mode, effective, setMode,

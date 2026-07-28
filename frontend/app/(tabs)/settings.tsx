@@ -37,10 +37,12 @@ export default function SettingsScreen() {
   const [newBookName, setNewBookName] = useState("");
   const [addingBook, setAddingBook] = useState(false);
   const [currency, setCurrency] = useState("USD");
+  const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
   const [taxRate, setTaxRate] = useState("");
-  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "" });
+  const [invoiceTheme, setInvoiceTheme] = useState("navy_gold");
+  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
@@ -118,9 +120,19 @@ export default function SettingsScreen() {
         setActiveBookState(api.activeBookId());
       } catch { /* books optional */ }
       setCurrency(s.currency || "USD");
-      setTaxLabel((s.taxLabel as TaxLabel) || "None");
-      setTaxLabelCustom(s.taxLabelCustom || "");
+      const rawLabel = s.taxLabel || "None";
+      if (rawLabel === "None") {
+        setTaxLabel("None");
+        setTaxLabelCustom("");
+      } else if (rawLabel === "Custom") {
+        setTaxLabel("Custom");
+        setTaxLabelCustom(s.taxLabelCustom || "");
+      } else {
+        setTaxLabel("Custom");
+        setTaxLabelCustom(rawLabel);
+      }
       setTaxRate(s.taxRate ? String(s.taxRate) : "");
+      setInvoiceTheme(s.invoiceTheme || "navy_gold");
       setBizProfile({
         businessName: s.businessName || "",
         businessAddress: s.businessAddress || "",
@@ -130,6 +142,7 @@ export default function SettingsScreen() {
         bankAccount: s.bankAccount || "",
         upiId: s.upiId || "",
         paymentDetails: s.paymentDetails || "",
+        invoiceTerms: s.invoiceTerms || "",
       });
       setLogo(s.logo || "");
     } catch (e) { console.warn(e); }
@@ -191,6 +204,7 @@ export default function SettingsScreen() {
         taxLabel,
         taxLabelCustom: taxLabelCustom.trim(),
         taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
+        invoiceTheme,
         ...bizProfile,
         logo,
       });
@@ -261,6 +275,11 @@ export default function SettingsScreen() {
   };
 
   const doReset = async () => {
+    const ok = await requireAuth("Confirm to reset all accounting data");
+    if (!ok) {
+      setConfirmReset(false);
+      return;
+    }
     setResetting(true); setStatus(null);
     try {
       await api.resetAll();
@@ -397,7 +416,7 @@ export default function SettingsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.bookName}>Partner Equity & Profit-Split Accounting</Text>
                     <Text style={styles.hint}>
-                      50/50 Partner Capital Accounts (Amit & Rahim), periodic physical stock audit, shopkeeper salary & commission % on gross profit, and period close balance carry-forward.
+                      50/50 Partner Capital Accounts, periodic physical stock audit, shopkeeper salary & commission % on gross profit, and period close balance carry-forward.
                     </Text>
                   </View>
                 </Pressable>
@@ -481,10 +500,10 @@ export default function SettingsScreen() {
                 style={styles.input}
               />
 
-              {provider === "custom" && (
+              {(provider === "custom" || provider === "custom_anthropic") && (
                 <>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
-                  <Text style={styles.hint}>OpenAI-compatible endpoint (e.g. https://my-server.com/v1)</Text>
+                  <Text style={styles.hint}>Custom API endpoint (e.g. https://my-server.com/v1)</Text>
                   <TextInput
                     testID="input-base-url"
                     value={baseUrl}
@@ -767,6 +786,7 @@ export default function SettingsScreen() {
                 { label: "Bank Account / IBAN / Interac", key: "bankAccount", placeholder: "Acct no, IBAN, or Interac email" },
                 { label: "Payment ID / Link", key: "upiId", placeholder: "Interac, UPI ID, PayPal or payment link" },
                 { label: "Other Payment Details", key: "paymentDetails", placeholder: "Cheque payable to…, notes, alt. link" },
+                { label: "Invoice Terms & Conditions", key: "invoiceTerms", placeholder: "Payment is due within X days..." },
               ].map(({ label, key, placeholder }) => (
                 <View key={key}>
                   <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{label}</Text>
@@ -786,46 +806,108 @@ export default function SettingsScreen() {
             <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>Currency</Text>
               <Text style={styles.hint}>Used across all reports and entries.</Text>
+              <Pressable
+                onPress={() => setCurrencyDropdownOpen(!currencyDropdownOpen)}
+                style={{
+                  flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                  backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md,
+                  padding: theme.spacing.md, marginTop: 8,
+                  borderWidth: 1, borderColor: theme.color.border,
+                }}
+              >
+                <Text style={{ color: theme.color.onSurface, fontWeight: "600", fontSize: 15 }}>
+                  {CURRENCIES.find(c => c.code === currency)?.symbol || ""} {currency}
+                </Text>
+                <Ionicons name={currencyDropdownOpen ? "chevron-up" : "chevron-down"} size={18} color={theme.color.muted} />
+              </Pressable>
+              {currencyDropdownOpen && (
+                <View style={{
+                  backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md,
+                  borderWidth: 1, borderColor: theme.color.border, marginTop: 4, maxHeight: 220,
+                }}>
+                  <ScrollView nestedScrollEnabled>
+                    {CURRENCIES.map((c) => (
+                      <Pressable
+                        key={c.code}
+                        onPress={() => { setCurrency(c.code); setCurrencyDropdownOpen(false); }}
+                        style={{
+                          flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14,
+                          backgroundColor: currency === c.code ? theme.color.brandTertiary : "transparent",
+                          borderBottomWidth: 1, borderBottomColor: theme.color.divider,
+                        }}
+                      >
+                        <Text style={{ color: currency === c.code ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: currency === c.code ? "700" : "500", fontSize: 14, flex: 1 }}>
+                          {c.symbol} {c.code} — {c.name}
+                        </Text>
+                        {currency === c.code && <Ionicons name="checkmark" size={16} color={theme.color.brandPrimary} />}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <Text style={styles.label}>App & Invoice Themes</Text>
+              <Text style={styles.hint}>Choose the visual appearance for the application UI and generated invoices.</Text>
+              
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>App Interface Theme</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                {CURRENCIES.map((c) => (
+                {[
+                  { id: "light", label: "Emerald Light" },
+                  { id: "dark", label: "Emerald Dark" },
+                  { id: "navy_gold", label: "Black & Gold" },
+                  { id: "amoled_blue", label: "AMOLED Blue" },
+                  { id: "system", label: "System Default" },
+                ].map((t) => (
                   <Pressable
-                    key={c.code}
-                    onPress={() => setCurrency(c.code)}
-                    style={[styles.currencyChip, currency === c.code && styles.currencyChipActive]}
+                    key={t.id}
+                    onPress={() => setMode(t.id as any)}
+                    style={[styles.modeBtn, mode === t.id && styles.modeBtnActive]}
                   >
-                    <Text style={[styles.currencyChipText, currency === c.code && styles.currencyChipTextActive]}>{c.symbol} {c.code}</Text>
+                    <Text style={[styles.modeText, mode === t.id && styles.modeTextActive]}>{t.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Invoice PDF Theme</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                {[
+                  { id: "navy_gold", label: "Black & Gold" },
+                  { id: "emerald", label: "Classic Emerald" },
+                  { id: "minimal", label: "Clean Minimal" },
+                ].map((t) => (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => setInvoiceTheme(t.id)}
+                    style={[styles.modeBtn, invoiceTheme === t.id && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, invoiceTheme === t.id && styles.modeTextActive]}>{t.label}</Text>
                   </Pressable>
                 ))}
               </View>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Tax Label</Text>
-              <Text style={styles.hint}>What tax is called in your country (or None).</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                {TAX_LABELS.map((t) => (
-                  <Pressable
-                    key={t}
-                    onPress={() => setTaxLabel(t)}
-                    style={[styles.modeBtn, taxLabel === t && styles.modeBtnActive]}
-                  >
-                    <Text style={[styles.modeText, taxLabel === t && styles.modeTextActive]}>{t}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              {taxLabel === "Custom" && (
-                <TextInput
-                  value={taxLabelCustom}
-                  onChangeText={setTaxLabelCustom}
-                  placeholder="e.g. Service Tax"
-                  placeholderTextColor={theme.color.muted}
-                  style={[styles.input, { marginTop: 8 }]}
-                />
-              )}
-              {taxLabel !== "None" && (
+              <Text style={styles.label}>Tax Settings</Text>
+              <Text style={styles.hint}>Enter your tax name and rate (e.g. GST, VAT). Leave label empty to disable tax.</Text>
+              
+              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Tax Label</Text>
+              <TextInput
+                value={taxLabelCustom}
+                onChangeText={(v) => {
+                  setTaxLabelCustom(v);
+                  setTaxLabel(v.trim() ? "Custom" : "None");
+                }}
+                placeholder="e.g. GST, VAT (Leave blank for no tax)"
+                placeholderTextColor={theme.color.muted}
+                style={styles.input}
+              />
+
+              {taxLabelCustom.trim() !== "" && (
                 <>
                   <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>
-                    {taxLabel === "Custom" ? taxLabelCustom || "Tax" : taxLabel} Rate %
+                    {taxLabelCustom} Rate %
                   </Text>
                   <TextInput
                     value={taxRate}

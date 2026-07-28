@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -136,9 +136,45 @@ export default function Dashboard() {
     frontColor: theme.color.brandSecondary,
   }));
 
+  const [periodPreset, setPeriodPreset] = useState<"all" | "today" | "this_month" | "custom">("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [rangeData, setRangeData] = useState<any>(null);
+
+  const applyPeriod = useCallback(async (preset: "all" | "today" | "this_month" | "custom", fStr?: string, tStr?: string) => {
+    setPeriodPreset(preset);
+    const nowStr = localTodayStr();
+    let f = fStr ?? fromDate;
+    let t = tStr ?? toDate;
+
+    if (preset === "all") {
+      setFromDate(""); setToDate(""); setRangeData(null); return;
+    } else if (preset === "today") {
+      f = nowStr; t = nowStr;
+      setFromDate(f); setToDate(t);
+    } else if (preset === "this_month") {
+      f = `${nowStr.slice(0, 7)}-01`; t = nowStr;
+      setFromDate(f); setToDate(t);
+    }
+    
+    if (f && t) {
+      try {
+        const res = await api.pnlRange(f, t);
+        setRangeData(res);
+      } catch (e) { console.warn(e); }
+    }
+  }, [fromDate, toDate]);
+
+  const displaySales = rangeData ? rangeData.revenue : (dash?.totalSales ?? 0);
+  const displayPurchases = rangeData ? rangeData.purchases : (dash?.totalPurchases ?? 0);
+  const displayGross = rangeData ? rangeData.grossProfit : (dash?.grossProfit ?? 0);
+  const displayCommission = rangeData ? rangeData.commission : (dash?.commission ?? 0);
+  const displayNetProfit = rangeData ? rangeData.netProfit : (dash?.netProfit ?? 0);
+  const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Ledgr" subtitle="Shop accounting, AI-fast" testID="dashboard-header" />
+      <ScreenHeader title="Ledgr" subtitle="Your business finances, simplified" testID="dashboard-header" />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
@@ -148,14 +184,65 @@ export default function Dashboard() {
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
         ) : (
           <>
+            {/* Period Filter Bar */}
+            <View style={{ marginBottom: theme.spacing.md }}>
+              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {[
+                  { id: "all", label: "All Time" },
+                  { id: "today", label: "Today" },
+                  { id: "this_month", label: "This Month" },
+                  { id: "custom", label: "Custom Period" },
+                ].map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => applyPeriod(p.id as any)}
+                    style={[{
+                      paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
+                      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                    }, periodPreset === p.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "25" }]}
+                  >
+                    <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, periodPreset === p.id && { color: theme.color.brandPrimary }]}>
+                      {p.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {periodPreset === "custom" && (
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" }}>
+                  <TextInput
+                    value={fromDate}
+                    onChangeText={setFromDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={theme.color.muted}
+                    style={{ flex: 1, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: theme.color.onSurface, fontSize: 13 }}
+                  />
+                  <Text style={{ color: theme.color.muted, fontSize: 12 }}>to</Text>
+                  <TextInput
+                    value={toDate}
+                    onChangeText={setToDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={theme.color.muted}
+                    style={{ flex: 1, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: theme.color.onSurface, fontSize: 13 }}
+                  />
+                  <Pressable
+                    onPress={() => applyPeriod("custom", fromDate, toDate)}
+                    style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
+                  >
+                    <Text style={{ color: theme.color.onBrandPrimary, fontWeight: "700", fontSize: 12 }}>Filter</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+
             {/* Net worth hero */}
             <LinearGradient
               colors={[theme.color.brandPrimary, theme.color.brandSecondary]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={styles.hero}
             >
-              <Text style={styles.heroLabel}>Net Profit {(dash?.periodStart && dash.periodStart !== "1970-01-01") ? `since ${dash.periodStart}` : ""}</Text>
-              <Text style={styles.heroValue} testID="dashboard-net-profit">{fmt(dash?.netProfit)}</Text>
+              <Text style={styles.heroLabel}>Net Profit {rangeData ? `(${fromDate} to ${toDate})` : ((dash?.periodStart && dash.periodStart !== "1970-01-01") ? `since ${dash.periodStart}` : "")}</Text>
+              <Text style={styles.heroValue} testID="dashboard-net-profit">{fmt(displayNetProfit)}</Text>
               <View style={styles.heroRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.heroSub}>Opening</Text>
@@ -175,36 +262,36 @@ export default function Dashboard() {
             </LinearGradient>
 
             {/* Profit Flow breakdown */}
-            {(dash?.totalSales || dash?.totalPurchases) ? (
+            {(displaySales || displayPurchases) ? (
               <Card style={{ marginBottom: theme.spacing.lg }} testID="profit-flow">
                 <Text style={styles.sectionTitleInline}>Profit Flow</Text>
                 <View style={styles.pfRow}>
                   <Text style={styles.pfLabel}>Sales</Text>
-                  <Text style={[styles.pfVal, { color: theme.color.success }]}>+ {fmt(dash?.totalSales)}</Text>
+                  <Text style={[styles.pfVal, { color: theme.color.success }]}>+ {fmt(displaySales)}</Text>
                 </View>
                 <View style={styles.pfRow}>
                   <Text style={styles.pfLabel}>Purchases (COGS)</Text>
-                  <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.totalPurchases)}</Text>
+                  <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayPurchases)}</Text>
                 </View>
                 <View style={[styles.pfRow, styles.pfStrong]}>
                   <Text style={[styles.pfLabel, { fontWeight: "700" }]}>Gross Profit</Text>
-                  <Text style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(dash?.grossProfit)}</Text>
+                  <Text style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(displayGross)}</Text>
                 </View>
-                {(dash?.managerCommissionPct ?? 0) > 0 ? (
+                {displayCommission > 0 ? (
                   <View style={styles.pfRow}>
-                    <Text style={styles.pfLabel}>Manager Commission ({dash?.managerCommissionPct}%)</Text>
-                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.commission)}</Text>
+                    <Text style={styles.pfLabel}>Manager Commission</Text>
+                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayCommission)}</Text>
                   </View>
                 ) : null}
-                {(dash?.drawings ?? 0) > 0 ? (
+                {displayDrawings > 0 ? (
                   <View style={styles.pfRow}>
                     <Text style={styles.pfLabel}>Drawings</Text>
-                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(dash?.drawings)}</Text>
+                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayDrawings)}</Text>
                   </View>
                 ) : null}
                 <View style={[styles.pfRow, styles.pfStrong, { borderTopWidth: 2, borderTopColor: theme.color.brandPrimary, paddingTop: 8, marginTop: 4 }]}>
                   <Text style={[styles.pfLabel, { fontWeight: "700", color: theme.color.brandPrimary }]}>Net Profit</Text>
-                  <Text style={[styles.pfVal, { fontWeight: "700", color: theme.color.brandPrimary, fontSize: 16 }]}>{fmt(dash?.netProfit)}</Text>
+                  <Text style={[styles.pfVal, { fontWeight: "700", color: theme.color.brandPrimary, fontSize: 16 }]}>{fmt(displayNetProfit)}</Text>
                 </View>
               </Card>
             ) : null}
