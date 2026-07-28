@@ -192,8 +192,21 @@ export async function updateSupplier(id: string, body: any) {
 }
 export async function deleteSupplier(id: string) {
   return serialize(async () => {
-    const arr = (await readColl<any>('suppliers')).filter((x: any) => x.id !== id);
-    await writeColl('suppliers', arr);
+    const arr = await readColl<any>('suppliers');
+    const supplier = arr.find((x: any) => x.id === id);
+    if (!supplier) throw new Error('Supplier not found');
+
+    const bills = await readColl<any>('bills');
+    const payments = await readColl<any>('payments');
+    
+    if (bills.some((x: any) => x.supplierId === id)) {
+      throw new Error(`Cannot delete ${supplier.name} because they have existing bills.`);
+    }
+    if (payments.some((x: any) => x.supplierId === id && x.type === 'supplier_payment')) {
+      throw new Error(`Cannot delete ${supplier.name} because they have existing payments.`);
+    }
+
+    await writeColl('suppliers', arr.filter((x: any) => x.id !== id));
     return { ok: true };
   });
 }
@@ -825,6 +838,19 @@ export async function updateDebtor(id: string, d: any) {
 export async function deleteDebtor(id: string) {
   return serialize(async () => {
     const items = await readColl<any>('debtors');
+    const debtor = items.find((x: any) => x.id === id);
+    if (!debtor) throw new Error('Customer not found');
+
+    if ((debtor.invoices && debtor.invoices.length > 0) || (debtor.payments && debtor.payments.length > 0)) {
+      throw new Error(`Cannot delete ${debtor.name} because they have existing invoices or payments.`);
+    }
+
+    const sales = await readColl<any>('sales');
+    const norm = (s: string) => (s || '').trim().toLowerCase();
+    if (sales.some((x: any) => norm(x.customerName) === norm(debtor.name))) {
+      throw new Error(`Cannot delete ${debtor.name} because they have existing sales records.`);
+    }
+
     await writeColl('debtors', items.filter((x: any) => x.id !== id));
     return { ok: true };
   });
