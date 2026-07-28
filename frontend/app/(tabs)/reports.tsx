@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LineChart, PieChart } from "react-native-gifted-charts";
@@ -12,6 +12,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
+import { printHtml } from "@/src/utils/print";
 import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
@@ -224,94 +225,166 @@ export default function ReportsScreen() {
 
   // ------- Build an HTML document for PDF export -------
   const buildHtml = (): string => {
-    const tc = theme.color || {};
-    const primary = tc.surfaceInverse || tc.surface || "#1e202c";
-    const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
-    const accentText = tc.onBrandPrimary || "#111111";
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const lines = buildText().split("\\n");
+    // Remove the first 2 lines (legacy text header)
+    lines.shift(); lines.shift();
 
-    const rows = buildText().split("\n").map((l) => {
-      if (!l.trim()) return "<div style='height:12px'></div>";
-      if (l.startsWith("—")) return `<h3 style='margin:24px 0 8px;color:${primary};font-size:14px;text-transform:uppercase;letter-spacing:1px;border-left:4px solid ${accent};padding-left:8px;background:#f9f9f9;padding-top:4px;padding-bottom:4px;'>${esc(l.replace(/—/g, "").trim())}</h3>`;
-      const [k, ...rest] = l.split(":");
-      if (rest.length) return `<div style='display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:13px;color:#333'><span>${esc(k)}</span><b style='color:${primary};font-weight:700'>${esc(rest.join(":").trim())}</b></div>`;
-      return `<div style='padding:4px 0;font-size:13px;color:#555'>${esc(l)}</div>`;
-    }).join("");
-    return `<html><head><meta name='viewport' content='width=device-width,initial-scale=1'/>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
-        .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
-        .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
-        .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
-        .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
-        .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
-        .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
-        .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
-        .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
-        .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
-        .header-logo-text { font-size: 56px; font-weight: 900; color: #fff; letter-spacing: 2px; }
-        .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
-        .report-title { color: ${accent}; font-weight: 800; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .biz-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
-        .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
-        .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
-        .report-heading { font-size: 36px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
-        .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
-        .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
-        .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
-        .banner-label { font-size: 11px; font-weight: 700; color: #222; }
-        .banner-val { font-size: 14px; font-weight: 800; margin-top: 4px; color: #111; }
-        .content { padding: 40px; }
-        .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; }
-        .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .gen-date { color: #aaa; font-size: 10px; margin-top: 4px; }
-      </style>
-      </head>
-      <body>
-      <div class="page-container">
-        <div class="top-bg-container">
-          <div class="bg-dark"></div>
-          <div class="bg-white-slant"></div>
-          <div class="bg-yellow-slant"></div>
-          <div class="bg-yellow-rect"></div>
-          <div class="bg-yellow-border"></div>
-        </div>
+    let html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { background: #faf9f6; color: #333; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; }
+    .report-container { max-width: 800px; margin: 0 auto; background: #faf9f6; padding: 40px; min-height: 100vh; box-sizing: border-box; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+    .title { font-family: Georgia, serif; font-size: 38px; font-weight: bold; color: #2c2a29; margin: 0; letter-spacing: -0.5px; }
+    .subtitle { font-size: 13px; color: #7a7771; margin-top: 6px; }
+    .biz-name { font-size: 16px; font-weight: 700; color: #4a4845; text-transform: uppercase; letter-spacing: 1px; }
+    
+    .box-green { background: #f0f9f3; border: 1px solid #cce6d5; border-radius: 8px; padding: 5px 20px; margin-bottom: 30px; }
+    .box-yellow { background: #fcf9eb; border: 1px solid #f0e1a8; border-radius: 8px; padding: 5px 20px; margin-bottom: 30px; }
+    
+    .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e8e5de; font-size: 13px; }
+    .row.no-border { border-bottom: none; }
+    .row-key { color: #5a5752; font-weight: 500; }
+    .row-val { color: #1a1918; font-weight: 700; }
+    
+    .box-green .row { border-bottom: 1px solid #cce6d5; }
+    .box-green .row:last-child { border-bottom: none; }
+    .box-green .row-key { color: #2d5a37; font-weight: 600; }
+    .box-green .row-val { color: #1e3f25; }
 
-        <div class="header-content">
-          <div class="header-left">
-            <div class="header-logo-text">${esc(bizName ? bizName.substring(0, 1) : 'L')}</div>
-          </div>
-          <div class="header-right">
-            <div class="report-title">${esc(seg)} Report</div>
-            <div class="biz-name">${esc(bizName || "Ledgr")}</div>
-          </div>
-        </div>
+    .box-yellow .row { border-bottom: 1px dashed #f0e1a8; }
+    .box-yellow .row:last-child { border-bottom: none; }
+    .box-yellow .row-key { color: #856a20; }
+    .box-yellow .row-val { color: #5c4811; }
 
-        <div class="banner-content">
-          <div class="banner-left">
-            <h1 class="report-heading">REPORT</h1>
-          </div>
-          <div class="banner-right">
-            <div class="banner-col">
-              <div class="banner-label">Report Type</div>
-              <div class="banner-val">${esc(seg)}</div>
-            </div>
-            <div class="banner-col">
-              <div class="banner-label">Period</div>
-              <div class="banner-val">${esc(from)} to ${esc(to)}</div>
-            </div>
-          </div>
-        </div>
+    .box-yellow .section-title { color: #a88117; font-size: 16px; font-weight: 800; text-transform: none; letter-spacing: 0; margin-top: 15px; margin-bottom: 5px; }
 
-        <div class="content">
-          ${rows}
-        </div>
-
-        <div class="footer-bar">
-          <div class="thank-you">Generated by Ledgr</div>
-          <div class="gen-date">Date: ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</div>
-        </div>
+    .section-title { font-size: 10px; font-weight: 800; color: #9c9993; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; margin-top: 25px; }
+    
+    .grid { display: flex; flex-wrap: wrap; gap: 40px; margin-bottom: 30px; }
+    .col { flex: 1; min-width: 300px; }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="header">
+      <div>
+        <h1 class="title">${seg === 'Summary' ? 'Report' : seg}</h1>
+        <div class="subtitle">${from} &middot; ${to} &middot; Generated ${new Date().toLocaleDateString()}</div>
       </div>
-      </body></html>`;
+      <div>
+        <div class="biz-name">${esc(bizName || "Ledgr")}</div>
+      </div>
+    </div>
+`;
+
+    let currentSection = "";
+    let sections: { title: string; lines: string[] }[] = [];
+    let currentLines: string[] = [];
+    
+    for (const l of lines) {
+      if (!l.trim()) continue;
+      if (l.startsWith("—") && l.includes("Sent from Ledgr")) continue;
+      
+      if (l.startsWith("—")) {
+        if (currentLines.length > 0 || currentSection) {
+          sections.push({ title: currentSection, lines: currentLines });
+        }
+        currentSection = l.replace(/—/g, "").trim();
+        currentLines = [];
+      } else {
+        currentLines.push(l);
+      }
+    }
+    if (currentLines.length > 0 || currentSection) {
+      sections.push({ title: currentSection, lines: currentLines });
+    }
+
+    let htmlContent = "";
+    
+    const renderRow = (l: string, isLast: boolean) => {
+      const parts = l.split(":");
+      if (parts.length > 1) {
+        const k = parts.shift()!;
+        const v = parts.join(":");
+        return `<div class="row ${isLast ? 'no-border' : ''}"><span class="row-key">${esc(k.trim())}</span><span class="row-val">${esc(v.trim())}</span></div>`;
+      }
+      return `<div class="row ${isLast ? 'no-border' : ''}"><span class="row-key" style="color:#111;font-weight:700">${esc(l)}</span></div>`;
+    };
+
+    const renderSection = (s: { title: string; lines: string[] }, style: 'normal' | 'green' | 'yellow') => {
+      if (style === 'green') {
+        return `<div class="box-green">
+          ${s.title ? `<div class="section-title" style="color:#2d5a37;margin-top:15px;">${esc(s.title)}</div>` : ''}
+          ${s.lines.map((l, i) => renderRow(l, i === s.lines.length - 1)).join("")}
+        </div>`;
+      } else if (style === 'yellow') {
+        return `<div class="box-yellow">
+          ${s.title ? `<div class="section-title">${esc(s.title)}</div>` : ''}
+          ${s.lines.map((l, i) => renderRow(l, i === s.lines.length - 1)).join("")}
+        </div>`;
+      } else {
+        return `<div>
+          ${s.title ? `<div class="section-title">${esc(s.title)}</div>` : ''}
+          ${s.lines.map((l, i) => renderRow(l, false)).join("")}
+        </div>`;
+      }
+    };
+    
+    if (sections.length === 1 && !sections[0].title) {
+       htmlContent += renderSection(sections[0], 'normal');
+    } else {
+      let i = 0;
+      if (sections[0] && sections[0].title && (sections[0].title.toUpperCase().includes("LIVE") || sections[0].title.toUpperCase().includes("PROFIT") || sections[0].title.toUpperCase().includes("SUMMARY"))) {
+        htmlContent += renderSection(sections[0], 'green');
+        i++;
+      } else if (sections.length > 1 && i === 0 && (!sections[0].title || sections[0].title === '')) {
+        htmlContent += renderSection(sections[0], 'green');
+        i++;
+      }
+
+      let gridSections = [];
+      while (i < sections.length) {
+        const s = sections[i];
+        if (s.title && (s.title.toUpperCase().includes("PARTNER") || s.title.toUpperCase().includes("RECONCILIATION") || s.title.toUpperCase().includes("LEGACY") || s.title.toUpperCase().includes("DRAWINGS"))) {
+          break; 
+        }
+        gridSections.push(s);
+        i++;
+      }
+      
+      if (gridSections.length > 0) {
+        htmlContent += `<div class="grid">`;
+        const col1: any[] = [];
+        const col2: any[] = [];
+        gridSections.forEach((s, idx) => {
+          if (idx % 2 === 0) col1.push(s);
+          else col2.push(s);
+        });
+        
+        htmlContent += `<div class="col">${col1.map(s => renderSection(s, 'normal')).join("")}</div>`;
+        if (col2.length > 0) {
+          htmlContent += `<div class="col">${col2.map(s => renderSection(s, 'normal')).join("")}</div>`;
+        }
+        htmlContent += `</div>`;
+      }
+      
+      while (i < sections.length) {
+        htmlContent += renderSection(sections[i], 'yellow');
+        i++;
+      }
+    }
+
+    html += htmlContent;
+    html += `
+  </div>
+</body>
+</html>`;
+    return html;
   };
 
   const shareWhatsApp = async () => {
@@ -321,9 +394,14 @@ export default function ReportsScreen() {
 
   const sharePdf = async () => {
     try {
-      const { uri } = await Print.printToFileAsync({ html: buildHtml() });
-      const can = await Sharing.isAvailableAsync();
-      if (can) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${seg} Report` });
+      const html = buildHtml();
+      if (Platform.OS === 'web') {
+        await printHtml(html, `${seg} Report`);
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        const can = await Sharing.isAvailableAsync();
+        if (can) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${seg} Report` });
+      }
     } catch (e) { console.warn(e); }
   };
 

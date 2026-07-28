@@ -134,6 +134,7 @@ export async function getSettings() {
     accountingBasis: s.accountingBasis === 'cash' ? 'cash' : 'accrual',
     invoiceTheme: s.invoiceTheme ?? 'navy_gold',
     invoiceTerms: s.invoiceTerms ?? '',
+    themeMode: s.themeMode ?? 'system',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
