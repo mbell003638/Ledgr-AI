@@ -700,7 +700,7 @@ export default function SettingsScreen() {
                   {[
                     { id: "light", label: "Emerald Light", icon: "sunny-outline" },
                     { id: "dark", label: "Emerald Dark", icon: "moon-outline" },
-                    { id: "navy_gold", label: "Navy & Gold", icon: "color-palette-outline" },
+                    { id: "navy_gold", label: "Black & Gold", icon: "color-palette-outline" },
                     { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" },
                     { id: "system", label: "System", icon: "phone-portrait-outline" },
                   ].map((m) => (
@@ -733,6 +733,7 @@ export default function SettingsScreen() {
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.xs }}>
                   {[
                     { id: "navy_gold", label: "Black & Gold" },
+                    { id: "amoled_blue", label: "Black & Blue" },
                     { id: "emerald", label: "Classic Emerald" },
                     { id: "minimal", label: "Clean Minimal" },
                   ].map((t) => (

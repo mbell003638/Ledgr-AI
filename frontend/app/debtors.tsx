@@ -14,6 +14,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { getCurrencySymbol } from "@/src/db/local";
+import { printHtml } from "@/src/utils/print";
 
 type Debtor = {
   id: string;
@@ -37,155 +38,541 @@ function buildStatementHtml(
   debtor: any, statement: any, biz: any, sym: string,
   themeColors?: any, currencyCode: string = 'USD'
 ) {
-  const tc = themeColors || {};
-  const primary = tc.surfaceInverse || tc.surface || "#1e202c";
-  const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
-  const accentText = tc.onBrandPrimary || "#111111";
   const money = (n: number) => `${sym}${(Number(n) || 0).toFixed(2)}`;
   const balance = Number(debtor.balance || 0);
   const totalInWords = amountToWords(Math.abs(balance), currencyCode);
-  const today = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const today = new Date().toLocaleDateString();
 
-  const ledger = statement?.ledger || [];
-  const rows = ledger.map((r: any, i: number) => {
-    const label = r.kind === "invoice" ? "Invoice" : r.kind === "payment" ? "Payment" : r.kind === "credit_note" ? "Credit Note" : r.kind === "debit_note" ? "Debit Note" : "Entry";
-    const dateStr = r.date ? new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-    return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
-      <td>${escapeHtml(dateStr)}</td>
-      <td>${escapeHtml(label)}</td>
-      <td>${escapeHtml(r.ref || '-')}</td>
-      <td class="right">${r.debit ? money(r.debit) : '-'}</td>
-      <td class="right">${r.credit ? money(r.credit) : '-'}</td>
-      <td class="right" style="font-weight:600">${money(r.balance)}</td>
-    </tr>`;
-  }).join("");
+  let primary = "#1e222b";
+  let accent = "#f5a623";
+  
+  if (biz.invoiceTheme === "navy_gold") {
+    primary = "#000000";
+    accent = "#FDBA21";
+  } else if (biz.invoiceTheme === "amoled_blue") {
+    primary = "#000000";
+    accent = "#3498db";
+  } else if (biz.invoiceTheme === "emerald") {
+    primary = "#1C4030";
+    accent = "#2ecc71";
+  } else if (biz.invoiceTheme === "minimal") {
+    primary = "#111513";
+    accent = "#8FB99A";
+  } else {
+    const tc = themeColors || {};
+    const getDarkest = (c1: string, c2: string, fallback: string) => {
+      const parse = (c: string) => {
+        const hex = (c || "").replace('#', '');
+        if (hex.length !== 6) return 255;
+        return (parseInt(hex.substring(0,2), 16) * 299 + parseInt(hex.substring(2,4), 16) * 587 + parseInt(hex.substring(4,6), 16) * 114) / 1000;
+      };
+      const b1 = parse(c1); const b2 = parse(c2);
+      if (!c1 && !c2) return fallback;
+      return b1 < b2 ? c1 : c2;
+    };
+    primary = getDarkest(tc.surface, tc.surfaceInverse, "#1e222b");
+    accent  = tc.brandPrimary || tc.brand || "#f5a623";
+  }
+
+  const rows = statement.map((r: any, i: number) =>
+    `<tr>
+      <td>${new Date(r.date).toLocaleDateString()}</td>
+      <td>${escapeHtml(r.type === 'invoice' ? "Invoice" : r.type === 'payment' ? "Payment Received" : r.type === 'credit' ? "Credit Note / Discount" : "Debit Note / Charge")}</td>
+      <td>${escapeHtml(r.ref || "")}</td>
+      <td>${r.type === 'invoice' || r.type === 'debit' ? money(r.amount) : ""}</td>
+      <td>${r.type === 'payment' || r.type === 'credit' ? money(r.amount) : ""}</td>
+      <td>${money(r.runningBalance)}</td>
+    </tr>`
+  ).join("");
 
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
-    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
-    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
-    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
-    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
-    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
-    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
-    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
-    .header-logo-text { font-size: 56px; font-weight: 900; color: #fff; letter-spacing: 2px; }
-    .header-logo { max-height: 80px; max-width: 180px; object-fit: contain; }
-    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
-    .statement-to-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-    .client-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 8px; text-transform: uppercase; }
-    .contact-item { display: flex; align-items: center; margin-bottom: 6px; font-size: 11px; color: #fff; }
-    .contact-icon { width: 18px; height: 18px; border-radius: 50%; background: ${accent}; color: ${primary}; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; margin-right: 10px; }
-    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
-    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
-    .statement-heading { font-size: 36px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
-    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
-    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
-    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
-    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
-    .banner-val { font-size: 14px; font-weight: 800; margin-top: 4px; color: #111; }
-    .content { padding: 40px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
-    th { background: ${primary}; color: #ffffff; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 700; }
-    td { padding: 12px 14px; border-bottom: none; color: #333; font-weight: 500; }
-    tr.even td { background: #fff; }
-    tr.odd td { background: #f4f4f4; }
-    th.right, td.right { text-align: right; }
-    .totals-wrapper { display: flex; justify-content: flex-end; }
-    .totals-box { width: 280px; border-collapse: collapse; font-size: 12px; }
-    .totals-box td { padding: 10px 14px; border: none; }
-    .tot-row td { background: ${primary}; color: #ffffff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1); }
-    .grand-tot-row td { background: ${accent}; color: ${accentText}; font-weight: 800; font-size: 13px; text-transform: uppercase; }
-    .amount-words { background: #fff; padding: 12px 14px; font-size: 11px; font-style: italic; color: #555; text-align: right; border-top: 2px solid ${accent}; }
-    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; }
-    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .terms-heading { font-weight: 700; color: #fff; margin-bottom: 2px; text-transform: uppercase; font-size: 10px; }
-    .terms-body { color: #aaa; line-height: 1.4; white-space: pre-wrap; font-size: 9px; max-width: 600px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Statement</title>
+<style>
+  :root{
+    --dark: ${primary};
+    --gold: ${accent};
+    --gray-row: #eef0f2;
+    --text: #1e222b;
+    --muted: #7a7f8a;
+  }
+
+  @media print {
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body { background: #fff !important; padding: 0 !important; }
+    .invoice { box-shadow: none !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; }
+  }
+
+  *{ box-sizing: border-box; margin:0; padding:0; }
+
+  body{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    background:#e9e9e9;
+    display:flex;
+    justify-content:center;
+    padding:30px 0;
+  }
+
+  .invoice{
+    width: 800px;
+    background:#fff;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    overflow:hidden;
+  }
+
+  /* ---------- HEADER ---------- */
+  .header{
+    position:relative;
+    background:#fff;
+    color:#fff;
+    min-height:150px;
+    overflow:hidden;
+  }
+
+  /* two separate dark panels with a thin gap between them = the white diagonal stripe
+     NOTE: the cut is narrower at the top and widens going down (not the reverse) */
+  .header-panel-left{
+    position:absolute;
+    top:0; left:0; bottom:0;
+    width:100%;
+    background:var(--dark);
+    clip-path: polygon(0 0, 37% 0, 44% 100%, 0% 100%);
+  }
+
+  .header-panel-right{
+    position:absolute;
+    top:0; left:0; bottom:0;
+    width:100%;
+    background:var(--dark);
+    clip-path: polygon(38% 0, 100% 0, 100% 100%, 45% 100%);
+  }
+
+  .header-content{
+    position:relative;
+    z-index:2;
+    display:flex;
+    min-height:150px;
+  }
+
+  .header-left{
+    width:44%;
+    padding:35px 30px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+
+  .logo{
+    font-size:34px;
+    font-weight:800;
+    letter-spacing:1px;
+  }
+
+  .header-right{
+    flex:1;
+    padding:30px 40px 30px 10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+  }
+
+  .invoice-to h4{
+    color:var(--gold);
+    font-size:13px;
+    letter-spacing:1px;
+    margin-bottom:8px;
+  }
+
+  .invoice-to p{
+    font-size:12px;
+    line-height:1.9;
+    color:#e6e6e6;
+    text-transform: uppercase;
+  }
+
+  .contact-list{
+    text-align:right;
+    font-size:11px;
+    line-height:1.6;
+  }
+
+  .contact-list div{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    margin-bottom:6px;
+  }
+
+  .contact-icon{
+    width:22px;
+    height:22px;
+    border-radius:50%;
+    background:var(--gold);
+    color:var(--dark);
+    font-size:11px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+  }
+
+  /* ---------- TITLE BAR ---------- */
+  .title-bar{
+    position:relative;
+    background:var(--gold);
+    min-height:78px;
+    overflow:hidden;
+  }
+
+  /* white panel behind "INVOICE" - same direction as header: narrow at top, wider at bottom */
+  .title-bar-white{
+    position:absolute;
+    top:0; left:0; bottom:0;
+    width:100%;
+    background:#fff;
+    clip-path: polygon(0 0, 45% 0, 48% 100%, 0% 100%);
+  }
+
+  .title-bar-content{
+    position:relative;
+    z-index:2;
+    display:flex;
+    min-height:78px;
+  }
+
+  .title-bar-content .title{
+    width:44%;
+    padding:20px 30px;
+    display:flex;
+    align-items:center;
+  }
+
+  .title-bar-content .title h1{
+    font-size:28px;
+    font-weight:800;
+    letter-spacing:1px;
+    color:var(--dark);
+    margin:0;
+  }
+
+  .meta{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:space-around;
+    padding:10px 20px;
+  }
+
+  .meta div{
+    text-align:center;
+    font-size:11px;
+    color:var(--dark);
+  }
+
+  .meta div span{
+    display:block;
+    font-weight:700;
+    font-size:13px;
+    margin-top:2px;
+  }
+
+  .meta .divider{
+    width:1px;
+    height:30px;
+    background:rgba(30,34,43,0.3);
+  }
+
+  /* ---------- TABLE ---------- */
+  .table-wrap{
+    padding:35px 40px 10px;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+  }
+
+  thead tr{
+    background:var(--dark);
+    color:#fff;
+  }
+
+  thead th{
+    text-align:left;
+    font-size:12px;
+    padding:12px 14px;
+    font-weight:600;
+    text-transform: uppercase;
+  }
+
+  thead th:last-child,
+  tbody td:last-child{
+    text-align:right;
+  }
+
+  tbody td{
+    font-size:12px;
+    padding:14px;
+    color:var(--text);
+  }
+
+  tbody tr:nth-child(even){
+    background:var(--gray-row);
+  }
+
+  /* ---------- TOTALS ---------- */
+  .totals{
+    width:280px;
+    margin-left:auto;
+    margin-top:20px;
+    font-size:12px;
+    border:1px solid #e0e0e0;
+  }
+
+  .totals div{
+    display:flex;
+    justify-content:space-between;
+    padding:10px 16px;
+    background:var(--gray-row);
+    border-bottom:1px solid #e0e0e0;
+  }
+
+  .totals div:last-child{
+    border-bottom:none;
+  }
+
+  .totals span:first-child{
+    color:var(--muted);
+  }
+
+  .totals span:last-child{
+    font-weight:700;
+    color:var(--text);
+  }
+
+  .totals .grand{
+    background:var(--gold);
+    font-weight:700;
+    font-size:13px;
+  }
+
+  .totals .grand span{
+    color:var(--dark) !important;
+  }
+
+  /* ---------- FOOTER CONTENT ---------- */
+  .footer-content{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    padding:30px 40px 40px;
+  }
+
+  .payment-methods h4{
+    font-size:13px;
+    margin-bottom:10px;
+    position:relative;
+    padding-bottom:8px;
+    text-transform: uppercase;
+  }
+
+  .payment-methods h4::after{
+    content:"";
+    position:absolute;
+    left:0; bottom:0;
+    width:40px;
+    height:3px;
+    background:var(--gold);
+  }
+
+  .payment-methods ul{
+    list-style:none;
+    max-width:320px;
+  }
+
+  .payment-methods li{
+    display:flex;
+    gap:8px;
+    font-size:11px;
+    color:var(--muted);
+    margin-bottom:10px;
+    line-height:1.5;
+  }
+
+  .payment-methods li::before{
+    content:"+";
+    color:var(--gold);
+    font-weight:700;
+  }
+
+  .signature{
+    text-align:center;
+  }
+
+  .signature .sig-name{
+    font-family: 'Brush Script MT', cursive, sans-serif;
+    font-size:28px;
+    margin-bottom:6px;
+    color:var(--dark);
+  }
+
+  .signature p{
+    font-size:11px;
+    color:var(--muted);
+    border-top:1px solid #ccc;
+    padding-top:4px;
+    text-transform: uppercase;
+  }
+
+  .signature p.role{
+    font-weight:700;
+    color:var(--text);
+    border-top:none;
+    padding-top:0;
+  }
+
+  /* ---------- BOTTOM BAR ---------- */
+  .bottom-bar{
+    background:var(--dark);
+    color:#fff;
+    padding:25px 40px;
+    position:relative;
+  }
+
+  .bottom-bar::before{
+    content:"";
+    position:absolute;
+    top:0; left:0; right:0;
+    height:4px;
+    background:var(--gold);
+  }
+
+  .bottom-bar h5{
+    color:var(--gold);
+    font-size:13px;
+    margin-bottom:4px;
+  }
+
+  .bottom-bar h6{
+    font-size:12px;
+    margin-bottom:10px;
+  }
+
+  .bottom-bar p{
+    font-size:10px;
+    color:#c7c9cf;
+    line-height:1.6;
+    white-space: pre-wrap;
+  }
+</style>
 </head>
 <body>
-  <div class="page-container">
-    <div class="top-bg-container">
-      <div class="bg-dark"></div>
-      <div class="bg-white-slant"></div>
-      <div class="bg-yellow-slant"></div>
-      <div class="bg-yellow-rect"></div>
-      <div class="bg-yellow-border"></div>
-    </div>
 
+<div class="invoice">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-panel-left"></div>
+    <div class="header-panel-right"></div>
     <div class="header-content">
       <div class="header-left">
-        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="header-logo-text">Logo</div>`}
+        ${biz.logo ? `<img src="${biz.logo}" class="logo-img" style="max-height: 80px; max-width: 180px; object-fit: contain;" />` : `<div class="logo">Logo</div>`}
       </div>
       <div class="header-right">
-        <div class="statement-to-title">STATEMENT TO</div>
-        <div class="client-name">${escapeHtml(debtor.name)}</div>
-        ${debtor.phone ? `<div class="contact-item"><span class="contact-icon">P</span>${escapeHtml(debtor.phone)}</div>` : ''}
-        ${debtor.email ? `<div class="contact-item"><span class="contact-icon">E</span>${escapeHtml(debtor.email)}</div>` : ''}
-        ${biz.businessName ? `<div class="contact-item"><span class="contact-icon">C</span>${escapeHtml(biz.businessName)}</div>` : ''}
-      </div>
-    </div>
-
-    <div class="banner-content">
-      <div class="banner-left">
-        <h1 class="statement-heading">STATEMENT</h1>
-      </div>
-      <div class="banner-right">
-        <div class="banner-col">
-          <div class="banner-label">Balance Due</div>
-          <div class="banner-val">${money(balance)}</div>
+        <div class="invoice-to">
+          <h4>STATEMENT TO</h4>
+          <p>
+            ${escapeHtml(debtor.name)}<br>
+            ${debtor.phone ? `P : ${escapeHtml(debtor.phone)}<br>` : ''}
+            ${debtor.email ? `E : ${escapeHtml(debtor.email)}<br>` : ''}
+          </p>
         </div>
-        <div class="banner-col">
-          <div class="banner-label">As of Date</div>
-          <div class="banner-val">${today}</div>
-        </div>
-        <div class="banner-col">
-          <div class="banner-label">Total Invoiced</div>
-          <div class="banner-val">${money(debtor.totalInvoiced || 0)}</div>
+        <div class="contact-list">
+          ${biz.businessName ? `<div>${escapeHtml(biz.businessName)} <span class="contact-icon">&#9742;</span></div>` : ''}
+          ${biz.businessPhone ? `<div>${escapeHtml(biz.businessPhone)} <span class="contact-icon">&#9742;</span></div>` : ''}
+          ${biz.businessEmail ? `<div>${escapeHtml(biz.businessEmail)} <span class="contact-icon">&#64;</span></div>` : ''}
+          ${biz.businessAddress ? `<div>${escapeHtml(biz.businessAddress)} <span class="contact-icon">&#128205;</span></div>` : ''}
         </div>
       </div>
-    </div>
-
-    <div class="content">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Description</th>
-            <th>Reference</th>
-            <th class="right">Debit</th>
-            <th class="right">Credit</th>
-            <th class="right">Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-
-      <div class="totals-wrapper">
-        <table class="totals-box">
-          <tr class="tot-row"><td>Total Invoiced</td><td class="right">${money(debtor.totalInvoiced || 0)}</td></tr>
-          <tr class="tot-row"><td>Total Paid</td><td class="right">${money(debtor.totalPaid || 0)}</td></tr>
-          <tr class="grand-tot-row"><td>Balance Due</td><td class="right">${money(balance)}</td></tr>
-          <tr><td colspan="2" class="amount-words">${totalInWords}</td></tr>
-        </table>
-      </div>
-    </div>
-
-    <div class="footer-bar">
-      <div class="thank-you">Thank you for your business</div>
-      <div class="terms-heading">Account Statement</div>
-      <div class="terms-body">This is a computer-generated statement of your account. Please contact us if you have any queries regarding the transactions listed above.</div>
     </div>
   </div>
+
+  <!-- Title / meta bar -->
+  <div class="title-bar">
+    <div class="title-bar-white"></div>
+    <div class="title-bar-content">
+      <div class="title">
+        <h1>STATEMENT</h1>
+      </div>
+      <div class="meta">
+        <div>Total Due <span>${money(balance)}</span></div>
+        <div class="divider"></div>
+        <div>As of Date <span>${today}</span></div>
+        <div class="divider"></div>
+        <div>Total Invoiced <span>${money(debtor.totalInvoiced || 0)}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Reference</th>
+          <th>Debit</th>
+          <th>Credit</th>
+          <th>Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div><span>Total Invoiced</span><span>${money(debtor.totalInvoiced || 0)}</span></div>
+      <div><span>Total Paid</span><span>${money(debtor.totalPaid || 0)}</span></div>
+      <div class="grand"><span>Balance Due</span><span>${money(balance)}</span></div>
+      <div style="background:transparent;color:var(--muted);font-style:italic;font-size:10px;justify-content:flex-end;padding:10px 0 0;border:none;">${totalInWords}</div>
+    </div>
+  </div>
+
+  <!-- Payment + signature -->
+  <div class="footer-content">
+    <div class="payment-methods">
+      <h4>ACCOUNT SUMMARY</h4>
+      <ul>
+        <li>This is a computer-generated statement.</li>
+        <li>Please review transactions carefully.</li>
+        <li>Contact us immediately if you find any discrepancies.</li>
+      </ul>
+    </div>
+    <div class="signature">
+      <div class="sig-name">${escapeHtml(biz.businessName || "Signature")}</div>
+      <p class="role">Authorized Signatory</p>
+      <p>ACCOUNT MANAGER</p>
+    </div>
+  </div>
+
+  <!-- Bottom bar -->
+  <div class="bottom-bar">
+    <h5>Thank you for your business</h5>
+    <h6>Statement Terms</h6>
+    <p>This statement reflects all activity up to ${today}. Please settle outstanding balances promptly.</p>
+  </div>
+
+</div>
+
 </body>
 </html>`;
 }
@@ -508,16 +895,21 @@ export default function DebtorsScreen() {
     if (!selected || !statement) return;
     try {
       const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
-      const { uri } = await Print.printToFileAsync({ html });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
+      if (Platform.OS === 'web') {
+        await printHtml(html, `Statement — ${selected.name}`);
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
+      }
     } catch (e: any) { console.warn(e); }
   };
 
   const printStatement = async () => {
     if (!selected || !statement) return;
     try {
-      await Print.printAsync({ html: buildStatementHtml(selected, statement, biz, currency, theme.color, currCode) });
+      const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
+      await printHtml(html, `Statement — ${selected.name}`);
     } catch (e: any) { console.warn(e); }
   };
 
@@ -581,45 +973,41 @@ export default function DebtorsScreen() {
                   <Text style={styles.actionText}>Apply Deposit</Text>
                 </Pressable>
               ) : null}
-              <Pressable onPress={() => router.push(`/reconcile?customerId=${selected.id}` as any)} style={[styles.actionBtn, { backgroundColor: theme.color.brandSecondary }]}>
-                <Ionicons name="git-compare-outline" size={16} color="#fff" />
-                <Text style={styles.actionText}>Compare Statement</Text>
-              </Pressable>
-              <Pressable onPress={() => openNote("credit")} style={[styles.actionBtn, { backgroundColor: theme.color.warning }]}>
-                <Ionicons name="pricetag-outline" size={16} color="#fff" />
-                <Text style={styles.actionText}>Give Discount / Credit</Text>
-              </Pressable>
-              <Pressable onPress={() => openNote("debit")} style={[styles.actionBtn, { backgroundColor: theme.color.info }]}>
-                <Ionicons name="add-circle-outline" size={16} color="#fff" />
-                <Text style={styles.actionText}>Add Charge / Debit</Text>
-              </Pressable>
               <Pressable onPress={shareStatementPdf} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
                 <Ionicons name="document-text-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Statement PDF</Text>
               </Pressable>
-              <Pressable onPress={printStatement} style={[styles.actionBtn, { backgroundColor: theme.color.brandSecondary }]}>
-                <Ionicons name="print-outline" size={16} color="#fff" />
-                <Text style={styles.actionText}>Print</Text>
+              <Pressable onPress={() => router.push(`/reconcile?customerId=${selected.id}` as any)} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border }]}>
+                <Ionicons name="git-compare-outline" size={16} color={theme.color.onSurface} />
+                <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Compare Statement</Text>
+              </Pressable>
+              <Pressable onPress={() => openNote("credit")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border }]}>
+                <Ionicons name="pricetag-outline" size={16} color={theme.color.onSurface} />
+                <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Give Discount / Credit</Text>
+              </Pressable>
+              <Pressable onPress={() => openNote("debit")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border }]}>
+                <Ionicons name="add-circle-outline" size={16} color={theme.color.onSurface} />
+                <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Add Charge / Debit</Text>
+              </Pressable>
+              <Pressable onPress={printStatement} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border }]}>
+                <Ionicons name="print-outline" size={16} color={theme.color.onSurface} />
+                <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Print</Text>
               </Pressable>
               {selected.phone ? (
                 <Pressable onPress={() => sendWhatsApp(selected)} style={[styles.actionBtn, { backgroundColor: "#25D366" }]}>
                   <Ionicons name="logo-whatsapp" size={16} color="#fff" />
-                  <Text style={styles.actionText}>WhatsApp Reminder</Text>
+                  <Text style={styles.actionText}>WhatsApp</Text>
                 </Pressable>
               ) : null}
               {selected.email ? (
-                <Pressable onPress={() => sendEmail(selected)} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                  <Ionicons name="mail-outline" size={16} color="#fff" />
-                  <Text style={styles.actionText}>Email Reminder</Text>
+                <Pressable onPress={() => sendEmail(selected)} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border }]}>
+                  <Ionicons name="mail-outline" size={16} color={theme.color.onSurface} />
+                  <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Email</Text>
                 </Pressable>
               ) : null}
-              <Pressable testID="btn-delete-debtor" onPress={() => deleteDebtor(selected)} disabled={deletingDebtor} style={[styles.actionBtn, { backgroundColor: theme.color.error }]}>
-                {deletingDebtor ? <ActivityIndicator color="#fff" /> : (
-                  <>
-                    <Ionicons name="trash-outline" size={16} color="#fff" />
-                    <Text style={styles.actionText}>Delete Customer</Text>
-                  </>
-                )}
+              <Pressable onPress={() => deleteDebtor(selected)} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.error }]}>
+                <Ionicons name="trash-outline" size={16} color={theme.color.error} />
+                <Text style={[styles.actionText, { color: theme.color.error }]}>Delete Customer</Text>
               </Pressable>
             </View>
           </Card>
