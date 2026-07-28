@@ -94,12 +94,15 @@ export default function CashBookScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerRow}>
-        <ScreenHeader title="Cash Book" subtitle={`Net ${fmt(totals.net, currSym)} • In ${fmt(totals.ins, currSym)} • Out ${fmt(totals.outs, currSym)}`} />
-        <Pressable testID="btn-add-cash" onPress={openAdd} style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}>
-          <Ionicons name="add" size={22} color="#fff" />
-        </Pressable>
-      </View>
+      <ScreenHeader 
+        title="Cash Book" 
+        subtitle={`Net ${fmt(totals.net, currSym)} • In ${fmt(totals.ins, currSym)} • Out ${fmt(totals.outs, currSym)}`}
+        rightAction={
+          <Pressable testID="btn-add-cash" onPress={openAdd} style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}>
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
+        }
+      />
 
       {formOpen && (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>

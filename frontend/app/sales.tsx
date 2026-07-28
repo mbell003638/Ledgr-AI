@@ -79,18 +79,19 @@ export default function SalesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <ScreenHeader title="Sales" subtitle={`${sales.length} sale${sales.length === 1 ? "" : "s"} • ${fmt(total, currSym)} total`} />
-        </View>
-        <Pressable
-          testID="btn-add-sale"
-          onPress={() => router.push("/sale-form")}
-          style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-        </Pressable>
-      </View>
+      <ScreenHeader 
+        title="Sales" 
+        subtitle={`${sales.length} sale${sales.length === 1 ? "" : "s"} • ${fmt(total, currSym)} total`}
+        rightAction={
+          <Pressable
+            testID="btn-add-sale"
+            onPress={() => router.push("/sale-form")}
+            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />

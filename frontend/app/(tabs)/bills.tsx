@@ -68,18 +68,19 @@ export default function BillsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <ScreenHeader title="Vendor Bills" subtitle={`${bills.length} purchase${bills.length === 1 ? "" : "s"} logged`} />
-        </View>
-        <Pressable
-          testID="btn-add-bill"
-          onPress={() => router.push("/bill-form")}
-          style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-        </Pressable>
-      </View>
+      <ScreenHeader 
+        title="Vendor Bills" 
+        subtitle={`${bills.length} purchase${bills.length === 1 ? "" : "s"} logged`}
+        rightAction={
+          <Pressable
+            testID="btn-add-bill"
+            onPress={() => router.push("/bill-form")}
+            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
