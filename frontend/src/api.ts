@@ -403,7 +403,18 @@ export const api = {
     const settings = await db.getSettings();
     return closeBooks({ actualStock, openingInventory: Number(settings.openingInventory || 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
   },
-  resetAll: () => db.resetAll(),
+  resetAll: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      await Promise.all([
+        'v2_sources', 'v2_journal_entries', 'v2_journal_lines', 'v2_parties',
+        'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
+        'v2_periods', 'v2_accounts', 'v2_personas', 'v2_books'
+      ].map(t => runner.run(`DELETE FROM ${t}`).catch(() => {})));
+      await runner.run(`DELETE FROM meta WHERE key LIKE 'v2_%'`).catch(() => {});
+    }
+    return db.resetAll();
+  },
 
   // AI
   parseCommand: async (text: string) => ai.parseCommand(await getAIConfig(), text),
