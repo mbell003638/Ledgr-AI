@@ -512,8 +512,8 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
           <p>
             ${escapeHtml(inv.clientName)}<br>
             ${inv.clientPhone ? `P : ${escapeHtml(inv.clientPhone)}<br>` : ''}
-            ${inv.clientEmail ? `E : ${escapeHtml(inv.clientEmail)}<br>` : ''}
-            ${inv.clientAddress ? `A : ${escapeHtml(inv.clientAddress)}` : ''}
+            ${(inv as any).clientEmail ? `E : ${escapeHtml((inv as any).clientEmail)}<br>` : ''}
+            ${(inv as any).clientAddress ? `A : ${escapeHtml((inv as any).clientAddress)}` : ''}
           </p>
         </div>
         <div class="contact-list">

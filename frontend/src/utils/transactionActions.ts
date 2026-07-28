@@ -24,11 +24,27 @@ export type TransactionDocument = {
 };
 
 export function transactionHtml(doc: TransactionDocument, themeColors?: any, bizInfo?: any, currCode: string = 'USD') {
-  const tc = themeColors || doc.themeColors || {};
-  const primary = tc.surfaceInverse || tc.surface || "#1e202c";
-  const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
-  const accentText = tc.onBrandPrimary || "#111111";
   const biz = bizInfo || doc.biz || {};
+  let primary = "#000000";
+  let accent = "#FDBA21";
+
+  if (biz.invoiceTheme === "navy_gold") {
+    primary = "#000000";
+    accent = "#FDBA21";
+  } else if (biz.invoiceTheme === "amoled_blue") {
+    primary = "#000000";
+    accent = "#3498db";
+  } else if (biz.invoiceTheme === "emerald") {
+    primary = "#1C4030";
+    accent = "#2ecc71";
+  } else if (biz.invoiceTheme === "minimal") {
+    primary = "#111513";
+    accent = "#8FB99A";
+  } else {
+    const tc = themeColors || doc.themeColors || {};
+    primary = tc.surfaceInverse || tc.surface || "#000000";
+    accent  = tc.brandPrimary || tc.brand || "#3498db";
+  }
 
   const tableRows = doc.rows.map(([label, value], i) => `
     <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
@@ -48,6 +64,13 @@ export function transactionHtml(doc: TransactionDocument, themeColors?: any, biz
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      body { background: #fff !important; padding: 0 !important; }
+    }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
     .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
     .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }

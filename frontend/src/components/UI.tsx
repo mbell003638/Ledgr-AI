@@ -5,7 +5,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 
 import { api } from "@/src/api";
 
-export function ScreenHeader({ title, subtitle, testID }: { title: string; subtitle?: string; testID?: string }) {
+export function ScreenHeader({ title, subtitle, testID, rightAction }: { title: string; subtitle?: string; testID?: string; rightAction?: React.ReactNode }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [bizName, setBizName] = React.useState<string | null>(null);
@@ -23,12 +23,15 @@ export function ScreenHeader({ title, subtitle, testID }: { title: string; subti
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
-        {bizName ? (
-          <View style={{ backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Ionicons name="business" size={12} color={theme.color.brandPrimary} />
-            <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
-          </View>
-        ) : null}
+        <View style={{ alignItems: "flex-end", gap: 8 }}>
+          {bizName ? (
+            <View style={{ flexShrink: 0, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
+              <Text style={{ fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
+            </View>
+          ) : null}
+          {rightAction}
+        </View>
       </View>
     </View>
   );

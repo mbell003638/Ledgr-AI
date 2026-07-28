@@ -59,6 +59,7 @@ export default function ReportsScreen() {
   const [receiptsReg, setReceiptsReg] = useState<any>(null);
   const [currSym, setCurrSym] = useState("$");
   const [bizName, setBizName] = useState("");
+  const [bizSettings, setBizSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rangePresetSel, setRangePresetSel] = useState("This Month");
@@ -79,6 +80,7 @@ export default function ReportsScreen() {
   const load = useCallback(async () => {
     try {
       const s = await api.getSettings();
+      setBizSettings(s);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
       const [core, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
@@ -221,13 +223,33 @@ export default function ReportsScreen() {
         ...receiptsReg.rows.map((r: any) => `${shortDate(r.date)} ${r.ref} ${r.party} (${r.method}): ${fmt(r.amount)}`),
       ].join("\n");
     }
-    return `${head}\n${body}\n\n— Sent f  // ------- Build an HTML document for PDF export -------
+    return `${head}\n${body}\n\n— Sent from Ledgr`;
+  };
+
+  // ------- Build an HTML document for PDF export -------
   const buildHtml = (): string => {
     const esc = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const tc = theme.color || {};
-    const primary = tc.surfaceInverse || tc.surface || "#1e202c";
-    const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
-    const accentText = tc.onBrandPrimary || "#111111";
+    const biz = bizSettings || {};
+    let primary = "#000000";
+    let accent = "#FDBA21";
+
+    if (biz.invoiceTheme === "navy_gold") {
+      primary = "#000000";
+      accent = "#FDBA21";
+    } else if (biz.invoiceTheme === "amoled_blue") {
+      primary = "#000000";
+      accent = "#3498db";
+    } else if (biz.invoiceTheme === "emerald") {
+      primary = "#1C4030";
+      accent = "#2ecc71";
+    } else if (biz.invoiceTheme === "minimal") {
+      primary = "#111513";
+      accent = "#8FB99A";
+    } else {
+      const tc = theme.color || {};
+      primary = tc.surfaceInverse || tc.surface || "#000000";
+      accent  = tc.brandPrimary || tc.brand || "#3498db";
+    }
 
     const lines = buildText().split("\n");
     // Remove legacy text header lines if present
@@ -235,100 +257,258 @@ export default function ReportsScreen() {
     if (lines[0] && lines[0].includes("Period")) lines.shift();
 
     let html = `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${esc(seg)} Report</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
-    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
-    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
-    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
-    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
-    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
-    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
-    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
-    .header-logo-text { font-size: 48px; font-weight: 900; color: #fff; letter-spacing: 2px; }
-    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
-    .report-top-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-    .biz-name { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
-    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
-    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
-    .report-heading { font-size: 28px; font-weight: 900; color: #111; letter-spacing: 1.5px; text-transform: uppercase; margin: 0; }
-    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
-    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
-    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
-    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
-    .banner-val { font-size: 13px; font-weight: 800; margin-top: 4px; color: #111; }
-    .content { padding: 40px; }
+    :root{
+      --dark: ${primary};
+      --gold: ${accent};
+      --gray-row: #eef0f2;
+      --text: #1e222b;
+      --muted: #7a7f8a;
+    }
+
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      body { background: #fff !important; padding: 0 !important; }
+      .report-container { box-shadow: none !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; }
+    }
+
+    @page {
+      size: A4;
+      margin: 10mm;
+    }
+
+    *{ box-sizing: border-box; margin:0; padding:0; }
+
+    body{
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background:#e9e9e9;
+      display:flex;
+      justify-content:center;
+      padding:20px 0;
+      color: #1e222b;
+    }
+
+    .report-container{
+      width: 850px;
+      background:#fff;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      overflow:hidden;
+      border-radius: 8px;
+    }
+
+    /* ---------- HEADER ---------- */
+    .header{
+      position:relative;
+      background:#fff;
+      color:#fff;
+      min-height:140px;
+      overflow:hidden;
+    }
+
+    .header-panel-left{
+      position:absolute;
+      top:0; left:0; bottom:0;
+      width:100%;
+      background:var(--dark);
+      clip-path: polygon(0 0, 37% 0, 44% 100%, 0% 100%);
+    }
+
+    .header-panel-right{
+      position:absolute;
+      top:0; left:0; bottom:0;
+      width:100%;
+      background:var(--dark);
+      clip-path: polygon(38% 0, 100% 0, 100% 100%, 45% 100%);
+    }
+
+    .header-content{
+      position:relative;
+      z-index:2;
+      display:flex;
+      min-height:140px;
+    }
+
+    .header-left{
+      width:44%;
+      padding:30px 25px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+    }
+
+    .logo{
+      font-size:32px;
+      font-weight:800;
+      letter-spacing:1px;
+      color:#ffffff;
+      text-transform: uppercase;
+    }
+    .header-logo { max-height: 75px; max-width: 180px; object-fit: contain; }
+
+    .header-right{
+      flex:1;
+      padding:25px 35px 25px 10px;
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+    }
+
+    .invoice-to h4{
+      color:var(--gold);
+      font-size:13px;
+      letter-spacing:1px;
+      margin-bottom:6px;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .invoice-to p{
+      font-size:14px;
+      line-height:1.5;
+      color:#ffffff;
+      font-weight:700;
+      text-transform: uppercase;
+    }
+
+    /* ---------- TITLE BAR ---------- */
+    .title-bar{
+      position:relative;
+      background:var(--gold);
+      color:#fff;
+      min-height:80px;
+      overflow:hidden;
+    }
+
+    .title-bar-panel-left{
+      position:absolute;
+      top:0; left:0; bottom:0;
+      width:100%;
+      background:#fff;
+      clip-path: polygon(0 0, 45% 0, 48% 100%, 0% 100%);
+    }
+
+    .title-bar-panel-right{
+      position:absolute;
+      top:0; left:0; bottom:0;
+      width:100%;
+      background:var(--gold);
+      clip-path: polygon(45.5% 0, 100% 0, 100% 100%, 48.5% 100%);
+    }
+
+    .title-bar-content{
+      position:relative;
+      z-index:2;
+      display:flex;
+      align-items:center;
+      min-height:80px;
+    }
+
+    .title-left{
+      width:48%;
+      padding:0 25px;
+      font-size:22px;
+      font-weight:900;
+      letter-spacing:2px;
+      color:#1e222b;
+      text-transform:uppercase;
+    }
+
+    .title-right{
+      flex:1;
+      display:flex;
+      justify-content:flex-start;
+      padding-left:15px;
+      color:#1e222b;
+    }
+
+    .title-col{
+      border-left:1px solid rgba(0,0,0,0.3);
+      padding-left:18px;
+      margin-right:20px;
+    }
+
+    .title-col:first-child{ border-left:none; padding-left:0; }
+
+    .title-label{ font-size:10px; text-transform:uppercase; color:#222; font-weight:700; }
+    .title-val{ font-size:12px; font-weight:800; margin-top:2px; }
+
+    .content { padding: 24px 30px; }
     
-    .box-green { background: #f0f9f3; border: 1px solid #cce6d5; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
-    .box-yellow { background: #fcf9eb; border: 1px solid #f0e1a8; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
-    .box-normal { background: #f9f9f9; border: 1px solid #e8e5de; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
+    .box-green { background: #F8FBFD; border: 1px solid #DCEAF7; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; page-break-inside: avoid; break-inside: avoid; }
+    .box-yellow { background: #FFFDF5; border: 1px solid #F0D88A; border-radius: 10px; padding: 18px 22px; margin-top: 20px; page-break-inside: avoid; break-inside: avoid; }
     
-    .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e8e5de; font-size: 13px; }
-    .row.no-border { border-bottom: none; }
-    .row-key { color: #5a5752; font-weight: 500; }
-    .row-val { color: #1a1918; font-weight: 700; }
+    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eef0f2; font-size: 13px; }
+    .row:last-child { border-bottom: none; }
+    .row-key { color: #57606a; font-weight: 500; }
+    .row-val { color: #1f2328; font-weight: 700; font-variant-numeric: tabular-nums; }
     
-    .box-green .row { border-bottom: 1px solid #cce6d5; }
+    .box-green .row { border-bottom: 1px solid #dceaf7; }
     .box-green .row:last-child { border-bottom: none; }
-    .box-green .row-key { color: #2d5a37; font-weight: 600; }
-    .box-green .row-val { color: #1e3f25; }
-
-    .box-yellow .row { border-bottom: 1px dashed #f0e1a8; }
+    .box-green .row-key { color: #1a568a; font-weight: 600; }
+    .box-green .row-val { color: #0d385c; font-weight: 800; }
+    
+    .box-yellow .row { border-bottom: 1px dashed #f0d88a; }
     .box-yellow .row:last-child { border-bottom: none; }
-    .box-yellow .row-key { color: #856a20; }
-    .box-yellow .row-val { color: #5c4811; }
+    .box-yellow .row-key { color: #856100; font-weight: 500; }
+    .box-yellow .row-val { color: #523b00; font-weight: 700; }
+    .box-yellow .section-title { color: #a77a00; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 0; }
 
-    .section-title { font-size: 12px; font-weight: 800; color: ${primary}; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; margin-top: 10px; }
-    .grid { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px; }
-    .col { flex: 1; min-width: 280px; }
-    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; margin-top: 40px; }
-    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .section-title { font-size: 11px; font-weight: 800; color: #6e7781; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 14px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px; page-break-inside: avoid; break-inside: avoid; }
+    .col { flex: 1; min-width: 260px; }
+    
+    .total-row { border-top: 2px solid var(--dark); border-bottom: none; padding-top: 8px; font-weight: 800; font-size: 14px; }
+    .total-row .row-key { color: var(--dark); font-weight: 800; }
+    .total-row .row-val { color: var(--dark); font-weight: 800; font-size: 14px; }
+
+    .footer-bar { background: var(--dark); color: #fff; padding: 18px 30px; font-size: 10px; border-top: 5px solid var(--gold); margin-top: 24px; display: flex; justify-content: space-between; align-items: center; }
+    .thank-you { color: var(--gold); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
   </style>
 </head>
 <body>
-  <div class="page-container">
-    <div class="top-bg-container">
-      <div class="bg-dark"></div>
-      <div class="bg-white-slant"></div>
-      <div class="bg-yellow-slant"></div>
-      <div class="bg-yellow-rect"></div>
-      <div class="bg-yellow-border"></div>
-    </div>
-
-    <div class="header-content">
-      <div class="header-left">
-        <div class="header-logo-text">${esc(bizName ? bizName.substring(0, 1) : 'L')}</div>
-      </div>
-      <div class="header-right">
-        <div class="report-top-title">FINANCIAL REPORT</div>
-        <div class="biz-name">${esc(bizName || "Ledgr")}</div>
-      </div>
-    </div>
-
-    <div class="banner-content">
-      <div class="banner-left">
-        <h1 class="report-heading">${esc(seg === 'Summary' ? 'Report' : seg)}</h1>
-      </div>
-      <div class="banner-right">
-        <div class="banner-col">
-          <div class="banner-label">Period</div>
-          <div class="banner-val">${esc(from)} to ${esc(to)}</div>
+  <div class="report-container">
+    <div class="header">
+      <div class="header-panel-left"></div>
+      <div class="header-panel-right"></div>
+      <div class="header-content">
+        <div class="header-left">
+          ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="logo">${esc(bizName || "Ledgr")}</div>`}
         </div>
-        <div class="banner-col">
-          <div class="banner-label">Generated</div>
-          <div class="banner-val">${new Date().toLocaleDateString()}</div>
+        <div class="header-right">
+          <div class="invoice-to">
+            <h4>FINANCIAL REPORT</h4>
+            <p>${esc(bizName || "Ledgr")}</p>
+          </div>
         </div>
       </div>
     </div>
 
+    <div class="title-bar">
+      <div class="title-bar-panel-left"></div>
+      <div class="title-bar-panel-right"></div>
+      <div class="title-bar-content">
+        <div class="title-left">${esc(seg === 'Summary' ? 'REPORT' : seg.toUpperCase())}</div>
+        <div class="title-right">
+          <div class="title-col">
+            <div class="title-label">Period</div>
+            <div class="title-val">${esc(from)} to ${esc(to)}</div>
+          </div>
+          <div class="title-col">
+            <div class="title-label">Generated</div>
+            <div class="title-val">${new Date().toLocaleDateString()}</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="content">
-`;/div>
-    </div>
 `;
 
     let currentSection = "";
@@ -360,7 +540,16 @@ export default function ReportsScreen() {
       if (parts.length > 1) {
         const k = parts.shift()!;
         const v = parts.join(":");
-        return `<div class="row ${isLast ? 'no-border' : ''}"><span class="row-key">${esc(k.trim())}</span><span class="row-val">${esc(v.trim())}</span></div>`;
+        let valStyle = "";
+        const valStr = v.trim();
+        if (valStr.startsWith("+")) valStyle = "color:#2d5a37;font-weight:700;";
+        else if (valStr.startsWith("-") || valStr.startsWith("−")) valStyle = "color:#a93226;font-weight:700;";
+
+        const isTotal = k.toLowerCase().includes("total") || k.toLowerCase().includes("ending stake");
+        return `<div class="row ${isLast ? 'no-border' : ''} ${isTotal ? 'total-row' : ''}">
+          <span class="row-key">${esc(k.trim())}</span>
+          <span class="row-val" style="${valStyle}">${esc(valStr)}</span>
+        </div>`;
       }
       return `<div class="row ${isLast ? 'no-border' : ''}"><span class="row-key" style="color:#111;font-weight:700">${esc(l)}</span></div>`;
     };
@@ -368,18 +557,18 @@ export default function ReportsScreen() {
     const renderSection = (s: { title: string; lines: string[] }, style: 'normal' | 'green' | 'yellow') => {
       if (style === 'green') {
         return `<div class="box-green">
-          ${s.title ? `<div class="section-title" style="color:#2d5a37;margin-top:15px;">${esc(s.title)}</div>` : ''}
+          ${s.title ? `<div class="section-title" style="color:#2d5a37;font-size:13px;margin-bottom:8px;">${esc(s.title)}</div>` : ''}
           ${s.lines.map((l, i) => renderRow(l, i === s.lines.length - 1)).join("")}
         </div>`;
       } else if (style === 'yellow') {
         return `<div class="box-yellow">
-          ${s.title ? `<div class="section-title">${esc(s.title)}</div>` : ''}
+          ${s.title ? `<div class="section-title" style="color:#a88117;font-size:15px;margin-bottom:12px;">${esc(s.title)}</div>` : ''}
           ${s.lines.map((l, i) => renderRow(l, i === s.lines.length - 1)).join("")}
         </div>`;
       } else {
-        return `<div>
+        return `<div style="margin-bottom:20px;">
           ${s.title ? `<div class="section-title">${esc(s.title)}</div>` : ''}
-          ${s.lines.map((l, i) => renderRow(l, false)).join("")}
+          ${s.lines.map((l, i) => renderRow(l, i === s.lines.length - 1)).join("")}
         </div>`;
       }
     };
@@ -388,21 +577,25 @@ export default function ReportsScreen() {
        htmlContent += renderSection(sections[0], 'normal');
     } else {
       let i = 0;
-      if (sections[0] && sections[0].title && (sections[0].title.toUpperCase().includes("LIVE") || sections[0].title.toUpperCase().includes("PROFIT") || sections[0].title.toUpperCase().includes("SUMMARY"))) {
+      if (sections[0] && (sections[0].title.toUpperCase().includes("LIVE") || sections[0].title.toUpperCase().includes("PROFIT") || sections[0].title.toUpperCase().includes("SUMMARY"))) {
         htmlContent += renderSection(sections[0], 'green');
         i++;
-      } else if (sections.length > 1 && i === 0 && (!sections[0].title || sections[0].title === '')) {
+      } else if (sections.length > 1 && (!sections[0].title || sections[0].title === '')) {
         htmlContent += renderSection(sections[0], 'green');
         i++;
       }
 
-      let gridSections = [];
+      let gridSections: { title: string; lines: string[] }[] = [];
+      let yellowSections: { title: string; lines: string[] }[] = [];
+
       while (i < sections.length) {
         const s = sections[i];
-        if (s.title && (s.title.toUpperCase().includes("PARTNER") || s.title.toUpperCase().includes("RECONCILIATION") || s.title.toUpperCase().includes("LEGACY") || s.title.toUpperCase().includes("DRAWINGS"))) {
-          break; 
+        const t = (s.title || "").toUpperCase();
+        if (t.includes("PARTNER") || t.includes("RECONCILIATION") || t.includes("STAKE") || t.includes("LEGACY")) {
+          yellowSections.push(s);
+        } else {
+          gridSections.push(s);
         }
-        gridSections.push(s);
         i++;
       }
       
@@ -410,9 +603,17 @@ export default function ReportsScreen() {
         htmlContent += `<div class="grid">`;
         const col1: any[] = [];
         const col2: any[] = [];
-        gridSections.forEach((s, idx) => {
-          if (idx % 2 === 0) col1.push(s);
-          else col2.push(s);
+        
+        gridSections.forEach((s) => {
+          const t = (s.title || "").toUpperCase();
+          if (t.includes("ASSET")) {
+            col1.push(s);
+          } else if (t.includes("LIABILIT") || t.includes("DRAWING")) {
+            col2.push(s);
+          } else {
+            if (col1.length <= col2.length) col1.push(s);
+            else col2.push(s);
+          }
         });
         
         htmlContent += `<div class="col">${col1.map(s => renderSection(s, 'normal')).join("")}</div>`;
@@ -422,10 +623,9 @@ export default function ReportsScreen() {
         htmlContent += `</div>`;
       }
       
-      while (i < sections.length) {
-        htmlContent += renderSection(sections[i], 'yellow');
-        i++;
-      }
+      yellowSections.forEach((s) => {
+        htmlContent += renderSection(s, 'yellow');
+      });
     }
 
     html += htmlContent;
@@ -448,6 +648,10 @@ export default function ReportsScreen() {
 
   const sharePdf = async () => {
     try {
+      if (!bizSettings) {
+        const s = await api.getSettings().catch(() => ({}));
+        setBizSettings(s);
+      }
       const html = buildHtml();
       if (Platform.OS === 'web') {
         await printHtml(html, `${seg} Report`);
@@ -468,17 +672,20 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg }}>
-        <ScreenHeader title="Reports" subtitle="Financial statements" />
-        <Pressable
-          testID="btn-custom-report"
-          onPress={() => router.push("/custom-report")}
-          style={({ pressed }) => [styles.customReportBtn, pressed && { opacity: 0.85 }]}
-        >
-          <Ionicons name="options-outline" size={16} color={theme.color.brandPrimary} />
-          <Text style={styles.customReportBtnText}>Custom Report</Text>
-        </Pressable>
-      </View>
+      <ScreenHeader 
+        title="Reports" 
+        subtitle="Financial statements"
+        rightAction={
+          <Pressable
+            testID="btn-custom-report"
+            onPress={() => router.push("/custom-report")}
+            style={({ pressed }) => [styles.customReportBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="options-outline" size={16} color={theme.color.brandPrimary} />
+            <Text style={styles.customReportBtnText}>Custom Report</Text>
+          </Pressable>
+        }
+      />
 
       {/* Report category segments */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>

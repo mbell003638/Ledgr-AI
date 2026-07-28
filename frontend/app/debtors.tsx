@@ -15,6 +15,7 @@ import * as Sharing from "expo-sharing";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { getCurrencySymbol } from "@/src/db/local";
 import { printHtml } from "@/src/utils/print";
+import { confirmAction, showAlert } from "@/src/utils/alerts";
 
 type Debtor = {
   id: string;
@@ -746,18 +747,7 @@ export default function DebtorsScreen() {
     setShowAdd(true);
   };
 
-  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`)) {
-        onConfirm();
-      }
-    } else {
-      Alert.alert(title, message, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onConfirm },
-      ]);
-    }
-  };
+
 
   // Delete a customer.
   const deleteDebtor = (d: Debtor) => {
