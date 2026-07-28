@@ -739,7 +739,10 @@ export default function SettingsScreen() {
                   ].map((t) => (
                     <Pressable
                       key={t.id}
-                      onPress={() => setInvoiceTheme(t.id)}
+                      onPress={async () => {
+                        setInvoiceTheme(t.id);
+                        await api.updateSettings({ invoiceTheme: t.id });
+                      }}
                       style={[{
                         paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20,
                         borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
