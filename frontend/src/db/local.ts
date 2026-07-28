@@ -42,7 +42,7 @@ let writeChain: Promise<any> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const run = writeChain.then(fn, fn);
   // keep the chain alive even if a op rejects
-  writeChain = run.catch(() => {});
+  writeChain = run.catch(() => { });
   return run;
 }
 
@@ -134,7 +134,6 @@ export async function getSettings() {
     accountingBasis: s.accountingBasis === 'cash' ? 'cash' : 'accrual',
     invoiceTheme: s.invoiceTheme ?? 'navy_gold',
     invoiceTerms: s.invoiceTerms ?? '',
-    themeMode: s.themeMode ?? 'system',
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
