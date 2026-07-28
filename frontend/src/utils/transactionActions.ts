@@ -118,7 +118,7 @@ export function transactionHtml(doc: TransactionDocument, themeColors?: any, biz
 
     <div class="header-content">
       <div class="header-left">
-        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="header-logo-text">${escapeHtml(biz.businessName ? biz.businessName.substring(0, 1) : 'L')}</div>`}
+        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="header-logo-text">${escapeHtml(biz.businessName || "Ledgr")}</div>`}
       </div>
       <div class="header-right">
         <div class="doc-to-title">TRANSACTION RECORD</div>

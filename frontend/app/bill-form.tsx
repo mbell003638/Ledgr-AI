@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -96,16 +96,57 @@ export default function BillForm() {
     await runOcr(asset.base64!, asset.mimeType || "image/jpeg");
   };
 
+  type LineItem = { description: string; qty: string; rate: string };
+  const [lines, setLines] = useState<LineItem[]>([]);
+
+  const addLine = () => setLines((prev) => [...prev, { description: "", qty: "1", rate: "" }]);
+  const removeLine = (idx: number) => {
+    setLines((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      const totalAmt = next.reduce((sum, l) => sum + (parseFloat(l.qty) || 0) * (parseFloat(l.rate) || 0), 0);
+      if (totalAmt > 0) setAmount(totalAmt.toFixed(2));
+      return next;
+    });
+  };
+  const updateLine = (idx: number, field: keyof LineItem, val: string) => {
+    setLines((prev) => {
+      const next = prev.map((l, i) => (i === idx ? { ...l, [field]: val } : l));
+      const totalAmt = next.reduce((sum, l) => sum + (parseFloat(l.qty) || 0) * (parseFloat(l.rate) || 0), 0);
+      if (totalAmt > 0) setAmount(totalAmt.toFixed(2));
+      return next;
+    });
+  };
+
   const save = async () => {
     setError("");
-    if (!supplierId) { setError("Select a supplier"); return; }
+    let finalSupplierId = supplierId;
+    if (!finalSupplierId && newSupplierName.trim()) {
+      const existing = suppliers.find(s => s.name.toLowerCase() === newSupplierName.trim().toLowerCase());
+      if (existing) {
+        finalSupplierId = existing.id;
+      } else {
+        try {
+          const created = await api.createSupplier({ name: newSupplierName.trim(), phone: newSupplierPhone.trim() });
+          finalSupplierId = created.id;
+        } catch (e: any) {
+          setError(e.message || "Failed to create supplier");
+          return;
+        }
+      }
+    }
+    if (!finalSupplierId) { setError("Enter or select a supplier"); return; }
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     setSaving(true);
     try {
+      const itemSummaryText = lines.length > 0
+        ? lines.map((l) => `${l.description || 'Item'} (${l.qty} x $${l.rate})`).join(", ")
+        : "";
+      const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
+
       const payload = {
-        supplierId, date, amount: amt, currency,
-        paymentType, invoiceNo, notes, photo,
+        supplierId: finalSupplierId, date, amount: amt, currency,
+        paymentType, invoiceNo, notes: finalNotes, photo,
       };
       if (editId) await api.updateBill(editId, payload);
       else await api.createBill(payload);
@@ -120,6 +161,28 @@ export default function BillForm() {
     try { await api.deleteBill(editId); router.back(); }
     catch (e: any) { setError(e.message); }
     finally { setDeleting(false); }
+  };
+
+  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierPhone, setNewSupplierPhone] = useState("");
+  const [addingSupplier, setAddingSupplier] = useState(false);
+
+  const handleCreateSupplierInline = async () => {
+    if (!newSupplierName.trim()) return;
+    setAddingSupplier(true);
+    try {
+      const created = await api.createSupplier({ name: newSupplierName.trim(), phone: newSupplierPhone.trim() });
+      setSuppliers((prev) => [...prev, created]);
+      setSupplierId(created.id);
+      setShowAddSupplierModal(false);
+      setNewSupplierName("");
+      setNewSupplierPhone("");
+    } catch (e: any) {
+      setError(e.message || "Failed to create supplier");
+    } finally {
+      setAddingSupplier(false);
+    }
   };
 
   return (
@@ -160,23 +223,80 @@ export default function BillForm() {
           ) : null}
 
           <Card style={{ marginTop: theme.spacing.md }}>
-            <Text style={styles.label}>Supplier</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
-              {suppliers.length === 0 ? (
-                <Text style={styles.hint}>No suppliers. Add one first.</Text>
-              ) : suppliers.map((s) => (
-                <Pressable
-                  key={s.id}
-                  testID={`supplier-chip-${s.id}`}
-                  onPress={() => setSupplierId(s.id)}
-                  style={[styles.chip, supplierId === s.id && styles.chipActive]}
-                >
-                  <Text style={[styles.chipText, supplierId === s.id && styles.chipTextActive]}>{s.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+            <Text style={styles.label}>Supplier / Vendor name *</Text>
+            <TextInput
+              testID="input-supplier-name"
+              value={newSupplierName}
+              onChangeText={setNewSupplierName}
+              placeholder="e.g. Sharma Traders"
+              placeholderTextColor={theme.color.muted}
+              autoCapitalize="words"
+              style={styles.input}
+            />
+            {suppliers.length > 0 && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {suppliers
+                  .filter((e) => !newSupplierName.trim() || e.name.toLowerCase().includes(newSupplierName.trim().toLowerCase()))
+                  .slice(0, 6)
+                  .map((e) => (
+                    <Pressable key={e.id} testID={`pick-supp-${e.id}`} onPress={() => { setNewSupplierName(e.name); setSupplierId(e.id); }} style={styles.chip}>
+                      <Text style={styles.chipText}>{e.name}</Text>
+                    </Pressable>
+                  ))}
+              </View>
+            )}
+            <Text style={[styles.label, { marginTop: 12 }]}>Phone (optional)</Text>
+            <TextInput
+              testID="input-supplier-phone"
+              value={newSupplierPhone}
+              onChangeText={setNewSupplierPhone}
+              keyboardType="phone-pad"
+              placeholder="+1 555 000 0000"
+              placeholderTextColor={theme.color.muted}
+              style={styles.input}
+            />
 
-            <Text style={[styles.label, { marginTop: 8 }]}>Amount</Text>
+            {/* Line Items / Products (Optional) */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>
+              <Text style={styles.label}>Itemized Items & Prices (Optional)</Text>
+              <Pressable onPress={addLine} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Ionicons name="add-circle-outline" size={16} color={theme.color.brandPrimary} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: theme.color.brandPrimary }}>+ Add Item</Text>
+              </Pressable>
+            </View>
+
+            {lines.map((item, idx) => (
+              <View key={idx} style={{ flexDirection: "row", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                <TextInput
+                  placeholder="Item Description"
+                  placeholderTextColor={theme.color.muted}
+                  value={item.description}
+                  onChangeText={(val) => updateLine(idx, "description", val)}
+                  style={[styles.input, { flex: 2, marginTop: 0 }]}
+                />
+                <TextInput
+                  placeholder="Qty"
+                  placeholderTextColor={theme.color.muted}
+                  value={item.qty}
+                  keyboardType="numeric"
+                  onChangeText={(val) => updateLine(idx, "qty", val)}
+                  style={[styles.input, { flex: 1, marginTop: 0 }]}
+                />
+                <TextInput
+                  placeholder="Price"
+                  placeholderTextColor={theme.color.muted}
+                  value={item.rate}
+                  keyboardType="decimal-pad"
+                  onChangeText={(val) => updateLine(idx, "rate", val)}
+                  style={[styles.input, { flex: 1.2, marginTop: 0 }]}
+                />
+                <Pressable onPress={() => removeLine(idx)} style={{ padding: 4 }}>
+                  <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                </Pressable>
+              </View>
+            ))}
+
+            <Text style={[styles.label, { marginTop: 8 }]}>Total Amount ($)</Text>
             <TextInput
               testID="input-amount"
               value={amount}
@@ -234,6 +354,7 @@ export default function BillForm() {
           <View style={{ height: 60 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
     </SafeAreaView>
   );
 }

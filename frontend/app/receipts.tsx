@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { shortDate } from "@/src/theme";
@@ -9,7 +9,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { confirmAction } from "@/src/utils/alerts";
-import { Empty } from "@/src/components/UI";
+import { Empty, Card } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
@@ -46,19 +46,7 @@ export default function ReceiptsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Receipt | null>(null);
 
-  // form state
-  const [formOpen, setFormOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>("cash_sale");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(todayStr());
-  const [clientName, setClientName] = useState("");
-  const [debtorId, setDebtorId] = useState<string | null>(null);
-  const [invoiceId, setInvoiceId] = useState<string | null>(null);
-  const [method, setMethod] = useState("cash");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const [ocrBusy, setOcrBusy] = useState(false);
+
 
   const load = useCallback(async () => {
     try {
@@ -76,71 +64,6 @@ export default function ReceiptsScreen() {
 
   const totalReceived = useMemo(() => receipts.reduce((s, r) => s + (Number(r.amount) || 0), 0), [receipts]);
 
-  const resetForm = () => {
-    setMode("cash_sale"); setAmount(""); setDate(todayStr()); setClientName("");
-    setDebtorId(null); setInvoiceId(null); setMethod("cash"); setNotes(""); setErr("");
-  };
-  const openAdd = () => { resetForm(); setFormOpen(true); };
-
-  // Scan / upload a receipt image → OCR → prefill amount, date, customer.
-  const runOcr = async (base64: string, mimeType: string) => {
-    setOcrBusy(true); setErr("");
-    try {
-      const r = await api.ocrReceipt(base64, mimeType);
-      if (r.amount) setAmount(String(r.amount));
-      if (r.date) setDate(r.date);
-      if (r.supplierName && !clientName) setClientName(r.supplierName);
-    } catch (e: any) {
-      setErr(e?.message || "Could not read the image.");
-    } finally { setOcrBusy(false); }
-  };
-  const scan = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { setErr("Camera permission denied."); return; }
-    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets[0].base64) return;
-    await runOcr(res.assets[0].base64!, res.assets[0].mimeType || "image/jpeg");
-  };
-  const uploadImg = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { setErr("Gallery permission denied."); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets[0].base64) return;
-    await runOcr(res.assets[0].base64!, res.assets[0].mimeType || "image/jpeg");
-  };
-
-  // When an invoice is picked, prefill client + amount (its open balance).
-  const pickInvoice = async (inv: Invoice) => {
-    setInvoiceId(inv.id);
-    setClientName(inv.clientName);
-    const match = debtors.find((d) => d.name.trim().toLowerCase() === inv.clientName.trim().toLowerCase());
-    setDebtorId(match ? match.id : null);
-    try {
-      const paid = await api.invoicePaidAmount(inv.id);
-      const open = +(inv.total - paid).toFixed(2);
-      setAmount(open > 0 ? String(open) : "");
-    } catch { setAmount(String(inv.total)); }
-  };
-
-  const save = async () => {
-    setErr("");
-    const amt = parseFloat(amount);
-    if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter a valid amount."); return; }
-    if (mode === "against_invoice" && !invoiceId) { setErr("Pick an invoice to settle."); return; }
-    if (mode === "advance" && !debtorId) { setErr("Pick a customer for the advance."); return; }
-    setSaving(true);
-    try {
-      const payload: any = { mode, date, amount: amt, method, notes, clientName: clientName.trim(), debtorId };
-      if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
-      if (mode === "cash_sale") payload.taxRate = taxRate;
-      await api.createReceipt(payload);
-      setFormOpen(false);
-      resetForm();
-      await load();
-    } catch (e: any) {
-      setErr(e?.message || "Failed to save receipt.");
-    } finally { setSaving(false); }
-  };
 
   const remove = (r: Receipt) => {
     confirmAction(
@@ -157,11 +80,10 @@ export default function ReceiptsScreen() {
       }
     );
   };
+  const router = useRouter();
 
   const openEdit = (r: Receipt) => {
-    setMode(r.mode); setAmount(String(r.amount)); setDate(r.date); setClientName(r.clientName || "");
-    setDebtorId(r.debtorId || null); setMethod(r.method || "cash"); setNotes(r.notes || "");
-    setSelected(null); setFormOpen(true);
+    router.push({ pathname: "/receipt-form", params: { id: r.id } } as any);
   };
   const documentFor = (r: Receipt) => ({ title: `Receipt ${r.receiptNumber}`, subtitle: MODE_LABEL[r.mode], rows: [
     ["Customer", r.clientName || "Walk-in"], ["Date", shortDate(r.date)], ["Amount", `${currSym}${Number(r.amount).toFixed(2)}`],
@@ -193,7 +115,7 @@ export default function ReceiptsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Receipts</Text>
-        <Pressable onPress={openAdd}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable onPress={() => router.push("/receipt-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
       <View style={styles.summaryBar}>
         <Text style={styles.summaryLabel}>Total Received</Text>
@@ -219,98 +141,7 @@ export default function ReceiptsScreen() {
         )}
       />
 
-      <Modal visible={formOpen} transparent animationType="slide">
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>New Receipt</Text>
-                <Pressable onPress={() => setFormOpen(false)}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
-              </View>
-              <ScrollView keyboardShouldPersistTaps="handled">
-                <View style={styles.scanRow}>
-                  <Pressable onPress={scan} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1 }]}>
-                    <Ionicons name="camera-outline" size={16} color="#fff" />
-                    <Text style={styles.scanText}>Scan</Text>
-                  </Pressable>
-                  <Pressable onPress={uploadImg} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1, backgroundColor: theme.color.brandSecondary }]}>
-                    <Ionicons name="image-outline" size={16} color="#fff" />
-                    <Text style={styles.scanText}>Upload</Text>
-                  </Pressable>
-                </View>
-                {ocrBusy ? <Text style={styles.hint}>Reading image…</Text> : null}
 
-                <Text style={styles.label}>Type</Text>
-                <View style={styles.modeRow}>
-                  {(["cash_sale", "against_invoice", "advance"] as Mode[]).map((m) => (
-                    <Pressable key={m} onPress={() => { setMode(m); setInvoiceId(null); }} style={[styles.modeBtn, mode === m && styles.modeBtnActive]}>
-                      <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>{MODE_LABEL[m]}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {mode === "against_invoice" && (
-                  <>
-                    <Text style={[styles.label, { marginTop: 12 }]}>Settle Invoice</Text>
-                    {invoices.length === 0 ? (
-                      <Text style={styles.hint}>No unpaid invoices.</Text>
-                    ) : invoices.map((inv) => (
-                      <Pressable key={inv.id} onPress={() => pickInvoice(inv)} style={[styles.pickRow, invoiceId === inv.id && styles.pickRowActive]}>
-                        <Text style={styles.pickTitle}>{inv.invoiceNumber} · {inv.clientName}</Text>
-                        <Text style={styles.pickAmt}>{currSym}{Number(inv.total).toFixed(2)}</Text>
-                      </Pressable>
-                    ))}
-                  </>
-                )}
-
-                {mode === "advance" && (
-                  <>
-                    <Text style={[styles.label, { marginTop: 12 }]}>Customer</Text>
-                    {debtors.length === 0 ? (
-                      <Text style={styles.hint}>No customers yet. Add one from Debtors.</Text>
-                    ) : debtors.map((d) => (
-                      <Pressable key={d.id} onPress={() => { setDebtorId(d.id); setClientName(d.name); }} style={[styles.pickRow, debtorId === d.id && styles.pickRowActive]}>
-                        <Text style={styles.pickTitle}>{d.name}</Text>
-                      </Pressable>
-                    ))}
-                  </>
-                )}
-
-                {mode === "cash_sale" && (
-                  <>
-                    <Text style={[styles.label, { marginTop: 12 }]}>Customer (optional)</Text>
-                    <TextInput value={clientName} onChangeText={setClientName} placeholder="Walk-in" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  </>
-                )}
-
-                <Text style={[styles.label, { marginTop: 12 }]}>Amount Received</Text>
-                <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                <Text style={[styles.label, { marginTop: 12 }]}>Date</Text>
-                <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                <Text style={[styles.label, { marginTop: 12 }]}>Method</Text>
-                <View style={styles.modeRow}>
-                  {["cash", "card", "bank", "upi"].map((m) => (
-                    <Pressable key={m} onPress={() => setMethod(m)} style={[styles.modeBtn, method === m && styles.modeBtnActive]}>
-                      <Text style={[styles.modeText, method === m && styles.modeTextActive]}>{m.toUpperCase()}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
-                <TextInput value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 50 }]} multiline />
-
-                {err ? <Text style={styles.error}>{err}</Text> : null}
-                <Pressable onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
-                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Receipt</Text>}
-                </Pressable>
-                <View style={{ height: 20 }} />
-              </ScrollView>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -329,7 +160,7 @@ function makeStyles(theme: any) {
     rowSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
     rowAmount: { fontSize: 15, fontWeight: "700", color: theme.color.success },
     modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-    modalBox: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: theme.spacing.lg, maxHeight: "88%" },
+    modalBox: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: theme.spacing.lg, maxHeight: "88%", width: "100%", maxWidth: 480, alignSelf: "center" },
     modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.md },
     modalTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
     label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },

@@ -128,11 +128,27 @@ export default function PaymentForm() {
             <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
             <TextInput testID="input-payment-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Method</Text>
-            <TextInput testID="input-method" value={method} onChangeText={setMethod} placeholder="cash / bank / mobile" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Payment Method</Text>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+              <Pressable
+                onPress={() => { setMethod("cash"); }}
+                style={[styles.segBtnFull, { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border }, method === "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
+              >
+                <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface, textAlign: "center" }, method === "cash" && { color: "#fff" }]}>Cash</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { setMethod(method === "cash" ? "" : method); }}
+                style={[styles.segBtnFull, { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border }, method !== "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
+              >
+                <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface, textAlign: "center" }, method !== "cash" && { color: "#fff" }]}>Bank / Custom</Text>
+              </Pressable>
+            </View>
+            {method !== "cash" && (
+              <TextInput testID="input-method" value={method} onChangeText={setMethod} placeholder="e.g. Bank Transfer, UPI, Check" placeholderTextColor={theme.color.muted} style={[styles.input, { marginTop: 8 }]} />
+            )}
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
-            <TextInput testID="input-payment-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
+            <Text style={[styles.label, { marginTop: 12 }]}>Details / Information (Payment For / Reason)</Text>
+            <TextInput testID="input-payment-notes" value={notes} onChangeText={setNotes} placeholder="e.g. Payment for Invoice INV-001, July rent, equipment" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
           </Card>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable testID="btn-save-payment" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>

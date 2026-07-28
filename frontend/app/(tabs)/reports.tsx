@@ -161,23 +161,26 @@ export default function ReportsScreen() {
     let body = "";
     if (seg === "Summary" && dash) {
       body = [
-        `— LIVE (current period)`,
+        `— PROFIT (LIVE)`,
         line("Sales", dash.totalSales),
         line("Purchases", dash.totalPurchases),
         line("Gross Profit", dash.grossProfit),
         line("Net Profit", dash.netProfit),
+        ``,
+        `— ASSETS`,
         line("Cash", dash.cash),
         line("Inventory", dash.inventoryValue),
         line("Outstanding Debtors", dash.accountsReceivable || 0),
-        line("Net Worth", dash.netWorth),
+        line("Total Assets", dash.cash + dash.inventoryValue + (dash.accountsReceivable || 0)),
+        ``,
+        `— LIABILITIES`,
         line("Creditors", dash.liabilities),
         `Registered Suppliers: ${dash.suppliers}`,
+        line("Net Worth (Equity)", dash.netWorth),
         ``,
-        `— LEGACY (closed periods: ${legacy.entries})`,
+        `— PARTNER STAKES RECONCILIATION`,
         line("Total Profit (legacy)", legacy.totalProfit),
         line("Total Drawings (legacy)", legacy.totalDrawings),
-        ``,
-        `— PARTNER CAPITAL`,
         ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
         cap ? line("Closing Capital", cap.closingCapital) : "",
       ].join("\n");
@@ -442,24 +445,24 @@ export default function ReportsScreen() {
 
     .content { padding: 24px 30px; }
     
-    .box-green { background: #F8FBFD; border: 1px solid #DCEAF7; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; page-break-inside: avoid; break-inside: avoid; }
-    .box-yellow { background: #FFFDF5; border: 1px solid #F0D88A; border-radius: 10px; padding: 18px 22px; margin-top: 20px; page-break-inside: avoid; break-inside: avoid; }
+    .box-green { background: #fafafa; border: 1px solid #eaeaea; border-top: 3px solid var(--dark); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; page-break-inside: avoid; break-inside: avoid; }
+    .box-yellow { background: #fafafa; border: 1px solid #eaeaea; border-top: 3px solid var(--gold); border-radius: 10px; padding: 18px 22px; margin-top: 20px; page-break-inside: avoid; break-inside: avoid; }
     
     .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eef0f2; font-size: 13px; }
     .row:last-child { border-bottom: none; }
     .row-key { color: #57606a; font-weight: 500; }
     .row-val { color: #1f2328; font-weight: 700; font-variant-numeric: tabular-nums; }
     
-    .box-green .row { border-bottom: 1px solid #dceaf7; }
+    .box-green .row { border-bottom: 1px solid #eaeaea; }
     .box-green .row:last-child { border-bottom: none; }
-    .box-green .row-key { color: #1a568a; font-weight: 600; }
-    .box-green .row-val { color: #0d385c; font-weight: 800; }
+    .box-green .row-key { color: var(--dark); font-weight: 600; }
+    .box-green .row-val { color: var(--dark); font-weight: 800; }
     
-    .box-yellow .row { border-bottom: 1px dashed #f0d88a; }
+    .box-yellow .row { border-bottom: 1px dashed #eaeaea; }
     .box-yellow .row:last-child { border-bottom: none; }
-    .box-yellow .row-key { color: #856100; font-weight: 500; }
-    .box-yellow .row-val { color: #523b00; font-weight: 700; }
-    .box-yellow .section-title { color: #a77a00; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 0; }
+    .box-yellow .row-key { color: var(--dark); font-weight: 500; }
+    .box-yellow .row-val { color: var(--dark); font-weight: 700; }
+    .box-yellow .section-title { color: var(--gold); font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 0; }
 
     .section-title { font-size: 11px; font-weight: 800; color: #6e7781; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 14px; }
     .grid { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 18px; page-break-inside: avoid; break-inside: avoid; }
@@ -743,43 +746,48 @@ export default function ReportsScreen() {
         >
           {seg === "Summary" && dash && (
             <>
-              <Card testID="report-summary-live">
-                <Text style={styles.rTitle}>{reportSource === "v2" ? "V2 — Journal Report" : "Live — Current Period"}</Text>
+              <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1 }}>
+                <Text style={[styles.rTitle, { color: theme.color.brandPrimary }]}>PROFIT (LIVE)</Text>
                 <RowKV label="Sales" value={fmt(dash.totalSales)} theme={theme} styles={styles} />
                 <RowKV label={reportSource === "v2" ? "Expenses" : "Purchases"} value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
-                <RowKV label="Gross Profit" value={fmt(dash.grossProfit)} strong theme={theme} styles={styles} />
-                <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
+                <RowKV label="Gross Profit" value={fmt(dash.grossProfit)} theme={theme} styles={styles} />
                 <View style={styles.divider} />
-                <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
-                <RowKV label="Inventory Value" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
-                <RowKV label="Outstanding Debtors" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
-                <RowKV label="Net Worth" value={fmt(dash.netWorth)} strong theme={theme} styles={styles} />
-                <RowKV label="Creditors" value={fmt(dash.liabilities)} theme={theme} styles={styles} danger />
-                <RowKV label="Registered Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
+                <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
               </Card>
 
-              <Card style={{ marginTop: theme.spacing.md }} testID="report-summary-legacy">
-                <Text style={styles.rTitle}>Legacy — Closed Periods</Text>
+              <View style={{ flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>ASSETS</Text>
+                  <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
+                  <RowKV label="Inventory" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
+                  <RowKV label="Debtors" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
+                  <View style={styles.divider} />
+                  <RowKV label="Total Assets" value={fmt(dash.cash + dash.inventoryValue + (dash.accountsReceivable || 0))} strong theme={theme} styles={styles} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>LIABILITIES</Text>
+                  <RowKV label="Creditors" value={fmt(dash.liabilities)} theme={theme} styles={styles} />
+                  <RowKV label="Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
+                  <RowKV label="Net Worth" value={fmt(dash.netWorth)} theme={theme} styles={styles} />
+                  <View style={styles.divider} />
+                  <RowKV label="Liab. & Equity" value={fmt(dash.liabilities + dash.netWorth)} strong theme={theme} styles={styles} />
+                </View>
+              </View>
+
+              <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1 }} testID="report-summary-reconciliation">
+                <Text style={[styles.rTitle, { color: theme.color.brandTertiary }]}>PARTNER STAKES RECONCILIATION</Text>
                 <RowKV label="Total Profit (legacy)" value={fmt(legacy.totalProfit)} theme={theme} styles={styles} />
                 <RowKV label="Total Drawings (legacy)" value={fmt(legacy.totalDrawings)} theme={theme} styles={styles} danger />
-                <RowKV label="Last Period Assets" value={fmt(legacy.lastAssets)} theme={theme} styles={styles} />
-                <RowKV label="Period Entries" value={String(legacy.entries)} theme={theme} styles={styles} />
+                {cap && cap.partners.map((p: any) => (
+                  <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
+                ))}
+                {cap && (
+                  <>
+                    <View style={styles.divider} />
+                    <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
+                  </>
+                )}
               </Card>
-
-              {cap && (
-                <Card style={{ marginTop: theme.spacing.md }} testID="report-summary-capital">
-                  <Text style={styles.rTitle}>Partner Capital</Text>
-                  <RowKV label="Opening Capital" value={fmt(cap.openingCapital)} theme={theme} styles={styles} />
-                  <RowKV label="Net Profit" value={`+ ${fmt(cap.netProfit)}`} theme={theme} styles={styles} />
-                  <RowKV label="Total Drawings" value={`- ${fmt(cap.totalDrawings)}`} theme={theme} styles={styles} />
-                  <View style={styles.divider} />
-                  {cap.partners.map((p: any) => (
-                    <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
-                  ))}
-                  <View style={styles.divider} />
-                  <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
-                </Card>
-              )}
             </>
           )}
 

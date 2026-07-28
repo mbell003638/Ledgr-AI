@@ -602,15 +602,6 @@ export default function DebtorsScreen() {
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState("");
 
-  const [showAdd, setShowAdd] = useState(false);
-  const [addName, setAddName] = useState("");
-  const [addPhone, setAddPhone] = useState("");
-  const [addEmail, setAddEmail] = useState("");
-  const [addNotes, setAddNotes] = useState("");
-  const [addSaving, setAddSaving] = useState(false);
-  const [addError, setAddError] = useState("");
-  // Edit an existing debtor (reuses the add fields; editId != null = edit mode).
-  const [editId, setEditId] = useState<string | null>(null);
   const [deletingDebtor, setDeletingDebtor] = useState(false);
 
   // Payment editor (statement row → edit/delete, same interaction model as Sales).
@@ -717,35 +708,6 @@ export default function DebtorsScreen() {
     } finally { setNoteBusy(false); }
   };
 
-  const saveDebtor = async () => {
-    if (!addName.trim()) { setAddError("Name is required"); return; }
-    setAddSaving(true); setAddError("");
-    try {
-      const payload = { name: addName.trim(), phone: addPhone.trim(), email: addEmail.trim(), notes: addNotes.trim() };
-      if (editId) {
-        await api.updateDebtor(editId, payload);
-        // Keep the open detail view in sync with the edit.
-        setSelected((prev) => (prev && prev.id === editId ? { ...prev, ...payload } : prev));
-      } else {
-        await api.createDebtor(payload);
-      }
-      setShowAdd(false); setEditId(null);
-      setAddName(""); setAddPhone(""); setAddEmail(""); setAddNotes("");
-      await load();
-    } catch (e: any) { setAddError(e.message); }
-    finally { setAddSaving(false); }
-  };
-
-  // Open the form pre-filled to edit an existing customer.
-  const openEdit = (d: Debtor) => {
-    setEditId(d.id);
-    setAddName(d.name || "");
-    setAddPhone(d.phone || "");
-    setAddEmail((d as any).email || "");
-    setAddNotes((d as any).notes || "");
-    setAddError("");
-    setShowAdd(true);
-  };
 
 
 
@@ -943,7 +905,7 @@ export default function DebtorsScreen() {
         <View style={styles.headerBar}>
           <Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
           <Text style={styles.headerTitle}>Customer Detail</Text>
-          <Pressable testID="btn-edit-debtor" onPress={() => openEdit(selected)} hitSlop={10}>
+          <Pressable testID="btn-edit-debtor" onPress={() => router.push({ pathname: "/party-form", params: { id: selected.id, type: "customer" } } as any)} hitSlop={10}>
             <Ionicons name="create-outline" size={24} color={theme.color.brandPrimary} />
           </Pressable>
         </View>
@@ -1182,7 +1144,7 @@ export default function DebtorsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Debtors</Text>
-        <Pressable onPress={() => { setAddName(""); setAddPhone(""); setAddNotes(""); setAddError(""); setShowAdd(true); }}>
+        <Pressable onPress={() => router.push({ pathname: "/party-form", params: { type: "customer" } } as any)}>
           <Ionicons name="add" size={28} color={theme.color.brandPrimary} />
         </Pressable>
       </View>
@@ -1207,30 +1169,7 @@ export default function DebtorsScreen() {
         <View style={{ height: 60 }} />
       </ScrollView>
 
-      <Modal visible={showAdd} transparent animationType="slide">
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.headerTitle}>{editId ? "Edit Customer" : "Add Customer"}</Text>
-                <Pressable onPress={() => { setShowAdd(false); setEditId(null); }}><Ionicons name="close" size={24} color={theme.color.onSurface} /></Pressable>
-              </View>
-              <Text style={styles.label}>Name *</Text>
-              <TextInput value={addName} onChangeText={setAddName} placeholder="Full name" placeholderTextColor={theme.color.muted} style={styles.input} />
-              <Text style={[styles.label, { marginTop: 12 }]}>Phone</Text>
-              <TextInput value={addPhone} onChangeText={setAddPhone} placeholder="+123****7890" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
-              <Text style={[styles.label, { marginTop: 12 }]}>Email</Text>
-              <TextInput value={addEmail} onChangeText={setAddEmail} placeholder="Optional — for email reminders" placeholderTextColor={theme.color.muted} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
-              <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
-              <TextInput value={addNotes} onChangeText={setAddNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 50 }]} multiline />
-              {addError ? <Text style={styles.error}>{addError}</Text> : null}
-              <Pressable onPress={saveDebtor} disabled={addSaving} style={({ pressed }) => [styles.saveBtn, (pressed || addSaving) && { opacity: 0.85 }]}>
-                {addSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Add Debtor</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+
     </SafeAreaView>
   );
 }
