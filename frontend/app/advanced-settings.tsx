@@ -40,7 +40,7 @@ import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 
-export default function SettingsScreen() {
+export default function AdvancedSettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
@@ -392,125 +392,188 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Settings" subtitle="Main Configuration" />
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 16 }}>
+        <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
+          <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
+        </Pressable>
+        <ScreenHeader title="Advanced" subtitle="System & Workflows" />
+      </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             
-            <SectionTitle title="Account" theme={theme} />
+            <SectionTitle title="System & Workflows" theme={theme} />
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="🏢" title="Business Profile" subtitle="Name, Contact, Tax Reg No" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow icon="📚" title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <Text style={[styles.label, { fontSize: 13 }]}>Company Logo</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
-                    {logo ? (
-                      <Image source={{ uri: logo }} style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary }} />
-                    ) : (
-                      <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="image-outline" size={24} color={theme.color.muted} />
-                      </View>
-                    )}
-                    <Pressable onPress={pickLogo} style={styles.addBtn}>
-                      <Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} />
-                      <Text style={styles.addText}>{logo ? "Change Logo" : "Upload Logo"}</Text>
-                    </Pressable>
-                    {logo && (
-                      <Pressable onPress={() => setLogo("")} style={styles.addBtn}>
-                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                        <Text style={[styles.addText, { color: theme.color.error }]}>Remove</Text>
-                      </Pressable>
-                    )}
+                  <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
+                  <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
+                    {books.map((b) => {
+                      const isActive = b.id === activeBook;
+                      return (
+                        <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface }, isActive && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                            <Ionicons name={isActive ? "business" : "business-outline"} size={20} color={isActive ? theme.color.brandPrimary : theme.color.muted} />
+                            <Text style={[{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }, isActive && { color: theme.color.brandPrimary }]}>{b.name}</Text>
+                          </View>
+                          {isActive ? (
+                            <View style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}><Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.onBrandPrimary }}>Active</Text></View>
+                          ) : (
+                            <Text style={{ fontSize: 12, fontWeight: "600", color: theme.color.brandPrimary }}>Switch</Text>
+                          )}
+                          {b.id !== "default" && !isActive && (
+                            <Pressable onPress={() => removeBook(b.id)} style={{ marginLeft: 12 }}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                          )}
+                        </Pressable>
+                      );
+                    })}
                   </View>
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Business Name</Text>
-                  <TextInput value={bizProfile.businessName} onChangeText={(v) => setBizProfile((p) => ({ ...p, businessName: v }))} placeholder="e.g. Amit General Store" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Address</Text>
-                  <TextInput value={bizProfile.businessAddress} onChangeText={(v) => setBizProfile((p) => ({ ...p, businessAddress: v }))} placeholder="Street, City, State, ZIP" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Phone</Text>
-                  <TextInput value={bizProfile.businessPhone} onChangeText={(v) => setBizProfile((p) => ({ ...p, businessPhone: v }))} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Email</Text>
-                  <TextInput value={bizProfile.businessEmail} onChangeText={(v) => setBizProfile((p) => ({ ...p, businessEmail: v }))} placeholder="you@example.com" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Tax Reg. No (TRN / GSTIN / VAT)</Text>
-                  <TextInput value={bizProfile.taxRegNo} onChangeText={(v) => setBizProfile((p) => ({ ...p, taxRegNo: v }))} placeholder="Shown on invoices" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Bank Account / IBAN / Interac</Text>
-                  <TextInput value={bizProfile.bankAccount} onChangeText={(v) => setBizProfile((p) => ({ ...p, bankAccount: v }))} placeholder="Acct no, IBAN, or Interac email" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Payment ID / Link</Text>
-                  <TextInput value={bizProfile.upiId} onChangeText={(v) => setBizProfile((p) => ({ ...p, upiId: v }))} placeholder="Interac, UPI ID, PayPal or payment link" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Invoice Terms & Conditions</Text>
-                  <TextInput value={bizProfile.invoiceTerms} onChangeText={(v) => setBizProfile((p) => ({ ...p, invoiceTerms: v }))} placeholder="Payment is due within X days..." placeholderTextColor={theme.color.muted} multiline style={[styles.input, { minHeight: 60 }]} />
+                  <View style={{ marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.color.border }}>
+                    <Text style={[styles.label, { fontSize: 13, marginBottom: theme.spacing.xs }]}>+ Create New Business Account</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
+                      {PERSONAS.map(p => (
+                        <Pressable key={`new-${p.id}`} onPress={() => setNewBookPersona(p.id)} style={[{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary }, newBookPersona === p.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                          <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, newBookPersona === p.id && { color: theme.color.brandPrimary }]}>{p.label}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                    <View style={styles.entryRow}>
+                      <TextInput value={newBookName} onChangeText={setNewBookName} placeholder="New account name" placeholderTextColor={theme.color.muted} style={[styles.input, styles.entryInput]} />
+                      <Pressable onPress={addBook} disabled={addingBook || !newBookName.trim()} style={styles.addBtn}>
+                        {addingBook ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add</Text></>}
+                      </Pressable>
+                    </View>
+                  </View>
                 </View>
               </AccordionRow>
-              <AccordionRow icon="💲" title="Currency & Tax Rates" subtitle="USD, GST/VAT" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow icon="⚙" title="Accounting & Workflow" subtitle="Basis, Style, Members" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <Text style={styles.label}>Currency</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                    {CURRENCIES.map((c) => (
-                      <Pressable key={c.code} onPress={() => setCurrency(c.code)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: currency === c.code ? theme.color.brandPrimary : theme.color.border, backgroundColor: currency === c.code ? theme.color.brandPrimary + "20" : theme.color.surfaceTertiary }}>
-                        <Text style={{ color: currency === c.code ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "600", fontSize: 14 }}>{c.symbol} {c.code}</Text>
+                  <Text style={styles.label}>Accounting Basis</Text>
+                  <View style={styles.modeRow}>
+                    {(["cash", "accrual"] as const).map((b) => (
+                      <Pressable key={b} onPress={() => setAccountingBasis(b)} style={[styles.modeBtn, accountingBasis === b && styles.modeBtnActive]}>
+                        <Text style={[styles.modeText, accountingBasis === b && styles.modeTextActive]}>{b === "cash" ? "Cash Basis" : "Accrual Basis"}</Text>
                       </Pressable>
                     ))}
                   </View>
 
-                  <Text style={[styles.label, { marginTop: theme.spacing.xl }]}>Tax Settings</Text>
-                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Tax Label</Text>
-                  <TextInput value={taxLabelCustom} onChangeText={(v) => { setTaxLabelCustom(v); setTaxLabel(v.trim() ? "Custom" : "None"); }} placeholder="e.g. GST, VAT (Leave blank for no tax)" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  
-                  {taxLabelCustom.trim() !== "" && (
+                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Style</Text>
+                  <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
+                    <Pressable onPress={() => updateAccountingStyle('retail_partnership')} style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}>
+                      <Ionicons name={accountingStyle === 'retail_partnership' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'retail_partnership' ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Partner Equity & Profit-Split</Text></View>
+                    </Pressable>
+                    <Pressable onPress={() => updateAccountingStyle('standard')} style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}>
+                      <Ionicons name={accountingStyle === 'standard' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'standard' ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Standard Entity</Text></View>
+                    </Pressable>
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Members</Text>
+                  {members.map((m, i) => (
+                    <View key={`member-${i}`} style={styles.memberCard}>
+                      <View style={styles.entryRow}>
+                        <TextInput value={m.name} onChangeText={(v) => updateMember(i, "name", v)} placeholder="Name" placeholderTextColor={theme.color.muted} autoCapitalize="words" style={[styles.input, styles.entryInput]} />
+                        <Pressable onPress={() => removeMember(i)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                      </View>
+                      <View style={[styles.entryRow, { marginTop: 8 }]}>
+                        <View style={{ flex: 1 }}><Text style={styles.subLabel}>Investment (opt)</Text><TextInput value={m.amount} onChangeText={(v) => updateMember(i, "amount", v)} keyboardType="decimal-pad" placeholder="e.g. 5000" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                        <View style={{ flex: 1 }}><Text style={styles.subLabel}>Profit Share %</Text><TextInput value={m.profitSharePct} onChangeText={(v) => updateMember(i, "profitSharePct", v)} keyboardType="decimal-pad" placeholder="e.g. 50" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                      </View>
+                    </View>
+                  ))}
+                  <Pressable onPress={addMember} style={styles.addBtn}><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add Member</Text></Pressable>
+                </View>
+              </AccordionRow>
+              <AccordionRow icon="⚖" title="Opening Balances" subtitle="Cash & Inventory Start" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.label}>Opening Cash</Text>
+                  <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" style={styles.input} placeholder="e.g. 2000" placeholderTextColor={theme.color.muted} />
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Opening Inventory Value</Text>
+                  <TextInput value={openingInventory} onChangeText={setOpeningInventory} keyboardType="decimal-pad" style={styles.input} placeholder="e.g. 15000" placeholderTextColor={theme.color.muted} />
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Current Period Start (YYYY-MM-DD)</Text>
+                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                    <TextInput value={periodStart} onChangeText={setPeriodStart} autoCapitalize="none" style={[styles.input, { flex: 1 }]} placeholder="Blank = all data" placeholderTextColor={theme.color.muted} />
+                    <Pressable onPress={() => setPeriodStart("")} style={styles.addBtn}><Ionicons name="refresh-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Show All</Text></Pressable>
+                  </View>
+                </View>
+              </AccordionRow>
+            </View>
+
+            <SectionTitle title="AI & Integrations" theme={theme} />
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
+              <AccordionRow icon="🧠" title="AI Provider" subtitle="Google Gemini" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
+                    <Pressable onPress={() => { setProvider("gemini"); setModelName("gemini-2.0-flash-001"); setBaseUrl(""); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider === "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider === "gemini" && { color: theme.color.brandPrimary }]}>Google Gemini</Text></Pressable>
+                    <Pressable onPress={() => { if (provider === "gemini") { setProvider("custom"); setTestResult(null); } }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider !== "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider !== "gemini" && { color: theme.color.brandPrimary }]}>Custom Provider</Text></Pressable>
+                  </View>
+                  {provider !== "gemini" && (
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                      <Pressable onPress={() => { setProvider("custom"); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom" || provider === "openrouter") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom" || provider === "openrouter") && { color: theme.color.brandPrimary }]}>OpenAI Compatible</Text></Pressable>
+                      <Pressable onPress={() => { setProvider("custom_anthropic"); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom_anthropic" || provider === "anthropic") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom_anthropic" || provider === "anthropic") && { color: theme.color.brandPrimary }]}>Anthropic Compatible</Text></Pressable>
+                    </View>
+                  )}
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
+                  <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder="Paste your API key" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
+                  <TextInput value={modelName} onChangeText={setModelName} placeholder="model name" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                  {provider !== "gemini" && (
                     <>
-                      <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{taxLabelCustom} Rate %</Text>
-                      <TextInput value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" placeholder="e.g. 18" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
+                      <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://..." placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
                     </>
+                  )}
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
+                    <Pressable onPress={testKey} disabled={testing || !key} style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}>{testing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <Text style={styles.secondaryText}>Test Connection</Text>}</Pressable>
+                    {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
+                  </View>
+                </View>
+              </AccordionRow>
+            </View>
+
+            <SectionTitle title="Security & Data" theme={theme} />
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
+              <AccordionRow icon="🔒" title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Use your phone's fingerprint / face / PIN to protect sensitive actions.</Text>
+                  <Pressable onPress={() => setLockEnabled((v) => !v)} style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}>
+                    <Ionicons name={lockEnabled ? "lock-closed" : "lock-open-outline"} size={18} color={lockEnabled ? theme.color.onBrandPrimary : theme.color.onSurface} />
+                    <Text style={[styles.lockToggleText, lockEnabled && { color: theme.color.onBrandPrimary }]}>{lockEnabled ? "App Lock ON" : "App Lock OFF"}</Text>
+                  </Pressable>
+                </View>
+              </AccordionRow>
+              <AccordionRow icon="💾" title="Backup & Restore" subtitle="Export data to JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <View style={styles.backupRow}>
+                    <Pressable onPress={doExport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
+                      {busy === "export" ? <ActivityIndicator color="#fff" /> : <><Ionicons name="share-outline" size={18} color="#fff" /><Text style={styles.backupBtnTextPrimary}>Export</Text></>}
+                    </Pressable>
+                    <Pressable onPress={doImport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnSecondary, (pressed || busy === "import") && { opacity: 0.85 }]}>
+                      {busy === "import" ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.backupBtnTextSecondary}>Import</Text></>}
+                    </Pressable>
+                  </View>
+                </View>
+              </AccordionRow>
+              <AccordionRow icon="⚠" iconColor={theme.color.error} title="Danger Zone" subtitle="Reset all ledgers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key is preserved.</Text>
+                  {!confirmReset ? (
+                    <Pressable onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}><Ionicons name="trash-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Reset All Data…</Text></Pressable>
+                  ) : (
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This cannot be undone. Consider exporting a backup first.</Text>
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                        <Pressable onPress={() => setConfirmReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
+                        <Pressable onPress={doReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, delete everything</Text>}</Pressable>
+                      </View>
+                    </View>
                   )}
                 </View>
               </AccordionRow>
             </View>
-
-            <SectionTitle title="Preferences" theme={theme} />
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, overflow: "hidden", borderWidth: 1, borderColor: theme.color.border }}>
-              <AccordionRow icon="✨" title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : "Navy & Gold"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                  {[ { id: "light", label: "Emerald Light", icon: "sunny-outline" }, { id: "dark", label: "Emerald Dark", icon: "moon-outline" }, { id: "navy_gold", label: "Black & Gold", icon: "color-palette-outline" }, { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" }, { id: "system", label: "System", icon: "phone-portrait-outline" } ].map((m) => (
-                    <Pressable key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
-                      <Ionicons name={m.icon as any} size={16} color={mode === m.id ? theme.color.brandPrimary : theme.color.onSurface} />
-                      <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, mode === m.id && { color: theme.color.brandPrimary }]}>{m.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </AccordionRow>
-              <AccordionRow icon="📄" title="Invoice PDF Preset" subtitle="Black & Blue" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                  {[ { id: "navy_gold", label: "Black & Gold" }, { id: "amoled_blue", label: "Black & Blue" }, { id: "emerald", label: "Classic Emerald" }, { id: "minimal", label: "Clean Minimal" } ].map((t) => (
-                    <Pressable key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
-                      <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>{t.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </AccordionRow>
-            </View>
-
-            <Pressable onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.xl, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", backgroundColor: theme.color.brandPrimary + "15", overflow: "hidden" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 20 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: theme.color.brandPrimary + "25", alignItems: "center", justifyContent: "center", marginRight: 14 }}>
-                    <Ionicons name="settings" size={18} color={theme.color.brandPrimary} />
-                  </View>
-                  <View style={{ flex: 1, paddingRight: 16 }}>
-                    <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary }}>Advanced Settings</Text>
-                    <Text style={{ fontSize: 13, color: theme.color.brandPrimary + "aa", marginTop: 4 }}>AI, Multi-tenant, Backups...</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
-              </View>
-            </Pressable>
 
             {status && (
               <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
