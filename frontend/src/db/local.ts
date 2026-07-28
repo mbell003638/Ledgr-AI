@@ -275,8 +275,30 @@ export async function listSales() {
   return combined.sort((a: any, b: any) => (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
 }
 export const createSale = salesCrud.create;
-export const updateSale = salesCrud.update;
-export const deleteSale = salesCrud.remove;
+
+export async function updateSale(id: string, payload: any) {
+  const salesArr = await readColl<any>('sales');
+  if (salesArr.some((s: any) => s.id === id)) {
+    return salesCrud.update(id, payload);
+  }
+  const invoicesArr = await readColl<any>('invoices');
+  if (invoicesArr.some((i: any) => i.id === id)) {
+    return updateInvoice(id, payload);
+  }
+  return salesCrud.update(id, payload);
+}
+
+export async function deleteSale(id: string) {
+  const salesArr = await readColl<any>('sales');
+  if (salesArr.some((s: any) => s.id === id)) {
+    return salesCrud.remove(id);
+  }
+  const invoicesArr = await readColl<any>('invoices');
+  if (invoicesArr.some((i: any) => i.id === id)) {
+    return deleteInvoice(id);
+  }
+  return salesCrud.remove(id);
+}
 
 export const listPayments = paymentsCrud.list;
 export const createPayment = paymentsCrud.create;

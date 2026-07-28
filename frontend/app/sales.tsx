@@ -48,7 +48,15 @@ export default function SalesScreen() {
   const reverseSale = (sale: any) => confirmAction(
     "Reverse / Delete Sale",
     "This creates the appropriate V2 reversal and removes the sale from active records.",
-    async () => { await api.deleteSale(sale.id); setSelected(null); await load(); },
+    async () => {
+      try {
+        await api.deleteSale(sale.id);
+        setSelected(null);
+        await load();
+      } catch (e: any) {
+        Alert.alert("Delete Failed", e?.message || "Could not delete sale.");
+      }
+    },
     "Reverse / Delete"
   );
 

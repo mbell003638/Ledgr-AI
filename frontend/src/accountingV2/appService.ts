@@ -89,7 +89,14 @@ export class V2AppService {
   async deleteInvoice(id: string) { return this.documents.reverseSource(id, 'invoice', 'Delete invoice', true); }
   async deleteExpense(id: string) { return this.documents.reverseSource(id, 'expense', 'Delete expense', true); }
   async deletePayment(id: string) { return this.documents.reverseSource(id, 'supplier_payment', 'Delete supplier payment', true); }
-  async deleteSale(id: string) { return this.documents.reverseSource(id, 'cash_sale', 'Delete cash sale', true); }
+  async deleteSale(id: string) {
+    const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
+    if (!row) throw new Error('Sale not found');
+    if (['cash_sale', 'credit_sale', 'invoice'].includes(row.type)) {
+      return this.documents.reverseSource(id, row.type, 'Delete sale', true);
+    }
+    return this.documents.reverseSource(id, 'cash_sale', 'Delete cash sale', true);
+  }
   async deleteBill(id: string) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); return this.documents.reverseSource(id, row.type, 'Delete bill', true); }
   async updateExpense(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'expense', 'Edit expense'); return this.createExpense(input); }
   async updatePayment(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'supplier_payment', 'Edit supplier payment'); return this.createPayment(input); }
@@ -151,8 +158,14 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
   const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => (await v2.ownsSource(id, type)) ? v2[name](id) : legacy[name](id);
   return {
     updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
-    updateSale: async (id: string, payload: AnyRecord) => (await v2.ownsSource(id, 'cash_sale')) ? v2.updateSale(id, payload) : legacy.updateSale(id, payload),
-    deleteSale: async (id: string) => (await v2.ownsSource(id, 'cash_sale')) ? v2.deleteSale(id) : legacy.deleteSale(id),
+    updateSale: async (id: string, payload: AnyRecord) => {
+      const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
+      return isV2 ? v2.updateSale(id, payload) : legacy.updateSale(id, payload);
+    },
+    deleteSale: async (id: string) => {
+      const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
+      return isV2 ? v2.deleteSale(id) : legacy.deleteSale(id);
+    },
     updateBill: async (id: string, payload: AnyRecord) => (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) ? v2.updateBill(id, payload) : legacy.updateBill(id, payload),
     deleteBill: async (id: string) => (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) ? v2.deleteBill(id) : legacy.deleteBill(id),
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
