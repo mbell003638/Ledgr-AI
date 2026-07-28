@@ -13,6 +13,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { printHtml } from "@/src/utils/print";
+import { showAlert } from "@/src/utils/alerts";
 import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
@@ -220,15 +221,18 @@ export default function ReportsScreen() {
         ...receiptsReg.rows.map((r: any) => `${shortDate(r.date)} ${r.ref} ${r.party} (${r.method}): ${fmt(r.amount)}`),
       ].join("\n");
     }
-    return `${head}\n${body}\n\n— Sent from Ledgr`;
-  };
-
-  // ------- Build an HTML document for PDF export -------
+    return `${head}\n${body}\n\n— Sent f  // ------- Build an HTML document for PDF export -------
   const buildHtml = (): string => {
-    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const lines = buildText().split("\\n");
-    // Remove the first 2 lines (legacy text header)
-    lines.shift(); lines.shift();
+    const esc = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const tc = theme.color || {};
+    const primary = tc.surfaceInverse || tc.surface || "#1e202c";
+    const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
+    const accentText = tc.onBrandPrimary || "#111111";
+
+    const lines = buildText().split("\n");
+    // Remove legacy text header lines if present
+    if (lines[0] && lines[0].includes("REPORT")) lines.shift();
+    if (lines[0] && lines[0].includes("Period")) lines.shift();
 
     let html = `<!DOCTYPE html>
 <html>
@@ -236,17 +240,35 @@ export default function ReportsScreen() {
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    body { background: #faf9f6; color: #333; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; }
-    .report-container { max-width: 800px; margin: 0 auto; background: #faf9f6; padding: 40px; min-height: 100vh; box-sizing: border-box; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
-    .title { font-family: Georgia, serif; font-size: 38px; font-weight: bold; color: #2c2a29; margin: 0; letter-spacing: -0.5px; }
-    .subtitle { font-size: 13px; color: #7a7771; margin-top: 6px; }
-    .biz-name { font-size: 16px; font-weight: 700; color: #4a4845; text-transform: uppercase; letter-spacing: 1px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
+    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
+    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
+    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
+    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
+    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
+    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
+    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
+    .header-logo-text { font-size: 48px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
+    .report-top-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .biz-name { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
+    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
+    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
+    .report-heading { font-size: 28px; font-weight: 900; color: #111; letter-spacing: 1.5px; text-transform: uppercase; margin: 0; }
+    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
+    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
+    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
+    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
+    .banner-val { font-size: 13px; font-weight: 800; margin-top: 4px; color: #111; }
+    .content { padding: 40px; }
     
-    .box-green { background: #f0f9f3; border: 1px solid #cce6d5; border-radius: 8px; padding: 5px 20px; margin-bottom: 30px; }
-    .box-yellow { background: #fcf9eb; border: 1px solid #f0e1a8; border-radius: 8px; padding: 5px 20px; margin-bottom: 30px; }
+    .box-green { background: #f0f9f3; border: 1px solid #cce6d5; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
+    .box-yellow { background: #fcf9eb; border: 1px solid #f0e1a8; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
+    .box-normal { background: #f9f9f9; border: 1px solid #e8e5de; border-radius: 8px; padding: 15px 20px; margin-bottom: 24px; }
     
-    .row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e8e5de; font-size: 13px; }
+    .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e8e5de; font-size: 13px; }
     .row.no-border { border-bottom: none; }
     .row-key { color: #5a5752; font-weight: 500; }
     .row-val { color: #1a1918; font-weight: 700; }
@@ -261,24 +283,51 @@ export default function ReportsScreen() {
     .box-yellow .row-key { color: #856a20; }
     .box-yellow .row-val { color: #5c4811; }
 
-    .box-yellow .section-title { color: #a88117; font-size: 16px; font-weight: 800; text-transform: none; letter-spacing: 0; margin-top: 15px; margin-bottom: 5px; }
-
-    .section-title { font-size: 10px; font-weight: 800; color: #9c9993; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; margin-top: 25px; }
-    
-    .grid { display: flex; flex-wrap: wrap; gap: 40px; margin-bottom: 30px; }
-    .col { flex: 1; min-width: 300px; }
+    .section-title { font-size: 12px; font-weight: 800; color: ${primary}; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; margin-top: 10px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px; }
+    .col { flex: 1; min-width: 280px; }
+    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; margin-top: 40px; }
+    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
   </style>
 </head>
 <body>
-  <div class="report-container">
-    <div class="header">
-      <div>
-        <h1 class="title">${seg === 'Summary' ? 'Report' : seg}</h1>
-        <div class="subtitle">${from} &middot; ${to} &middot; Generated ${new Date().toLocaleDateString()}</div>
+  <div class="page-container">
+    <div class="top-bg-container">
+      <div class="bg-dark"></div>
+      <div class="bg-white-slant"></div>
+      <div class="bg-yellow-slant"></div>
+      <div class="bg-yellow-rect"></div>
+      <div class="bg-yellow-border"></div>
+    </div>
+
+    <div class="header-content">
+      <div class="header-left">
+        <div class="header-logo-text">${esc(bizName ? bizName.substring(0, 1) : 'L')}</div>
       </div>
-      <div>
+      <div class="header-right">
+        <div class="report-top-title">FINANCIAL REPORT</div>
         <div class="biz-name">${esc(bizName || "Ledgr")}</div>
       </div>
+    </div>
+
+    <div class="banner-content">
+      <div class="banner-left">
+        <h1 class="report-heading">${esc(seg === 'Summary' ? 'Report' : seg)}</h1>
+      </div>
+      <div class="banner-right">
+        <div class="banner-col">
+          <div class="banner-label">Period</div>
+          <div class="banner-val">${esc(from)} to ${esc(to)}</div>
+        </div>
+        <div class="banner-col">
+          <div class="banner-label">Generated</div>
+          <div class="banner-val">${new Date().toLocaleDateString()}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+`;/div>
     </div>
 `;
 
@@ -381,6 +430,11 @@ export default function ReportsScreen() {
 
     html += htmlContent;
     html += `
+    </div>
+    <div class="footer-bar">
+      <div class="thank-you">Generated by Ledgr</div>
+      <div>Official financial report for ${esc(bizName || "Ledgr")} &middot; ${new Date().toLocaleDateString()}</div>
+    </div>
   </div>
 </body>
 </html>`;
@@ -400,9 +454,16 @@ export default function ReportsScreen() {
       } else {
         const { uri } = await Print.printToFileAsync({ html });
         const can = await Sharing.isAvailableAsync();
-        if (can) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${seg} Report` });
+        if (can) {
+          await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `${seg} Report` });
+        } else {
+          showAlert("Sharing Unavailable", "Sharing is not available on this device.");
+        }
       }
-    } catch (e) { console.warn(e); }
+    } catch (e: any) {
+      console.warn(e);
+      showAlert("Share Failed", e?.message || "Could not generate report PDF.");
+    }
   };
 
   return (

@@ -95,39 +95,94 @@ export default function CustomReportScreen() {
       bodyHtml += `<table><thead><tr><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${tableRows}</tbody></table>`;
     }
 
+    const tc = theme.color || {};
+    const primary = tc.surfaceInverse || tc.surface || "#1e202c";
+    const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
+    const accentText = tc.onBrandPrimary || "#111111";
+
     return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 36px; color: #333; background: #fff; }
-    .header { background: #1e202c; color: #fff; padding: 24px 32px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0; margin-bottom: 24px; border-bottom: 4px solid #fcc145; }
-    .title { font-size: 22px; font-weight: 800; color: #fcc145; margin: 0; letter-spacing: 1px; text-transform: uppercase; }
-    .subtitle { font-size: 13px; color: #e0e0e0; margin-top: 6px; font-weight: 500; }
-    .period-badge { background: #fcc145; color: #1e202c; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 4px; }
-    .section-title { font-size: 15px; font-weight: 800; color: #1e202c; background: #f9f9f9; padding: 10px 14px; border-left: 5px solid #fcc145; margin-top: 28px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    th { background: #1e202c; color: #fcc145; text-align: left; padding: 10px 14px; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
+    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
+    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
+    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
+    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
+    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
+    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
+    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
+    .header-logo-text { font-size: 48px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
+    .report-top-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .biz-name { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
+    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
+    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
+    .report-heading { font-size: 26px; font-weight: 900; color: #111; letter-spacing: 1.5px; text-transform: uppercase; margin: 0; }
+    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
+    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
+    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
+    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
+    .banner-val { font-size: 13px; font-weight: 800; margin-top: 4px; color: #111; }
+    .content { padding: 40px; }
+    .section-title { font-size: 14px; font-weight: 800; color: ${primary}; background: #f9f9f9; padding: 10px 14px; border-left: 5px solid ${accent}; margin-top: 28px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+    th { background: ${primary}; color: #ffffff; text-align: left; padding: 10px 14px; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
     td { padding: 10px 14px; border-bottom: 1px solid #eee; color: #333; }
     tr:nth-child(even) td { background-color: #fafafa; }
     .num { text-align: right; font-weight: 600; }
-    .subheader { font-weight: 700; color: #1e202c; background: #f4f5f7; font-size: 12px; text-transform: uppercase; }
-    .footer { margin-top: 40px; padding: 20px; border-top: 2px solid #1e202c; font-size: 12px; color: #666; display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
+    .subheader { font-weight: 700; color: ${primary}; background: #f4f5f7; font-size: 12px; text-transform: uppercase; }
+    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; margin-top: 40px; }
+    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <h1 class="title">Financial Statement</h1>
-      <div class="subtitle">Official Business & Accounting Summary</div>
+  <div class="page-container">
+    <div class="top-bg-container">
+      <div class="bg-dark"></div>
+      <div class="bg-white-slant"></div>
+      <div class="bg-yellow-slant"></div>
+      <div class="bg-yellow-rect"></div>
+      <div class="bg-yellow-border"></div>
     </div>
-    <div class="period-badge">Period: ${from} to ${to}</div>
-  </div>
-  ${bodyHtml}
-  <div class="footer">
-    <span><strong>Generated by Ledgr</strong></span>
-    <span>Date: ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+
+    <div class="header-content">
+      <div class="header-left">
+        <div class="header-logo-text">L</div>
+      </div>
+      <div class="header-right">
+        <div class="report-top-title">CUSTOM FINANCIAL STATEMENT</div>
+      </div>
+    </div>
+
+    <div class="banner-content">
+      <div class="banner-left">
+        <h1 class="report-heading">STATEMENT</h1>
+      </div>
+      <div class="banner-right">
+        <div class="banner-col">
+          <div class="banner-label">Period</div>
+          <div class="banner-val">${from} to ${to}</div>
+        </div>
+        <div class="banner-col">
+          <div class="banner-label">Generated</div>
+          <div class="banner-val">${new Date().toLocaleDateString()}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      ${bodyHtml}
+    </div>
+
+    <div class="footer-bar">
+      <div class="thank-you">Generated by Ledgr</div>
+      <div>Official custom accounting report &middot; ${new Date().toLocaleDateString()}</div>
+    </div>
   </div>
 </body>
 </html>`;

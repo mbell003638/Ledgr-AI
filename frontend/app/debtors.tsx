@@ -771,7 +771,7 @@ export default function DebtorsScreen() {
           setSelected(null);
           await load();
         } catch (e: any) {
-          Alert.alert("Delete failed", e.message || "Could not delete");
+          showAlert("Cannot Delete Customer", e.message || "Could not delete customer");
         } finally { setDeletingDebtor(false); }
       },
     );
@@ -892,9 +892,19 @@ export default function DebtorsScreen() {
   };
 
   const shareStatementPdf = async () => {
-    if (!selected || !statement) return;
+    if (!selected) return;
     try {
-      const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
+      let stmt = statement;
+      if (!stmt) {
+        stmt = await api.getDebtorStatement(selected.id);
+        setStatement(stmt);
+      }
+      let b = biz;
+      if (!b || !b.businessName) {
+        b = await api.getSettings();
+        setBiz(b);
+      }
+      const html = buildStatementHtml(selected, stmt, b, currency, theme.color, currCode);
       if (Platform.OS === 'web') {
         await printHtml(html, `Statement — ${selected.name}`);
       } else {
@@ -902,15 +912,31 @@ export default function DebtorsScreen() {
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
       }
-    } catch (e: any) { console.warn(e); }
+    } catch (e: any) {
+      console.warn(e);
+      showAlert("Statement Error", e?.message || "Could not generate statement PDF.");
+    }
   };
 
   const printStatement = async () => {
-    if (!selected || !statement) return;
+    if (!selected) return;
     try {
-      const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
+      let stmt = statement;
+      if (!stmt) {
+        stmt = await api.getDebtorStatement(selected.id);
+        setStatement(stmt);
+      }
+      let b = biz;
+      if (!b || !b.businessName) {
+        b = await api.getSettings();
+        setBiz(b);
+      }
+      const html = buildStatementHtml(selected, stmt, b, currency, theme.color, currCode);
       await printHtml(html, `Statement — ${selected.name}`);
-    } catch (e: any) { console.warn(e); }
+    } catch (e: any) {
+      console.warn(e);
+      showAlert("Print Error", e?.message || "Could not print statement.");
+    }
   };
 
   if (loading) {

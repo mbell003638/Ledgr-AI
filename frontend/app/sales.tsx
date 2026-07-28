@@ -69,8 +69,8 @@ export default function SalesScreen() {
           subtitle={`Sale • ${shortDate(selected.date)}`}
           onEdit={() => router.push({ pathname: "/sale-form", params: { id: selected.id } })}
           onReversalDelete={() => reverseSale(selected)}
-          onShare={() => shareTransaction(documentFor(selected))}
-          onPrint={() => printTransaction(documentFor(selected))}
+          onShare={() => shareTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
+          onPrint={() => printTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
           onMore={() => Alert.alert("Sale details", selected.notes || "No additional notes")}
         ><Text style={styles.cardSub}>{selected.notes || "No notes"}</Text></TransactionDetail>
       </ScrollView>
