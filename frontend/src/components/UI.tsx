@@ -17,7 +17,7 @@ export function ScreenHeader({ title, subtitle, testID }: { title: string; subti
   }, []);
 
   return (
-    <View style={[styles.header, { flex: 1 }]} testID={testID}>
+    <View style={styles.header} testID={testID}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{title}</Text>

@@ -69,7 +69,9 @@ export default function BillsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerRow}>
-        <ScreenHeader title="Vendor Bills" subtitle={`${bills.length} purchase${bills.length === 1 ? "" : "s"} logged`} />
+        <View style={{ flex: 1 }}>
+          <ScreenHeader title="Vendor Bills" subtitle={`${bills.length} purchase${bills.length === 1 ? "" : "s"} logged`} />
+        </View>
         <Pressable
           testID="btn-add-bill"
           onPress={() => router.push("/bill-form")}

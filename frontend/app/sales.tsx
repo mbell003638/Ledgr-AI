@@ -80,7 +80,9 @@ export default function SalesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerRow}>
-        <ScreenHeader title="Sales" subtitle={`${sales.length} sale${sales.length === 1 ? "" : "s"} • ${fmt(total, currSym)} total`} />
+        <View style={{ flex: 1 }}>
+          <ScreenHeader title="Sales" subtitle={`${sales.length} sale${sales.length === 1 ? "" : "s"} • ${fmt(total, currSym)} total`} />
+        </View>
         <Pressable
           testID="btn-add-sale"
           onPress={() => router.push("/sale-form")}
