@@ -644,7 +644,7 @@ export default function SettingsScreen() {
                     testID="btn-test-key"
                     onPress={testKey}
                     disabled={testing || !key}
-                    style={({ pressed }) => [styles.secondaryBtn, { flex: 0 }, (pressed || testing) && { opacity: 0.7 }]}
+                    style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}
                   >
                     {testing
                       ? <ActivityIndicator color={theme.color.brandPrimary} />
