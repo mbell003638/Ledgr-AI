@@ -138,7 +138,7 @@ export default function QuotesScreen() {
   };
 
   const updateLine = (i: number, field: keyof Line, val: string) => {
-    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: field === "description" ? val : parseFloat(val) || 0 } : l));
+    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: field === "description" ? val : val as any } : l));
   };
   const addLine = () => setLines((p) => [...p, { description: "", qty: 1, rate: 0 }]);
   const removeLine = (i: number) => setLines((p) => p.filter((_, idx) => idx !== i));

@@ -15,6 +15,7 @@ import { fmt, shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { getCurrencySymbol } from "@/src/db/local";
+import { amountToWords } from "@/src/utils/numberToWords";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -56,7 +57,7 @@ function escapeHtml(v: any): string {
 // prevBalance = customer's outstanding balance carried forward from BEFORE this
 // invoice (0 when none / walk-in). balanceDue = prevBalance + this invoice total
 // − any amount already paid on this invoice.
-function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeColors?: any) {
+function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeColors?: any, currencyCode: string = 'USD') {
   const sub = inv.lines.reduce((s, l) => s + lineAmt(l), 0);
   const tax = inv.taxRate ? +(sub * inv.taxRate / 100).toFixed(2) : 0;
   const invT = invTotal(inv);
@@ -64,22 +65,18 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
   const carry = +(prevBalance || 0).toFixed(2);
   const balanceDue = +(carry + invT - paidOnThis).toFixed(2);
   const money = (n: number) => `${sym}${(Number(n) || 0).toFixed(2)}`;
+  const totalInWords = amountToWords(balanceDue, currencyCode);
 
-  // Map app theme colors to invoice PDF colors.
-  // For Black & Gold: surface=#15161A (dark bg), brandPrimary=#FDBA21 (gold accent).
-  // For Emerald Light: brandPrimary=#1C4030 (dark green), brand=#1C4030.
-  // For Emerald Dark: surface=#0E1210 (dark bg), brandPrimary=#8FB99A (green accent).
-  // The invoice always needs: primary = dark color, accent = bright/gold color.
   const tc = themeColors || {};
   const primary = tc.surfaceInverse || tc.surface || "#1e202c";
   const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
   const accentText = tc.onBrandPrimary || "#111111";
 
   const rows = inv.lines.map((l, i) =>
-    `<tr>
+    `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
       <td class="center" style="font-weight:600;color:#888">${String(i + 1).padStart(2, "0")}</td>
       <td style="font-weight:500">${escapeHtml(l.description)}</td>
-      <td class="right">${money(lineRate(l))}</td>
+      <td class="center">${money(lineRate(l))}</td>
       <td class="center">${lineQty(l)} ${l.unit ? escapeHtml(l.unit) : ""}</td>
       <td class="right" style="font-weight:700">${money(lineAmt(l))}</td>
     </tr>`
@@ -94,24 +91,34 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
     .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
     
-    /* Top Header */
-    .header-row { display: flex; background: ${primary}; color: #fff; padding: 40px 40px 0 40px; height: 120px; }
-    .header-left { flex: 1; }
-    .header-logo { max-height: 60px; max-width: 180px; object-fit: contain; }
-    .header-right { flex: 1; text-align: left; padding-left: 40px; font-size: 11px; line-height: 1.6; }
-    .invoice-to-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-    .client-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
-    .contact-item { display: flex; align-items: center; margin-bottom: 4px; }
-    .contact-icon { width: 16px; height: 16px; border-radius: 50%; background: ${accent}; color: ${primary}; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; margin-right: 8px; }
+    /* Backgrounds */
+    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
+    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
+    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
+    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
 
-    /* Banner Row */
-    .banner-row { display: flex; height: 80px; }
-    .banner-left { flex: 0.9; background: #fff; position: relative; padding: 10px 40px; }
-    .invoice-heading { font-size: 38px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
-    .banner-right { flex: 1.1; background: ${accent}; display: flex; align-items: center; justify-content: space-between; padding: 0 40px; position: relative; clip-path: polygon(30px 0, 100% 0, 100% 100%, 0 100%); margin-left: -30px; z-index: 2; }
-    .banner-col { text-align: left; border-left: 2px solid rgba(0,0,0,0.8); padding-left: 15px; }
-    .banner-col:first-child { border-left: none; padding-left: 20px; }
-    .banner-label { font-size: 10px; text-transform: uppercase; font-weight: 700; opacity: 0.8; color: #111; }
+    /* Foreground Headers */
+    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
+    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
+    .header-logo { max-height: 80px; max-width: 180px; object-fit: contain; }
+    .header-logo-text { font-size: 56px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+    
+    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
+    .invoice-to-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .client-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 8px; text-transform: uppercase; }
+    .contact-item { display: flex; align-items: center; margin-bottom: 6px; font-size: 11px; color: #fff; }
+    .contact-icon { width: 18px; height: 18px; border-radius: 50%; background: ${accent}; color: ${primary}; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; margin-right: 10px; }
+
+    /* Banner Content */
+    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
+    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
+    .invoice-heading { font-size: 42px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
+    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
+    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
+    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
     .banner-val { font-size: 14px; font-weight: 800; margin-top: 4px; color: #111; }
 
     /* Content */
@@ -121,42 +128,52 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
     table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
     th { background: ${primary}; color: #ffffff; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 700; }
     td { padding: 12px 14px; border-bottom: none; color: #333; font-weight: 500; }
-    tr:nth-child(even) td { background: #f3f3f3; }
-    tr:nth-child(odd) td { background: #fff; }
-    .center { text-align: center; }
-    .right { text-align: right; }
+    tr.even td { background: #fff; }
+    tr.odd td { background: #f4f4f4; }
+    th.center, td.center { text-align: center; }
+    th.right, td.right { text-align: right; }
+    th.left, td.left { text-align: left; }
     
     /* Totals Box */
     .totals-wrapper { display: flex; justify-content: flex-end; }
     .totals-box { width: 280px; border-collapse: collapse; font-size: 12px; }
     .totals-box td { padding: 10px 14px; border: none; }
-    .tot-label { background: ${primary}; color: #ffffff; font-weight: 600; border-bottom: 1px solid #333; }
-    .tot-val { background: ${primary}; color: #ffffff; text-align: right; font-weight: 600; border-bottom: 1px solid #333; }
-    .grand-tot-label { background: ${accent}; color: #111; font-weight: 800; font-size: 13px; text-transform: uppercase; }
-    .grand-tot-val { background: ${accent}; color: #111; text-align: right; font-weight: 800; font-size: 14px; }
+    .tot-row td { background: ${primary}; color: #ffffff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .grand-tot-row td { background: ${accent}; color: ${accentText}; font-weight: 800; font-size: 13px; text-transform: uppercase; }
 
     /* Bottom Info & Signature */
     .bottom-info { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; margin-bottom: 40px; padding: 0 40px; }
-    .payment-methods { font-size: 10px; color: #555; max-width: 320px; }
+    .payment-methods { font-size: 11px; color: #444; max-width: 320px; }
     .payment-title { font-weight: 800; color: #111; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 2px solid ${accent}; display: inline-block; padding-bottom: 4px; }
-    .payment-text { margin-top: 8px; line-height: 1.5; font-weight: 500; }
+    .payment-text { margin-top: 4px; line-height: 1.5; font-weight: 500; }
+    .payment-bullet { margin-bottom: 4px; display: flex; }
+    .payment-bullet::before { content: "+"; color: #111; margin-right: 8px; font-weight: 900; }
+    
     .signature-box { text-align: center; width: 180px; }
     .signature-line { border-bottom: 1px solid #777; margin-bottom: 6px; height: 40px; position: relative; }
     .signature-text { font-family: 'Brush Script MT', cursive, sans-serif; font-size: 24px; position: absolute; bottom: 2px; width: 100%; text-align: center; color: #333; }
     .signature-title { font-size: 9px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: 1px; }
 
     /* Footer */
-    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; display: flex; justify-content: space-between; align-items: center; }
+    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; }
     .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
     .terms-heading { font-weight: 700; color: #fff; margin-bottom: 2px; text-transform: uppercase; font-size: 10px; }
-    .terms-body { color: #aaa; line-height: 1.4; white-space: pre-wrap; font-size: 9px; max-width: 400px; }
+    .terms-body { color: #aaa; line-height: 1.4; white-space: pre-wrap; font-size: 9px; max-width: 600px; }
   </style>
 </head>
 <body>
   <div class="page-container">
-    <div class="header-row">
+    <div class="top-bg-container">
+      <div class="bg-dark"></div>
+      <div class="bg-white-slant"></div>
+      <div class="bg-yellow-slant"></div>
+      <div class="bg-yellow-rect"></div>
+      <div class="bg-yellow-border"></div>
+    </div>
+
+    <div class="header-content">
       <div class="header-left">
-        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div style="font-size:42px;font-weight:900;">LOGO</div>`}
+        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="header-logo-text">Logo</div>`}
       </div>
       <div class="header-right">
         <div class="invoice-to-title">INVOICE TO</div>
@@ -168,7 +185,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
       </div>
     </div>
 
-    <div class="banner-row">
+    <div class="banner-content">
       <div class="banner-left">
         <h1 class="invoice-heading">INVOICE</h1>
       </div>
@@ -194,8 +211,8 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
         <thead>
           <tr>
             <th style="width:40px" class="center">SL</th>
-            <th>Item Description</th>
-            <th class="right">Price</th>
+            <th class="left">Item Description</th>
+            <th class="center">Price</th>
             <th class="center">Quantity</th>
             <th class="right">Total</th>
           </tr>
@@ -207,11 +224,12 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
 
       <div class="totals-wrapper">
         <table class="totals-box">
-          <tr><td class="tot-label">Sub Total</td><td class="tot-val">${money(sub)}</td></tr>
-          ${tax > 0 ? `<tr><td class="tot-label">${escapeHtml(inv.taxLabel || "Vat")} ${inv.taxRate}%</td><td class="tot-val">${money(tax)}</td></tr>` : ""}
-          ${carry !== 0 ? `<tr><td class="tot-label">Previous Balance</td><td class="tot-val">${money(carry)}</td></tr>` : ""}
-          ${paidOnThis > 0 ? `<tr><td class="tot-label">Payment Made</td><td class="tot-val">(-) ${money(paidOnThis)}</td></tr>` : ""}
-          <tr><td class="grand-tot-label">Grand Total</td><td class="grand-tot-val">${money(balanceDue)}</td></tr>
+          <tr class="tot-row"><td class="left">Sub Total</td><td class="right">${money(sub)}</td></tr>
+          ${tax > 0 ? `<tr class="tot-row"><td class="left">${escapeHtml(inv.taxLabel || "Vat")} ${inv.taxRate}%</td><td class="right">${money(tax)}</td></tr>` : ""}
+          ${carry !== 0 ? `<tr class="tot-row"><td class="left">Previous Balance</td><td class="right">${money(carry)}</td></tr>` : ""}
+          ${paidOnThis > 0 ? `<tr class="tot-row"><td class="left">Payment Made</td><td class="right">(-) ${money(paidOnThis)}</td></tr>` : ""}
+          <tr class="grand-tot-row"><td class="left">Grand Total</td><td class="right">${money(balanceDue)}</td></tr>
+          <tr><td colspan="2" style="background:#fff;padding:12px 14px;font-size:11px;font-style:italic;color:#555;text-align:right;border-top:2px solid ${accent}">${totalInWords}</td></tr>
         </table>
       </div>
     </div>
@@ -220,9 +238,10 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
       <div class="payment-methods">
         <div class="payment-title">PAYMENT METHODS</div>
         <div class="payment-text">
-          • ${escapeHtml(biz.bankAccount || "Bank Transfer")}<br/>
-          • ${escapeHtml(biz.upiId || "UPI / Digital Payment")}<br/>
-          • ${escapeHtml(biz.paymentDetails || "Cash or Check")}
+          ${biz.bankAccount ? `<div class="payment-bullet">${escapeHtml(biz.bankAccount)}</div>` : ''}
+          ${biz.upiId ? `<div class="payment-bullet">${escapeHtml(biz.upiId)}</div>` : ''}
+          ${biz.paymentDetails ? `<div class="payment-bullet">${escapeHtml(biz.paymentDetails)}</div>` : ''}
+          ${!biz.bankAccount && !biz.upiId && !biz.paymentDetails ? `<div class="payment-bullet">Cash or Check</div>` : ''}
         </div>
       </div>
       <div class="signature-box">
@@ -234,10 +253,8 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
     </div>
 
     <div class="footer-bar">
-      <div>
-        <div class="thank-you">Thank you for your business</div>
-        <div class="terms-heading">Terms &amp; Condition</div>
-      </div>
+      <div class="thank-you">Thank you for your business</div>
+      <div class="terms-heading">Terms &amp; Condition</div>
       <div class="terms-body">${escapeHtml(inv.terms || biz.invoiceTerms || "Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed Lorem ipsum dolor sit amet, consectetuer Lorem ipsum dolor sit amet.")}</div>
     </div>
   </div>
@@ -363,7 +380,7 @@ export default function InvoicesScreen() {
   const sharePdf = async (inv: Invoice) => {
     try {
       const prevBalance = await getPrevBalance(inv);
-      const html = buildHtml(inv, biz, currSym, prevBalance, theme.color);
+      const html = buildHtml(inv, biz, currSym, prevBalance, theme.color, biz.currency || 'USD');
       const { uri } = await Print.printToFileAsync({ html });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Invoice ${inv.invoiceNumber}` });
@@ -373,7 +390,7 @@ export default function InvoicesScreen() {
   const printInvoice = async (inv: Invoice) => {
     try {
       const prevBalance = await getPrevBalance(inv);
-      await Print.printAsync({ html: buildHtml(inv, biz, currSym, prevBalance, theme.color) });
+      await Print.printAsync({ html: buildHtml(inv, biz, currSym, prevBalance, theme.color, biz.currency || 'USD') });
     } catch (e: any) { console.warn(e); }
   };
 
@@ -384,7 +401,7 @@ export default function InvoicesScreen() {
   };
 
   const updateLine = (i: number, field: keyof InvoiceLine, val: string) => {
-    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: (field === "description" || field === "unit") ? val : parseFloat(val) || 0 } : l));
+    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: (field === "description" || field === "unit") ? val : val as any } : l));
   };
 
   // Scan / upload a document → OCR → prefill client name + a line item with the total.

@@ -3,13 +3,33 @@ import { View, Text, StyleSheet, ViewStyle, StyleProp, Pressable } from "react-n
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 
+import { api } from "@/src/api";
+
 export function ScreenHeader({ title, subtitle, testID }: { title: string; subtitle?: string; testID?: string }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const [bizName, setBizName] = React.useState<string | null>(null);
+  
+  React.useEffect(() => {
+    api.getSettings().then(s => {
+      setBizName(s.businessName || "Main Account");
+    }).catch(() => {});
+  }, []);
+
   return (
     <View style={styles.header} testID={testID}>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{title}</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+        {bizName ? (
+          <View style={{ backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="business" size={12} color={theme.color.brandPrimary} />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

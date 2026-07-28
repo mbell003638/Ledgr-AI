@@ -16,11 +16,17 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: theme.color.surfaceSecondary,
             borderTopColor: theme.color.border,
-            height: 84,
-            paddingTop: 8,
-            paddingBottom: 24,
+            borderTopWidth: 1,
+            height: 88,
+            paddingTop: 10,
+            paddingBottom: 28,
+            elevation: 8,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.05,
+            shadowRadius: 12,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
+          tabBarLabelStyle: { fontSize: 12, fontWeight: "600", marginTop: -2 },
           sceneStyle: { backgroundColor: theme.color.surface },
         }}
       >

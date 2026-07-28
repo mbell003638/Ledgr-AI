@@ -117,7 +117,17 @@ This document records the exact accounting architecture, business persona specs,
 - **Resolutions**:
   1. Updated `deleteSale` and `updateSale` in `local.ts` and `appService.ts` to inspect record types (`cash_sale`, `credit_sale`, `invoice`) and delegate to `deleteInvoice` / `reverseSource('invoice')` when deleting a credit sale.
   2. Wrapped `reverseSale` in `sales.tsx` in a `try...catch` block with user feedback alerts.
-  3. All unit tests passed (31/31) and updates were pushed to `v3.0`.
+### Turn 7: Invoice Format Redesign, Decimal Input Fix, Amount in Words & Theme-Aware PDFs
+- **User Prompt**: *"need this invoice format as per image theme corrosponding to the app theme... across the app it does not accept the decimals it should alow 100.01 decimels and every amount should follow the formating of its relevent currency and add the amount in letters too for the invoices and statments and follow the similar format and app theme for the statement and report... theme consistency is missing for the tab... how about anthropic compatible... main workflow shows active when clicking under that other account... add all current session conversation to LEDGR_AI_MASTER_CONVERSATION.md"*
+- **Audit Findings**:
+  1. **Invoice PDF HTML**: Rebuilt `buildHtml()` in `frontend/app/invoices.tsx` to match the exact diagonal slash header and yellow/dark banner block design from the user's provided reference image, using CSS absolute backgrounds and `skewX(-20deg)` transforms while dynamically binding app theme colors (`primary` & `accent`).
+  2. **Decimal Input Bug**: `updateLine` in `invoices.tsx`, `quotes.tsx`, and `delivery-notes.tsx` were calling `parseFloat(val) || 0` on `onChangeText` keystrokes. Typing `100.` turned into `100` immediately, stripping the decimal point. Changed line item handlers to preserve raw input strings during typing.
+  3. **Amount in Words**: Created `src/utils/numberToWords.ts` with `amountToWords(amount, currencyCode)` supporting USD (Dollars/Cents), INR (Rupees/Paise), EUR, GBP, AED, etc., and integrated it into invoice and statement PDF templates (e.g. *"One Hundred Eighteen Dollars Only"*).
+  4. **Debtor Statement PDF**: Created `buildStatementHtml()` in `app/debtors.tsx` adopting the exact same diagonal slash header design, currency formatting, and amount-in-words banner. Added **Statement PDF** and **Print** action buttons.
+  5. **Theme-Aware Reports PDF**: Updated `buildHtml()` in `app/(tabs)/reports.tsx` to derive dynamic colors (`primary`, `accent`) from the active app theme (`useTheme()`) and adopt the diagonal header visual language.
+  6. **AI Provider Expansion**: Added `Anthropic Claude` (`anthropic`) and `Custom (Anthropic Compatible)` (`custom_anthropic`) to the `PROVIDERS` list in `src/db/ai.ts`.
+  7. **Theme Picker & Button Consistency**: Added `flexWrap: "wrap"` to `app/debtors.tsx` action buttons row to prevent horizontal button squishing across themes; mapped button colors to theme tokens (`warning`, `info`). Expanded Settings Appearance selector to include all 5 theme choices (**Emerald Light**, **Emerald Dark**, **Navy & Gold**, **AMOLED Blue**, **System**).
+  8. **Multi-Account Verification**: Confirmed that `activeBook` key-prefixing in `src/db/backend.ts` (`ledgr:<bookId>:<collection>`) strictly separates ledgers, customers, bills, sales, and settings per account.
 
 ---
 

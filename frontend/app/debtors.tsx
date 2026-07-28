@@ -10,6 +10,10 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import { amountToWords } from "@/src/utils/numberToWords";
+import { getCurrencySymbol } from "@/src/db/local";
 
 type Debtor = {
   id: string;
@@ -23,6 +27,169 @@ type Debtor = {
   balance?: number;
 };
 
+function escapeHtml(v: any): string {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function buildStatementHtml(
+  debtor: any, statement: any, biz: any, sym: string,
+  themeColors?: any, currencyCode: string = 'USD'
+) {
+  const tc = themeColors || {};
+  const primary = tc.surfaceInverse || tc.surface || "#1e202c";
+  const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
+  const accentText = tc.onBrandPrimary || "#111111";
+  const money = (n: number) => `${sym}${(Number(n) || 0).toFixed(2)}`;
+  const balance = Number(debtor.balance || 0);
+  const totalInWords = amountToWords(Math.abs(balance), currencyCode);
+  const today = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const ledger = statement?.ledger || [];
+  const rows = ledger.map((r: any, i: number) => {
+    const label = r.kind === "invoice" ? "Invoice" : r.kind === "payment" ? "Payment" : r.kind === "credit_note" ? "Credit Note" : r.kind === "debit_note" ? "Debit Note" : "Entry";
+    const dateStr = r.date ? new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+      <td>${escapeHtml(dateStr)}</td>
+      <td>${escapeHtml(label)}</td>
+      <td>${escapeHtml(r.ref || '-')}</td>
+      <td class="right">${r.debit ? money(r.debit) : '-'}</td>
+      <td class="right">${r.credit ? money(r.credit) : '-'}</td>
+      <td class="right" style="font-weight:600">${money(r.balance)}</td>
+    </tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
+    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
+    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
+    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
+    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
+    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
+    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
+    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
+    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
+    .header-logo-text { font-size: 56px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+    .header-logo { max-height: 80px; max-width: 180px; object-fit: contain; }
+    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
+    .statement-to-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .client-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 8px; text-transform: uppercase; }
+    .contact-item { display: flex; align-items: center; margin-bottom: 6px; font-size: 11px; color: #fff; }
+    .contact-icon { width: 18px; height: 18px; border-radius: 50%; background: ${accent}; color: ${primary}; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; margin-right: 10px; }
+    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
+    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
+    .statement-heading { font-size: 36px; font-weight: 900; color: #111; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
+    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
+    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
+    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
+    .banner-val { font-size: 14px; font-weight: 800; margin-top: 4px; color: #111; }
+    .content { padding: 40px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+    th { background: ${primary}; color: #ffffff; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 700; }
+    td { padding: 12px 14px; border-bottom: none; color: #333; font-weight: 500; }
+    tr.even td { background: #fff; }
+    tr.odd td { background: #f4f4f4; }
+    th.right, td.right { text-align: right; }
+    .totals-wrapper { display: flex; justify-content: flex-end; }
+    .totals-box { width: 280px; border-collapse: collapse; font-size: 12px; }
+    .totals-box td { padding: 10px 14px; border: none; }
+    .tot-row td { background: ${primary}; color: #ffffff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .grand-tot-row td { background: ${accent}; color: ${accentText}; font-weight: 800; font-size: 13px; text-transform: uppercase; }
+    .amount-words { background: #fff; padding: 12px 14px; font-size: 11px; font-style: italic; color: #555; text-align: right; border-top: 2px solid ${accent}; }
+    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; }
+    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .terms-heading { font-weight: 700; color: #fff; margin-bottom: 2px; text-transform: uppercase; font-size: 10px; }
+    .terms-body { color: #aaa; line-height: 1.4; white-space: pre-wrap; font-size: 9px; max-width: 600px; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <div class="top-bg-container">
+      <div class="bg-dark"></div>
+      <div class="bg-white-slant"></div>
+      <div class="bg-yellow-slant"></div>
+      <div class="bg-yellow-rect"></div>
+      <div class="bg-yellow-border"></div>
+    </div>
+
+    <div class="header-content">
+      <div class="header-left">
+        ${biz.logo ? `<img src="${biz.logo}" class="header-logo" />` : `<div class="header-logo-text">Logo</div>`}
+      </div>
+      <div class="header-right">
+        <div class="statement-to-title">STATEMENT TO</div>
+        <div class="client-name">${escapeHtml(debtor.name)}</div>
+        ${debtor.phone ? `<div class="contact-item"><span class="contact-icon">P</span>${escapeHtml(debtor.phone)}</div>` : ''}
+        ${debtor.email ? `<div class="contact-item"><span class="contact-icon">E</span>${escapeHtml(debtor.email)}</div>` : ''}
+        ${biz.businessName ? `<div class="contact-item"><span class="contact-icon">C</span>${escapeHtml(biz.businessName)}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="banner-content">
+      <div class="banner-left">
+        <h1 class="statement-heading">STATEMENT</h1>
+      </div>
+      <div class="banner-right">
+        <div class="banner-col">
+          <div class="banner-label">Balance Due</div>
+          <div class="banner-val">${money(balance)}</div>
+        </div>
+        <div class="banner-col">
+          <div class="banner-label">As of Date</div>
+          <div class="banner-val">${today}</div>
+        </div>
+        <div class="banner-col">
+          <div class="banner-label">Total Invoiced</div>
+          <div class="banner-val">${money(debtor.totalInvoiced || 0)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Reference</th>
+            <th class="right">Debit</th>
+            <th class="right">Credit</th>
+            <th class="right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+
+      <div class="totals-wrapper">
+        <table class="totals-box">
+          <tr class="tot-row"><td>Total Invoiced</td><td class="right">${money(debtor.totalInvoiced || 0)}</td></tr>
+          <tr class="tot-row"><td>Total Paid</td><td class="right">${money(debtor.totalPaid || 0)}</td></tr>
+          <tr class="grand-tot-row"><td>Balance Due</td><td class="right">${money(balance)}</td></tr>
+          <tr><td colspan="2" class="amount-words">${totalInWords}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div class="thank-you">Thank you for your business</div>
+      <div class="terms-heading">Account Statement</div>
+      <div class="terms-body">This is a computer-generated statement of your account. Please contact us if you have any queries regarding the transactions listed above.</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 export default function DebtorsScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -30,6 +197,8 @@ export default function DebtorsScreen() {
 
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [currency, setCurrency] = useState("$");
+  const [currCode, setCurrCode] = useState('USD');
+  const [biz, setBiz] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Debtor | null>(null);
   const [advanceCredit, setAdvanceCredit] = useState(0);
@@ -86,7 +255,9 @@ export default function DebtorsScreen() {
         balance: Number((d as any).balance) || 0,
       }));
       setDebtors(enriched);
+      setBiz(settings || {});
       const sym = (settings as any).currency ?? "USD";
+      setCurrCode(sym);
       const symMap: Record<string, string> = { USD: "$", INR: "₹", EUR: "€", GBP: "£", AED: "د.إ", CAD: "CA$", AUD: "A$", NGN: "₦", KES: "KSh", ZAR: "R", BDT: "৳", PKR: "₨", PHP: "₱", MXN: "MX$", BRL: "R$" };
       setCurrency(symMap[sym] ?? sym);
     } catch (e) { console.warn(e); }
@@ -333,6 +504,23 @@ export default function DebtorsScreen() {
     Linking.openURL(`mailto:${d.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`).catch(() => {});
   };
 
+  const shareStatementPdf = async () => {
+    if (!selected || !statement) return;
+    try {
+      const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
+      const { uri } = await Print.printToFileAsync({ html });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
+    } catch (e: any) { console.warn(e); }
+  };
+
+  const printStatement = async () => {
+    if (!selected || !statement) return;
+    try {
+      await Print.printAsync({ html: buildStatementHtml(selected, statement, biz, currency, theme.color, currCode) });
+    } catch (e: any) { console.warn(e); }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -367,22 +555,22 @@ export default function DebtorsScreen() {
               <Text style={[styles.balValue, { color: (selected.balance ?? 0) > 0 ? theme.color.error : theme.color.success }]}>
                 {currency}{(selected.balance ?? 0).toFixed(2)}
               </Text>
-              <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 12 }}>
-                <View style={{ alignItems: "center" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 12, gap: 8 }}>
+                <View style={{ alignItems: "center", flex: 1 }}>
                   <Text style={styles.smLabel}>Invoiced</Text>
                   <Text style={styles.smVal}>{currency}{(selected.totalInvoiced ?? 0).toFixed(2)}</Text>
                 </View>
-                <View style={{ alignItems: "center" }}>
+                <View style={{ alignItems: "center", flex: 1 }}>
                   <Text style={styles.smLabel}>Paid</Text>
                   <Text style={styles.smVal}>{currency}{(selected.totalPaid ?? 0).toFixed(2)}</Text>
                 </View>
-                <View style={{ alignItems: "center" }}>
+                <View style={{ alignItems: "center", flex: 1 }}>
                   <Text style={styles.smLabel}>Deposit</Text>
                   <Text style={[styles.smVal, { color: advanceCredit > 0 ? theme.color.success : theme.color.muted }]}>{currency}{advanceCredit.toFixed(2)}</Text>
                 </View>
               </View>
             </View>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.md }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => { setPayAmount(""); setPayDate(new Date().toISOString().slice(0, 10)); setPayNotes(""); setPayError(""); setShowPay(true); }} style={styles.actionBtn}>
                 <Ionicons name="cash-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Record Payment</Text>
@@ -397,13 +585,21 @@ export default function DebtorsScreen() {
                 <Ionicons name="git-compare-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Compare Statement</Text>
               </Pressable>
-              <Pressable onPress={() => openNote("credit")} style={[styles.actionBtn, { backgroundColor: "#B06A3B" }]}>
+              <Pressable onPress={() => openNote("credit")} style={[styles.actionBtn, { backgroundColor: theme.color.warning }]}>
                 <Ionicons name="pricetag-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Give Discount / Credit</Text>
               </Pressable>
-              <Pressable onPress={() => openNote("debit")} style={[styles.actionBtn, { backgroundColor: "#7A5A2A" }]}>
+              <Pressable onPress={() => openNote("debit")} style={[styles.actionBtn, { backgroundColor: theme.color.info }]}>
                 <Ionicons name="add-circle-outline" size={16} color="#fff" />
                 <Text style={styles.actionText}>Add Charge / Debit</Text>
+              </Pressable>
+              <Pressable onPress={shareStatementPdf} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                <Ionicons name="document-text-outline" size={16} color="#fff" />
+                <Text style={styles.actionText}>Statement PDF</Text>
+              </Pressable>
+              <Pressable onPress={printStatement} style={[styles.actionBtn, { backgroundColor: theme.color.brandSecondary }]}>
+                <Ionicons name="print-outline" size={16} color="#fff" />
+                <Text style={styles.actionText}>Print</Text>
               </Pressable>
               {selected.phone ? (
                 <Pressable onPress={() => sendWhatsApp(selected)} style={[styles.actionBtn, { backgroundColor: "#25D366" }]}>
@@ -651,8 +847,8 @@ function makeStyles(theme: any) {
     balValue: { fontSize: 22, fontWeight: "700", marginTop: 4 },
     smLabel: { fontSize: 11, color: theme.color.muted },
     smVal: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface, marginTop: 2 },
-    actionBtn: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, backgroundColor: theme.color.brandPrimary, padding: 12, borderRadius: theme.radius.md },
-    actionText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+    actionBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.color.brandPrimary, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20 },
+    actionText: { color: "#fff", fontWeight: "600", fontSize: 12 },
     section: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface, marginTop: theme.spacing.lg, marginBottom: theme.spacing.md },
     empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.lg },
     timelineRow: { flexDirection: "row", alignItems: "center", backgroundColor: theme.color.surfaceSecondary, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginBottom: theme.spacing.sm, gap: theme.spacing.md },

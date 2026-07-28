@@ -44,6 +44,7 @@ export default function SettingsScreen() {
   const [invoiceTheme, setInvoiceTheme] = useState("navy_gold");
   const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
   const [logo, setLogo] = useState<string>("");
+  const [bizSection, setBizSection] = useState<"basic" | "contact" | "banking" | "terms" | "all">("basic");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
@@ -131,6 +132,9 @@ export default function SettingsScreen() {
         setTaxLabel("Custom");
         setTaxLabelCustom(rawLabel);
       }
+      if (s.themeMode && (s.themeMode === 'light' || s.themeMode === 'dark' || s.themeMode === 'navy_gold' || s.themeMode === 'amoled_blue' || s.themeMode === 'system')) {
+        setMode(s.themeMode);
+      }
       setTaxRate(s.taxRate ? String(s.taxRate) : "");
       setInvoiceTheme(s.invoiceTheme || "navy_gold");
       setBizProfile({
@@ -205,6 +209,7 @@ export default function SettingsScreen() {
         taxLabelCustom: taxLabelCustom.trim(),
         taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
         invoiceTheme,
+        themeMode: mode,
         ...bizProfile,
         logo,
       });
@@ -299,7 +304,12 @@ export default function SettingsScreen() {
     if (id === activeBook) return;
     await api.setActiveBook(id);
     setActiveBookState(id);
-    setStatus({ ok: true, msg: "Switched account. Reloading…" });
+    const targetBook = books.find((b) => b.id === id);
+    const s = await api.getSettings();
+    const bookTheme = s.themeMode || (id === "default" ? "light" : id.charCodeAt(id.length - 1) % 2 === 0 ? "amoled_blue" : "navy_gold");
+    setMode(bookTheme as any);
+    await api.updateSettings({ themeMode: bookTheme });
+    setStatus({ ok: true, msg: `Switched to "${targetBook?.name || "Account"}". Records & theme updated.` });
     await load();
   };
   const addBook = async () => {
@@ -310,8 +320,13 @@ export default function SettingsScreen() {
       setNewBookName("");
       const bks = await api.listBooks();
       setBooks(bks);
-      // Immediately switch into the new account so the user can set it up.
-      await switchBook(meta.id);
+      const defaultNewTheme = bks.length % 3 === 0 ? "navy_gold" : bks.length % 2 === 0 ? "amoled_blue" : "dark";
+      await api.setActiveBook(meta.id);
+      setActiveBookState(meta.id);
+      setMode(defaultNewTheme as any);
+      await api.updateSettings({ themeMode: defaultNewTheme, businessName: meta.name });
+      setStatus({ ok: true, msg: `Created & switched to new account "${meta.name}".` });
+      await load();
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Could not create account" });
     } finally { setAddingBook(false); }
@@ -340,68 +355,112 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <Card>
-              <Text style={styles.label}>Account & Workflows</Text>
-              <Text style={styles.hint}>Switch active account or toggle business workflows.</Text>
+              <Text style={styles.label}>Business Accounts & Multi-Tenant Books</Text>
+              <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
               
-              {/* Active Accounts list */}
-              <View style={{ gap: 6, marginTop: theme.spacing.sm }}>
-                {books.map((b) => (
-                  <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[styles.bookRow, b.id === activeBook && styles.bookRowActive]}>
-                    <Ionicons
-                      name={b.id === activeBook ? "checkmark-circle" : "ellipse-outline"}
-                      size={20}
-                      color={b.id === activeBook ? theme.color.brandPrimary : theme.color.muted}
-                    />
-                    <Text style={[styles.bookName, { flex: 1 }]}>{b.name}</Text>
-                    {b.id === activeBook ? (
-                      <View style={{ backgroundColor: theme.color.brandPrimary + "20", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                        <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary }}>Active</Text>
+              {/* Active Account Switcher Cards */}
+              <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
+                {books.map((b) => {
+                  const isActive = b.id === activeBook;
+                  return (
+                    <Pressable
+                      key={b.id}
+                      onPress={() => switchBook(b.id)}
+                      style={[{
+                        flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+                        padding: 12, borderRadius: theme.radius.md,
+                        borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                      }, isActive && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                        <Ionicons
+                          name={isActive ? "business" : "business-outline"}
+                          size={20}
+                          color={isActive ? theme.color.brandPrimary : theme.color.muted}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }, isActive && { color: theme.color.brandPrimary }]}>
+                            {b.name}
+                          </Text>
+                        </View>
                       </View>
-                    ) : null}
-                    {b.id !== "default" && (
-                      <Pressable onPress={() => removeBook(b.id)} style={{ marginLeft: 8 }} testID={`btn-remove-book-${b.id}`}>
-                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                      </Pressable>
-                    )}
-                  </Pressable>
-                ))}
+                      {isActive ? (
+                        <View style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.onBrandPrimary }}>Active Account</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 12, fontWeight: "600", color: theme.color.brandPrimary }}>Switch</Text>
+                      )}
+                      {b.id !== "default" && !isActive && (
+                        <Pressable onPress={() => removeBook(b.id)} style={{ marginLeft: 12 }} testID={`btn-remove-book-${b.id}`}>
+                          <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                        </Pressable>
+                      )}
+                    </Pressable>
+                  );
+                })}
               </View>
 
-              {/* Compact Workflows chips */}
-              <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 14 }]}>Enabled Workflows</Text>
+              <View style={{ marginTop: theme.spacing.md, paddingTop: theme.spacing.sm, borderTopWidth: 1, borderTopColor: theme.color.border }}>
+                <Text style={[styles.label, { fontSize: 13, marginBottom: theme.spacing.xs }]}>+ Create New Business Account</Text>
+                <View style={styles.entryRow}>
+                  <TextInput
+                    testID="input-new-book"
+                    value={newBookName}
+                    onChangeText={setNewBookName}
+                    placeholder="New account name (e.g. Technician)"
+                    placeholderTextColor={theme.color.muted}
+                    style={[styles.input, styles.entryInput]}
+                  />
+                  <Pressable testID="btn-add-book" onPress={addBook} disabled={addingBook || !newBookName.trim()} style={styles.addBtn}>
+                    {addingBook ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
+                      <>
+                        <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                        <Text style={styles.addText}>Add</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            </Card>
+
+            <Card style={{ marginTop: theme.spacing.md }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: theme.spacing.xs }}>
+                <Ionicons name="business" size={18} color={theme.color.brandPrimary} />
+                <Text style={[styles.label, { marginBottom: 0 }]}>Active Business Profile: {books.find(b => b.id === activeBook)?.name || "Main Account"}</Text>
+              </View>
+              <Text style={styles.hint}>Configure workflows, accounting styles, and aesthetics specifically for this business account.</Text>
+              
+              {/* Workflows for Active Account */}
+              <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 13 }]}>Primary Workflow & Model</Text>
+              <Text style={styles.hint}>Tailors dashboard tools and forms for this business.</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.xs }}>
                 {PERSONAS.map((p) => {
                   const chosen = selectedPersonas.includes(p.id);
-                  const isActive = activePersona === p.id;
                   return (
                     <Pressable
                       key={p.id}
                       onPress={() => {
-                        if (chosen && selectedPersonas.length === 1) return;
-                        const next = chosen ? selectedPersonas.filter((id) => id !== p.id) : [...selectedPersonas, p.id];
-                        setSelectedPersonas(next);
-                        if (activePersona === p.id && !next.includes(activePersona)) setActivePersona(next[0]);
+                        setSelectedPersonas([p.id]);
+                        setActivePersona(p.id);
                       }}
-                      onLongPress={() => setActivePersona(p.id)}
                       style={[{
                         flexDirection: "row", alignItems: "center", gap: 6,
                         paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20,
                         borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
-                      }, chosen && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}
+                      }, chosen && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
                     >
                       <Ionicons name={chosen ? "checkmark-circle" : "ellipse-outline"} size={16} color={chosen ? theme.color.brandPrimary : theme.color.muted} />
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, chosen && { color: theme.color.brandPrimary }]}>
                         {p.label}
                       </Text>
-                      {isActive && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.color.brandPrimary }} />}
                     </Pressable>
                   );
                 })}
               </View>
-            </Card>
 
-            <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Accounting Style</Text>
+              {/* Accounting Style for Active Account */}
+              <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 13 }]}>Accounting Style</Text>
               <Text style={styles.hint}>Choose how profit, partner stakes, and financial reports are computed.</Text>
               <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
                 <Pressable
@@ -439,43 +498,58 @@ export default function SettingsScreen() {
                 </Pressable>
               </View>
             </Card>
-            <View style={[styles.entryRow, { marginTop: theme.spacing.md }]}>
-                <TextInput
-                  testID="input-new-book"
-                  value={newBookName}
-                  onChangeText={setNewBookName}
-                  placeholder="New account name (e.g. Technician)"
-                  placeholderTextColor={theme.color.muted}
-                  style={[styles.input, styles.entryInput]}
-                />
-                <Pressable testID="btn-add-book" onPress={addBook} disabled={addingBook || !newBookName.trim()} style={styles.addBtn}>
-                  {addingBook ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
-                    <>
-                      <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-                      <Text style={styles.addText}>Add</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
 
             <Card style={{ marginTop: theme.spacing.md }}>
               <Text style={styles.label}>AI Provider</Text>
-              <View style={styles.modeRow}>
-                {PROVIDERS.map((p) => (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => { setProvider(p.id); setModelName(p.defaultModel); setBaseUrl(p.defaultBaseUrl); setTestResult(null); }}
-                    style={[styles.modeBtn, provider === p.id && styles.modeBtnActive]}
-                  >
-                    <Text style={[styles.modeText, provider === p.id && styles.modeTextActive]} numberOfLines={1}>
-                      {p.label}
-                    </Text>
-                  </Pressable>
-                ))}
+              <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
+                <Pressable
+                  onPress={() => { setProvider("gemini"); setModelName("gemini-2.0-flash-001"); setBaseUrl(""); setTestResult(null); }}
+                  style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider === "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                >
+                  <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider === "gemini" && { color: theme.color.brandPrimary }]}>
+                    Google Gemini
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    if (provider === "gemini") { setProvider("custom"); setTestResult(null); }
+                  }}
+                  style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider !== "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                >
+                  <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider !== "gemini" && { color: theme.color.brandPrimary }]}>
+                    Custom Provider
+                  </Text>
+                </Pressable>
               </View>
 
+              {provider !== "gemini" && (
+                <>
+                  <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 13 }]}>Protocol / API Format</Text>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
+                    <Pressable
+                      onPress={() => { setProvider("custom"); setTestResult(null); }}
+                      style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom" || provider === "openrouter") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                    >
+                      <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom" || provider === "openrouter") && { color: theme.color.brandPrimary }]}>
+                        OpenAI Compatible
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => { setProvider("custom_anthropic"); setTestResult(null); }}
+                      style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom_anthropic" || provider === "anthropic") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                    >
+                      <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom_anthropic" || provider === "anthropic") && { color: theme.color.brandPrimary }]}>
+                        Anthropic Compatible
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+
               <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
-              <Text style={styles.hint}>{PROVIDERS.find((p) => p.id === provider)?.keyHint ?? ""}</Text>
+              <Text style={styles.hint}>{PROVIDERS.find((p) => p.id === provider)?.keyHint || "Paste your API key"}</Text>
               <TextInput
                 testID="input-api-key"
                 value={key}
@@ -493,14 +567,14 @@ export default function SettingsScreen() {
                 testID="input-api-model"
                 value={modelName}
                 onChangeText={setModelName}
-                placeholder={PROVIDERS.find((p) => p.id === provider)?.defaultModel ?? "model name"}
+                placeholder={PROVIDERS.find((p) => p.id === provider)?.defaultModel || "model name"}
                 placeholderTextColor={theme.color.muted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={styles.input}
               />
 
-              {(provider === "custom" || provider === "custom_anthropic") && (
+              {provider !== "gemini" && (
                 <>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
                   <Text style={styles.hint}>Custom API endpoint (e.g. https://my-server.com/v1)</Text>
@@ -570,23 +644,60 @@ export default function SettingsScreen() {
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>Appearance</Text>
-              <Text style={styles.hint}>Choose light, dark or match system.</Text>
-              <View style={styles.modeRow}>
-                {(["light", "dark", "system"] as const).map((m) => (
+              <Text style={styles.label}>Appearance & Color Theme</Text>
+              <Text style={styles.hint}>Choose your visual theme across all app tabs and generated PDFs.</Text>
+              
+              <Text style={[styles.label, { marginTop: theme.spacing.sm, fontSize: 13 }]}>App Interface Theme</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.xs }}>
+                {[
+                  { id: "light", label: "Emerald Light", icon: "sunny-outline" },
+                  { id: "dark", label: "Emerald Dark", icon: "moon-outline" },
+                  { id: "navy_gold", label: "Navy & Gold", icon: "color-palette-outline" },
+                  { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" },
+                  { id: "system", label: "System", icon: "phone-portrait-outline" },
+                ].map((m) => (
                   <Pressable
-                    key={m}
-                    testID={`mode-${m}`}
-                    onPress={() => setMode(m)}
-                    style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
+                    key={m.id}
+                    testID={`mode-${m.id}`}
+                    onPress={async () => {
+                      setMode(m.id as any);
+                      await api.updateSettings({ themeMode: m.id });
+                    }}
+                    style={[{
+                      flexDirection: "row", alignItems: "center", gap: 6,
+                      paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20,
+                      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                    }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
                   >
                     <Ionicons
-                      name={m === "light" ? "sunny-outline" : m === "dark" ? "moon-outline" : "phone-portrait-outline"}
-                      size={18}
-                      color={mode === m ? theme.color.onBrandPrimary : theme.color.onSurface}
+                      name={m.icon as any}
+                      size={16}
+                      color={mode === m.id ? theme.color.brandPrimary : theme.color.onSurface}
                     />
-                    <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
-                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, mode === m.id && { color: theme.color.brandPrimary }]}>
+                      {m.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { marginTop: theme.spacing.md, fontSize: 13 }]}>Invoice PDF Preset</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.xs }}>
+                {[
+                  { id: "navy_gold", label: "Black & Gold" },
+                  { id: "emerald", label: "Classic Emerald" },
+                  { id: "minimal", label: "Clean Minimal" },
+                ].map((t) => (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => setInvoiceTheme(t.id)}
+                    style={[{
+                      paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20,
+                      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                    }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                  >
+                    <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>
+                      {t.label}
                     </Text>
                   </Pressable>
                 ))}
@@ -756,51 +867,154 @@ export default function SettingsScreen() {
               <Text style={styles.label}>Business Profile</Text>
               <Text style={styles.hint}>Appears on invoices and reports.</Text>
 
-              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Company Logo</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
-                {logo ? (
-                  <Image source={{ uri: logo }} style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary }} />
-                ) : (
-                  <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name="image-outline" size={24} color={theme.color.muted} />
-                  </View>
-                )}
-                <Pressable onPress={pickLogo} style={styles.addBtn}>
-                  <Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} />
-                  <Text style={styles.addText}>{logo ? "Change Logo" : "Upload Logo"}</Text>
-                </Pressable>
-                {logo ? (
-                  <Pressable onPress={() => setLogo("")} style={styles.addBtn}>
-                    <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-                    <Text style={[styles.addText, { color: theme.color.error }]}>Remove</Text>
+              {/* Sub-menu Tabs */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: theme.spacing.sm }}>
+                {[
+                  { id: "basic", label: "Basic Info", icon: "business-outline" },
+                  { id: "contact", label: "Contact & Tax", icon: "call-outline" },
+                  { id: "banking", label: "Payment Info", icon: "card-outline" },
+                  { id: "terms", label: "Invoice Terms", icon: "document-text-outline" },
+                  { id: "all", label: "Show All", icon: "list-outline" },
+                ].map((tab) => (
+                  <Pressable
+                    key={tab.id}
+                    onPress={() => setBizSection(tab.id as any)}
+                    style={[{
+                      flexDirection: "row", alignItems: "center", gap: 6,
+                      paddingVertical: 6, paddingHorizontal: 10, borderRadius: 16,
+                      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
+                    }, bizSection === tab.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
+                  >
+                    <Ionicons name={tab.icon as any} size={14} color={bizSection === tab.id ? theme.color.brandPrimary : theme.color.muted} />
+                    <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, bizSection === tab.id && { color: theme.color.brandPrimary }]}>
+                      {tab.label}
+                    </Text>
                   </Pressable>
-                ) : null}
+                ))}
               </View>
 
-              {[
-                { label: "Business Name", key: "businessName", placeholder: "e.g. Amit General Store" },
-                { label: "Address", key: "businessAddress", placeholder: "Street, City" },
-                { label: "Phone", key: "businessPhone", placeholder: "+1 555 000 0000" },
-                { label: "Email", key: "businessEmail", placeholder: "you@example.com" },
-                { label: "Tax Reg. No (TRN / GSTIN / VAT)", key: "taxRegNo", placeholder: "Shown on invoices" },
-                { label: "Bank Account / IBAN / Interac", key: "bankAccount", placeholder: "Acct no, IBAN, or Interac email" },
-                { label: "Payment ID / Link", key: "upiId", placeholder: "Interac, UPI ID, PayPal or payment link" },
-                { label: "Other Payment Details", key: "paymentDetails", placeholder: "Cheque payable to…, notes, alt. link" },
-                { label: "Invoice Terms & Conditions", key: "invoiceTerms", placeholder: "Payment is due within X days..." },
-              ].map(({ label, key, placeholder }) => (
-                <View key={key}>
-                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>{label}</Text>
+              {/* Section 1: Basic Info & Logo */}
+              {(bizSection === "basic" || bizSection === "all") && (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={[styles.label, { fontSize: 13 }]}>Company Logo</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
+                    {logo ? (
+                      <Image source={{ uri: logo }} style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary }} />
+                    ) : (
+                      <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: theme.color.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
+                        <Ionicons name="image-outline" size={24} color={theme.color.muted} />
+                      </View>
+                    )}
+                    <Pressable onPress={pickLogo} style={styles.addBtn}>
+                      <Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} />
+                      <Text style={styles.addText}>{logo ? "Change Logo" : "Upload Logo"}</Text>
+                    </Pressable>
+                    {logo ? (
+                      <Pressable onPress={() => setLogo("")} style={styles.addBtn}>
+                        <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                        <Text style={[styles.addText, { color: theme.color.error }]}>Remove</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Business Name</Text>
                   <TextInput
-                    value={bizProfile[key as keyof typeof bizProfile]}
-                    onChangeText={(v) => setBizProfile((p) => ({ ...p, [key]: v }))}
-                    placeholder={placeholder}
+                    value={bizProfile.businessName}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, businessName: v }))}
+                    placeholder="e.g. Amit General Store"
                     placeholderTextColor={theme.color.muted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
+                    style={styles.input}
+                  />
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Address</Text>
+                  <TextInput
+                    value={bizProfile.businessAddress}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, businessAddress: v }))}
+                    placeholder="Street, City, State, ZIP"
+                    placeholderTextColor={theme.color.muted}
                     style={styles.input}
                   />
                 </View>
-              ))}
+              )}
+
+              {/* Section 2: Contact & Tax Registration */}
+              {(bizSection === "contact" || bizSection === "all") && (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Phone</Text>
+                  <TextInput
+                    value={bizProfile.businessPhone}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, businessPhone: v }))}
+                    placeholder="+1 555 000 0000"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Email</Text>
+                  <TextInput
+                    value={bizProfile.businessEmail}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, businessEmail: v }))}
+                    placeholder="you@example.com"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Tax Reg. No (TRN / GSTIN / VAT)</Text>
+                  <TextInput
+                    value={bizProfile.taxRegNo}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, taxRegNo: v }))}
+                    placeholder="Shown on invoices"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+                </View>
+              )}
+
+              {/* Section 3: Payment Details */}
+              {(bizSection === "banking" || bizSection === "all") && (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Bank Account / IBAN / Interac</Text>
+                  <TextInput
+                    value={bizProfile.bankAccount}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, bankAccount: v }))}
+                    placeholder="Acct no, IBAN, or Interac email"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Payment ID / Link</Text>
+                  <TextInput
+                    value={bizProfile.upiId}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, upiId: v }))}
+                    placeholder="Interac, UPI ID, PayPal or payment link"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Other Payment Details</Text>
+                  <TextInput
+                    value={bizProfile.paymentDetails}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, paymentDetails: v }))}
+                    placeholder="Cheque payable to…, notes, alt. link"
+                    placeholderTextColor={theme.color.muted}
+                    style={styles.input}
+                  />
+                </View>
+              )}
+
+              {/* Section 4: Invoice Terms */}
+              {(bizSection === "terms" || bizSection === "all") && (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Invoice Terms & Conditions</Text>
+                  <TextInput
+                    value={bizProfile.invoiceTerms}
+                    onChangeText={(v) => setBizProfile((p) => ({ ...p, invoiceTerms: v }))}
+                    placeholder="Payment is due within X days..."
+                    placeholderTextColor={theme.color.muted}
+                    multiline
+                    style={[styles.input, { minHeight: 60 }]}
+                  />
+                </View>
+              )}
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>
@@ -845,47 +1059,6 @@ export default function SettingsScreen() {
                   </ScrollView>
                 </View>
               )}
-            </Card>
-
-            <Card style={{ marginTop: theme.spacing.md }}>
-              <Text style={styles.label}>App & Invoice Themes</Text>
-              <Text style={styles.hint}>Choose the visual appearance for the application UI and generated invoices.</Text>
-              
-              <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>App Interface Theme</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                {[
-                  { id: "light", label: "Emerald Light" },
-                  { id: "dark", label: "Emerald Dark" },
-                  { id: "navy_gold", label: "Black & Gold" },
-                  { id: "amoled_blue", label: "AMOLED Blue" },
-                  { id: "system", label: "System Default" },
-                ].map((t) => (
-                  <Pressable
-                    key={t.id}
-                    onPress={() => setMode(t.id as any)}
-                    style={[styles.modeBtn, mode === t.id && styles.modeBtnActive]}
-                  >
-                    <Text style={[styles.modeText, mode === t.id && styles.modeTextActive]}>{t.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Invoice PDF Theme</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                {[
-                  { id: "navy_gold", label: "Black & Gold" },
-                  { id: "emerald", label: "Classic Emerald" },
-                  { id: "minimal", label: "Clean Minimal" },
-                ].map((t) => (
-                  <Pressable
-                    key={t.id}
-                    onPress={() => setInvoiceTheme(t.id)}
-                    style={[styles.modeBtn, invoiceTheme === t.id && styles.modeBtnActive]}
-                  >
-                    <Text style={[styles.modeText, invoiceTheme === t.id && styles.modeTextActive]}>{t.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
             </Card>
 
             <Card style={{ marginTop: theme.spacing.md }}>

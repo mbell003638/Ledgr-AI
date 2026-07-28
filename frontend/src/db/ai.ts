@@ -40,7 +40,16 @@ export const PROVIDERS: ProviderMeta[] = [
     supportsAudio: true,
     api: 'gemini',
   },
-
+  {
+    id: 'anthropic',
+    label: 'Anthropic Claude',
+    defaultBaseUrl: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-3-5-sonnet-20241022',
+    keyHint: 'sk-ant-… from console.anthropic.com',
+    supportsVision: true,
+    supportsAudio: false,
+    api: 'anthropic',
+  },
   {
     id: 'openrouter',
     label: 'OpenRouter',
@@ -60,6 +69,16 @@ export const PROVIDERS: ProviderMeta[] = [
     supportsVision: true,
     supportsAudio: false,
     api: 'openai',
+  },
+  {
+    id: 'custom_anthropic',
+    label: 'Custom (Anthropic Compatible)',
+    defaultBaseUrl: '',
+    defaultModel: '',
+    keyHint: 'Your Anthropic API key',
+    supportsVision: true,
+    supportsAudio: false,
+    api: 'anthropic',
   },
 ];
 

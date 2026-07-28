@@ -106,7 +106,7 @@ export default function DeliveryNotesScreen() {
   };
 
   const updateItem = (i: number, field: keyof Item, val: string) => {
-    setItems((prev) => prev.map((it, idx) => idx === i ? { ...it, [field]: field === "description" ? val : parseFloat(val) || 0 } : it));
+    setItems((prev) => prev.map((it, idx) => idx === i ? { ...it, [field]: field === "description" ? val : val as any } : it));
   };
   const addItem = () => setItems((p) => [...p, { description: "", qty: 1 }]);
   const removeItem = (i: number) => setItems((p) => p.filter((_, idx) => idx !== i));
