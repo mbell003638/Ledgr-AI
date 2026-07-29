@@ -109,6 +109,7 @@ function ThemedStack() {
         <Stack.Screen name="daybook" options={{ presentation: "card" }} />
         <Stack.Screen name="ask" options={{ presentation: "card" }} />
         <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
+        <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
         </Stack>
       </View>
     </View>
