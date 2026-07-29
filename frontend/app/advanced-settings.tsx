@@ -401,12 +401,14 @@ export default function AdvancedSettingsScreen() {
         <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
           <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
         </Pressable>
-        <ScreenHeader title="Advanced" subtitle="System & Workflows" />
+        <View style={{ flex: 1 }}>
+          <ScreenHeader title="Advanced" subtitle="System & Workflows" />
+        </View>
       </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
