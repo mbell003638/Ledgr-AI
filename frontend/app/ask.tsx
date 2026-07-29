@@ -10,6 +10,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { executeV2AiAction, validateV2AiAction } from "@/src/accountingV2/aiActions";
+import * as ImagePicker from "expo-image-picker";
 
 type Msg = { role: "user" | "assistant"; text: string };
 
@@ -223,33 +224,44 @@ export default function AskBooks() {
         </ScrollView>
 
         <View style={styles.inputBar}>
-          <Pressable style={styles.cameraBtn} onPress={() => Alert.alert("Coming soon", "Camera scanning will be available in the next update!")}>
-            <Ionicons name="camera-outline" size={28} color={theme.color.muted} />
+          <Pressable
+            onPress={async () => {
+              try {
+                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (!perm.granted) return;
+                const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+                if (res.canceled || !res.assets[0].base64) return;
+                setLoading(true);
+                const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
+                const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
+                send(prompt);
+              } catch (e: any) {
+                Alert.alert("Receipt Scan Error", e.message || "Failed to scan receipt");
+                setLoading(false);
+              }
+            }}
+            style={styles.cameraBtn}
+          >
+            <Ionicons name="camera-outline" size={24} color={theme.color.muted} />
           </Pressable>
+
           <View style={styles.inputWrapper}>
-            {Platform.OS === 'web' && (
-              <style>{`
-                textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
-                textarea { -ms-overflow-style: none; scrollbar-width: none; }
-              `}</style>
-            )}
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="Message Ledgr AI..."
               placeholderTextColor={theme.color.muted}
-              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
-              multiline={true}
-              numberOfLines={1}
-              showsVerticalScrollIndicator={false}
+              style={styles.input}
+              onSubmitEditing={() => send(input)}
+              returnKeyType="send"
             />
             {input.trim().length > 0 ? (
-              <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
-                <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
+              <Pressable onPress={() => send(input)} disabled={loading} style={styles.sendBtnPill}>
+                <Ionicons name="arrow-up" size={18} color="#000" />
               </Pressable>
             ) : (
-              <Pressable style={styles.micBtn} onPress={() => Alert.alert("Coming soon", "Voice input will be available in the next update!")}>
-                <Ionicons name="mic-outline" size={22} color={theme.color.muted} />
+              <Pressable onPress={() => router.push("/voice")} style={styles.micBtnPill}>
+                <Ionicons name="mic-outline" size={20} color={theme.color.muted} />
               </Pressable>
             )}
           </View>
@@ -273,11 +285,11 @@ function makeStyles(theme: any) {
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
+    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 10, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
     cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, maxHeight: 120 },
-    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, maxHeight: 96, textAlignVertical: "center" },
-    micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
-    sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, paddingLeft: 14, paddingRight: 6, paddingVertical: 4, backgroundColor: theme.color.surface },
+    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 6 },
+    sendBtnPill: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.brandPrimary, alignItems: "center", justifyContent: "center" },
+    micBtnPill: { padding: 6, justifyContent: "center", alignItems: "center" },
   });
 }
