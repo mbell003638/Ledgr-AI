@@ -223,18 +223,29 @@ export default function AskBooks() {
         </ScrollView>
 
         <View style={styles.inputBar}>
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="Ask a question..."
-            placeholderTextColor={theme.color.muted}
-            style={styles.input}
-            onSubmitEditing={() => send(input)}
-            returnKeyType="send"
-          />
-          <Pressable onPress={() => send(input)} disabled={loading || !input.trim()} style={[styles.sendBtn, (loading || !input.trim()) && { opacity: 0.5 }]}>
-            <Ionicons name="arrow-up" size={20} color="#fff" />
+          <Pressable style={styles.cameraBtn} onPress={() => Alert.alert("Coming soon", "Camera scanning will be available in the next update!")}>
+            <Ionicons name="camera-outline" size={28} color={theme.color.muted} />
           </Pressable>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="Message Ledgr AI..."
+              placeholderTextColor={theme.color.muted}
+              style={styles.input}
+              onSubmitEditing={() => send(input)}
+              returnKeyType="send"
+            />
+            {input.trim().length > 0 ? (
+              <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
+                <Ionicons name="arrow-up" size={18} color="#000" />
+              </Pressable>
+            ) : (
+              <Pressable style={styles.micBtn} onPress={() => Alert.alert("Coming soon", "Voice input will be available in the next update!")}>
+                <Ionicons name="mic-outline" size={24} color={theme.color.muted} />
+              </Pressable>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -255,8 +266,11 @@ function makeStyles(theme: any) {
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
-    input: { flex: 1, borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, paddingHorizontal: theme.spacing.md, paddingVertical: 10, fontSize: 14, color: theme.color.onSurface, backgroundColor: theme.color.surface },
-    sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.color.brandPrimary, alignItems: "center", justifyContent: "center" },
+    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
+    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 6, paddingVertical: 6 },
+    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 4 },
+    micBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
+    sendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.brandPrimary, alignItems: "center", justifyContent: "center" },
   });
 }
