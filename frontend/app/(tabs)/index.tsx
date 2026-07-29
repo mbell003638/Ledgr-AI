@@ -11,6 +11,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
+import { getEnabledFeatures } from "@/src/utils/featureFlags";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -70,18 +71,18 @@ export default function Dashboard() {
   const [dailyDate, setDailyDate] = useState(localTodayStr);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [businessType, setBusinessType] = useState<string>("");
+  const [settings, setSettings] = useState<any>({});
 
   const load = useCallback(async () => {
     try {
-      const [d, day, settings] = await Promise.all([
+      const [d, day, s] = await Promise.all([
         api.dashboard(),
         api.dailySummary(dailyDate),
         api.getSettings(),
       ]);
       setDash(d);
       setDaily(day);
-      setBusinessType(settings.businessType || "");
+      setSettings(s);
     } catch (e) {
       console.warn("dash", e);
     } finally {
@@ -91,9 +92,9 @@ export default function Dashboard() {
   }, [dailyDate]);
 
   const visibleTiles = useMemo(() => {
-    const hidden = HIDDEN_TILES[businessType] || [];
-    return TILES.filter((t) => !hidden.includes(t.key));
-  }, [businessType]);
+    const enabled = getEnabledFeatures(settings);
+    return TILES.filter((t) => enabled.includes(t.key as any));
+  }, [settings]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 

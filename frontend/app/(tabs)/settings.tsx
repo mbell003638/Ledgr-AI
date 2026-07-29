@@ -749,12 +749,23 @@ export default function SettingsScreen() {
                       }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}
                     >
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>
+                    <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>
                         {t.label}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
               </Card>
+
+              <Pressable onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flex: 1, paddingRight: 16 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
+                    <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Turn accounting tabs ON or OFF to fit your business</Text>
+                  </View>
+                  <Ionicons name="options-outline" size={22} color={theme.color.brandPrimary} />
+                </View>
+              </Pressable>
 
               <Card style={{ marginTop: theme.spacing.md }}>
                 <Text style={styles.label}>Accounting Basis</Text>
