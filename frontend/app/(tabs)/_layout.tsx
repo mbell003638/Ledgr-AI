@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
 import { useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
+import VoiceFab from "@/src/components/VoiceFab";
 
 export default function TabsLayout() {
   const theme = useTheme();
@@ -39,19 +40,19 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="bills"
-          options={{
-            title: "Bills",
-            tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" size={size} color={color} />,
-            tabBarButtonTestID: "tab-bills",
-          }}
-        />
-        <Tabs.Screen
           name="suppliers"
           options={{
             title: "Parties",
             tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
             tabBarButtonTestID: "tab-suppliers",
+          }}
+        />
+        <Tabs.Screen
+          name="quick_action_spacer"
+          options={{
+            title: "",
+            tabBarIcon: () => null,
+            tabBarButton: () => <View style={{ width: 60 }} />, // Empty spacer for the center FAB
           }}
         />
         <Tabs.Screen
@@ -72,6 +73,7 @@ export default function TabsLayout() {
         />
       </Tabs>
       <QuickActionMenu />
+      <VoiceFab />
     </View>
   );
 }
