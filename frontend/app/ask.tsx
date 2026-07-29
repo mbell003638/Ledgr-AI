@@ -240,6 +240,7 @@ export default function AskBooks() {
               placeholderTextColor={theme.color.muted}
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               multiline={true}
+              numberOfLines={1}
               showsVerticalScrollIndicator={false}
             />
             {input.trim().length > 0 ? (
