@@ -274,8 +274,8 @@ function makeStyles(theme: any) {
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
     inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
     cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 2, maxHeight: 120 },
-    input: { flex: 1, fontSize: 15, color: theme.color.onSurface, paddingTop: 8, paddingBottom: 8, margin: 0, maxHeight: 96, textAlignVertical: "center" },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, maxHeight: 120 },
+    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, maxHeight: 96, textAlignVertical: "center" },
     micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
   });
