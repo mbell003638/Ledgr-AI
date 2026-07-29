@@ -266,10 +266,10 @@ function makeStyles(theme: any) {
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
     inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
-    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 6, paddingVertical: 4, minHeight: 44, maxHeight: 120 },
-    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 6, paddingTop: 6 },
-    micBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4, marginBottom: 2 },
-    sendBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4, marginBottom: 2 },
+    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginBottom: 2 },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 2, maxHeight: 100 },
+    input: { flex: 1, fontSize: 15, color: theme.color.onSurface, paddingVertical: 8, maxHeight: 96 },
+    micBtn: { padding: 6, justifyContent: "center", alignItems: "center", marginRight: 2, marginBottom: 1 },
+    sendBtn: { padding: 6, justifyContent: "center", alignItems: "center", marginRight: 2, marginBottom: 1 },
   });
 }
