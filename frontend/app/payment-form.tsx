@@ -6,6 +6,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
 type PayType = "supplier_payment" | "drawing" | "commission_payment";
 
@@ -49,16 +50,25 @@ export default function PaymentForm() {
     })();
   }, []);
 
+  const [supplierName, setSupplierName] = useState("");
+
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
-    if (type === "supplier_payment" && !supplierId) { setError("Select a supplier"); return; }
+    let finalSupplierId = supplierId;
+    if (type === "supplier_payment") {
+      if (supplierName.trim()) {
+        const party = await api.findOrCreateParty(supplierName.trim(), "supplier");
+        if (party) finalSupplierId = party.id;
+      }
+      if (!finalSupplierId) { setError("Select or enter a supplier"); return; }
+    }
     if (type === "drawing" && !partnerName.trim()) { setError("Enter partner name"); return; }
     setSaving(true); setError("");
     try {
       const payload = {
         date, amount: amt, currency, type,
-        supplierId: type === "supplier_payment" ? supplierId : "",
+        supplierId: type === "supplier_payment" ? finalSupplierId : "",
         partnerName: type === "drawing" ? partnerName.trim() : "",
         method, notes,
       };
@@ -97,16 +107,19 @@ export default function PaymentForm() {
             </View>
 
             {type === "supplier_payment" ? (
-              <>
-                <Text style={[styles.label, { marginTop: 12 }]}>Supplier</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
-                  {suppliers.map((s) => (
-                    <Pressable key={s.id} testID={`p-supplier-${s.id}`} onPress={() => setSupplierId(s.id)} style={[styles.chip, supplierId === s.id && styles.chipActive]}>
-                      <Text style={[styles.chipText, supplierId === s.id && styles.chipTextActive]}>{s.name}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </>
+              <View style={{ marginTop: 12 }}>
+                <PartyAutocompleteInput
+                  label="Supplier / Recipient *"
+                  value={supplierName}
+                  onChangeText={setSupplierName}
+                  placeholder="Select or type party name..."
+                  roleFilter="all"
+                  onSelectParty={(p) => {
+                    setSupplierName(p.name);
+                    setSupplierId(p.id);
+                  }}
+                />
+              </View>
             ) : (
               <>
                 <Text style={[styles.label, { marginTop: 12 }]}>Partner Name</Text>

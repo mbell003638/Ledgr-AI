@@ -13,6 +13,8 @@ import { executeV2AiAction, validateV2AiAction, type V2AiValidationResult } from
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
+import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
+
 export default function VoiceModal() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -56,7 +58,19 @@ export default function VoiceModal() {
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
+
       const p = await api.parseCommand(txt);
+      const spokenParty = p.supplierName || p.customerName || p.partnerName || "";
+      if (spokenParty) {
+        const existingParties = await api.searchParties("");
+        const matchedParty = findBestPartyMatch(spokenParty, existingParties, 0.60);
+        if (matchedParty) {
+          if (p.supplierName) p.supplierName = matchedParty.name;
+          if (p.customerName) p.customerName = matchedParty.name;
+          if (p.partnerName) p.partnerName = matchedParty.name;
+        }
+      }
+
       const validation = validateV2AiAction({
         source: "voice", intent: "create_payment",
         partyId: p.supplierName || p.customerName || p.partnerName || "Voice transaction",
@@ -87,16 +101,10 @@ export default function VoiceModal() {
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeV2AiAction(validatedAction, { confirmed: true }, async () => {
       if (parsed.intent === "bill") {
-        // find or create supplier
         let sid = "";
         if (parsed.supplierName) {
-          const list = await api.listSuppliers();
-          const match = list.find((s: any) => s.name.toLowerCase().includes(parsed.supplierName.toLowerCase()));
-          if (match) sid = match.id;
-          else {
-            const created = await api.createSupplier({ name: parsed.supplierName });
-            sid = created.id;
-          }
+          const party = await api.findOrCreateParty(parsed.supplierName, "supplier");
+          if (party) sid = party.id;
         }
         await api.createBill({
           supplierId: sid, date, amount: parsed.amount, currency,

@@ -215,8 +215,67 @@ export const api = {
         return { id, name, phone: p.phone, email: p.email, roles };
       }
     }
-    return db.createSupplier({ ...p, name });
+    return p.type === 'customer' ? db.createDebtor({ ...p, name }) : db.createSupplier({ ...p, name });
   },
+
+  findOrCreateParty: async (rawName: string, role: 'customer' | 'supplier' = 'customer', details?: { phone?: string; email?: string }) => {
+    const name = (rawName || '').trim();
+    if (!name) return null;
+    const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
+    const dMatch = debtors.find((x: any) => norm(x.name) === norm(name));
+    const sMatch = suppliers.find((x: any) => norm(x.name) === norm(name));
+
+    if (dMatch || sMatch) {
+      const match = dMatch || sMatch;
+      // If party exists as debtor but not supplier and role is supplier, auto-add supplier entry
+      if (role === 'supplier' && !sMatch && dMatch) {
+        try { await db.createSupplier({ name: dMatch.name, phone: dMatch.phone || details?.phone || '' }); } catch {}
+      }
+      // If party exists as supplier but not debtor and role is customer, auto-add debtor entry
+      if (role === 'customer' && !dMatch && sMatch) {
+        try { await db.createDebtor({ name: sMatch.name, phone: sMatch.phone || details?.phone || '' }); } catch {}
+      }
+      return { id: match.id, name: match.name, role: (dMatch && sMatch) ? 'both' : (dMatch ? 'customer' : 'supplier') };
+    }
+
+    // Party does not exist -> auto create it in the books
+    try {
+      const created = role === 'customer' 
+        ? await db.createDebtor({ name, phone: details?.phone || '', email: details?.email || '' })
+        : await db.createSupplier({ name, phone: details?.phone || '', email: details?.email || '' });
+      return { id: created.id, name: created.name, role };
+    } catch {
+      const freshAll = [...(await db.listDebtors()), ...(await db.listSuppliers())];
+      const freshMatch = freshAll.find((x: any) => norm(x.name) === norm(name));
+      return freshMatch ? { id: freshMatch.id, name: freshMatch.name, role: freshMatch.role || role } : null;
+    }
+  },
+
+  searchParties: async (query: string) => {
+    const q = (query || '').trim().toLowerCase();
+    const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
+    const map = new Map<string, { id: string; name: string; phone?: string; role: string }>();
+
+    for (const d of debtors as any[]) {
+      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone, role: 'customer' });
+    }
+    for (const s of suppliers as any[]) {
+      const k = s.name.trim().toLowerCase();
+      const existing = map.get(k);
+      if (existing) {
+        existing.role = 'both';
+      } else {
+        map.set(k, { id: s.id, name: s.name, phone: s.phone, role: 'supplier' });
+      }
+    }
+
+    const list = Array.from(map.values());
+    if (!q) return list;
+    return list.filter((p) => p.name.toLowerCase().includes(q));
+  },
+
   listParties: async () => {
     const runner=activeSqlRunner(); if(!runner)return [];
     const service=new V2AppService(runner); return (await service.activeContext()) ? service.listParties() : [];
