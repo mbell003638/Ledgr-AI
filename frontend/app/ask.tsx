@@ -225,6 +225,7 @@ export default function AskBooks() {
 
         <View style={styles.inputBar}>
           <Pressable
+            style={styles.cameraBtn}
             onPress={async () => {
               try {
                 const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -240,28 +241,33 @@ export default function AskBooks() {
                 setLoading(false);
               }
             }}
-            style={styles.cameraBtn}
           >
-            <Ionicons name="camera-outline" size={24} color={theme.color.muted} />
+            <Ionicons name="camera-outline" size={28} color={theme.color.muted} />
           </Pressable>
-
           <View style={styles.inputWrapper}>
+            {Platform.OS === 'web' && (
+              <style>{`
+                textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
+                textarea { -ms-overflow-style: none; scrollbar-width: none; }
+              `}</style>
+            )}
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="Message Ledgr AI..."
               placeholderTextColor={theme.color.muted}
-              style={styles.input}
-              onSubmitEditing={() => send(input)}
-              returnKeyType="send"
+              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
+              multiline={true}
+              numberOfLines={1}
+              showsVerticalScrollIndicator={false}
             />
             {input.trim().length > 0 ? (
-              <Pressable onPress={() => send(input)} disabled={loading} style={styles.sendBtnPill}>
-                <Ionicons name="arrow-up" size={18} color="#000" />
+              <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
+                <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : (
-              <Pressable onPress={() => router.push("/voice")} style={styles.micBtnPill}>
-                <Ionicons name="mic-outline" size={20} color={theme.color.muted} />
+              <Pressable style={styles.micBtn} onPress={() => router.push("/voice")}>
+                <Ionicons name="mic-outline" size={22} color={theme.color.muted} />
               </Pressable>
             )}
           </View>
@@ -285,11 +291,11 @@ function makeStyles(theme: any) {
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 10, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
+    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
     cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, paddingLeft: 14, paddingRight: 6, paddingVertical: 4, backgroundColor: theme.color.surface },
-    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 6 },
-    sendBtnPill: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.brandPrimary, alignItems: "center", justifyContent: "center" },
-    micBtnPill: { padding: 6, justifyContent: "center", alignItems: "center" },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, maxHeight: 120 },
+    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, maxHeight: 96, textAlignVertical: "center" },
+    micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
+    sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
   });
 }
