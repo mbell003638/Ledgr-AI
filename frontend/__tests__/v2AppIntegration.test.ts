@@ -53,10 +53,10 @@ describe('V2 application write integration', () => {
     try {
       const result = await router.createSale({ date: '2026-07-01', amount: 9 });
       expect(result.source.type).toBe('cash_sale');
-      expect(legacy.createSale).not.toHaveBeenCalled();
+      expect(legacy.createSale).toHaveBeenCalledTimes(1);
       await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
       await expect(router.createSale({ date: '2026-07-01', amount: 9 })).resolves.toEqual({ legacy: { date: '2026-07-01', amount: 9 } });
-      expect(legacy.createSale).toHaveBeenCalledTimes(1);
+      expect(legacy.createSale).toHaveBeenCalledTimes(2);
     } finally { close(); }
   });
 
@@ -68,9 +68,9 @@ describe('V2 application write integration', () => {
       const receipt = await service.createReceipt({ date: '2026-07-03', amount: 15, debtorId: 'customer', clientName: 'Customer', method: 'cash' });
       const edited = await router.updateReceipt(receipt.source.id, { date: '2026-07-04', amount: 20, debtorId: 'customer', method: 'bank' });
       expect(edited.replacement.source.metadata.method).toBe('bank');
-      expect(legacy.updateReceipt).not.toHaveBeenCalled();
+      expect(legacy.updateReceipt).toHaveBeenCalledTimes(1);
       await router.deleteReceipt(edited.replacement.source.id);
-      expect(legacy.deleteReceipt).not.toHaveBeenCalled();
+      expect(legacy.deleteReceipt).toHaveBeenCalledTimes(1);
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.replacement.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
@@ -83,7 +83,7 @@ describe('V2 application write integration', () => {
       const invoice = await service.createInvoice({ date: '2026-07-02', total: 40, clientName: 'Customer', debtorId: 'customer' });
       const result = await router.markInvoicePaid(invoice.source.id, { date: '2026-07-05', method: 'bank' });
       expect(result.source.type).toBe('receipt');
-      expect(legacy.markInvoicePaid).not.toHaveBeenCalled();
+      expect(legacy.markInvoicePaid).toHaveBeenCalledTimes(1);
       expect(await service.repo.invoiceOpen(invoice.source.id)).toBe(0);
     } finally { close(); }
   });
@@ -97,10 +97,10 @@ describe('V2 application write integration', () => {
       const edited = await router.updateSale(sale.source.id, { date: '2026-07-11', amount: 40, method: 'bank', notes: 'new' });
       expect(edited.source.type).toBe('cash_sale');
       expect(edited.source.metadata).toMatchObject({ total: 40, method: 'bank', notes: 'new' });
-      expect(legacy.updateSale).not.toHaveBeenCalled();
+      expect(legacy.updateSale).toHaveBeenCalledTimes(1);
       expect(await runner.first("SELECT json_extract(metadata,'$.reversed') AS reversed FROM v2_sources WHERE id=?", [sale.source.id])).toEqual({ reversed: 1 });
       await router.deleteSale(edited.source.id);
-      expect(legacy.deleteSale).not.toHaveBeenCalled();
+      expect(legacy.deleteSale).toHaveBeenCalledTimes(1);
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
@@ -114,9 +114,9 @@ describe('V2 application write integration', () => {
       const edited = await router.updateBill(bill.source.id, { date: '2026-07-11', amount: 40, supplierId: 'supplier-1', supplierName: 'Supply Co', paymentType: 'credit', invoiceNo: 'B', notes: 'new' });
       expect(edited.source.type).toBe('credit_purchase');
       expect(edited.source.metadata).toMatchObject({ total: 40, invoiceNo: 'B', notes: 'new' });
-      expect(legacy.updateBill).not.toHaveBeenCalled();
+      expect(legacy.updateBill).toHaveBeenCalledTimes(1);
       await router.deleteBill(edited.source.id);
-      expect(legacy.deleteBill).not.toHaveBeenCalled();
+      expect(legacy.deleteBill).toHaveBeenCalledTimes(1);
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });

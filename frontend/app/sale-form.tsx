@@ -7,6 +7,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+
 export default function SaleForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -21,8 +23,6 @@ export default function SaleForm() {
   const [error, setError] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Cash vs Credit(party) sale. A credit sale is owed by a customer, so it
-  // becomes an invoice + a debtor entry instead of straight cash.
   const [saleType, setSaleType] = useState<"cash" | "party">("cash");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -30,13 +30,12 @@ export default function SaleForm() {
 
   useEffect(() => {
     (async () => {
-  const isV2 = await api.v2BookVersion(api.activeBookId()).catch(() => null);
+      const isV2 = await api.v2BookVersion(api.activeBookId()).catch(() => null);
       if (isV2 === 2) {
         const list = await api.listSales();
         const it = list.find((x: any) => x.id === editId);
         if (it) { setAmount(String(it.amount)); setNotes(it.notes || ""); setDate(it.date); }
       }
-      // Load existing customers (debtors) for quick pick.
       try {
         const d = await api.listDebtors();
         setExisting((d || []).map((x: any) => ({ id: x.id, name: x.name })));
@@ -74,6 +73,10 @@ export default function SaleForm() {
     }
     setSaving(true); setError("");
     try {
+      if (customerName.trim()) {
+        await api.findOrCreateParty(customerName.trim(), "customer", { phone: customerPhone.trim() });
+      }
+
       const formattedLines = lines.length > 0 ? lines.map((l) => ({
         description: l.description.trim() || "Item",
         qty: parseFloat(l.qty) || 1,
@@ -86,13 +89,10 @@ export default function SaleForm() {
       const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
 
       if (editId) {
-        // Editing only supports the original cash-sale record.
         await api.updateSale(editId, { date, amount: amt, currency, notes: finalNotes });
       } else if (saleType === "cash") {
         await api.createSale({ date, amount: amt, currency, notes: finalNotes });
       } else {
-        // Credit sale to a party → create an invoice. createInvoice auto-creates
-        // the debtor and links the invoice to their ledger.
         await api.createInvoice({
           clientName: customerName.trim(),
           clientPhone: customerPhone.trim(),
@@ -156,28 +156,14 @@ export default function SaleForm() {
           {/* Customer picker — placed immediately under Sale Type */}
           {!editId && saleType === "party" && (
             <Card style={{ marginBottom: theme.spacing.md }}>
-              <Text style={styles.label}>Customer / Party name *</Text>
-              <TextInput
+              <PartyAutocompleteInput
                 testID="input-customer-name"
+                label="Customer / Party name *"
                 value={customerName}
                 onChangeText={setCustomerName}
                 placeholder="e.g. Sharma Traders"
-                placeholderTextColor={theme.color.muted}
-                autoCapitalize="words"
-                style={styles.input}
+                roleFilter="all"
               />
-              {existing.length > 0 && (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  {existing
-                    .filter((e) => !customerName.trim() || e.name.toLowerCase().includes(customerName.trim().toLowerCase()))
-                    .slice(0, 6)
-                    .map((e) => (
-                      <Pressable key={e.id} testID={`pick-cust-${e.id}`} onPress={() => setCustomerName(e.name)} style={styles.chip}>
-                        <Text style={styles.chipText}>{e.name}</Text>
-                      </Pressable>
-                    ))}
-                </View>
-              )}
               <Text style={[styles.label, { marginTop: 12 }]}>Phone (optional)</Text>
               <TextInput
                 testID="input-customer-phone"

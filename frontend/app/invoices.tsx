@@ -15,6 +15,7 @@ import { fmt, shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { getCurrencySymbol } from "@/src/db/local";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";
 
@@ -669,6 +670,7 @@ export default function InvoicesScreen() {
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
     try {
+      await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       const validLines = lines.filter((l) => l.description.trim());
       const rate = parseFloat(taxRateInput) || 0;
       const label = taxLabelInput.trim();
@@ -920,8 +922,13 @@ export default function InvoicesScreen() {
                     </Pressable>
                   </View>
                   {ocrBusy ? <Text style={{ fontSize: 12, color: theme.color.muted, marginBottom: 8 }}>Reading document…</Text> : null}
-                  <Text style={styles.label}>Client Name *</Text>
-                  <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <PartyAutocompleteInput
+                    label="Client Name *"
+                    value={clientName}
+                    onChangeText={setClientName}
+                    placeholder="Full name or business"
+                    roleFilter="all"
+                  />
                   <Text style={[styles.label, { marginTop: 12 }]}>Client Phone</Text>
                   <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
                   <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
