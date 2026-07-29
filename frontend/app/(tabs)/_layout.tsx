@@ -2,7 +2,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
 import { useTheme } from "@/src/context/ThemeContext";
-import VoiceFab from "@/src/components/VoiceFab";
+import QuickActionMenu from "@/src/components/QuickActionMenu";
 
 export default function TabsLayout() {
   const theme = useTheme();
@@ -71,7 +71,7 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-      <VoiceFab />
+      <QuickActionMenu />
     </View>
   );
 }
