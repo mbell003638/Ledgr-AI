@@ -234,6 +234,7 @@ export default function AskBooks() {
               placeholderTextColor={theme.color.muted}
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               multiline={true}
+              showsVerticalScrollIndicator={false}
             />
             {input.trim().length > 0 ? (
               <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
