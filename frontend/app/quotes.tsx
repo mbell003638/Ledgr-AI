@@ -288,7 +288,8 @@ export default function QuotesScreen() {
       </ScrollView>
 
       <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
-        <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={{ flex: 1, backgroundColor: theme.color.surface, alignItems: "center" }}>
+          <SafeAreaView style={[styles.container, { width: "100%", maxWidth: 480 }]} edges={["top"]}>
           <View style={styles.headerBar}>
             <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
             <Text style={styles.headerTitle}>{editId ? "Edit Quote" : "New Quote"}</Text>
@@ -334,7 +335,8 @@ export default function QuotesScreen() {
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
-      </Modal>
+      </View>
+    </Modal>
     </SafeAreaView>
   );
 }

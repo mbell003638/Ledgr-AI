@@ -898,97 +898,99 @@ export default function InvoicesScreen() {
 
       {/* Create / Edit Modal */}
       <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
-        <SafeAreaView style={styles.container} edges={["top"]}>
-          <View style={styles.headerBar}>
-            <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
-            <Text style={styles.headerTitle}>{editId ? "Edit Invoice" : "New Invoice"}</Text>
-            <View style={{ width: 26 }} />
-          </View>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
-              <Card>
-                <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-                  <Pressable onPress={scanInvoice} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandPrimary, paddingVertical: 10, borderRadius: theme.radius.md }}>
-                    <Ionicons name="camera-outline" size={16} color="#fff" />
-                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Scan</Text>
-                  </Pressable>
-                  <Pressable onPress={uploadInvoiceImg} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandSecondary, paddingVertical: 10, borderRadius: theme.radius.md }}>
-                    <Ionicons name="image-outline" size={16} color="#fff" />
-                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Upload</Text>
-                  </Pressable>
-                </View>
-                {ocrBusy ? <Text style={{ fontSize: 12, color: theme.color.muted, marginBottom: 8 }}>Reading document…</Text> : null}
-                <Text style={styles.label}>Client Name *</Text>
-                <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
-                <Text style={[styles.label, { marginTop: 12 }]}>Client Phone</Text>
-                <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Date</Text>
-                    <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+        <View style={{ flex: 1, backgroundColor: theme.color.surface, alignItems: "center" }}>
+          <SafeAreaView style={[styles.container, { width: "100%", maxWidth: 480 }]} edges={["top"]}>
+            <View style={styles.headerBar}>
+              <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+              <Text style={styles.headerTitle}>{editId ? "Edit Invoice" : "New Invoice"}</Text>
+              <View style={{ width: 26 }} />
+            </View>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+              <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
+                <Card>
+                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                    <Pressable onPress={scanInvoice} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandPrimary, paddingVertical: 10, borderRadius: theme.radius.md }}>
+                      <Ionicons name="camera-outline" size={16} color="#fff" />
+                      <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Scan</Text>
+                    </Pressable>
+                    <Pressable onPress={uploadInvoiceImg} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandSecondary, paddingVertical: 10, borderRadius: theme.radius.md }}>
+                      <Ionicons name="image-outline" size={16} color="#fff" />
+                      <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Upload</Text>
+                    </Pressable>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Due Date</Text>
-                    <TextInput value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  </View>
-                </View>
-              </Card>
-
-              <Card style={{ marginTop: theme.spacing.md }}>
-                <Text style={styles.label}>Line Items</Text>
-                {lines.map((l, i) => (
-                  <View key={i} style={{ marginTop: 10 }}>
-                    <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={styles.input} />
-                    <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-                      <TextInput value={String(l.qty)} onChangeText={(v) => updateLine(i, "qty", v)} keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
-                      <TextInput value={l.unit || ""} onChangeText={(v) => updateLine(i, "unit", v)} placeholder="Unit (e.g. pcs, box)" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
-                      <TextInput value={String(l.rate ?? "")} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.5 }]} />
-                      <View style={{ justifyContent: "center", flex: 1.1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }} numberOfLines={1} adjustsFontSizeToFit>{currSym}{lineAmt(l).toFixed(2)}</Text>
-                      </View>
+                  {ocrBusy ? <Text style={{ fontSize: 12, color: theme.color.muted, marginBottom: 8 }}>Reading document…</Text> : null}
+                  <Text style={styles.label}>Client Name *</Text>
+                  <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <Text style={[styles.label, { marginTop: 12 }]}>Client Phone</Text>
+                  <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Date</Text>
+                      <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
                     </View>
-                    {lines.length > 1 && (
-                      <Pressable onPress={() => setLines((p) => p.filter((_, idx) => idx !== i))} style={{ alignSelf: "flex-end", marginTop: 4 }}>
-                        <Text style={{ color: theme.color.error, fontSize: 12 }}>Remove</Text>
-                      </Pressable>
-                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Due Date</Text>
+                      <TextInput value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                    </View>
                   </View>
-                ))}
-                <Pressable onPress={() => setLines((p) => [...p, { description: "", qty: 1, rate: 0 }])} style={[styles.addBtn]}>
-                  <Ionicons name="add-outline" size={16} color={theme.color.brandPrimary} />
-                  <Text style={{ color: theme.color.brandPrimary, fontSize: 13, fontWeight: "600" }}>Add Line</Text>
+                </Card>
+
+                <Card style={{ marginTop: theme.spacing.md }}>
+                  <Text style={styles.label}>Line Items</Text>
+                  {lines.map((l, i) => (
+                    <View key={i} style={{ marginTop: 10 }}>
+                      <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                        <TextInput value={String(l.qty)} onChangeText={(v) => updateLine(i, "qty", v)} keyboardType="decimal-pad" placeholder="Qty" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
+                        <TextInput value={l.unit || ""} onChangeText={(v) => updateLine(i, "unit", v)} placeholder="Unit (e.g. pcs, box)" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.2 }]} />
+                        <TextInput value={String(l.rate ?? "")} onChangeText={(v) => updateLine(i, "rate", v)} keyboardType="decimal-pad" placeholder="Rate" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1.5 }]} />
+                        <View style={{ justifyContent: "center", flex: 1.1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }} numberOfLines={1} adjustsFontSizeToFit>{currSym}{lineAmt(l).toFixed(2)}</Text>
+                        </View>
+                      </View>
+                      {lines.length > 1 && (
+                        <Pressable onPress={() => setLines((p) => p.filter((_, idx) => idx !== i))} style={{ alignSelf: "flex-end", marginTop: 4 }}>
+                          <Text style={{ color: theme.color.error, fontSize: 12 }}>Remove</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ))}
+                  <Pressable onPress={() => setLines((p) => [...p, { description: "", qty: 1, rate: 0 }])} style={[styles.addBtn]}>
+                    <Ionicons name="add-outline" size={16} color={theme.color.brandPrimary} />
+                    <Text style={{ color: theme.color.brandPrimary, fontSize: 13, fontWeight: "600" }}>Add Line</Text>
+                  </Pressable>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                    <View style={{ flex: 2 }}>
+                      <Text style={styles.label}>Tax Description</Text>
+                      <TextInput value={taxLabelInput} onChangeText={setTaxLabelInput} placeholder="e.g. GST / VAT / Sales Tax" placeholderTextColor={theme.color.muted} style={styles.input} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Rate %</Text>
+                      <TextInput value={taxRateInput} onChangeText={setTaxRateInput} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.color.muted} style={styles.input} />
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.color.divider }}>
+                    <Text style={{ fontWeight: "700", color: theme.color.onSurface }}>Total</Text>
+                    <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), parseFloat(taxRateInput) || 0).toFixed(2)}</Text>
+                  </View>
+                </Card>
+
+                <Card style={{ marginTop: theme.spacing.md }}>
+                  <Text style={styles.label}>Notes</Text>
+                  <TextInput value={notes} onChangeText={setNotes} placeholder="Internal or extra notes (optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60, marginBottom: 12 }]} multiline />
+                  <Text style={styles.label}>Invoice Terms</Text>
+                  <TextInput value={terms} onChangeText={setTerms} placeholder="Terms & Conditions (Optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
+                </Card>
+
+                {formError ? <Text style={styles.error}>{formError}</Text> : null}
+                <Pressable onPress={saveInvoice} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Invoice" : "Create Invoice"}</Text>}
                 </Pressable>
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                  <View style={{ flex: 2 }}>
-                    <Text style={styles.label}>Tax Description</Text>
-                    <TextInput value={taxLabelInput} onChangeText={setTaxLabelInput} placeholder="e.g. GST / VAT / Sales Tax" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Rate %</Text>
-                    <TextInput value={taxRateInput} onChangeText={setTaxRateInput} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.color.muted} style={styles.input} />
-                  </View>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.color.divider }}>
-                  <Text style={{ fontWeight: "700", color: theme.color.onSurface }}>Total</Text>
-                  <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), parseFloat(taxRateInput) || 0).toFixed(2)}</Text>
-                </View>
-              </Card>
-
-              <Card style={{ marginTop: theme.spacing.md }}>
-                <Text style={styles.label}>Notes</Text>
-                <TextInput value={notes} onChangeText={setNotes} placeholder="Internal or extra notes (optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60, marginBottom: 12 }]} multiline />
-                <Text style={styles.label}>Invoice Terms</Text>
-                <TextInput value={terms} onChangeText={setTerms} placeholder="Terms & Conditions (Optional)" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
-              </Card>
-
-              {formError ? <Text style={styles.error}>{formError}</Text> : null}
-              <Pressable onPress={saveInvoice} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Invoice" : "Create Invoice"}</Text>}
-              </Pressable>
-              <View style={{ height: 60 }} />
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+                <View style={{ height: 60 }} />
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
