@@ -51,7 +51,7 @@ export default function TabsLayout() {
           name="quick_action_spacer"
           options={{
             title: "",
-            tabBarButton: () => <QuickActionMenu />,
+            tabBarButton: (props) => <QuickActionMenu {...props} />,
           }}
         />
         <Tabs.Screen

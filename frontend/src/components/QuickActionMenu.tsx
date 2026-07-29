@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
-export default function QuickActionMenu() {
+export default function QuickActionMenu(props: any) {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
   const theme = useTheme();
@@ -55,17 +55,18 @@ export default function QuickActionMenu() {
   return (
     <>
       {/* FAB rendered in the tab bar slot */}
-      <View style={styles.fabContainer}>
+      <View style={[styles.fabContainer, props.style]}>
         <Pressable
           onPress={toggleMenu}
           style={({ pressed }) => [
             styles.fab,
             { backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary },
+            { shadowColor: isOpen ? "#000" : theme.color.brandPrimary },
             pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
           ]}
         >
           <Animated.View style={fabIconStyle}>
-            <Ionicons name="add" size={36} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
+            <Ionicons name="add" size={38} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
           </Animated.View>
         </Pressable>
       </View>
@@ -245,18 +246,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    top: -12, // Protrude slightly out of the tab bar
+    top: -24, // Protrude significantly out of the tab bar like the HTML concept
   },
   fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 8,
   },
 });
