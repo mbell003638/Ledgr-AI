@@ -502,9 +502,17 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               </AccordionRow>
-            </View>
+            <Pressable onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Turn accounting tabs ON or OFF to fit your business</Text>
+                </View>
+                <Ionicons name="options-outline" size={22} color={theme.color.brandPrimary} />
+              </View>
+            </Pressable>
 
-            <Pressable onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
+            <Pressable onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
