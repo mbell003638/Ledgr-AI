@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgr AI - Quick Action Concept</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --surface: #09090b;
+      --surface-secondary: #18181b;
+      --surface-tertiary: #27272a;
+      --primary: #FDBA21; /* Gold */
+      --primary-dim: rgba(253, 186, 33, 0.15);
+      --text: #ffffff;
+      --muted: #a1a1aa;
+      --border: #27272a;
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
+    body { background-color: #111; color: var(--text); padding: 40px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    
+    .phone {
+      width: 375px; height: 812px;
+      background-color: var(--bg);
+      border-radius: 40px;
+      border: 8px solid #222;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* MAIN SCREEN */
+    .screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      transition: transform 0.3s ease-in-out;
+    }
+    .screen.hidden-left { transform: translateX(-100%); }
+    .screen.hidden-right { transform: translateX(100%); }
+
+    .header { padding: 40px 20px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+    .title { font-size: 24px; font-weight: 700; }
+    
+    .content { flex: 1; padding: 20px; overflow-y: auto; }
+    .content::-webkit-scrollbar { display: none; }
+    
+    .card { background-color: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+
+    /* BOTTOM NAV */
+    .bottom-nav {
+      position: absolute; bottom: 0; width: 100%;
+      height: 80px;
+      background-color: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-around; align-items: center;
+      padding-bottom: 20px;
+      z-index: 10;
+    }
+    .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: 10px; font-weight: 500; cursor: pointer; }
+    .nav-item.active { color: var(--primary); }
+    .nav-icon { font-size: 20px; margin-bottom: 4px; }
+
+    /* FLOATING ACTION BUTTON (FAB) */
+    .fab-container {
+      position: relative;
+      top: -20px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .fab {
+      width: 56px; height: 56px;
+      background-color: var(--primary);
+      border-radius: 28px;
+      display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 4px 12px rgba(253, 186, 33, 0.4);
+      cursor: pointer;
+      font-size: 32px; color: #000; font-weight: 300;
+      line-height: 0; padding-bottom: 4px; /* Optical centering */
+      transition: transform 0.2s, background-color 0.2s;
+      z-index: 20;
+    }
+    .fab:active { transform: scale(0.9); }
+    .fab.active { background-color: var(--surface-tertiary); color: var(--text); box-shadow: none; transform: rotate(45deg); }
+    
+    /* SLEEK POPUP MENU (QUICK ACTIONS) */
+    .overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      z-index: 30; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .overlay.active { opacity: 1; pointer-events: all; }
+
+    .quick-action-menu {
+      position: absolute; bottom: 100px; left: 20px; right: 20px;
+      background: rgba(20, 20, 22, 0.45);
+      backdrop-filter: blur(35px); -webkit-backdrop-filter: blur(35px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 32px;
+      padding: 12px;
+      z-index: 40;
+      transform: translateY(20px) scale(0.95);
+      opacity: 0; pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .quick-action-menu.active {
+      transform: translateY(0) scale(1);
+      opacity: 1; pointer-events: all;
+    }
+
+    /* PREMIUM AI BUTTON */
+    .ai-action {
+      background: linear-gradient(135deg, rgba(253, 186, 33, 0.15) 0%, rgba(253, 186, 33, 0.05) 100%);
+      border: 1px solid rgba(253, 186, 33, 0.3);
+      border-radius: 20px;
+      padding: 16px 20px;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+    .ai-action:active { background: rgba(253, 186, 33, 0.2); }
+    .ai-icon { font-size: 24px; text-shadow: 0 0 10px rgba(253, 186, 33, 0.5); }
+    .ai-text { font-size: 16px; font-weight: 600; color: var(--primary); letter-spacing: 0.2px; }
+
+    /* ACTION ROWS */
+    .action-row {
+      display: flex; align-items: center; padding: 12px 16px; 
+      border-radius: 16px; cursor: pointer; transition: background 0.2s;
+    }
+    .action-row:active { background: rgba(255, 255, 255, 0.08); }
+    .action-icon-circle { width: 44px; height: 44px; border-radius: 22px; display: flex; justify-content: center; align-items: center; font-size: 20px; margin-right: 16px; }
+    .action-details { flex: 1; }
+    .action-title { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+    .action-subtitle { font-size: 13px; color: var(--muted); }
+
+    /* SUB-PAGE STYLES */
+    .subpage-header { display: flex; align-items: center; padding: 40px 20px 20px; border-bottom: 1px solid var(--border); }
+    .back-btn { font-size: 24px; color: var(--primary); margin-right: 16px; cursor: pointer; padding-right: 10px; }
+    
+    /* AI ASSISTANT SCREEN */
+    .chat-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .chat-history { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .chat-history::-webkit-scrollbar { display: none; }
+    
+    .chat-bubble { max-width: 85%; padding: 14px 16px; border-radius: 18px; font-size: 15px; line-height: 1.4; }
+    .chat-ai { background: var(--surface-secondary); color: var(--text); border-bottom-left-radius: 4px; align-self: flex-start; border: 1px solid var(--border); }
+    .chat-user { background: var(--primary); color: #000; border-bottom-right-radius: 4px; align-self: flex-end; }
+    
+    .chat-receipt { background: #000; border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+    .chat-receipt img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; opacity: 0.8; }
+    .chat-receipt-info { flex: 1; color: var(--text); }
+    
+    /* AI INPUT BAR */
+    .chat-input-area { padding: 12px 16px 24px 16px; background: var(--bg); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    .camera-btn { 
+      width: 44px; height: 44px; border-radius: 22px; 
+      background: var(--surface-secondary); border: 1px solid var(--border);
+      display: flex; justify-content: center; align-items: center;
+      font-size: 20px; cursor: pointer; color: var(--primary);
+    }
+    .camera-btn:active { background: var(--surface-tertiary); }
+    
+    .chat-input-box {
+      flex: 1; background: var(--surface-secondary); border: 1px solid var(--border);
+      border-radius: 22px; padding: 10px 16px;
+      display: flex; align-items: center;
+    }
+    .chat-input-box input { flex: 1; background: transparent; border: none; color: var(--text); font-size: 15px; outline: none; }
+    .chat-input-box input::placeholder { color: var(--muted); }
+    .mic-btn { font-size: 18px; color: var(--muted); cursor: pointer; padding-left: 8px; }
+
+  </style>
+</head>
+<body>
+
+  <div class="phone">
+    
+    <!-- MAIN SCREEN -->
+    <div id="mainScreen" class="screen">
+      <div class="header">
+        <div class="title">Home</div>
+        <div style="font-size: 20px;">🔔</div>
+      </div>
+      <div class="content">
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 12px; color: var(--muted);">Today's Revenue</div>
+            <div style="font-size: 28px; font-weight: bold; color: var(--primary); margin-top: 4px;">$2,450.00</div>
+          </div>
+          <div style="font-size: 24px; opacity: 0.5;">📈</div>
+        </div>
+        <div style="font-size: 14px; font-weight: 600; margin: 20px 0 10px;">Recent Activity</div>
+        <div class="card" style="padding: 12px 16px; border-radius: 12px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-weight: 500; font-size: 15px;">Invoice #1042</span>
+            <span style="color: #4ade80; font-weight: 500;">+$500.00</span>
+          </div>
+          <div style="font-size: 12px; color: var(--muted);">John Doe Plumbing</div>
+        </div>
+        <div class="card" style="padding: 12px 16px; border-radius: 12px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-weight: 500; font-size: 15px;">Expense</span>
+            <span style="color: #ef4444; font-weight: 500;">-$120.00</span>
+          </div>
+          <div style="font-size: 12px; color: var(--muted);">Home Depot Supplies</div>
+        </div>
+      </div>
+
+      <!-- BOTTOM NAV -->
+      <div class="bottom-nav">
+        <div class="nav-item active"><div class="nav-icon">⌂</div>Home</div>
+        <div class="nav-item"><div class="nav-icon">👥</div>Parties</div>
+        
+        <div class="fab-container">
+          <div class="fab" id="fabBtn" onclick="toggleSheet()">+</div>
+        </div>
+        
+        <div class="nav-item"><div class="nav-icon">📊</div>Reports</div>
+        <div class="nav-item"><div class="nav-icon">⚙</div>Settings</div>
+      </div>
+    </div>
+
+    <!-- AI ASSISTANT SCREEN -->
+    <div id="aiScreen" class="screen hidden-right">
+      <div class="subpage-header">
+        <div class="back-btn" onclick="closeSubPage('aiScreen')">‹</div>
+        <div class="title" style="color: var(--primary);">✨ Ledgr AI</div>
+      </div>
+      
+      <div class="chat-container">
+        <div class="chat-history" id="chatHistory">
+          <!-- Initial AI Greeting -->
+          <div class="chat-bubble chat-ai">
+            Hi! How can I help you today? You can type out a transaction, or just tap the camera icon to snap a photo of a receipt.
+          </div>
+        </div>
+        
+        <div class="chat-input-area">
+          <div class="camera-btn" onclick="simulateCameraScan()">📷</div>
+          <div class="chat-input-box">
+            <input type="text" id="aiInput" placeholder="Message Ledgr AI..." onkeypress="handleEnter(event)">
+            <div class="mic-btn" onclick="simulateTyping()">🎤</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLEEK POPUP QUICK ACTIONS -->
+    <div class="overlay" id="overlay" onclick="toggleMenu()"></div>
+    <div class="quick-action-menu" id="quickActionMenu">
+      <div class="ai-action" onclick="openSubPage('aiScreen')">
+        <div class="ai-icon">✨</div>
+        <div class="ai-text">Scan Receipt or Ask AI</div>
+      </div>
+      <div style="height: 8px;"></div>
+      <div class="action-row" onclick="alert('Create Invoice')">
+        <div class="action-icon-circle" style="background: rgba(74, 222, 128, 0.15); color: #4ade80;">🧾</div>
+        <div class="action-details">
+          <div class="action-title">Create Invoice</div>
+          <div class="action-subtitle">Record a new sale</div>
+        </div>
+        <div style="color: var(--border); font-size: 20px;">›</div>
+      </div>
+      <div class="action-row" onclick="alert('Add Expense')">
+        <div class="action-icon-circle" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">💸</div>
+        <div class="action-details">
+          <div class="action-title">Add Expense</div>
+          <div class="action-subtitle">Log a bill or purchase</div>
+        </div>
+        <div style="color: var(--border); font-size: 20px;">›</div>
+      </div>
+      <div class="action-row" onclick="alert('Receive Payment')">
+        <div class="action-icon-circle" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;">💵</div>
+        <div class="action-details">
+          <div class="action-title">Receive Payment</div>
+          <div class="action-subtitle">Log incoming funds</div>
+        </div>
+        <div style="color: var(--border); font-size: 20px;">›</div>
+      </div>
+      <div class="action-row" onclick="alert('New Customer')">
+        <div class="action-icon-circle" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">👥</div>
+        <div class="action-details">
+          <div class="action-title">Add Party</div>
+          <div class="action-subtitle">New customer or vendor</div>
+        </div>
+        <div style="color: var(--border); font-size: 20px;">›</div>
+      </div>
+    </div>
+    
+  </div>
+
+  <script>
+    const popupMenu = document.getElementById('quickActionMenu');
+    const overlay = document.getElementById('overlay');
+    const mainScreen = document.getElementById('mainScreen');
+    const fabBtn = document.getElementById('fabBtn');
+    const chatHistory = document.getElementById('chatHistory');
+    const aiInput = document.getElementById('aiInput');
+
+    // Update fab onclick in HTML to toggleMenu
+    fabBtn.onclick = toggleMenu;
+
+    function toggleMenu() {
+      popupMenu.classList.toggle('active');
+      overlay.classList.toggle('active');
+      fabBtn.classList.toggle('active');
+      fabBtn.innerHTML = '+';
+    }
+
+    function openSubPage(pageId) {
+      popupMenu.classList.remove('active');
+      overlay.classList.remove('active');
+      fabBtn.classList.remove('active');
+      mainScreen.classList.add('hidden-left');
+      document.getElementById(pageId).classList.remove('hidden-right');
+      
+      if(pageId === 'aiScreen') {
+        setTimeout(() => {
+          aiInput.focus();
+        }, 300);
+      }
+    }
+
+    function closeSubPage(pageId) {
+      mainScreen.classList.remove('hidden-left');
+      document.getElementById(pageId).classList.add('hidden-right');
+    }
+
+    // AI SIMULATION LOGIC
+    function addChatBubble(text, sender) {
+      const bubble = document.createElement('div');
+      bubble.className = `chat-bubble chat-${sender}`;
+      bubble.innerHTML = text;
+      chatHistory.appendChild(bubble);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function simulateTyping() {
+      if (aiInput.value.trim() === '') {
+        aiInput.value = "I bought $45 of fuel at Shell";
+      } else {
+        handleEnter({ key: 'Enter' });
+      }
+    }
+
+    function handleEnter(e) {
+      if (e.key === 'Enter' && aiInput.value.trim() !== '') {
+        const text = aiInput.value;
+        aiInput.value = '';
+        addChatBubble(text, 'user');
+        
+        setTimeout(() => {
+          addChatBubble(`
+            Got it. I've recorded a <b>$45.00</b> expense for <b>Fuel</b> at <b>Shell</b>.<br>
+            <div style="color: var(--primary); font-size: 13px; margin-top: 8px; cursor: pointer; font-weight: bold;">VIEW ENTRY ›</div>
+          `, 'ai');
+        }, 1000);
+      }
+    }
+
+    function simulateCameraScan() {
+      // 1. User uploads a receipt
+      addChatBubble('<i>Uploaded a photo of a receipt</i> 📷', 'user');
+      
+      // 2. AI parses the receipt
+      setTimeout(() => {
+        addChatBubble(`
+          I analyzed the receipt. Here is what I extracted:<br>
+          <div class="chat-receipt">
+            <div style="font-size: 24px;">🧾</div>
+            <div class="chat-receipt-info">
+              <div style="font-weight: 600; font-size: 14px;">Home Depot</div>
+              <div style="color: var(--muted); font-size: 12px; margin-bottom: 4px;">Hardware & Tools</div>
+              <div style="color: #ef4444; font-weight: bold;">$124.50</div>
+            </div>
+          </div>
+          <div style="margin-top: 10px;">Would you like me to save this expense?</div>
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button style="background: var(--primary); border: none; color: #000; padding: 6px 12px; border-radius: 8px; font-weight: bold; cursor: pointer;">Save Expense</button>
+            <button style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 8px; font-weight: bold; cursor: pointer;">Edit</button>
+          </div>
+        `, 'ai');
+      }, 1500);
+    }
+  </script>
+</body>
+</html>

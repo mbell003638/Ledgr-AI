@@ -51,7 +51,10 @@ export default function TabsLayout() {
           name="quick_action_spacer"
           options={{
             title: "",
-            tabBarButton: (props) => <QuickActionMenu {...props} />,
+            tabBarIcon: () => null,
+            tabBarButton: () => (
+              <View style={{ flex: 1 }} />
+            ),
           }}
         />
         <Tabs.Screen
@@ -77,6 +80,7 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
+      <QuickActionMenu />
       <VoiceFab />
     </View>
   );

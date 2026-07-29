@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
-export default function QuickActionMenu(props: any) {
+export default function QuickActionMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
   const theme = useTheme();
@@ -54,8 +54,8 @@ export default function QuickActionMenu(props: any) {
 
   return (
     <>
-      {/* FAB rendered in the tab bar slot */}
-      <View style={[styles.fabContainer, props.style]}>
+      {/* FAB rendered absolutely over the tab bar */}
+      <View style={styles.fabContainer}>
         <Pressable
           onPress={toggleMenu}
           style={({ pressed }) => [
@@ -81,7 +81,7 @@ export default function QuickActionMenu(props: any) {
         </Animated.View>
 
         <Animated.View style={[styles.menuContainer, menuStyle]}>
-          <BlurView intensity={40} tint="dark" style={styles.menuBlur}>
+          <View style={styles.menuSolid}>
             <View style={[styles.menuInner, { borderColor: 'rgba(255,255,255,0.15)' }]}>
               
               {/* AI Action */}
@@ -148,7 +148,7 @@ export default function QuickActionMenu(props: any) {
               </Pressable>
 
             </View>
-          </BlurView>
+          </View>
         </Animated.View>
       </Modal>
     </>
@@ -165,8 +165,9 @@ const styles = StyleSheet.create({
   menuContainer: {
     position: 'absolute',
     bottom: 110,
-    left: 20,
-    right: 20,
+    alignSelf: 'center',
+    width: '90%',
+    maxWidth: 400,
     borderRadius: 32,
     overflow: 'hidden',
     shadowColor: "#000",
@@ -176,9 +177,9 @@ const styles = StyleSheet.create({
     elevation: 10,
     transformOrigin: 'bottom',
   },
-  menuBlur: {
+  menuSolid: {
     flex: 1,
-    backgroundColor: 'rgba(20, 20, 22, 0.60)', // Less transparent (15% more opaque)
+    backgroundColor: '#141416', // Solid color as requested
   },
   menuInner: {
     padding: 12,
@@ -243,10 +244,12 @@ const styles = StyleSheet.create({
     color: '#a1a1aa',
   },
   fabContainer: {
-    flex: 1,
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: 40, // Protrudes exactly above the 88px tab bar
     justifyContent: 'center',
     alignItems: 'center',
-    top: -24, // Protrude significantly out of the tab bar like the HTML concept
+    zIndex: 110,
   },
   fab: {
     width: 64,

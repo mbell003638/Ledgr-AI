@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgr AI - AMOLED Settings Concept</title>
+  <style>
+    :root {
+      --bg: #000000; /* True AMOLED Black */
+      --card-bg: rgba(255, 255, 255, 0.05); /* Glassmorphism card */
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #3b82f6; /* Vibrant Blue Accent */
+      --primary-glow: rgba(59, 130, 246, 0.25);
+      --text: #ffffff;
+      --muted: #8a8a93;
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #111; color: var(--text); padding: 40px; display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; margin: 0; }
+    
+    .phone {
+      width: 375px; height: 812px;
+      background-color: var(--bg);
+      border-radius: 44px;
+      border: 12px solid #222;
+      overflow-y: auto;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.1);
+      position: relative;
+    }
+    .phone::-webkit-scrollbar { display: none; }
+    
+    .header { 
+      padding: 50px 24px 20px; 
+      background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 70%, transparent 100%); 
+      position: sticky; top: 0; z-index: 10; 
+      backdrop-filter: blur(10px);
+      display: flex; align-items: center; gap: 15px;
+    }
+    .title { font-size: 28px; font-weight: 700; margin: 0; flex: 1; letter-spacing: -0.5px; }
+    
+    .content { padding: 0 20px 40px; display: flex; flex-direction: column; gap: 24px; }
+    
+    .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-left: 12px; margin-bottom: 8px; }
+    
+    .card { 
+      background-color: var(--card-bg); 
+      border: 1px solid var(--card-border); 
+      border-radius: var(--radius); 
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+    }
+    
+    .row { 
+      display: flex; align-items: center; justify-content: space-between; 
+      padding: 16px 20px; 
+      border-bottom: 1px solid var(--card-border); 
+      transition: background 0.2s;
+    }
+    .row:active { background-color: rgba(255,255,255,0.03); }
+    .row:last-child { border-bottom: none; }
+    
+    .icon-box {
+      width: 32px; height: 32px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.08); margin-right: 14px;
+      font-size: 14px;
+    }
+    .icon-box.blue { background: var(--primary-glow); color: var(--primary); font-weight: bold; }
+    
+    .row-text { font-size: 16px; font-weight: 500; }
+    .row-subtext { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .chevron { color: #555; font-size: 20px; font-weight: 300; }
+    
+    .advanced-card {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      cursor: pointer;
+    }
+    .advanced-card .row-text { color: var(--primary); font-weight: 600; }
+    
+  </style>
+</head>
+<body>
+
+  <!-- Screen 1: MAIN SETTINGS -->
+  <div class="phone">
+    <div class="header">
+      <h1 class="title">Settings</h1>
+    </div>
+    <div class="content">
+      
+      <div>
+        <div class="section-title">Account</div>
+        <div class="card">
+          <div class="row">
+            <div style="display: flex; align-items: center;">
+              <div class="icon-box">🏢</div>
+              <div><div class="row-text">Business Profile</div><div class="row-subtext">Name, Contact, Tax Reg No</div></div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row">
+            <div style="display: flex; align-items: center;">
+              <div class="icon-box">💲</div>
+              <div><div class="row-text">Currency & Tax Rates</div><div class="row-subtext">USD, GST/VAT</div></div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Preferences</div>
+        <div class="card">
+          <div class="row">
+            <div style="display: flex; align-items: center;">
+              <div class="icon-box">✨</div>
+              <div><div class="row-text">App Theme</div><div class="row-subtext">AMOLED Blue</div></div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row">
+            <div style="display: flex; align-items: center;">
+              <div class="icon-box">📄</div>
+              <div><div class="row-text">Invoice PDF Preset</div><div class="row-subtext">Black & Blue</div></div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card advanced-card" onclick="alert('Navigates to Advanced screen')">
+        <div class="row">
+          <div style="display: flex; align-items: center;">
+            <div class="icon-box blue">⚙</div>
+            <div>
+              <div class="row-text">Advanced Settings</div>
+              <div class="row-subtext" style="color: rgba(255,255,255,0.7)">AI, Multi-tenant, Backups...</div>
+            </div>
+          </div>
+          <div class="chevron" style="color: var(--primary);">›</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Screen 2: ADVANCED SETTINGS -->
+  <div class="phone">
+    <div class="header">
+      <div style="font-size: 28px; color: var(--primary); margin-right: 10px; font-weight: 300;">‹</div>
+      <h1 class="title">Advanced</h1>
+    </div>
+    <div class="content">
+      
+      <div>
+        <div class="section-title">System & Workflows</div>
+        <div class="card">
+          <div class="row">
+            <div><div class="row-text">Business Accounts (Books)</div><div class="row-subtext">Main Account (Active)</div></div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row">
+            <div><div class="row-text">Accounting & Workflow</div><div class="row-subtext">Basis, Style, Members</div></div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row">
+            <div><div class="row-text">Opening Balances</div><div class="row-subtext">Cash & Inventory Start</div></div>
+            <div class="chevron">›</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">AI & Integrations</div>
+        <div class="card">
+          <div class="row">
+            <div><div class="row-text">AI Provider</div><div class="row-subtext">Google Gemini</div></div>
+            <div class="chevron">›</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Security & Data</div>
+        <div class="card">
+          <div class="row">
+            <div><div class="row-text">App Lock</div><div class="row-subtext">Fingerprint / PIN</div></div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row">
+            <div><div class="row-text">Backup & Restore</div><div class="row-subtext">Export data to JSON</div></div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row" style="background-color: rgba(239, 68, 68, 0.1);">
+            <div><div class="row-text" style="color: #ef4444;">Danger Zone</div><div class="row-subtext">Reset all ledgers</div></div>
+            <div class="chevron" style="color: #ef4444;">›</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>
