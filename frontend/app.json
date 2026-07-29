@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Ledgr v3.0",
+    "name": "Ledgr Opt",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mbell.ledgr.v3",
+      "bundleIdentifier": "com.mbell.ledgr.opt",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
         "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
@@ -20,10 +20,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.mbell.ledgr.v3",
+      "package": "com.mbell.ledgr.opt",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -57,7 +57,7 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#1C4030"
         }
       ],
       "expo-sqlite"
