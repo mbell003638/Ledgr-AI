@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Ledgr",
+    "name": "Ledgr v3.0",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mbell.ledgr",
+      "bundleIdentifier": "com.mbell.ledgr.v3",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
         "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
@@ -23,7 +23,7 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.mbell.ledgr",
+      "package": "com.mbell.ledgr.v3",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
