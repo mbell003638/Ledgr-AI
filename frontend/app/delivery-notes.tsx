@@ -223,7 +223,7 @@ export default function DeliveryNotesScreen() {
         <View style={{ height: 60 }} />
       </ScrollView>
 
-      <Modal visible={showForm} animationType="slide">
+      <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
         <SafeAreaView style={styles.container} edges={["top"]}>
           <View style={styles.headerBar}>
             <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>

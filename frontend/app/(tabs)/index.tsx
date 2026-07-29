@@ -40,6 +40,7 @@ const TILES = [
   { key: "reports", label: "Reports", icon: "bar-chart-outline", route: "/reports", color: "#E0E0DA" },
   { key: "monthly", label: "Monthly Report", icon: "calendar-outline", route: "/monthly-summary", color: "#EFDCC8" },
   { key: "ask", label: "Ask AI", icon: "sparkles-outline", route: "/ask", color: "#D0E0D8" },
+  { key: "debtors", label: "Customers/Debtors", icon: "people-outline", route: "/debtors", color: "#E0D8E8" },
   { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
 ] as const;
 
