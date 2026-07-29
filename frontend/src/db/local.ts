@@ -135,6 +135,7 @@ export async function getSettings() {
     invoiceTheme: s.invoiceTheme ?? 'navy_gold',
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',
+    enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
   };
 }
 export async function updateSettings(partial: Record<string, any>) {
