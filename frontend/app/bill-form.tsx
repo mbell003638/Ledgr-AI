@@ -7,6 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
 export default function BillForm() {
   const theme = useTheme();
@@ -120,18 +121,13 @@ export default function BillForm() {
   const save = async () => {
     setError("");
     let finalSupplierId = supplierId;
-    if (!finalSupplierId && newSupplierName.trim()) {
-      const existing = suppliers.find(s => s.name.toLowerCase() === newSupplierName.trim().toLowerCase());
-      if (existing) {
-        finalSupplierId = existing.id;
-      } else {
-        try {
-          const created = await api.createSupplier({ name: newSupplierName.trim(), phone: newSupplierPhone.trim() });
-          finalSupplierId = created.id;
-        } catch (e: any) {
-          setError(e.message || "Failed to create supplier");
-          return;
-        }
+    if (newSupplierName.trim()) {
+      try {
+        const party = await api.findOrCreateParty(newSupplierName.trim(), "supplier", { phone: newSupplierPhone.trim() });
+        if (party) finalSupplierId = party.id;
+      } catch (e: any) {
+        setError(e.message || "Failed to save supplier");
+        return;
       }
     }
     if (!finalSupplierId) { setError("Enter or select a supplier"); return; }
@@ -223,28 +219,15 @@ export default function BillForm() {
           ) : null}
 
           <Card style={{ marginTop: theme.spacing.md }}>
-            <Text style={styles.label}>Supplier / Vendor name *</Text>
-            <TextInput
+            <PartyAutocompleteInput
               testID="input-supplier-name"
+              label="Supplier / Vendor name *"
               value={newSupplierName}
               onChangeText={setNewSupplierName}
               placeholder="e.g. Sharma Traders"
-              placeholderTextColor={theme.color.muted}
-              autoCapitalize="words"
-              style={styles.input}
+              roleFilter="all"
+              onSelectParty={(p) => setSupplierId(p.id)}
             />
-            {suppliers.length > 0 && (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                {suppliers
-                  .filter((e) => !newSupplierName.trim() || e.name.toLowerCase().includes(newSupplierName.trim().toLowerCase()))
-                  .slice(0, 6)
-                  .map((e) => (
-                    <Pressable key={e.id} testID={`pick-supp-${e.id}`} onPress={() => { setNewSupplierName(e.name); setSupplierId(e.id); }} style={styles.chip}>
-                      <Text style={styles.chipText}>{e.name}</Text>
-                    </Pressable>
-                  ))}
-              </View>
-            )}
             <Text style={[styles.label, { marginTop: 12 }]}>Phone (optional)</Text>
             <TextInput
               testID="input-supplier-phone"

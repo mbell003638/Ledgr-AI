@@ -13,6 +13,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
 type Item = { description: string; qty: number };
 type DeliveryNote = {
@@ -115,9 +116,11 @@ export default function DeliveryNotesScreen() {
     setErr("");
     if (!clientName.trim()) { setErr("Enter a customer name."); return; }
     const clean = items.filter((it) => it.description.trim() || it.qty > 0);
-    if (!clean.length) { setErr("Add at least one item."); return; }
     setSaving(true);
     try {
+      if (clientName.trim()) {
+        await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
+      }
       const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
       if (editId) await api.updateDeliveryNote(editId, payload);
       else await api.createDeliveryNote(payload);
@@ -235,8 +238,13 @@ export default function DeliveryNotesScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
               <Card>
-                <Text style={styles.label}>Customer Name *</Text>
-                <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <PartyAutocompleteInput
+                  label="Customer Name *"
+                  value={clientName}
+                  onChangeText={setClientName}
+                  placeholder="Full name or business"
+                  roleFilter="all"
+                />
                 <Text style={[styles.label, { marginTop: 12 }]}>Customer Phone</Text>
                 <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
                 <Text style={[styles.label, { marginTop: 12 }]}>Date</Text>

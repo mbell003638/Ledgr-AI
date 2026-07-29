@@ -8,8 +8,9 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { Card } from "@/src/components/UI";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
-type Mode = "cash_sale" | "against_invoice" | "advance";
+type Mode = "against_invoice" | "advance";
 type Invoice = { id: string; invoiceNumber: string; clientName: string; total: number; status: string; date: string };
 type Debtor = { id: string; name: string; balance?: number };
 
@@ -19,9 +20,8 @@ const todayStr = () => {
 };
 
 const MODE_LABEL: Record<Mode, string> = {
-  cash_sale: "Cash Sale",
   against_invoice: "Against Invoice",
-  advance: "Advance",
+  advance: "Advance / Deposit",
 };
 
 export default function ReceiptFormScreen() {
@@ -36,7 +36,7 @@ export default function ReceiptFormScreen() {
   const [currSym, setCurrSym] = useState("$");
   const [taxRate, setTaxRate] = useState(0);
 
-  const [mode, setMode] = useState<Mode>("cash_sale");
+  const [mode, setMode] = useState<Mode>("against_invoice");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayStr());
   const [clientName, setClientName] = useState("");
@@ -61,7 +61,7 @@ export default function ReceiptFormScreen() {
         const rl = await api.listReceipts();
         const r = (rl as any[]).find((x) => x.id === editId);
         if (r) {
-          setMode(r.mode); setAmount(String(r.amount)); setDate(r.date); setClientName(r.clientName || "");
+          setMode(r.mode === "cash_sale" ? "advance" : r.mode); setAmount(String(r.amount)); setDate(r.date); setClientName(r.clientName || "");
           setDebtorId(r.debtorId || null); setMethod(r.method || "cash"); setNotes(r.notes || "");
           if (r.allocations && r.allocations.length > 0) {
             setInvoiceId(r.allocations[0].invoiceId);
@@ -117,13 +117,17 @@ export default function ReceiptFormScreen() {
     setErr("");
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter a valid amount."); return; }
+    if (!clientName.trim()) { setErr("Customer / Party name is required."); return; }
     if (mode === "against_invoice" && !invoiceId) { setErr("Pick an invoice to settle."); return; }
-    if (mode === "advance" && !debtorId) { setErr("Pick a customer for the advance."); return; }
     setSaving(true);
     try {
-      const payload: any = { mode, date, amount: amt, method, notes, clientName: clientName.trim(), debtorId };
+      let finalDebtorId = debtorId;
+      if (clientName.trim()) {
+        const party = await api.findOrCreateParty(clientName.trim(), "customer");
+        if (party) finalDebtorId = party.id;
+      }
+      const payload: any = { mode, date, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId };
       if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
-      if (mode === "cash_sale") payload.taxRate = taxRate;
       
       if (editId) {
          await api.deleteReceipt(editId);
@@ -166,44 +170,43 @@ export default function ReceiptFormScreen() {
           <Card style={{ marginBottom: theme.spacing.md, marginTop: theme.spacing.md }}>
             <Text style={styles.label}>Receipt Type</Text>
             <View style={styles.modeRow}>
-              {(["cash_sale", "against_invoice", "advance"] as Mode[]).map((m) => (
+              {(["against_invoice", "advance"] as Mode[]).map((m) => (
                 <Pressable key={m} onPress={() => { setMode(m); setInvoiceId(null); }} style={[styles.modeBtn, mode === m && styles.modeBtnActive]}>
                   <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>{MODE_LABEL[m]}</Text>
                 </Pressable>
               ))}
             </View>
 
+            <View style={{ marginTop: 12 }}>
+              <PartyAutocompleteInput
+                label="Customer / Party name *"
+                value={clientName}
+                onChangeText={(val) => {
+                  setClientName(val);
+                  setDebtorId(null);
+                }}
+                placeholder="e.g. Sharma Traders"
+                roleFilter="all"
+                onSelectParty={(p) => {
+                  setClientName(p.name);
+                  setDebtorId(p.id);
+                }}
+              />
+            </View>
+
             {mode === "against_invoice" && (
               <>
-                <Text style={[styles.label, { marginTop: 12 }]}>Settle Invoice</Text>
+                <Text style={[styles.label, { marginTop: 16 }]}>Settle Invoice (Optional)</Text>
                 {invoices.length === 0 ? (
-                  <Text style={styles.hint}>No unpaid invoices.</Text>
-                ) : invoices.map((inv) => (
-                  <Pressable key={inv.id} onPress={() => pickInvoice(inv)} style={[styles.pickRow, invoiceId === inv.id && styles.pickRowActive]}>
-                    <Text style={styles.pickTitle}>{inv.invoiceNumber} · {inv.clientName}</Text>
-                    <Text style={styles.pickAmt}>{currSym}{Number(inv.total).toFixed(2)}</Text>
-                  </Pressable>
-                ))}
-              </>
-            )}
-
-            {mode === "advance" && (
-              <>
-                <Text style={[styles.label, { marginTop: 12 }]}>Customer</Text>
-                {debtors.length === 0 ? (
-                  <Text style={styles.hint}>No customers yet. Add one from Debtors.</Text>
-                ) : debtors.map((d) => (
-                  <Pressable key={d.id} onPress={() => { setDebtorId(d.id); setClientName(d.name); }} style={[styles.pickRow, debtorId === d.id && styles.pickRowActive]}>
-                    <Text style={styles.pickTitle}>{d.name}</Text>
-                  </Pressable>
-                ))}
-              </>
-            )}
-
-            {mode === "cash_sale" && (
-              <>
-                <Text style={[styles.label, { marginTop: 12 }]}>Customer (optional)</Text>
-                <TextInput value={clientName} onChangeText={setClientName} placeholder="Walk-in" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <Text style={styles.hint}>No unpaid invoices found.</Text>
+                ) : invoices
+                  .filter((inv) => !clientName.trim() || inv.clientName.toLowerCase().includes(clientName.trim().toLowerCase()))
+                  .map((inv) => (
+                    <Pressable key={inv.id} onPress={() => pickInvoice(inv)} style={[styles.pickRow, invoiceId === inv.id && styles.pickRowActive]}>
+                      <Text style={styles.pickTitle}>{inv.invoiceNumber} · {inv.clientName}</Text>
+                      <Text style={styles.pickAmt}>{currSym}{Number(inv.total).toFixed(2)}</Text>
+                    </Pressable>
+                  ))}
               </>
             )}
           </Card>

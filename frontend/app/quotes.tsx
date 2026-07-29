@@ -14,6 +14,7 @@ import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { getCurrencySymbol } from "@/src/db/local";
+import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
 type Line = { description: string; qty: number; rate: number };
 type Quote = {
@@ -147,9 +148,11 @@ export default function QuotesScreen() {
     setErr("");
     if (!clientName.trim()) { setErr("Enter a client name."); return; }
     const clean = lines.filter((l) => l.description.trim() || l.rate > 0);
-    if (!clean.length) { setErr("Add at least one line item."); return; }
     setSaving(true);
     try {
+      if (clientName.trim()) {
+        await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
+      }
       const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, validUntil: validUntil.trim(), lines: clean, taxRate: taxRateDefault, taxLabel: taxLabelDefault, notes: notes.trim() };
       if (editId) await api.updateQuote(editId, payload);
       else await api.createQuote(payload);
@@ -299,8 +302,13 @@ export default function QuotesScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
               <Card>
-                <Text style={styles.label}>Client Name *</Text>
-                <TextInput value={clientName} onChangeText={setClientName} placeholder="Full name or business" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <PartyAutocompleteInput
+                  label="Client Name *"
+                  value={clientName}
+                  onChangeText={setClientName}
+                  placeholder="Full name or business"
+                  roleFilter="all"
+                />
                 <Text style={[styles.label, { marginTop: 12 }]}>Client Phone</Text>
                 <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
                 <Text style={[styles.label, { marginTop: 12 }]}>Date</Text>
