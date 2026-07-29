@@ -502,6 +502,8 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               </AccordionRow>
+            </View>
+
             <Pressable onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
