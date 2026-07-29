@@ -2,6 +2,14 @@ name: Build Ledgr AI Android
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'Ledger-Logic-Build'
+      - 'settings-ui-optimized'
+      - 'settings-ui-simplified'
+      - 'v3.0'
+      - 'main'
+      - 'master'
 
 jobs:
   build:
