@@ -32,21 +32,27 @@ export default function PaymentForm() {
 
   useEffect(() => {
     (async () => {
-      const s = await api.listSuppliers();
-      setSuppliers(s);
-      if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
-      const st = await api.getSettings();
-      setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
-      if (editId) {
-        const list = await api.listPayments();
-        const it = list.find((x: any) => x.id === editId);
-        if (it) {
-          setType(it.type); setSupplierId(it.supplierId || "");
-          setPartnerName(it.partnerName || "");
-          setAmount(String(it.amount)); 
-          setMethod(it.method || "cash"); setNotes(it.notes || ""); setDate(it.date);
+      try {
+        const s = await api.listSuppliers();
+        setSuppliers(s);
+        if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
+        const st = await api.getSettings();
+        setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
+        if (editId) {
+          const list = await api.listPayments();
+          const it = list.find((x: any) => x.id === editId);
+          if (it) {
+            setType(it.type); setSupplierId(it.supplierId || "");
+            setPartnerName(it.partnerName || "");
+            setAmount(String(it.amount)); 
+            setMethod(it.method || "cash"); setNotes(it.notes || ""); setDate(it.date);
+            if (it.supplierId && s.length) {
+              const match = s.find((x: any) => x.id === it.supplierId);
+              if (match) setSupplierName(match.name);
+            }
+          }
         }
-      }
+      } catch {}
     })();
   }, []);
 
