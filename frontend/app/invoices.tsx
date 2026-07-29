@@ -898,8 +898,8 @@ export default function InvoicesScreen() {
 
       {/* Create / Edit Modal */}
       <Modal visible={showForm} animationType="slide" onRequestClose={() => setShowForm(false)}>
-        <View style={{ flex: 1, backgroundColor: theme.color.surface, alignItems: "center" }}>
-          <SafeAreaView style={[styles.container, { width: "100%", maxWidth: 480 }]} edges={["top"]}>
+        <View style={{ flex: 1, backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.75)" : theme.color.surface, justifyContent: "center", alignItems: "center", padding: Platform.OS === "web" ? 20 : 0 }}>
+          <SafeAreaView style={[styles.container, { width: "100%", maxWidth: 520, maxHeight: Platform.OS === "web" ? "92%" : "100%", borderRadius: Platform.OS === "web" ? 20 : 0, overflow: "hidden", borderWidth: Platform.OS === "web" ? 1 : 0, borderColor: theme.color.border }]} edges={["top"]}>
             <View style={styles.headerBar}>
               <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
               <Text style={styles.headerTitle}>{editId ? "Edit Invoice" : "New Invoice"}</Text>
