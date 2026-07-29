@@ -391,7 +391,7 @@ export default function SupplierDetail() {
 
       {/* Note Modal */}
       {noteKind ? (
-        <Modal visible transparent animationType="fade">
+        <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
           <View style={styles.modalBg}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>{noteKind === "credit" ? "Credit" : "Debit"} Note for {data.name}</Text>
