@@ -401,7 +401,7 @@ export default function SettingsScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
@@ -510,9 +510,7 @@ export default function SettingsScreen() {
                   <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
                   <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>AI config, Workflows, Opening Balances, Backup...</Text>
                 </View>
-                <View style={{ backgroundColor: theme.color.brandPrimary + "25", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}>
-                  <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.brandPrimary }}>Open ›</Text>
-                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
               </View>
             </Pressable>
 
