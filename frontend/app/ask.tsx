@@ -232,7 +232,7 @@ export default function AskBooks() {
               onChangeText={setInput}
               placeholder="Message Ledgr AI..."
               placeholderTextColor={theme.color.muted}
-              style={styles.input}
+              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               multiline={true}
             />
             {input.trim().length > 0 ? (
