@@ -233,12 +233,11 @@ export default function AskBooks() {
               placeholder="Message Ledgr AI..."
               placeholderTextColor={theme.color.muted}
               style={styles.input}
-              onSubmitEditing={() => send(input)}
-              returnKeyType="send"
+              multiline={true}
             />
             {input.trim().length > 0 ? (
               <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
-                <Ionicons name="arrow-up" size={18} color="#000" />
+                <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : (
               <Pressable style={styles.micBtn} onPress={() => Alert.alert("Coming soon", "Voice input will be available in the next update!")}>
@@ -266,11 +265,11 @@ function makeStyles(theme: any) {
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
-    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 6, paddingVertical: 6 },
-    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 4 },
-    micBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
-    sendBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.brandPrimary, alignItems: "center", justifyContent: "center" },
+    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
+    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 6, paddingVertical: 4, minHeight: 44, maxHeight: 120 },
+    input: { flex: 1, fontSize: 14, color: theme.color.onSurface, paddingVertical: 6, paddingTop: 6 },
+    micBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4, marginBottom: 2 },
+    sendBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4, marginBottom: 2 },
   });
 }
