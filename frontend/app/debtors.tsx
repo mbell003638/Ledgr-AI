@@ -1042,7 +1042,7 @@ export default function DebtorsScreen() {
           <View style={{ height: 60 }} />
         </ScrollView>
 
-        <Modal visible={editingInvoice !== null} transparent animationType="slide">
+        <Modal visible={editingInvoice !== null} transparent animationType="slide" onRequestClose={() => setEditingInvoice(null)}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={styles.modalOverlay}><View style={styles.modalBox}>
               <View style={styles.modalHeader}><Text style={styles.headerTitle}>Edit Invoice</Text><Pressable onPress={() => setEditingInvoice(null)}><Ionicons name="close" size={24} color={theme.color.onSurface}/></Pressable></View>
@@ -1055,7 +1055,7 @@ export default function DebtorsScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        <Modal visible={showPay} transparent animationType="slide">
+        <Modal visible={showPay} transparent animationType="slide" onRequestClose={() => setShowPay(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalBox}>
@@ -1078,7 +1078,7 @@ export default function DebtorsScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        <Modal visible={editingPayment !== null} transparent animationType="slide">
+        <Modal visible={editingPayment !== null} transparent animationType="slide" onRequestClose={() => setEditingPayment(null)}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={styles.modalOverlay}><View style={styles.modalBox}>
               <View style={styles.modalHeader}><Text style={styles.headerTitle}>Edit Payment</Text><Pressable onPress={() => setEditingPayment(null)}><Ionicons name="close" size={24} color={theme.color.onSurface}/></Pressable></View>
@@ -1091,7 +1091,7 @@ export default function DebtorsScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        <Modal visible={showApply} transparent animationType="slide">
+        <Modal visible={showApply} transparent animationType="slide" onRequestClose={() => setShowApply(false)}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <View style={styles.modalHeader}>
@@ -1115,7 +1115,7 @@ export default function DebtorsScreen() {
           </View>
         </Modal>
 
-        <Modal visible={noteKind !== null} transparent animationType="slide">
+        <Modal visible={noteKind !== null} transparent animationType="slide" onRequestClose={() => setNoteKind(null)}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalBox}>

@@ -86,15 +86,15 @@ export default function QuickActionMenu() {
               
               {/* AI Action */}
               <Pressable 
-                style={({ pressed }) => [styles.aiAction, pressed && { opacity: 0.8 }]} 
+                style={({ pressed }) => [styles.aiAction, { borderColor: theme.color.brandPrimary + '4D' }, pressed && { opacity: 0.8 }]} 
                 onPress={() => { closeMenu(); router.push('/ask'); }}
               >
                 <LinearGradient 
-                  colors={['rgba(253, 186, 33, 0.2)', 'rgba(253, 186, 33, 0.05)']}
+                  colors={[theme.color.brandPrimary + '33', theme.color.brandPrimary + '0D']}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={styles.aiIcon}>✨</Text>
-                <Text style={styles.aiText}>Scan Receipt or Ask AI</Text>
+                <Text style={[styles.aiIcon, { textShadowColor: theme.color.brandPrimary + '80' }]}>✨</Text>
+                <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
               </Pressable>
 
               <View style={{ height: 8 }} />
@@ -194,7 +194,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(253, 186, 33, 0.3)',
     overflow: 'hidden',
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -205,14 +204,12 @@ const styles = StyleSheet.create({
   aiIcon: {
     fontSize: 24,
     marginRight: 12,
-    textShadowColor: 'rgba(253, 186, 33, 0.5)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
   aiText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FDBA21',
     letterSpacing: 0.2,
   },
   actionRow: {
