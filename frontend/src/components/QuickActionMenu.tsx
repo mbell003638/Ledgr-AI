@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Dimensions, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, interpolate, Extrapolation } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
@@ -19,7 +19,7 @@ export default function QuickActionMenu() {
   const toggleMenu = () => {
     if (isOpen) {
       progress.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.ease) });
-      setIsOpen(false);
+      setTimeout(() => setIsOpen(false), 250);
     } else {
       setIsOpen(true);
       progress.value = withSpring(1, { damping: 15, stiffness: 150 });
@@ -33,7 +33,6 @@ export default function QuickActionMenu() {
   const overlayStyle = useAnimatedStyle(() => {
     return {
       opacity: progress.value,
-      pointerEvents: progress.value > 0 ? 'auto' : 'none',
     };
   });
 
@@ -44,7 +43,6 @@ export default function QuickActionMenu() {
         { translateY: interpolate(progress.value, [0, 1], [30, 0], Extrapolation.CLAMP) },
         { scale: interpolate(progress.value, [0, 1], [0.95, 1], Extrapolation.CLAMP) },
       ],
-      pointerEvents: progress.value > 0 ? 'auto' : 'none',
     };
   });
 
@@ -56,121 +54,118 @@ export default function QuickActionMenu() {
 
   return (
     <>
-      {/* OVERLAY */}
-      <Animated.View style={[styles.overlayContainer, overlayStyle]}>
-        <Pressable style={styles.overlayPressable} onPress={closeMenu}>
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+      {/* FAB rendered in the tab bar slot */}
+      <View style={styles.fabContainer}>
+        <Pressable
+          onPress={toggleMenu}
+          style={({ pressed }) => [
+            styles.fab,
+            { backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+          ]}
+        >
+          <Animated.View style={fabIconStyle}>
+            <Ionicons name="add" size={36} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
+          </Animated.View>
         </Pressable>
-      </Animated.View>
+      </View>
 
-      {/* POPUP MENU */}
-      <Animated.View style={[styles.menuContainer, menuStyle]}>
-        <BlurView intensity={40} tint="dark" style={styles.menuBlur}>
-          <View style={[styles.menuInner, { borderColor: 'rgba(255,255,255,0.15)' }]}>
-            
-            {/* AI Action */}
-            <Pressable 
-              style={({ pressed }) => [styles.aiAction, pressed && { opacity: 0.8 }]} 
-              onPress={() => { closeMenu(); router.push('/ask'); }}
-            >
-              <LinearGradient 
-                colors={['rgba(253, 186, 33, 0.2)', 'rgba(253, 186, 33, 0.05)']}
-                style={StyleSheet.absoluteFill}
-              />
-              <Text style={styles.aiIcon}>✨</Text>
-              <Text style={styles.aiText}>Scan Receipt or Ask AI</Text>
-            </Pressable>
-
-            <View style={{ height: 8 }} />
-
-            {/* Action Row: Invoice */}
-            <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
-              <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
-                <Text style={{ fontSize: 20 }}>🧾</Text>
-              </View>
-              <View style={styles.actionDetails}>
-                <Text style={styles.actionTitle}>Create Invoice</Text>
-                <Text style={styles.actionSubtitle}>Record a new sale</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-            </Pressable>
-
-            {/* Action Row: Expense */}
-            <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
-              <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-                <Text style={{ fontSize: 20 }}>💸</Text>
-              </View>
-              <View style={styles.actionDetails}>
-                <Text style={styles.actionTitle}>Add Expense</Text>
-                <Text style={styles.actionSubtitle}>Log a bill or purchase</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-            </Pressable>
-            
-            {/* Action Row: Payment */}
-            <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
-              <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                <Text style={{ fontSize: 20 }}>💵</Text>
-              </View>
-              <View style={styles.actionDetails}>
-                <Text style={styles.actionTitle}>Receive Payment</Text>
-                <Text style={styles.actionSubtitle}>Log incoming funds</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-            </Pressable>
-            
-            {/* Action Row: Party */}
-            <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
-              <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
-                <Text style={{ fontSize: 20 }}>👥</Text>
-              </View>
-              <View style={styles.actionDetails}>
-                <Text style={styles.actionTitle}>Add Party</Text>
-                <Text style={styles.actionSubtitle}>New customer or vendor</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-            </Pressable>
-
-          </View>
-        </BlurView>
-      </Animated.View>
-
-      {/* FAB */}
-      <Pressable
-        onPress={toggleMenu}
-        style={({ pressed }) => [
-          styles.fab,
-          { backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary },
-          pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
-        ]}
-      >
-        <Animated.View style={fabIconStyle}>
-          <Ionicons name="add" size={36} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
+      {/* POPUP MENU MODAL */}
+      <Modal transparent visible={isOpen} animationType="none" onRequestClose={closeMenu}>
+        <Animated.View style={[styles.overlayContainer, overlayStyle]}>
+          <Pressable style={styles.overlayPressable} onPress={closeMenu}>
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+          </Pressable>
         </Animated.View>
-      </Pressable>
+
+        <Animated.View style={[styles.menuContainer, menuStyle]}>
+          <BlurView intensity={40} tint="dark" style={styles.menuBlur}>
+            <View style={[styles.menuInner, { borderColor: 'rgba(255,255,255,0.15)' }]}>
+              
+              {/* AI Action */}
+              <Pressable 
+                style={({ pressed }) => [styles.aiAction, pressed && { opacity: 0.8 }]} 
+                onPress={() => { closeMenu(); router.push('/ask'); }}
+              >
+                <LinearGradient 
+                  colors={['rgba(253, 186, 33, 0.2)', 'rgba(253, 186, 33, 0.05)']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.aiIcon}>✨</Text>
+                <Text style={styles.aiText}>Scan Receipt or Ask AI</Text>
+              </Pressable>
+
+              <View style={{ height: 8 }} />
+
+              {/* Action Row: Invoice */}
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
+                  <Text style={{ fontSize: 20 }}>🧾</Text>
+                </View>
+                <View style={styles.actionDetails}>
+                  <Text style={styles.actionTitle}>Create Invoice</Text>
+                  <Text style={styles.actionSubtitle}>Record a new sale</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+              </Pressable>
+
+              {/* Action Row: Expense */}
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                  <Text style={{ fontSize: 20 }}>💸</Text>
+                </View>
+                <View style={styles.actionDetails}>
+                  <Text style={styles.actionTitle}>Add Expense</Text>
+                  <Text style={styles.actionSubtitle}>Log a bill or purchase</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+              </Pressable>
+              
+              {/* Action Row: Payment */}
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                  <Text style={{ fontSize: 20 }}>💵</Text>
+                </View>
+                <View style={styles.actionDetails}>
+                  <Text style={styles.actionTitle}>Receive Payment</Text>
+                  <Text style={styles.actionSubtitle}>Log incoming funds</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+              </Pressable>
+              
+              {/* Action Row: Party */}
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
+                  <Text style={{ fontSize: 20 }}>👥</Text>
+                </View>
+                <View style={styles.actionDetails}>
+                  <Text style={styles.actionTitle}>Add Party</Text>
+                  <Text style={styles.actionSubtitle}>New customer or vendor</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+              </Pressable>
+
+            </View>
+          </BlurView>
+        </Animated.View>
+      </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   overlayContainer: {
-    position: 'absolute',
-    top: -height, 
-    left: -width,
-    right: -width,
-    bottom: -height,
-    zIndex: 90,
+    ...StyleSheet.absoluteFillObject,
   },
   overlayPressable: {
     flex: 1,
   },
   menuContainer: {
     position: 'absolute',
-    bottom: 110, // Matches FAB bottom slightly
+    bottom: 110,
     left: 20,
     right: 20,
-    zIndex: 100,
     borderRadius: 32,
     overflow: 'hidden',
     shadowColor: "#000",
@@ -178,11 +173,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.6,
     shadowRadius: 48,
     elevation: 10,
-    transformOrigin: 'bottom', // helps with scaling
+    transformOrigin: 'bottom',
   },
   menuBlur: {
     flex: 1,
-    backgroundColor: 'rgba(20, 20, 22, 0.45)', 
+    backgroundColor: 'rgba(20, 20, 22, 0.60)', // Less transparent (15% more opaque)
   },
   menuInner: {
     padding: 12,
@@ -246,10 +241,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a1a1aa',
   },
+  fabContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    top: -12, // Protrude slightly out of the tab bar
+  },
   fab: {
-    position: 'absolute',
-    left: width / 2 - 30,
-    bottom: 34, 
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -260,6 +258,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 6,
-    zIndex: 110,
   },
 });

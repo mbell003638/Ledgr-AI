@@ -51,8 +51,7 @@ export default function TabsLayout() {
           name="quick_action_spacer"
           options={{
             title: "",
-            tabBarIcon: () => null,
-            tabBarButton: () => <View style={{ width: 60 }} />, // Empty spacer for the center FAB
+            tabBarButton: () => <QuickActionMenu />,
           }}
         />
         <Tabs.Screen
@@ -71,8 +70,13 @@ export default function TabsLayout() {
             tabBarButtonTestID: "tab-settings",
           }}
         />
+        <Tabs.Screen
+          name="bills"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
-      <QuickActionMenu />
       <VoiceFab />
     </View>
   );
