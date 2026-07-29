@@ -477,3 +477,33 @@ This document records the exact accounting architecture, business persona specs,
 
 4. **GitHub Actions Build Trigger**:
    - Triggered the `build-apk.yml` GitHub Actions workflow for branches `v3.0`, `settings-ui-optimized`, and `settings-ui-simplified` to build the APK/AAB binaries.
+
+---
+
+### Session Update: Dynamic Tab Toggle, Dual-Role Parties, 3D Icon & Build Workflow
+
+1. **Dynamic Dashboard & Feature Tab Toggle System**:
+   - Created `src/utils/featureFlags.ts` to manage feature metadata, persona defaults, and flag checking helpers.
+   - Built `app/customize-features.tsx` screen enabling users to toggle any accounting feature tab ON/OFF from **Settings → Customize Dashboard & Feature Tabs**.
+   - Updated `app/(tabs)/index.tsx` to dynamically filter dashboard tiles based on active user features.
+
+2. **Universal Party Autocomplete & Dual-Role Support**:
+   - Integrated `<PartyAutocompleteInput roleFilter="all">` across Sales, Purchases, Receipts, Payments, Invoices, Quotes, and Delivery Notes forms.
+   - Updated `api.findOrCreateParty` to automatically detect when an existing Supplier is used in a Customer flow (or vice-versa) and upgrade the party's role to `'both'` (`Customer & Supplier`).
+   - Made Customer Name mandatory on Receipts and simplified receipt modes to `against_invoice` and `advance`.
+
+3. **3D App Icon Design & Assets**:
+   - Generated 3D leather wallet artwork with glowing neon green dollar hologram and 3D gold coins.
+   - Replaced `assets/images/icon.png` and `assets/images/adaptive-icon.png` with exact high-res 3D wallet artwork assets.
+
+4. **Multi-Branch Git Synchronization**:
+   - Created new branch `Ledger-Logic-Build` off `settings-ui-optimized`.
+   - Merged and pushed the complete feature set across all 4 active branches (`Ledger-Logic-Build`, `settings-ui-optimized`, `settings-ui-simplified`, `v3.0`).
+
+5. **Automated GitHub Actions Build Workflow**:
+   - Updated `.github/workflows/build-apk.yml` to automatically trigger APK (`Ledger-AI-APK`) and AAB (`Ledger-AI-AAB`) builds on every push to active branches.
+
+6. **v3.0 Build Failure Diagnosis & Fix**:
+   - Diagnosed `:app:createBundleReleaseJsAndAssets` build failure on `v3.0` caused by a duplicate `<Text>` opening tag in `app/(tabs)/settings.tsx`.
+   - Fixed the duplicate tag locally and validated production bundling (`npx expo export --platform android` -> 1,742 modules / 6.1 MB HBC bundled cleanly).
+
