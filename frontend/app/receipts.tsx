@@ -13,6 +13,7 @@ import { Empty, Card } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
+import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 type Mode = "cash_sale" | "against_invoice" | "advance";
 type Receipt = {
@@ -30,13 +31,14 @@ const todayStr = () => {
 
 const MODE_LABEL: Record<Mode, string> = {
   cash_sale: "Cash Sale",
-  against_invoice: "Against Invoice",
-  advance: "Advance",
+  against_invoice: "Payment Against Invoice",
+  advance: "Advance Payment",
 };
 
 export default function ReceiptsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const router = useRouter();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [debtors, setDebtors] = useState<Debtor[]>([]);
@@ -45,8 +47,7 @@ export default function ReceiptsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Receipt | null>(null);
-
-
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -80,7 +81,6 @@ export default function ReceiptsScreen() {
       }
     );
   };
-  const router = useRouter();
 
   const openEdit = (r: Receipt) => {
     router.push({ pathname: "/receipt-form", params: { id: r.id } } as any);
@@ -101,9 +101,42 @@ export default function ReceiptsScreen() {
           onReversalDelete={() => remove(selected)}
           onShare={() => shareTransaction(documentFor(selected))}
           onPrint={() => printTransaction(documentFor(selected))}
-          onMore={() => Alert.alert("Receipt details", selected.notes || `${selected.method || "Unknown"} payment`)}
+          onMore={() => setMoreModalVisible(true)}
         ><Text style={styles.rowSub}>{selected.clientName || "Walk-in"} • {shortDate(selected.date)}</Text></TransactionDetail>
       </ScrollView>
+      <ActionSheetModal
+        visible={moreModalVisible}
+        onClose={() => setMoreModalVisible(false)}
+        title={`Receipt ${selected.receiptNumber}`}
+        subtitle={`${selected.clientName || "Walk-in"} • ${currSym}${Number(selected.amount).toFixed(2)}`}
+        actions={[
+          {
+            id: "share",
+            label: "Share Document Summary",
+            icon: "share-social-outline",
+            onPress: () => shareTransaction(documentFor(selected)),
+          },
+          {
+            id: "print",
+            label: "Print Receipt",
+            icon: "print-outline",
+            onPress: () => printTransaction(documentFor(selected)),
+          },
+          {
+            id: "edit",
+            label: "Edit Receipt",
+            icon: "create-outline",
+            onPress: () => openEdit(selected),
+          },
+          {
+            id: "delete",
+            label: "Delete / Reverse Receipt",
+            icon: "trash-outline",
+            destructive: true,
+            onPress: () => remove(selected),
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 
@@ -117,8 +150,13 @@ export default function ReceiptsScreen() {
         <Text style={styles.headerTitle}>Receipts</Text>
         <Pressable onPress={() => router.push("/receipt-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
-      <View style={styles.summaryBar}>
-        <Text style={styles.summaryLabel}>Total Received</Text>
+      <View style={styles.summaryCard}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={styles.summaryIconBox}>
+            <Ionicons name="arrow-down-circle-outline" size={18} color={theme.color.success} />
+          </View>
+          <Text style={styles.summaryLabel}>Total Received</Text>
+        </View>
         <Text style={styles.summaryValue}>{currSym}{totalReceived.toFixed(2)}</Text>
       </View>
       <FlatList
@@ -151,9 +189,10 @@ function makeStyles(theme: any) {
     container: { flex: 1, backgroundColor: theme.color.surface },
     headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
-    summaryBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary },
-    summaryLabel: { fontSize: 12, color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5 },
-    summaryValue: { fontSize: 18, fontWeight: "700", color: theme.color.brandPrimary },
+    summaryCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, marginBottom: 4, paddingHorizontal: theme.spacing.lg, paddingVertical: 12, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border },
+    summaryIconBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: theme.color.success + "18", alignItems: "center", justifyContent: "center" },
+    summaryLabel: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+    summaryValue: { fontSize: 18, fontWeight: "700", color: theme.color.success },
     row: { flexDirection: "row", alignItems: "center", backgroundColor: theme.color.surfaceSecondary, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginBottom: theme.spacing.sm, gap: theme.spacing.md },
     badge: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
     rowTitle: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface },

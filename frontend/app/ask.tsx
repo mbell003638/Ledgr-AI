@@ -224,27 +224,47 @@ export default function AskBooks() {
         </ScrollView>
 
         <View style={styles.inputBar}>
-          <Pressable
-            style={styles.cameraBtn}
-            onPress={async () => {
-              try {
-                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                if (!perm.granted) return;
-                const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-                if (res.canceled || !res.assets[0].base64) return;
-                setLoading(true);
-                const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
-                const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
-                send(prompt);
-              } catch (e: any) {
-                Alert.alert("Receipt Scan Error", e.message || "Failed to scan receipt");
-                setLoading(false);
-              }
-            }}
-          >
-            <Ionicons name="camera-outline" size={28} color={theme.color.muted} />
-          </Pressable>
           <View style={styles.inputWrapper}>
+            <Pressable
+              style={styles.attachBtn}
+              onPress={async () => {
+                try {
+                  const perm = await ImagePicker.requestCameraPermissionsAsync();
+                  if (!perm.granted) return;
+                  const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+                  if (res.canceled || !res.assets[0].base64) return;
+                  setLoading(true);
+                  const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
+                  const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
+                  send(prompt);
+                } catch (e: any) {
+                  Alert.alert("Camera Error", e.message || "Failed to open camera");
+                  setLoading(false);
+                }
+              }}
+            >
+              <Ionicons name="camera-outline" size={24} color={theme.color.muted} />
+            </Pressable>
+            <Pressable
+              style={styles.attachBtn}
+              onPress={async () => {
+                try {
+                  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (!perm.granted) return;
+                  const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+                  if (res.canceled || !res.assets[0].base64) return;
+                  setLoading(true);
+                  const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
+                  const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
+                  send(prompt);
+                } catch (e: any) {
+                  Alert.alert("Library Error", e.message || "Failed to open library");
+                  setLoading(false);
+                }
+              }}
+            >
+              <Ionicons name="image-outline" size={24} color={theme.color.muted} />
+            </Pressable>
             {Platform.OS === 'web' && (
               <style>{`
                 textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
@@ -259,7 +279,6 @@ export default function AskBooks() {
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               multiline={true}
               numberOfLines={1}
-              showsVerticalScrollIndicator={false}
             />
             {input.trim().length > 0 ? (
               <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
@@ -292,7 +311,7 @@ function makeStyles(theme: any) {
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
     inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
-    cameraBtn: { padding: 4, justifyContent: "center", alignItems: "center" },
+    attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
     inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, maxHeight: 120 },
     input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, maxHeight: 96, textAlignVertical: "center" },
     micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },

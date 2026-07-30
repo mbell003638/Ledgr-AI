@@ -27,6 +27,8 @@
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
         "INTERNET"
       ]
     },
@@ -37,7 +39,12 @@
     },
     "plugins": [
       "expo-router",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Dictate transactions hands-free"
+        }
+      ],
       [
         "expo-camera",
         {

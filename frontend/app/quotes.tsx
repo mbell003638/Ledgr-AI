@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
@@ -146,6 +147,8 @@ export default function QuotesScreen() {
 
   const save = async () => {
     setErr("");
+    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
+    if (validUntil.trim() && !isValidDateString(validUntil.trim())) { setErr("Invalid valid until date format. Please use YYYY-MM-DD."); return; }
     if (!clientName.trim()) { setErr("Enter a client name."); return; }
     const clean = lines.filter((l) => l.description.trim() || l.rate > 0);
     setSaving(true);
