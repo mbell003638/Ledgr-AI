@@ -100,7 +100,7 @@ export default function QuickActionMenu() {
               <View style={{ height: 8 }} />
 
               {/* Action Row: Invoice */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/sale-form'); }}>
                 <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
                   <Text style={{ fontSize: 20 }}>🧾</Text>
                 </View>
@@ -112,7 +112,7 @@ export default function QuickActionMenu() {
               </Pressable>
 
               {/* Action Row: Expense */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/bill-form'); }}>
                 <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
                   <Text style={{ fontSize: 20 }}>💸</Text>
                 </View>
@@ -124,7 +124,7 @@ export default function QuickActionMenu() {
               </Pressable>
               
               {/* Action Row: Payment */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/receipt-form'); }}>
                 <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                   <Text style={{ fontSize: 20 }}>💵</Text>
                 </View>
@@ -136,7 +136,7 @@ export default function QuickActionMenu() {
               </Pressable>
               
               {/* Action Row: Party */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); alert("Coming soon"); }}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/suppliers'); }}>
                 <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
                   <Text style={{ fontSize: 20 }}>👥</Text>
                 </View>

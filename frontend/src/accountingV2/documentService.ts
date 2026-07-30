@@ -50,6 +50,8 @@ export class V2DocumentService {
       if (expectedType === 'invoice') {
         const allocated = await this.repo.db.first('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [sourceId]);
         if (allocated) throw new Error('Cannot reverse an invoice with receipt allocations');
+      } else if (expectedType === 'receipt') {
+        await this.repo.db.run('DELETE FROM v2_invoice_allocations WHERE receipt_source_id=?', [sourceId]);
       }
       const original = await this.journalForSource(sourceId);
       const reversal = await this.insertReversal(source, original, memo);

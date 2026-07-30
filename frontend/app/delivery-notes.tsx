@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
@@ -114,6 +115,7 @@ export default function DeliveryNotesScreen() {
 
   const save = async () => {
     setErr("");
+    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
     if (!clientName.trim()) { setErr("Enter a customer name."); return; }
     const clean = items.filter((it) => it.description.trim() || it.qty > 0);
     setSaving(true);

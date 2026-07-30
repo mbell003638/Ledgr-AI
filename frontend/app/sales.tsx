@@ -11,6 +11,7 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
+import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 export default function SalesScreen() {
   const theme = useTheme();
@@ -21,6 +22,7 @@ export default function SalesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -71,9 +73,42 @@ export default function SalesScreen() {
           onReversalDelete={() => reverseSale(selected)}
           onShare={() => shareTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
           onPrint={() => printTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
-          onMore={() => Alert.alert("Sale details", selected.notes || "No additional notes")}
+          onMore={() => setMoreModalVisible(true)}
         ><Text style={styles.cardSub}>{selected.notes || "No notes"}</Text></TransactionDetail>
       </ScrollView>
+      <ActionSheetModal
+        visible={moreModalVisible}
+        onClose={() => setMoreModalVisible(false)}
+        title={`Sale ${fmt(selected.amount, currSym)}`}
+        subtitle={`Date: ${shortDate(selected.date)}${selected.customerName ? ` • ${selected.customerName}` : ""}`}
+        actions={[
+          {
+            id: "share",
+            label: "Share Document Summary",
+            icon: "share-social-outline",
+            onPress: () => shareTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color),
+          },
+          {
+            id: "print",
+            label: "Print Document",
+            icon: "print-outline",
+            onPress: () => printTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color),
+          },
+          {
+            id: "edit",
+            label: "Edit Sale",
+            icon: "create-outline",
+            onPress: () => router.push({ pathname: "/sale-form", params: { id: selected.id } }),
+          },
+          {
+            id: "delete",
+            label: "Delete / Reverse Sale",
+            icon: "trash-outline",
+            destructive: true,
+            onPress: () => reverseSale(selected),
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 
