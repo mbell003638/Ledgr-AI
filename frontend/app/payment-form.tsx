@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -60,6 +61,7 @@ export default function PaymentForm() {
 
   const save = async () => {
     const amt = parseFloat(amount);
+    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     let finalSupplierId = supplierId;
     if (type === "supplier_payment") {

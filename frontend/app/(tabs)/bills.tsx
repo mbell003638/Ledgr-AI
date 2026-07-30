@@ -10,6 +10,7 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
+import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 export default function BillsScreen() {
   const theme = useTheme();
@@ -20,6 +21,7 @@ export default function BillsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -60,9 +62,42 @@ export default function BillsScreen() {
           onReversalDelete={() => reverseBill(selected)}
           onShare={() => shareTransaction(documentFor(selected))}
           onPrint={() => printTransaction(documentFor(selected))}
-          onMore={() => Alert.alert("Bill details", selected.notes || selected.invoiceNo || "No additional details")}
+          onMore={() => setMoreModalVisible(true)}
         ><Text style={styles.cardSub}>{selected.paymentType === "cash" ? "Cash" : "Credit"}{selected.invoiceNo ? ` • #${selected.invoiceNo}` : ""}</Text></TransactionDetail>
       </ScrollView>
+      <ActionSheetModal
+        visible={moreModalVisible}
+        onClose={() => setMoreModalVisible(false)}
+        title={suppliers[selected.supplierId] || "Vendor Bill"}
+        subtitle={`${fmt(selected.amount, selected.currency)} • ${shortDate(selected.date)}`}
+        actions={[
+          {
+            id: "share",
+            label: "Share Bill Summary",
+            icon: "share-social-outline",
+            onPress: () => shareTransaction(documentFor(selected)),
+          },
+          {
+            id: "print",
+            label: "Print Bill",
+            icon: "print-outline",
+            onPress: () => printTransaction(documentFor(selected)),
+          },
+          {
+            id: "edit",
+            label: "Edit Purchase",
+            icon: "create-outline",
+            onPress: () => router.push({ pathname: "/bill-form", params: { id: selected.id } }),
+          },
+          {
+            id: "delete",
+            label: "Delete / Reverse Purchase",
+            icon: "trash-outline",
+            destructive: true,
+            onPress: () => reverseBill(selected),
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 

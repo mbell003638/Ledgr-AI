@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,6 +12,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
+import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -23,6 +25,7 @@ export default function Expenses() {
   const [currencySymbol, setCurrencySymbol] = useState("$");
   const [editing, setEditing] = useState<Expense | "new" | null>(null);
   const [selected, setSelected] = useState<Expense | null>(null);
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState("");
@@ -53,6 +56,7 @@ export default function Expenses() {
 
   const save = async () => {
     const amt = parseFloat(amount);
+    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     if (!category.trim()) { setError("Enter a category"); return; }
     setSaving(true); setError("");
@@ -95,9 +99,42 @@ export default function Expenses() {
           onReversalDelete={() => reverseExpense(selected)}
           onShare={() => shareTransaction(documentFor(selected))}
           onPrint={() => printTransaction(documentFor(selected))}
-          onMore={() => Alert.alert("Expense details", selected.notes || "No additional notes")}
+          onMore={() => setMoreModalVisible(true)}
         ><Text style={{ color: theme.color.muted }}>{selected.notes || "No notes"}</Text></TransactionDetail>
       </ScrollView>
+      <ActionSheetModal
+        visible={moreModalVisible}
+        onClose={() => setMoreModalVisible(false)}
+        title={`Expense: ${selected.category}`}
+        subtitle={`${fmt(selected.amount, currencySymbol)} • ${shortDate(selected.date)}`}
+        actions={[
+          {
+            id: "share",
+            label: "Share Expense Voucher",
+            icon: "share-social-outline",
+            onPress: () => shareTransaction(documentFor(selected)),
+          },
+          {
+            id: "print",
+            label: "Print Voucher",
+            icon: "print-outline",
+            onPress: () => printTransaction(documentFor(selected)),
+          },
+          {
+            id: "edit",
+            label: "Edit Expense",
+            icon: "create-outline",
+            onPress: () => { setSelected(null); openEdit(selected); },
+          },
+          {
+            id: "delete",
+            label: "Delete / Reverse Expense",
+            icon: "trash-outline",
+            destructive: true,
+            onPress: () => reverseExpense(selected),
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 

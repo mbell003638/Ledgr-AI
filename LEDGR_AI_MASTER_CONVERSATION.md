@@ -460,4 +460,75 @@ This document records the exact accounting architecture, business persona specs,
 6. **Git Synchronization**:
    - Staged all new and modified files and committed/pushed the code to the `v3.0` branch on GitHub.
 
+---
+
+## 13. UI Polish, App Icons, Modal Fixes & Remote Build Automation
+
+### Key Accomplishments & Architectural Updates:
+
+1. **Web Modal Width & Animation Polish**:
+   - Fixed modal behavior on Web (`invoices.tsx`, `quotes.tsx`, `delivery-notes.tsx`) by passing `transparent={true}` to `<Modal>`.
+   - Constrained overlay container width to `maxWidth: 480` on Web to prevent modal backdrop from blacking out the entire desktop screen.
+   - Switched Web modal transition animation to `fade` while preserving native `slide` animation for mobile devices.
+
+2. **3D Glowing Neon Dollar Sign App Icon & Splash Screen**:
+   - Replaced all default Expo placeholder icons with a high-end 3D Glowing Neon Dollar Sign icon.
+   - Synchronized icon artwork across:
+     - `frontend/assets/images/icon.png`
+     - `frontend/assets/images/adaptive-icon.png`
+     - `frontend/assets/images/favicon.png`
+     - `frontend/assets/images/splash-image.png`
+     - `frontend/assets/images/app-image.png`
+   - Updated `app.json` splash screen and adaptive icon background color properties from dark green (`#1C4030`) to pitch black (`#000000`) for seamless startup transitions.
+
+3. **Strict Git Workflow Safety & Manual Actions Triggers**:
+   - Updated `.github/workflows/build-apk.yml` to remove automatic `on: push` build triggers, ensuring builds are only initiated on explicit request (`workflow_dispatch`).
+   - Added project rule in `.agents/AGENTS.md` strictly prohibiting automated git pushes without user instruction.
+
+4. **Automated Remote Build Triggering via REST API & PAT**:
+   - Created `trigger_build.ps1` script to automate triggering GitHub Actions workflows remotely without requiring `gh` CLI.
+   - Stored Personal Access Token securely in git-ignored `.env` (`GITHUB_TOKEN`).
+   - Triggered Release APK & AAB builds for `settings-ui-optimized`, `settings-ui-simplified`, and `v3.0` branches remotely via GitHub REST API.
+
+---
+
+## 4. Chronological Timeline & Session Handoff (July 29, 2026)
+
+### Timeline of User Requests & System Actions
+
+1. **User Request: Dynamic Tab Customization & Dual-Role Accounting Logic**
+   - User requested removing obsolete Debtors tile, enabling universal party autocomplete across forms, auto-upgrading suppliers used in customer flows to `role = 'both'`, making customer names mandatory on receipts, and implementing a dynamic dashboard tab customization system ON/OFF without breaking existing features.
+   - **Action Taken**: Created new branch `Ledger-Logic-Build` off `settings-ui-optimized`. Built `src/utils/featureFlags.ts` and `app/customize-features.tsx`. Integrated `<PartyAutocompleteInput roleFilter="all">` across all 7 transaction forms (`sales.tsx`, `bills.tsx`, `receipts.tsx`, `payments.tsx`, `invoices.tsx`, `quotes.tsx`, `delivery-notes.tsx`). Ran full test suite (32/32 suites, 206/206 tests passed).
+
+2. **User Request: Metro Bundler Syntax Fix (`settings.tsx`)**
+   - User reported Metro syntax error on `settings.tsx:536`.
+   - **Action Taken**: Restored missing `</View>` closing tag in `app/(tabs)/settings.tsx` preferences block. Tested and verified Metro bundler output.
+
+3. **User Request: 3D App Icon Update**
+   - User provided a 3D leather wallet artwork with a glowing neon green dollar sign and floating gold coins, requesting it be applied as the official mobile app icon.
+   - **Action Taken**: Replaced `frontend/assets/images/icon.png` (329,405 bytes) and `frontend/assets/images/adaptive-icon.png` (329,405 bytes) with the exact 3D leather wallet artwork. Synced across `Ledger-Logic-Build`, `settings-ui-optimized`, `settings-ui-simplified`, and `v3.0`.
+
+4. **User Request: Multi-Branch Push & GitHub Actions Build Workflow**
+   - User requested pushing customization settings across all branches and configuring GitHub Actions to build APK and AAB binaries.
+   - **Action Taken**: Merged and pushed `Ledger-Logic-Build` features into `settings-ui-optimized`, `settings-ui-simplified`, and `v3.0`. Updated `.github/workflows/build-apk.yml` with push triggers for all active branches.
+
+5. **User Request: Build Failure Investigation on `v3.0`**
+   - User reported build failure on `v3.0` during `:app:createBundleReleaseJsAndAssets` (`Process 'command 'node'' finished with non-zero exit value 1`). Instructed agent to find the failure reason without pushing to Git.
+   - **Action Taken**: Ran local production export (`npx expo export --platform android`). Found duplicate `<Text>` tag syntax error on lines 751-752 of `app/(tabs)/settings.tsx` on branch `v3.0`. Explained root cause to user.
+
+6. **User Request: Local Fix without Git Push**
+   - User instructed: *"fix the issue but do not push the update yet"*.
+   - **Action Taken**: Fixed duplicate `<Text>` tag in `app/(tabs)/settings.tsx` locally on branch `v3.0`. Re-ran production export bundle check—verified clean compilation (`Exported: dist` - 1,742 modules / 6.1 MB HBC). Left working copy uncommitted/unpushed as instructed.
+
+### Branch Status Matrix for Next AI Session
+
+| Branch Name | Remote Commit / SHA | Dynamic Tabs | 3D Icon Asset | Build Workflow | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `Ledger-Logic-Build` | `3ad1726` | ✅ Yes | ✅ 329KB Wallet | ✅ Active | Clean & Pushed |
+| `settings-ui-optimized` | `45979a4` | ✅ Yes | ✅ 329KB Wallet | ✅ Active | Clean & Pushed |
+| `settings-ui-simplified` | `b0bb7a0` | ✅ Yes | ✅ 329KB Wallet | ✅ Active | Clean & Pushed |
+| `v3.0` | `c81553b` (Remote) | ✅ Yes | ✅ 329KB Wallet | ✅ Active | **Local fix applied (settings.tsx L751-752 duplicate tag removed). Tested & bundled (`dist`). Awaiting user instruction to commit/push.** |
+
+
+
 

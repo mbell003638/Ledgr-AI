@@ -178,11 +178,13 @@ export default function ReportsScreen() {
         `Registered Suppliers: ${dash.suppliers}`,
         line("Net Worth (Equity)", dash.netWorth),
         ``,
-        `— PARTNER STAKES RECONCILIATION`,
-        line("Total Profit (legacy)", legacy.totalProfit),
-        line("Total Drawings (legacy)", legacy.totalDrawings),
-        ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
-        cap ? line("Closing Capital", cap.closingCapital) : "",
+        ...(bizSettings?.accountingStyle === 'retail_partnership' ? [
+          `— PARTNER STAKES RECONCILIATION`,
+          line("Total Profit (legacy)", legacy.totalProfit),
+          line("Total Drawings (legacy)", legacy.totalDrawings),
+          ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
+          cap ? line("Closing Capital", cap.closingCapital) : "",
+        ] : []),
       ].join("\n");
     } else if (seg === "P&L" && pnl) {
       body = [line("Revenue", pnl.revenue), line("COGS", pnl.cogs), line("Gross Profit", pnl.grossProfit), line("Net Profit", pnl.netProfit)].join("\n");
@@ -692,7 +694,7 @@ export default function ReportsScreen() {
 
       {/* Report category segments */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
-        {SEGMENTS.map((s) => (
+        {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital" && s !== "Drawings")).map((s) => (
           <Pressable key={s} testID={`report-seg-${s}`} onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
             <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
           </Pressable>
@@ -774,20 +776,22 @@ export default function ReportsScreen() {
                 </View>
               </View>
 
-              <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }} testID="report-summary-reconciliation">
-                <Text style={[styles.rTitle, { color: theme.color.brandTertiary }]}>PARTNER STAKES RECONCILIATION</Text>
-                <RowKV label="Total Profit (legacy)" value={fmt(legacy.totalProfit)} theme={theme} styles={styles} />
-                <RowKV label="Total Drawings (legacy)" value={fmt(legacy.totalDrawings)} theme={theme} styles={styles} danger />
-                {cap && cap.partners.map((p: any) => (
-                  <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
-                ))}
-                {cap && (
-                  <>
-                    <View style={styles.divider} />
-                    <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
-                  </>
-                )}
-              </Card>
+              {bizSettings?.accountingStyle === 'retail_partnership' && (
+                <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }} testID="report-summary-reconciliation">
+                  <Text style={[styles.rTitle, { color: theme.color.onSurface }]}>PARTNER STAKES RECONCILIATION</Text>
+                  <RowKV label="Total Profit (legacy)" value={fmt(legacy.totalProfit)} theme={theme} styles={styles} />
+                  <RowKV label="Total Drawings (legacy)" value={fmt(legacy.totalDrawings)} theme={theme} styles={styles} danger />
+                  {cap && cap.partners.map((p: any) => (
+                    <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
+                  ))}
+                  {cap && (
+                    <>
+                      <View style={styles.divider} />
+                      <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
+                    </>
+                  )}
+                </Card>
+              )}
             </>
           )}
 

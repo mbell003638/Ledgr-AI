@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert, Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,13 +12,14 @@ import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { fmt, shortDate } from "@/src/theme";
+import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { getCurrencySymbol } from "@/src/db/local";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";
+import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -68,6 +70,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
 
   let primary = "#1e222b";
   let accent = "#f5a623";
+  let isCleanMinimal = false;
   
   if (biz.invoiceTheme === "navy_gold") {
     primary = "#000000";
@@ -78,9 +81,10 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
   } else if (biz.invoiceTheme === "emerald") {
     primary = "#1C4030";
     accent = "#2ecc71";
-  } else if (biz.invoiceTheme === "minimal") {
-    primary = "#111513";
-    accent = "#8FB99A";
+  } else if (biz.invoiceTheme === "minimal" || biz.invoiceTheme === "clean_minimal") {
+    primary = "#000000";
+    accent = "#000000";
+    isCleanMinimal = true;
   } else {
     const tc = themeColors || {};
     const getDarkest = (c1: string, c2: string, fallback: string) => {
@@ -106,6 +110,110 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
       <td>${money(lineAmt(l))}</td>
     </tr>`
   ).join("");
+
+  if (isCleanMinimal) {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Invoice</title>
+<style>
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { background: #fff !important; padding: 0 !important; }
+    .invoice { box-shadow: none !important; margin: 0 !important; border: none !important; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background: #e9e9e9; display: flex; justify-content: center; padding: 30px 0; color: #000; }
+  .invoice { width: 800px; background: #fff; padding: 50px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
+  .header-left .logo { font-size: 28px; font-weight: 800; letter-spacing: 1px; }
+  .header-left img { max-height: 70px; max-width: 180px; object-fit: contain; }
+  .header-right { text-align: right; font-size: 13px; line-height: 1.6; }
+  .header-right strong { font-size: 24px; display: block; margin-bottom: 8px; font-weight: 700; letter-spacing: 1px; }
+  .info-section { display: flex; justify-content: space-between; margin-bottom: 40px; font-size: 13px; line-height: 1.6; }
+  .info-section h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 6px; }
+  .meta-table { font-size: 13px; border-collapse: collapse; }
+  .meta-table td { padding: 4px 0 4px 20px; text-align: right; }
+  .meta-table td:first-child { color: #666; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; text-align: left; }
+  .meta-table strong { font-size: 14px; }
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 30px; border-bottom: 2px solid #000; font-size: 13px; }
+  table.items th { text-align: left; padding: 12px; border-bottom: 1px solid #000; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+  table.items th:last-child, table.items td:last-child { text-align: right; }
+  table.items td { padding: 12px; border-bottom: 1px solid #eee; }
+  .totals-wrapper { display: flex; justify-content: space-between; align-items: flex-start; }
+  .totals-left { max-width: 60%; font-size: 12px; line-height: 1.6; }
+  .totals-left h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .totals-table { width: 280px; border-collapse: collapse; font-size: 13px; }
+  .totals-table td { padding: 8px 0; text-align: right; }
+  .totals-table td:first-child { text-align: left; color: #666; }
+  .totals-table tr.grand td { border-top: 2px solid #000; font-weight: 700; font-size: 16px; padding-top: 12px; color: #000; }
+  .totals-table tr.in-words td { font-style: italic; color: #666; font-size: 11px; padding-top: 4px; text-align: right; border: none; }
+  .footer { margin-top: 50px; font-size: 12px; border-top: 1px solid #eee; padding-top: 20px; color: #666; }
+</style>
+</head>
+<body>
+<div class="invoice">
+  <div class="header">
+    <div class="header-left">
+      ${biz.logo ? `<img src="${biz.logo}" />` : `<div class="logo">Logo</div>`}
+    </div>
+    <div class="header-right">
+      <strong>INVOICE</strong>
+      ${biz.businessName ? `<div>${escapeHtml(biz.businessName)}</div>` : ''}
+      ${biz.businessAddress ? `<div>${escapeHtml(biz.businessAddress)}</div>` : ''}
+      ${biz.businessPhone ? `<div>${escapeHtml(biz.businessPhone)}</div>` : ''}
+      ${biz.businessEmail ? `<div>${escapeHtml(biz.businessEmail)}</div>` : ''}
+    </div>
+  </div>
+  <div class="info-section">
+    <div>
+      <h4>Bill To</h4>
+      <div><strong>${escapeHtml(inv.clientName)}</strong></div>
+      ${inv.clientPhone ? `<div>${escapeHtml(inv.clientPhone)}</div>` : ''}
+      ${(inv as any).clientEmail ? `<div>${escapeHtml((inv as any).clientEmail)}</div>` : ''}
+      ${(inv as any).clientAddress ? `<div>${escapeHtml((inv as any).clientAddress)}</div>` : ''}
+    </div>
+    <table class="meta-table">
+      <tr><td>Invoice No</td><td><strong>${inv.invoiceNumber}</strong></td></tr>
+      <tr><td>Date</td><td>${inv.date}</td></tr>
+      ${inv.dueDate ? `<tr><td>Due Date</td><td>${inv.dueDate}</td></tr>` : ''}
+    </table>
+  </div>
+  <table class="items">
+    <thead>
+      <tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>
+    </thead>
+    <tbody>
+      ${inv.lines.map(l => `<tr><td>${escapeHtml(l.description)}</td><td>${lineQty(l)} ${l.unit ? escapeHtml(l.unit) : ""}</td><td>${money(lineRate(l))}</td><td>${money(lineAmt(l))}</td></tr>`).join("")}
+    </tbody>
+  </table>
+  <div class="totals-wrapper">
+    <div class="totals-left">
+      ${biz.bankAccount || biz.upiId || biz.paymentDetails ? `
+        <h4>Payment Info</h4>
+        ${biz.bankAccount ? `<div>${escapeHtml(biz.bankAccount)}</div>` : ''}
+        ${biz.upiId ? `<div>${escapeHtml(biz.upiId)}</div>` : ''}
+        ${biz.paymentDetails ? `<div>${escapeHtml(biz.paymentDetails)}</div>` : ''}
+      ` : ''}
+    </div>
+    <table class="totals-table">
+      <tr><td>Subtotal</td><td>${money(sub)}</td></tr>
+      ${tax > 0 ? `<tr><td>${escapeHtml(inv.taxLabel || "Tax")} ${inv.taxRate}%</td><td>${money(tax)}</td></tr>` : ''}
+      ${carry !== 0 ? `<tr><td>Previous Balance</td><td>${money(carry)}</td></tr>` : ''}
+      ${paidOnThis > 0 ? `<tr><td>Amount Paid</td><td>-${money(paidOnThis)}</td></tr>` : ''}
+      <tr class="grand"><td>Total Due</td><td>${money(balanceDue)}</td></tr>
+      <tr class="in-words"><td colspan="2">${totalInWords}</td></tr>
+    </table>
+  </div>
+  <div class="footer">
+    ${escapeHtml(inv.terms || biz.invoiceTerms || "Thank you for your business.")}
+  </div>
+</div>
+</body>
+</html>`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -666,6 +774,8 @@ export default function InvoicesScreen() {
   };
 
   const saveInvoice = async () => {
+    if (!isValidDateString(date)) { setFormError("Invalid date format. Please use YYYY-MM-DD."); return; }
+    if (dueDate.trim() && !isValidDateString(dueDate.trim())) { setFormError("Invalid due date format. Please use YYYY-MM-DD."); return; }
     if (!clientName.trim()) { setFormError("Client name is required"); return; }
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
@@ -698,10 +808,51 @@ export default function InvoicesScreen() {
     setSelected(null);
   };
 
-  const deleteInv = async (id: string) => {
-    await api.deleteInvoice(id);
+  const markUnpaid = async (id: string) => {
+    // If we mark unpaid, we might just update the metadata
+    await api.updateInvoice(id, { status: "unpaid" });
     await load();
     setSelected(null);
+  };
+
+  const deleteInv = async (id: string) => {
+    try {
+      const paid = await api.invoicePaidAmount(id);
+      if (paid > 0) {
+        if (Platform.OS === "web") {
+          const ok = window.confirm("This invoice has payment receipts. Delete payment receipts and reverse invoice?");
+          if (ok) {
+            // Delete receipts associated with invoice
+            const receipts = await api.listReceipts();
+            const invoiceReceipts = receipts.filter((r: any) => r.allocations?.some((a: any) => a.invoiceId === id || a.invoiceSourceId === id));
+            for (const r of invoiceReceipts) await api.deleteReceipt(r.id);
+            await api.deleteInvoice(id);
+            await load();
+            setSelected(null);
+          }
+        } else {
+          Alert.alert(
+            "Delete Invoice?",
+            "This invoice has payment receipts. Delete payment receipts and reverse invoice?",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Delete", style: "destructive", onPress: async () => {
+                const receipts = await api.listReceipts();
+                const invoiceReceipts = receipts.filter((r: any) => r.allocations?.some((a: any) => a.invoiceId === id || a.invoiceSourceId === id));
+                for (const r of invoiceReceipts) await api.deleteReceipt(r.id);
+                await api.deleteInvoice(id);
+                await load();
+                setSelected(null);
+              } }
+            ]
+          );
+        }
+      } else {
+        await api.deleteInvoice(id);
+        await load();
+        setSelected(null);
+      }
+    } catch (e) { console.warn(e); }
   };
 
   const getPrevBalance = async (inv: Invoice) => {
@@ -745,6 +896,17 @@ export default function InvoicesScreen() {
     const phone = (inv.clientPhone || "").replace(/\D/g, "");
     const msg = `Hi ${inv.clientName}, please find your invoice ${inv.invoiceNumber} for ${currSym}${invTotal(inv).toFixed(2)} dated ${inv.date}.${inv.dueDate ? ` Due: ${inv.dueDate}.` : ""}${biz.paymentDetails ? `\nPayment: ${biz.paymentDetails}` : ""}`;
     Linking.openURL(`whatsapp://send?phone=${phone}&text=${encodeURIComponent(msg)}`).catch(() => {});
+  };
+
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
+
+  const copyTextSummary = (inv: Invoice) => {
+    const msg = `Invoice ${inv.invoiceNumber}\nClient: ${inv.clientName}\nDate: ${inv.date}\nTotal: ${currSym}${invTotal(inv).toFixed(2)}\nStatus: ${inv.status.toUpperCase()}`;
+    Share.share({ message: msg }).catch(() => {});
+  };
+
+  const handleMore = (inv: Invoice) => {
+    setMoreModalVisible(true);
   };
 
   const updateLine = (i: number, field: keyof InvoiceLine, val: string) => {
@@ -800,7 +962,7 @@ export default function InvoicesScreen() {
             onReversalDelete={() => deleteInv(selected.id)}
             onShare={() => sharePdf(selected)}
             onPrint={() => printInvoice(selected)}
-            onMore={() => selected.status === "unpaid" ? markPaid(selected.id) : shareWhatsApp(selected)}
+            onMore={() => handleMore(selected)}
           >
           <Card>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -860,6 +1022,51 @@ export default function InvoicesScreen() {
           </Pressable>
           <View style={{ height: 60 }} />
         </ScrollView>
+        <ActionSheetModal
+          visible={moreModalVisible}
+          onClose={() => setMoreModalVisible(false)}
+          title={`Invoice ${selected.invoiceNumber}`}
+          subtitle={`${selected.clientName} • ${selected.date}`}
+          actions={[
+            {
+              id: "status",
+              label: selected.status === "paid" ? "Mark as Unpaid" : "Mark as Paid",
+              icon: selected.status === "paid" ? "close-circle-outline" : "checkmark-circle-outline",
+              onPress: () => (selected.status === "paid" ? markUnpaid(selected.id) : markPaid(selected.id)),
+            },
+            {
+              id: "whatsapp",
+              label: "Send via WhatsApp",
+              icon: "logo-whatsapp",
+              onPress: () => shareWhatsApp(selected),
+            },
+            {
+              id: "copy",
+              label: "Copy Text Summary",
+              icon: "copy-outline",
+              onPress: () => copyTextSummary(selected),
+            },
+            {
+              id: "pdf",
+              label: "Share PDF Document",
+              icon: "share-social-outline",
+              onPress: () => sharePdf(selected),
+            },
+            {
+              id: "print",
+              label: "Print Document",
+              icon: "print-outline",
+              onPress: () => printInvoice(selected),
+            },
+            {
+              id: "delete",
+              label: "Delete / Reverse Invoice",
+              icon: "trash-outline",
+              destructive: true,
+              onPress: () => deleteInv(selected.id),
+            },
+          ]}
+        />
       </SafeAreaView>
     );
   }

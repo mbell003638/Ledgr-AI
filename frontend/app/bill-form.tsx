@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { isValidDateString } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -120,6 +121,7 @@ export default function BillForm() {
 
   const save = async () => {
     setError("");
+    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
     let finalSupplierId = supplierId;
     if (newSupplierName.trim()) {
       try {
