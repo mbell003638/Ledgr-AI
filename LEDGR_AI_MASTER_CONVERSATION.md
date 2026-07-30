@@ -529,6 +529,68 @@ This document records the exact accounting architecture, business persona specs,
 | `settings-ui-simplified` | `b0bb7a0` | ✅ Yes | ✅ 329KB Wallet | ✅ Active | Clean & Pushed |
 | `v3.0` | `c81553b` (Remote) | ✅ Yes | ✅ 329KB Wallet | ✅ Active | **Local fix applied (settings.tsx L751-752 duplicate tag removed). Tested & bundled (`dist`). Awaiting user instruction to commit/push.** |
 
+---
+
+## 5. Chronological Timeline & Session Handoff (July 30, 2026)
+
+### Timeline of User Requests & System Actions
+
+1. **User Request: 10 Comprehensive UI/UX & Accounting Bug Fixes**
+   - User reported 10 specific bugs/improvements with screenshots:
+     1. Ask AI input alignment & camera/media permissions (`app/ask.tsx`).
+     2. Unified date validation across all 8 transaction forms (`src/utils/dateValidation.ts`).
+     3. Settings UI dynamic subtitles, accordion reset on blur, and dark theme contrast for Partner Reconciliation text.
+     4. Standard Entity mode hiding Partner Stakes Reconciliation on reports (`assets.tsx`, `reports.tsx`).
+     5. FAB Quick Action menu routing replacing "Coming soon" alerts (`QuickActionMenu.tsx`).
+     6. System theme subtitle showing "System Default".
+     7. Clean Minimal PDF preset producing true monochrome black & white layout (`invoices.tsx`).
+     8. Invoice reversal/delete prompts for linked payment receipts + receipt allocation cleanup (`api.deleteReceipt`).
+     9. Party navigation in Parties tab resolving roles (`customer`, `supplier`, `both`) without "Supplier not found" errors.
+     10. Context-aware top-right `+` button in Parties tab pre-selecting Customer vs Supplier based on active sub-tab.
+   - **Action Taken**: Invoked 4 specialized subagents in parallel to resolve all 10 tasks. Ran full unit test suite (32/32 test suites, 206/206 tests passed).
+
+2. **User Request: Modern ActionSheet Modal for "More" Menu Actions**
+   - User reported that pressing "More" on transaction screens showed un-professional browser `window.prompt()` alerts on Web and raw alerts on Mobile.
+   - **Action Taken**: Built `src/components/ActionSheetModal.tsx` featuring a glassmorphic bottom sheet modal with smooth top rounded corners (`borderTopLeftRadius: 24`), dark overlay, touch feedback, and icons for each action item. Connected across `invoices.tsx`, `sales.tsx`, `receipts.tsx`, `payments.tsx`, `bills.tsx`, and `expenses.tsx`.
+
+3. **User Request: Metro & TypeScript Compilation Fixes**
+   - User reported Metro syntax errors (`<Modal>` closing tag in `invoices.tsx`, duplicate `router` declaration in `receipts.tsx`, missing `</SafeAreaView>` in `invoices.tsx`).
+   - **Action Taken**: Resolved all JSX closing tags, removed duplicate `router` declaration in `receipts.tsx`, fixed `selected` type narrowing in `invoices.tsx`, and removed invalid `showsVerticalScrollIndicator` prop in `ask.tsx`. Ran `npx tsc --noEmit` (**0 errors**) and Jest tests (32/32 passed).
+
+4. **User Request: Styled Summary Metric Cards (`receipts.tsx`, `payments.tsx`)**
+   - User reported that the `TOTAL RECEIVED` summary bar was an un-curved full-width rectangle detached from the card theme.
+   - **Action Taken**: Upgraded `summaryBar` in `receipts.tsx` and `payments.tsx` to a curved `summaryCard` with rounded corners (`borderRadius: theme.radius.md`), subtle border, icon badge (`arrow-down-circle-outline` / `arrow-up-circle-outline`), and high-contrast typography.
+
+5. **User Request: Android Permission Compliance Confirmation**
+   - User asked for confirmation regarding Android policy compliance for Camera, Mic, and Storage permissions.
+   - **Action Taken**: Updated `app.json` to declare `READ_MEDIA_IMAGES` and `READ_EXTERNAL_STORAGE` in `android.permissions`, and added `microphonePermission` to `expo-audio` plugin config. Verified dynamic runtime permission dialogs across all features.
+
+6. **User Request: Explanation of Accounting Toggles & 50/50 Capital Buyouts**
+   - User asked how tab toggles and accounting style changes affect existing entries, and what happens if a 50/50 partnership is switched to Standard Entity.
+   - **Action Taken**: Explained that feature toggles only hide UI launchers without deleting SQLite records or breaking financial calculations. Clarified that switching to Standard Entity preserves total equity on the Balance Sheet (`Assets = Liabilities + Equity`) while combining partner capital lines into Owner's Equity, and provided accounting guidance for partner buyouts.
+
+7. **User Request: Push to `settings-ui-optimized` & Trigger Remote Build Workflow**
+   - User instructed: *"push the update to git only to settings-ui-optimized branch and run workflow to build the apk/aab do not configure auto running workflow on push"*.
+   - **Action Taken**: Committed all updates (`commit 0c75919`) and pushed exclusively to `origin/settings-ui-optimized`. Triggered GitHub Actions APK/AAB build workflow remotely via `.\trigger_build.ps1` using `GITHUB_TOKEN` from `.env`.
+
+8. **User Request: Explanation of GitHub Commit Ahead Counter (`0 | 70` vs `0 | 101`)**
+   - User asked why `v3.0` showed `0 | 101` ahead while `settings-ui-optimized` showed `0 | 70`.
+   - **Action Taken**: Explained that the counter reflects Git history commit nodes relative to `main`, and that `v3.0` had accumulated more intermediate merge/commit nodes during V3 development, whereas `settings-ui-optimized` contains all the freshest code and bug fixes.
+
+9. **User Request: Sync Code to `v3.0` and `settings-ui-simplified` without Workflow Execution**
+   - User instructed: *"push updated code to v3.0 and settings-ui-simplified too but dont run workflow"*.
+   - **Action Taken**: Checked out `v3.0`, merged `settings-ui-optimized` (`commit e64a5e9`), and pushed to `origin/v3.0`. Checked out `settings-ui-simplified`, merged `settings-ui-optimized` (`commit 4e2a919`), and pushed to `origin/settings-ui-simplified`. Returned local HEAD to `settings-ui-optimized`. No workflows were run.
+
+### Updated Branch Status Matrix
+
+| Branch Name | Remote Commit / SHA | Dynamic Tabs | ActionSheet UI | Date Validation | Minimal PDF | Android Perms | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `settings-ui-optimized` | `0c75919` | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Pushed & Workflow Triggered (Build Running)** |
+| `v3.0` | `e64a5e9` | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Synced & Pushed (No Workflow Triggered)** |
+| `settings-ui-simplified` | `4e2a919` | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **Synced & Pushed (No Workflow Triggered)** |
+| `Ledger-Logic-Build` | `3ad1726` | ✅ Yes | — | — | — | — | Synced Baseline |
+
+
 
 
 
