@@ -2,6 +2,8 @@ name: Build Ledgr AI Android
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ settings-ui-optimized, main ]
 
 
 jobs:
