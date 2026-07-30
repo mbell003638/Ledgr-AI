@@ -116,42 +116,75 @@ function ThemedStack() {
   );
 }
 
+import * as ImagePicker from "expo-image-picker";
+import { Image, Animated, StyleSheet } from "react-native";
+
+function AppOpeningSplashScreen() {
+  const scaleAnim = React.useRef(new Animated.Value(0.92)).current;
+  const opacityAnim = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacityAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 50, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: "#0A0A0C", justifyContent: "center", alignItems: "center", paddingHorizontal: 24 }}>
+      <Animated.View style={{ alignItems: "center", opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+        {/* Official App Icon (Green Neon Dollar Emblem) */}
+        <View
+          style={{
+            width: 100,
+            height: 100,
+            borderRadius: 24,
+            overflow: "hidden",
+            marginBottom: 24,
+            shadowColor: "#22c55e",
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.45,
+            shadowRadius: 16,
+            elevation: 10,
+            borderWidth: 1,
+            borderColor: "rgba(34, 197, 94, 0.3)",
+          }}
+        >
+          <Image
+            source={require("@/assets/images/icon.png")}
+            style={{ width: 100, height: 100, borderRadius: 24 }}
+            resizeMode="cover"
+          />
+        </View>
+
+        {/* Title matching Image 1: Ledgr */}
+        <Text style={{ fontSize: 34, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 }}>
+          Ledgr
+        </Text>
+
+        {/* Subtitle matching Image 1: Your business finances, simplified */}
+        <Text style={{ fontSize: 14, fontWeight: "400", color: "#94A3B8", marginTop: 6, letterSpacing: 0.2 }}>
+          Your business finances, simplified
+        </Text>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ---------- Root Layout ----------
 export default function RootLayout() {
-  const [loaded, error] = useIconFontsSafe();
-  const [timedOut, setTimedOut] = useState(false);
-  const [storageReady, setStorageReady] = useState(false);
-
   useEffect(() => {
-    // Activate the storage backend (SQLite if available, else AsyncStorage).
-    // initStorage self-catches and falls back to AsyncStorage, so this can
-    // never reject — the app always becomes ready.
-    let cancelled = false;
-    initStorage()
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setStorageReady(true); });
-    // Hard safety: never let storage init block the app for more than 4s.
-    const t = setTimeout(() => { if (!cancelled) setStorageReady(true); }, 4000);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, []);
+    // Hide splash screen immediately on mount with ZERO delay
+    SplashScreen.hideAsync().catch(() => {});
 
-  useEffect(() => {
-    // Safety: hide splash after 5 seconds no matter what
-    const timer = setTimeout(() => {
-      setTimedOut(true);
-      SplashScreen.hideAsync().catch(() => {});
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, []);
+    // Initialize storage & permissions in background without holding UI
+    initStorage().catch(() => {});
 
-  useEffect(() => {
-    if ((loaded || error) && storageReady) {
-      SplashScreen.hideAsync().catch(() => {});
+    if (Platform.OS !== "web") {
+      ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
+      ImagePicker.requestCameraPermissionsAsync().catch(() => {});
     }
-  }, [loaded, error, storageReady]);
-
-  if (!loaded && !error && !timedOut) return null;
-  if (!storageReady && !timedOut) return null;
+  }, []);
 
   return (
     <ErrorBoundary>

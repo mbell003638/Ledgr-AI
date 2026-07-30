@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput, PanResponder, Animated, LayoutAnimation, Platform, UIManager } from "react-native";
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,6 +16,8 @@ import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -35,13 +41,12 @@ const TILES = [
   { key: "quotes", label: "Quotes", icon: "pricetags-outline", route: "/quotes", color: "#E0E8F0" },
   { key: "delivery", label: "Delivery Notes", icon: "cube-outline", route: "/delivery-notes", color: "#DCE4DC" },
   { key: "expenses", label: "Expenses", icon: "wallet-outline", route: "/expenses", color: "#E4D8D8" },
-  { key: "inventory", label: "Inventory", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
+  { key: "inventory", label: "Stock", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
   { key: "assets", label: "Assets & Liabilities", icon: "pie-chart-outline", route: "/assets", color: "#D0D8E0" },
   { key: "daybook", label: "Day Book", icon: "book-outline", route: "/daybook", color: "#DDE3EC" },
   { key: "reports", label: "Reports", icon: "bar-chart-outline", route: "/reports", color: "#E0E0DA" },
   { key: "monthly", label: "Monthly Report", icon: "calendar-outline", route: "/monthly-summary", color: "#EFDCC8" },
   { key: "ask", label: "Ask AI", icon: "sparkles-outline", route: "/ask", color: "#D0E0D8" },
-  { key: "debtors", label: "Debtors", icon: "people-outline", route: "/debtors", color: "#E0D8E8" },
   { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
 ] as const;
 
@@ -72,6 +77,17 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
+  const [isEditingGrid, setIsEditingGrid] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem("ledgr_tile_order");
+        if (saved) setCustomTileOrder(JSON.parse(saved));
+      } catch {}
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -93,8 +109,144 @@ export default function Dashboard() {
 
   const visibleTiles = useMemo(() => {
     const enabled = getEnabledFeatures(settings);
-    return TILES.filter((t) => enabled.includes(t.key as any));
-  }, [settings]);
+    const filtered = TILES.filter((t) => enabled.includes(t.key as any));
+    if (!customTileOrder.length) return filtered;
+    const map = new Map<string, (typeof TILES)[number]>(filtered.map((t) => [t.key, t]));
+    const ordered: (typeof TILES)[number][] = [];
+    for (const k of customTileOrder) {
+      if (map.has(k)) {
+        ordered.push(map.get(k)!);
+        map.delete(k);
+      }
+    }
+    return [...ordered, ...Array.from(map.values())];
+  }, [settings, customTileOrder]);
+
+  const [selectedSwapIndex, setSelectedSwapIndex] = useState<number | null>(null);
+  const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
+
+  const recordTileUsage = async (key: string) => {
+    try {
+      const raw = (await AsyncStorage.getItem("ledgr_tile_usage")) || "{}";
+      const usage = JSON.parse(raw);
+      usage[key] = (usage[key] || 0) + 1;
+      usage[`${key}_last_used`] = Date.now();
+      await AsyncStorage.setItem("ledgr_tile_usage", JSON.stringify(usage));
+    } catch {}
+  };
+
+  const handleTilePress = (tile: (typeof TILES)[number]) => {
+    if (isEditingGrid) return;
+    recordTileUsage(tile.key);
+    router.push(tile.route as any);
+  };
+
+  const wiggleAnim = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isEditingGrid) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(wiggleAnim, { toValue: 1, duration: 130, useNativeDriver: true }),
+          Animated.timing(wiggleAnim, { toValue: -1, duration: 130, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      wiggleAnim.setValue(0);
+    }
+  }, [isEditingGrid]);
+
+  const wiggleStyle = {
+    transform: [
+      {
+        rotate: wiggleAnim.interpolate({
+          inputRange: [-1, 1],
+          outputRange: ["-1.2deg", "1.2deg"],
+        }),
+      },
+    ],
+  };
+
+  const swapTiles = (fromIndex: number, toIndex: number) => {
+    const currentKeys = visibleTiles.map((t) => t.key);
+    if (fromIndex < 0 || fromIndex >= currentKeys.length || toIndex < 0 || toIndex >= currentKeys.length) return;
+    const temp = currentKeys[fromIndex];
+    currentKeys[fromIndex] = currentKeys[toIndex];
+    currentKeys[toIndex] = temp;
+    if (Platform.OS !== "web") {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setCustomTileOrder(currentKeys);
+    setSelectedSwapIndex(null);
+    AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(currentKeys)).catch(() => {});
+  };
+
+  const createPanResponder = (index: number) => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return isEditingGrid && (Math.abs(gestureState.dx) > 8 || Math.abs(gestureState.dy) > 8);
+      },
+      onPanResponderGrant: () => {
+        if (Platform.OS !== "web") {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
+        }
+        setActiveDragIndex(index);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const colShift = gestureState.dx > 45 ? 1 : gestureState.dx < -45 ? -1 : 0;
+        const rowShift = Math.round(gestureState.dy / 75) * 2;
+        const targetIndex = index + colShift + rowShift;
+        if (targetIndex >= 0 && targetIndex < visibleTiles.length && targetIndex !== index) {
+          swapTiles(index, targetIndex);
+        }
+      },
+      onPanResponderRelease: () => {
+        if (Platform.OS !== "web") {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        }
+        setActiveDragIndex(null);
+      },
+      onPanResponderTerminate: () => {
+        if (Platform.OS !== "web") {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        }
+        setActiveDragIndex(null);
+      },
+    });
+  };
+
+  const sortTilesByPreset = async (preset: "alphabetical" | "frequent" | "recent" | "default") => {
+    const enabled = getEnabledFeatures(settings);
+    const filtered = TILES.filter((t) => enabled.includes(t.key as any));
+
+    if (preset === "default") {
+      setCustomTileOrder([]);
+      setSelectedSwapIndex(null);
+      await AsyncStorage.removeItem("ledgr_tile_order");
+      return;
+    }
+
+    let raw = "";
+    try { raw = (await AsyncStorage.getItem("ledgr_tile_usage")) || ""; } catch {}
+    const usage = raw ? JSON.parse(raw) : {};
+
+    let sorted = [...filtered];
+    if (preset === "alphabetical") {
+      sorted.sort((a, b) => a.label.localeCompare(b.label));
+    } else if (preset === "frequent") {
+      sorted.sort((a, b) => (usage[b.key] || 0) - (usage[a.key] || 0));
+    } else if (preset === "recent") {
+      sorted.sort((a, b) => (usage[`${b.key}_last_used`] || 0) - (usage[`${a.key}_last_used`] || 0));
+    }
+
+    const keys = sorted.map((t) => t.key);
+    setCustomTileOrder(keys);
+    setSelectedSwapIndex(null);
+    await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(keys));
+  };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -347,30 +499,115 @@ export default function Dashboard() {
             </View>
             <View style={styles.kpiRow}>
               <KpiTile label="Cash" value={fmt(dash?.cash)} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
-              <KpiTile label="Inventory" value={fmt(dash?.inventoryValue)} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
+              <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
             </View>
 
-            {/* Apps grid */}
-            <Text style={styles.sectionTitle}>Apps</Text>
-            <View style={styles.grid}>
-              {visibleTiles.map((t) => {
-                const isBrand = t.key === "voice";
-                return (
+            {/* Quick Workspaces Header */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: theme.spacing.lg, marginBottom: theme.spacing.md }}>
+              <View>
+                <Text style={styles.sectionTitle}>Quick Workspaces</Text>
+                <Text style={{ fontSize: 11, color: theme.color.muted, marginTop: -6 }}>Hold any tile to organize & sort</Text>
+              </View>
+              {isEditingGrid ? (
+                <Pressable
+                  onPress={() => { setIsEditingGrid(false); setSelectedSwapIndex(null); }}
+                  style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>Done</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            {/* Re-order & Auto-Sort Floating Toolbar (visible during long-press edit mode) */}
+            {isEditingGrid ? (
+              <Card style={{ marginBottom: theme.spacing.md, padding: 12, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.brandPrimary }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: theme.color.brandPrimary, marginBottom: 8 }}>
+                  Tile Organization & Auto-Sort
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.color.muted, marginBottom: 10 }}>
+                  Tap any 2 tiles to swap their position, or select an auto-sort preset below:
+                </Text>
+                <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
                   <Pressable
+                    onPress={() => sortTilesByPreset("recent")}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>⚡ Most Recent</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => sortTilesByPreset("frequent")}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>🔥 Frequently Used</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => sortTilesByPreset("alphabetical")}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>🔤 A - Z</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => sortTilesByPreset("default")}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.muted }}>🔄 Reset Default</Text>
+                  </Pressable>
+                </View>
+              </Card>
+            ) : null}
+
+            {/* Quick Workspaces 2-Column Auto-Aligning Grid */}
+            <View style={styles.grid}>
+              {visibleTiles.map((t, idx) => {
+                const isBrand = t.key === "voice";
+                const isDraggingThis = activeDragIndex === idx;
+                const isSelectedForSwap = selectedSwapIndex === idx;
+                const pan = createPanResponder(idx);
+                return (
+                  <Animated.View
                     key={t.key}
-                    testID={`tile-${t.key}`}
-                    onPress={() => router.push(t.route as any)}
-                    style={({ pressed }) => [
-                      styles.tile,
-                      { backgroundColor: isBrand ? theme.color.brandPrimary : theme.color.surfaceSecondary },
-                      pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+                    {...(isEditingGrid ? pan.panHandlers : {})}
+                    style={[
+                      { width: "48%", marginBottom: theme.spacing.md },
+                      isEditingGrid && wiggleStyle,
+                      isDraggingThis && { zIndex: 99, transform: [{ scale: 1.08 }] },
                     ]}
                   >
-                    <View style={[styles.tileIcon, { backgroundColor: isBrand ? "rgba(255,255,255,0.15)" : t.color }]}>
-                      <Ionicons name={t.icon as any} size={22} color={isBrand ? "#fff" : theme.color.brandPrimary} />
-                    </View>
-                    <Text style={[styles.tileLabel, { color: isBrand ? "#fff" : theme.color.onSurface }]}>{t.label}</Text>
-                  </Pressable>
+                    <Pressable
+                      testID={`tile-${t.key}`}
+                      delayLongPress={800}
+                      onPress={() => {
+                        if (isEditingGrid) {
+                          if (selectedSwapIndex === null) {
+                            setSelectedSwapIndex(idx);
+                          } else if (selectedSwapIndex === idx) {
+                            setSelectedSwapIndex(null);
+                          } else {
+                            swapTiles(selectedSwapIndex, idx);
+                          }
+                        } else {
+                          handleTilePress(t);
+                        }
+                      }}
+                      onLongPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                        setIsEditingGrid(true);
+                        setSelectedSwapIndex(idx);
+                      }}
+                      style={({ pressed }) => [
+                        styles.tile,
+                        { width: "100%", margin: 0, backgroundColor: isBrand ? theme.color.brandPrimary : theme.color.surfaceSecondary },
+                        isEditingGrid && { borderWidth: 1.5, borderColor: isSelectedForSwap || isDraggingThis ? theme.color.brandPrimary : theme.color.border },
+                        (isSelectedForSwap || isDraggingThis) && { backgroundColor: theme.color.brandPrimary + "15", shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
+                        pressed && !isEditingGrid && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+                      ]}
+                    >
+                      <View style={[styles.tileIcon, { backgroundColor: isBrand ? "rgba(255,255,255,0.15)" : t.color }]}>
+                        <Ionicons name={t.icon as any} size={22} color={isBrand ? "#fff" : theme.color.brandPrimary} />
+                      </View>
+                      <Text style={[styles.tileLabel, { color: isBrand ? "#fff" : theme.color.onSurface }]}>{t.label}</Text>
+                    </Pressable>
+                  </Animated.View>
                 );
               })}
             </View>
