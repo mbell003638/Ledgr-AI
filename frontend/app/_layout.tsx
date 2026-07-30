@@ -116,137 +116,42 @@ function ThemedStack() {
   );
 }
 
-import * as ImagePicker from "expo-image-picker";
-import { LinearGradient } from "expo-linear-gradient";
-import { Animated, StyleSheet } from "react-native";
-
-function AppOpeningSplashScreen({ statusText, progress }: { statusText: string; progress: number }) {
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
-  const opacityAnim = React.useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacityAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 40, useNativeDriver: true }),
-    ]).start();
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.12, duration: 1200, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, []);
-
-  return (
-    <View style={{ flex: 1, backgroundColor: "#0F172A", justifyContent: "center", alignItems: "center" }}>
-      <LinearGradient colors={["#0F172A", "#1E293B", "#0B0F19"]} style={StyleSheet.absoluteFill} />
-      
-      <Animated.View
-        style={{
-          position: "absolute",
-          width: 220,
-          height: 220,
-          borderRadius: 110,
-          backgroundColor: "rgba(253, 186, 33, 0.12)",
-          transform: [{ scale: pulseAnim }],
-        }}
-      />
-
-      <Animated.View style={{ alignItems: "center", opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
-        <LinearGradient
-          colors={["#FDBA21", "#F59E0B"]}
-          style={{
-            width: 84,
-            height: 84,
-            borderRadius: 24,
-            justifyContent: "center",
-            alignItems: "center",
-            shadowColor: "#FDBA21",
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.4,
-            shadowRadius: 16,
-            elevation: 10,
-            marginBottom: 20,
-          }}
-        >
-          <Text style={{ fontSize: 44, fontWeight: "900", color: "#111827" }}>L</Text>
-        </LinearGradient>
-
-        <Text style={{ fontSize: 28, fontWeight: "900", color: "#FFFFFF", letterSpacing: 1.5 }}>
-          LEDGR <Text style={{ color: "#FDBA21" }}>AI</Text>
-        </Text>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: "#94A3B8", letterSpacing: 1, marginTop: 4, textTransform: "uppercase" }}>
-          Smart Business Accounting
-        </Text>
-
-        <View style={{ width: 220, height: 5, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 3, marginTop: 36, overflow: "hidden" }}>
-          <View style={{ width: `${Math.min(100, Math.max(0, progress * 100))}%`, height: "100%", backgroundColor: "#FDBA21", borderRadius: 3 }} />
-        </View>
-
-        <Text style={{ fontSize: 12, fontWeight: "500", color: "#64748B", marginTop: 12 }}>
-          {statusText}
-        </Text>
-      </Animated.View>
-    </View>
-  );
-}
-
 // ---------- Root Layout ----------
 export default function RootLayout() {
   const [loaded, error] = useIconFontsSafe();
-  const [statusText, setStatusText] = useState("Initializing storage...");
-  const [progress, setProgress] = useState(0.2);
-  const [readyToRender, setReadyToRender] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
+    // Activate the storage backend (SQLite if available, else AsyncStorage).
+    // initStorage self-catches and falls back to AsyncStorage, so this can
+    // never reject — the app always becomes ready.
     let cancelled = false;
-
-    async function initApp() {
-      try {
-        setStatusText("Initializing secure storage...");
-        setProgress(0.3);
-        await initStorage().catch(() => {});
-        if (cancelled) return;
-
-        setStatusText("Checking permissions...");
-        setProgress(0.6);
-        if (Platform.OS !== "web") {
-          await Promise.all([
-            ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {}),
-            ImagePicker.requestCameraPermissionsAsync().catch(() => {}),
-          ]);
-        }
-        if (cancelled) return;
-
-        setStatusText("Opening Ledgr Workspace...");
-        setProgress(1.0);
-        await SplashScreen.hideAsync().catch(() => {});
-
-        setTimeout(() => {
-          if (!cancelled) setReadyToRender(true);
-        }, 300);
-      } catch {
-        if (!cancelled) setReadyToRender(true);
-      }
-    }
-
-    initApp();
-
-    const fallback = setTimeout(() => {
-      if (!cancelled) setReadyToRender(true);
-      SplashScreen.hideAsync().catch(() => {});
-    }, 4500);
-
-    return () => { cancelled = true; clearTimeout(fallback); };
+    initStorage()
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStorageReady(true); });
+    // Hard safety: never let storage init block the app for more than 4s.
+    const t = setTimeout(() => { if (!cancelled) setStorageReady(true); }, 4000);
+    return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
-  if (!readyToRender) {
-    return <AppOpeningSplashScreen statusText={statusText} progress={progress} />;
-  }
+  useEffect(() => {
+    // Safety: hide splash after 5 seconds no matter what
+    const timer = setTimeout(() => {
+      setTimedOut(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if ((loaded || error) && storageReady) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [loaded, error, storageReady]);
+
+  if (!loaded && !error && !timedOut) return null;
+  if (!storageReady && !timedOut) return null;
 
   return (
     <ErrorBoundary>
