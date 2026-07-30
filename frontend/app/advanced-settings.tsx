@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -44,6 +44,7 @@ import { ScreenHeader, Card } from "@/src/components/UI";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
+import { isValidDateString } from "@/src/utils/dateValidation";
 
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
@@ -102,7 +103,10 @@ export default function AdvancedSettingsScreen() {
           basis: v2.basis,
           selectedPersonas: v2.selectedPersonas,
           activePersona: v2.activePersona,
-          retailPartnership: v2.retailPartnership,
+          retailPartnership: {
+            ...v2.retailPartnership,
+            enabled: style === "retail_partnership",
+          },
         });
       }
     } catch { /* v2 update fallback */ }
@@ -191,6 +195,18 @@ export default function AdvancedSettingsScreen() {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
+    if (periodStart.trim()) {
+      if (!isValidDateString(periodStart.trim())) {
+        Alert.alert("Error", "Invalid date format. Please use YYYY-MM-DD.");
+        return;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (periodStart.trim() > today) {
+        Alert.alert("Error", "Period start date cannot be in the future, as it filters out current transactions.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const meta = PROVIDERS.find((p) => p.id === provider)!;
@@ -203,11 +219,11 @@ export default function AdvancedSettingsScreen() {
       try {
         await api.updateV2BookConfig({
           basis: accountingBasis,
-          style: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
+          style: accountingStyle,
           selectedPersonas,
           activePersona,
           retailPartnership: {
-            enabled: selectedPersonas.includes("retail"),
+            enabled: accountingStyle === "retail_partnership",
             commissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
@@ -222,7 +238,7 @@ export default function AdvancedSettingsScreen() {
         accountingBasis,
         selectedPersonas,
         activePersona,
-        accountingStyle: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
+        accountingStyle,
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
@@ -325,6 +341,7 @@ export default function AdvancedSettingsScreen() {
       await api.resetAll();
       setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
       setConfirmReset(false);
+      await load();
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Reset failed" });
     } finally { setResetting(false); }
@@ -456,7 +473,7 @@ export default function AdvancedSettingsScreen() {
                   </View>
                 </View>
               </AccordionRow>
-              <AccordionRow title="Accounting & Workflow" subtitle="Basis, Style, Members" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Accounting & Workflow" subtitle={accountingStyle === 'retail_partnership' ? "Basis, Style, Investors" : "Basis, Style"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.label}>Accounting Basis</Text>
                   <View style={styles.modeRow}>
@@ -471,7 +488,7 @@ export default function AdvancedSettingsScreen() {
                   <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
                     <Pressable onPress={() => updateAccountingStyle('retail_partnership')} style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}>
                       <Ionicons name={accountingStyle === 'retail_partnership' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'retail_partnership' ? theme.color.brandPrimary : theme.color.muted} />
-                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Partner Equity & Profit-Split</Text></View>
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Equity Split</Text></View>
                     </Pressable>
                     <Pressable onPress={() => updateAccountingStyle('standard')} style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}>
                       <Ionicons name={accountingStyle === 'standard' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'standard' ? theme.color.brandPrimary : theme.color.muted} />
@@ -479,33 +496,24 @@ export default function AdvancedSettingsScreen() {
                     </Pressable>
                   </View>
 
-                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Members</Text>
-                  {members.map((m, i) => (
-                    <View key={`member-${i}`} style={styles.memberCard}>
-                      <View style={styles.entryRow}>
-                        <TextInput value={m.name} onChangeText={(v) => updateMember(i, "name", v)} placeholder="Name" placeholderTextColor={theme.color.muted} autoCapitalize="words" style={[styles.input, styles.entryInput]} />
-                        <Pressable onPress={() => removeMember(i)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
-                      </View>
-                      <View style={[styles.entryRow, { marginTop: 8 }]}>
-                        <View style={{ flex: 1 }}><Text style={styles.subLabel}>Investment (opt)</Text><TextInput value={m.amount} onChangeText={(v) => updateMember(i, "amount", v)} keyboardType="decimal-pad" placeholder="e.g. 5000" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
-                        <View style={{ flex: 1 }}><Text style={styles.subLabel}>Profit Share %</Text><TextInput value={m.profitSharePct} onChangeText={(v) => updateMember(i, "profitSharePct", v)} keyboardType="decimal-pad" placeholder="e.g. 50" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
-                      </View>
-                    </View>
-                  ))}
-                  <Pressable onPress={addMember} style={styles.addBtn}><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add Member</Text></Pressable>
-                </View>
-              </AccordionRow>
-              <AccordionRow title="Opening Balances" subtitle="Cash & Inventory Start" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View>
-                  <Text style={styles.label}>Opening Cash</Text>
-                  <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" style={styles.input} placeholder="e.g. 2000" placeholderTextColor={theme.color.muted} />
-                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Opening Inventory Value</Text>
-                  <TextInput value={openingInventory} onChangeText={setOpeningInventory} keyboardType="decimal-pad" style={styles.input} placeholder="e.g. 15000" placeholderTextColor={theme.color.muted} />
-                  <Text style={[styles.label, { marginTop: theme.spacing.sm }]}>Current Period Start (YYYY-MM-DD)</Text>
-                  <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                    <TextInput value={periodStart} onChangeText={setPeriodStart} autoCapitalize="none" style={[styles.input, { flex: 1 }]} placeholder="Blank = all data" placeholderTextColor={theme.color.muted} />
-                    <Pressable onPress={() => setPeriodStart("")} style={styles.addBtn}><Ionicons name="refresh-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Show All</Text></Pressable>
-                  </View>
+                  {accountingStyle === 'retail_partnership' ? (
+                    <>
+                      <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Investors</Text>
+                      {members.map((m, i) => (
+                        <View key={`member-${i}`} style={styles.memberCard}>
+                          <View style={styles.entryRow}>
+                            <TextInput value={m.name} onChangeText={(v) => updateMember(i, "name", v)} placeholder="Name" placeholderTextColor={theme.color.muted} autoCapitalize="words" style={[styles.input, styles.entryInput]} />
+                            <Pressable onPress={() => removeMember(i)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                          </View>
+                          <View style={[styles.entryRow, { marginTop: 8 }]}>
+                            <View style={{ flex: 1 }}><Text style={styles.subLabel}>Investment (opt)</Text><TextInput value={m.amount} onChangeText={(v) => updateMember(i, "amount", v)} keyboardType="decimal-pad" placeholder="e.g. 5000" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                            <View style={{ flex: 1 }}><Text style={styles.subLabel}>Profit Share %</Text><TextInput value={m.profitSharePct} onChangeText={(v) => updateMember(i, "profitSharePct", v)} keyboardType="decimal-pad" placeholder="e.g. 50" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                          </View>
+                        </View>
+                      ))}
+                      <Pressable onPress={addMember} style={styles.addBtn}><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add Member</Text></Pressable>
+                    </>
+                  ) : null}
                 </View>
               </AccordionRow>
             </View>

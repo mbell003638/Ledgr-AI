@@ -83,6 +83,7 @@ export default function ReceiptsScreen() {
   };
 
   const openEdit = (r: Receipt) => {
+    setSelected(null);
     router.push({ pathname: "/receipt-form", params: { id: r.id } } as any);
   };
   const documentFor = (r: Receipt) => ({ title: `Receipt ${r.receiptNumber}`, subtitle: MODE_LABEL[r.mode], rows: [

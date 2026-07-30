@@ -37,7 +37,7 @@ describe('persistent V2 document service', () => {
     try {
       const drawing = await service.drawing({ bookId: book.id, periodId: 'period', date: '2026-07-20', amount: 25, method: 'cash' });
       expect(await runner.all('SELECT account_id,debit,credit FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [drawing.journal.id])).toEqual([
-        { account_id: `${book.id}:account:3100`, debit: 25, credit: 0 }, { account_id: `${book.id}:account:1000`, debit: 0, credit: 25 },
+        { account_id: `${book.id}:account:3100`, debit: 25, credit: 0 }, { account_id: `${book.id}:account:1010`, debit: 0, credit: 25 },
       ]);
       const expense = await service.createExpense({ bookId: book.id, periodId: 'period', date: '2026-07-20', amount: 40, payable: true });
       expect(await runner.all('SELECT account_id,debit,credit FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [expense.journal.id])).toEqual([

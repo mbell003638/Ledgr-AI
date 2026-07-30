@@ -69,7 +69,11 @@ export default function SalesScreen() {
         <TransactionDetail
           title={fmt(selected.amount, currSym)}
           subtitle={`Sale • ${shortDate(selected.date)}`}
-          onEdit={() => router.push({ pathname: "/sale-form", params: { id: selected.id } })}
+          onEdit={() => {
+            const id = selected.id;
+            setSelected(null);
+            router.push({ pathname: "/sale-form", params: { id } });
+          }}
           onReversalDelete={() => reverseSale(selected)}
           onShare={() => shareTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
           onPrint={() => printTransaction({ ...documentFor(selected), amount: selected.amount }, theme.color)}
@@ -143,19 +147,28 @@ export default function SalesScreen() {
               hint="Tap the + button to log a daily sale."
             />
           }
-          renderItem={({ item }) => (
-            <Pressable
-              testID={`sale-${item.id}`}
-              onPress={() => setSelected(item)}
-              style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
-                {item.notes ? <Text style={styles.cardSub}>{item.notes}</Text> : null}
-              </View>
-              <Text style={styles.amount}>{fmt(item.amount, currSym)}</Text>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const isCredit = item.type === "invoice" || item.clientName || item.partyId || (item.notes && item.notes.toLowerCase().includes("credit sale"));
+            const partyLabel = item.clientName || item.partyId || "";
+            const defaultSub = isCredit
+              ? `Credit Sale${partyLabel ? ` (${partyLabel})` : ""}`
+              : "Cash Sale";
+            const displaySub = item.notes && item.notes.trim() ? item.notes.trim() : defaultSub;
+
+            return (
+              <Pressable
+                testID={`sale-${item.id}`}
+                onPress={() => setSelected(item)}
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
+                  <Text style={styles.cardSub}>{displaySub}</Text>
+                </View>
+                <Text style={styles.amount}>{fmt(item.amount, currSym)}</Text>
+              </Pressable>
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -164,7 +177,7 @@ export default function SalesScreen() {
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
   addBtn: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: theme.color.brandPrimary,

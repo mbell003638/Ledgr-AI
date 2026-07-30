@@ -28,3 +28,19 @@ export const showAlert = (title: string, message: string) => {
     Alert.alert(title, message);
   }
 };
+
+export const promptPartyType = (onCustomer: () => void, onSupplier: () => void) => {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      const isCustomer = window.confirm("Create a Customer or Supplier?\n\nPress OK for Customer, Cancel for Supplier.");
+      if (isCustomer) onCustomer();
+      else onSupplier();
+    }
+  } else {
+    Alert.alert("Create Party", "Create Customer or Supplier?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Customer", onPress: onCustomer },
+      { text: "Supplier", onPress: onSupplier },
+    ]);
+  }
+};

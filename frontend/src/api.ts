@@ -128,7 +128,27 @@ async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
   if (!runner) return (db[name] as (value: any) => Promise<any>)(payload);
   const writes = createAppWriteRouter(new V2AppService(runner), db);
-  return writes[name](payload);
+
+  const injected = { ...payload };
+  if (name === 'createBill' || name === 'createPayment') {
+    if (injected.supplierId && !injected.supplierName) {
+      try {
+        const s = await db.getSupplier(injected.supplierId);
+        injected.supplierName = s.name;
+      } catch {}
+    }
+  } else if (name === 'createInvoice' || name === 'createReceipt') {
+    if ((injected.partyId || injected.debtorId) && !injected.clientName) {
+      try {
+        const debtors = await db.listDebtors();
+        const partyId = injected.partyId || injected.debtorId;
+        const d = debtors.find((x: any) => x.id === partyId);
+        if (d) injected.clientName = d.name;
+      } catch {}
+    }
+  }
+
+  return writes[name](injected);
 }
 
 async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill', ...args: any[]) {
@@ -277,8 +297,24 @@ export const api = {
   },
 
   listParties: async () => {
-    const runner=activeSqlRunner(); if(!runner)return [];
-    const service=new V2AppService(runner); return (await service.activeContext()) ? service.listParties() : [];
+    const runner = activeSqlRunner();
+    if (!runner) return [];
+    const service = new V2AppService(runner);
+    if (await service.activeContext()) {
+      const v2Parties = await service.listParties();
+      const [suppliers, debtors] = await Promise.all([db.listSuppliers(), db.listDebtors()]);
+      const v1Map = new Map();
+      for (const s of suppliers) v1Map.set(s.id, s.name);
+      for (const d of debtors) v1Map.set(d.id, d.name);
+      return v2Parties.map(p => {
+        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id;
+        if (isId && v1Map.get(p.id)) {
+          p.name = v1Map.get(p.id);
+        }
+        return p;
+      });
+    }
+    return [];
   },
   listSalesAndInvoices: async () => {
     const runner=activeSqlRunner(); if(!runner)return db.listSales();
@@ -324,7 +360,22 @@ export const api = {
   deleteInventory: (id: string) => db.deleteInventory(id),
 
   // Cash Book (manual cash in/out ledger)
-  listCashEntries: () => db.listCashEntries(),
+  listCashEntries: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext();
+      if (ctx) {
+        const v2Entries = await service.documents.listCashEntries(ctx.bookId);
+        const legacyEntries = await db.listCashEntries();
+        const all = [...v2Entries, ...legacyEntries].sort((a: any, b: any) =>
+          (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
+        );
+        return all;
+      }
+    }
+    return db.listCashEntries();
+  },
   createCashEntry: (e: any) => db.createCashEntry(e),
   updateCashEntry: (id: string, e: any) => db.updateCashEntry(id, e),
   deleteCashEntry: (id: string) => db.deleteCashEntry(id),
@@ -468,10 +519,23 @@ export const api = {
       await Promise.all([
         'v2_sources', 'v2_journal_entries', 'v2_journal_lines', 'v2_parties',
         'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
-        'v2_periods', 'v2_accounts', 'v2_personas', 'v2_books'
+        'v2_periods', 'v2_accounts', 'v2_personas', 'v2_books',
+        'v2_journal_postings', 'v2_period_closes', 'v2_reconciliations', 'v2_receipt_allocations'
       ].map(t => runner.run(`DELETE FROM ${t}`).catch(() => {})));
       await runner.run(`DELETE FROM meta WHERE key LIKE 'v2_%'`).catch(() => {});
+      await runner.run(`DELETE FROM settings`).catch(() => {});
     }
+    
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const keysToRemove = keys.filter(k => k.startsWith('ledgr_') || k.startsWith('ledgr:'));
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove);
+      }
+    } catch (e) {
+      // ignore
+    }
+
     return db.resetAll();
   },
 

@@ -126,13 +126,21 @@ export default function CustomerDetailScreen() {
   const params = useLocalSearchParams<{ id?: string; customerId?: string }>();
   const id = params.id || params.customerId;
 
-  const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [selected, setSelected] = useState<Debtor | null>(null);
   const [statement, setStatement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState("$");
   const [currCode, setCurrCode] = useState("USD");
   const [biz, setBiz] = useState<any>({});
+  const [deleting, setDeleting] = useState(false);
+
+  // Note Modal state (Debit / Credit Note)
+  const [noteKind, setNoteKind] = useState<"debit" | "credit" | null>(null);
+  const [noteAmount, setNoteAmount] = useState("");
+  const [noteReason, setNoteReason] = useState("");
+  const [noteNotes, setNoteNotes] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteError, setNoteError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -147,7 +155,6 @@ export default function CustomerDetailScreen() {
         const paid = Number(d.totalPaid) || 0;
         return { ...d, totalInvoiced: invoiced, totalPaid: paid, balance: d.balance ?? invoiced - paid };
       });
-      setDebtors(enriched);
 
       if (id) {
         const found = enriched.find((d) => d.id === id);
@@ -167,81 +174,235 @@ export default function CustomerDetailScreen() {
     if (!selected || !statement) return;
     try {
       const html = buildStatementHtml(selected, statement, biz, currency, theme.color, currCode);
-      const { uri } = await Print.printToFileAsync({ html });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
-    } catch (e: any) { console.warn(e); }
+      if (Platform.OS === 'web') {
+        await printHtml(html, `Statement — ${selected.name}`);
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: `Statement — ${selected.name}` });
+      }
+    } catch (e: any) { showAlert("Statement Error", e?.message || "Could not generate statement PDF."); }
   };
 
   const printStatement = async () => {
     if (!selected || !statement) return;
     try {
       await printHtml(buildStatementHtml(selected, statement, biz, currency, theme.color, currCode));
-    } catch (e: any) { console.warn(e); }
+    } catch (e: any) { showAlert("Print Error", e?.message || "Could not print statement."); }
+  };
+
+  const deleteCustomer = () => {
+    if (!selected) return;
+    confirmAction(
+      "Delete Customer?",
+      `Remove ${selected.name}? This will remove this customer from your active records.`,
+      async () => {
+        setDeleting(true);
+        try {
+          await api.deleteDebtor(selected.id);
+          router.back();
+        } catch (e: any) {
+          showAlert("Cannot Delete Customer", e?.message || "Could not delete customer.");
+        } finally { setDeleting(false); }
+      }
+    );
+  };
+
+  const saveNote = async () => {
+    if (!selected || !noteKind) return;
+    const amt = parseFloat(noteAmount);
+    if (!amt || amt <= 0) { setNoteError("Enter a valid amount."); return; }
+    setNoteBusy(true); setNoteError("");
+    try {
+      const payload = { customerId: selected.id, customerName: selected.name, date: new Date().toISOString().slice(0, 10), amount: amt, reason: noteReason, notes: noteNotes.trim() };
+      if (noteKind === "credit") await api.createCreditNote(payload);
+      else await api.createDebitNote(payload);
+      setNoteKind(null); setNoteAmount(""); setNoteNotes(""); setNoteReason("");
+      await load();
+    } catch (e: any) {
+      setNoteError(e?.message || "Failed to save note.");
+    } finally { setNoteBusy(false); }
   };
 
   if (loading) {
     return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /></SafeAreaView>;
   }
 
+  if (!selected) {
+    return <SafeAreaView style={styles.container}><Text style={{ padding: 20, color: theme.color.onSurface }}>Customer not found</Text></SafeAreaView>;
+  }
+
+  const initials = selected.name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
+  const owing = Number(selected.balance || 0) > 0;
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable testID="btn-back" onPress={() => router.back()} hitSlop={10}>
           <Ionicons name="chevron-back" size={26} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>{selected ? selected.name : "Customer Statement"}</Text>
-        <View style={{ width: 26 }} />
+        <Text style={styles.headerTitle}>Customer Detail</Text>
+        <Pressable testID="btn-edit-customer" onPress={() => router.push({ pathname: "/party-form", params: { id: selected.id, type: "customer" } })} hitSlop={10}>
+          <Ionicons name="pencil-outline" size={22} color={theme.color.brandPrimary} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
-        {selected ? (
-          <Card>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <View>
-                <Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>{selected.name}</Text>
-                {selected.phone ? <Text style={{ fontSize: 13, color: theme.color.muted }}>{selected.phone}</Text> : null}
+        <Card>
+          <View style={styles.top}>
+            <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name} testID="customer-detail-name">{selected.name}</Text>
+              <Text style={styles.sub}>{selected.phone || "No phone"}{selected.email ? ` • ${selected.email}` : ""}</Text>
+            </View>
+          </View>
+
+          <View style={styles.balBox}>
+            <Text style={styles.balLabel}>OUTSTANDING BALANCE</Text>
+            <Text style={[styles.balValue, { color: owing ? theme.color.error : theme.color.success }]} testID="customer-balance">
+              {currency}{Number(selected.balance || 0).toFixed(2)}
+            </Text>
+            <View style={styles.balGrid}>
+              <View style={{ alignItems: "center" }}>
+                <Text style={styles.smLabel}>Total Invoiced</Text>
+                <Text style={styles.smVal}>{currency}{Number(selected.totalInvoiced || 0).toFixed(2)}</Text>
               </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ fontSize: 11, color: theme.color.muted, textTransform: "uppercase" }}>Balance Due</Text>
-                <Text style={{ fontSize: 18, fontWeight: "800", color: theme.color.brandPrimary }}>{currency}{Number(selected.balance || 0).toFixed(2)}</Text>
+              <View style={{ alignItems: "center" }}>
+                <Text style={styles.smLabel}>Paid</Text>
+                <Text style={styles.smVal}>{currency}{Number(selected.totalPaid || 0).toFixed(2)}</Text>
               </View>
             </View>
+          </View>
 
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12, marginBottom: 16 }}>
-              <Pressable onPress={shareStatementPdf} style={[styles.actBtn, { backgroundColor: theme.color.brandPrimary, flex: 1 }]}>
-                <Ionicons name="document-text-outline" size={14} color="#fff" />
-                <Text style={styles.actBtnText}>PDF Statement</Text>
-              </Pressable>
-              <Pressable onPress={printStatement} style={[styles.actBtn, { backgroundColor: theme.color.brandSecondary, flex: 1 }]}>
-                <Ionicons name="print-outline" size={14} color="#fff" />
-                <Text style={styles.actBtnText}>Print</Text>
-              </Pressable>
-            </View>
+          {/* Action Buttons 6-Button Grid (Matching Vendor Layout) */}
+          <View style={styles.btnRow}>
+            <Pressable
+              testID="btn-receive-payment"
+              onPress={() => router.push({ pathname: "/receipt-form", params: { customerId: selected.id } })}
+              style={[styles.btnPill, { backgroundColor: theme.color.brandPrimary }]}
+            >
+              <Ionicons name="cash-outline" size={16} color="#fff" />
+              <Text style={styles.btnPillTextText}>Receive Payment</Text>
+            </Pressable>
 
-            <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface, marginBottom: 8 }}>Transaction History</Text>
-            {(statement?.ledger || []).length === 0 ? (
-              <Text style={{ fontSize: 13, color: theme.color.muted }}>No transactions recorded yet.</Text>
-            ) : (
-              (statement?.ledger || []).map((r: any, idx: number) => (
-                <View key={idx} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.color.border }}>
-                  <View>
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{r.ref || r.kind}</Text>
-                    <Text style={{ fontSize: 11, color: theme.color.muted }}>{shortDate(r.date)}</Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    {r.debit ? <Text style={{ fontSize: 13, fontWeight: "700", color: theme.color.error }}>+{currency}{r.debit.toFixed(2)}</Text> : null}
-                    {r.credit ? <Text style={{ fontSize: 13, fontWeight: "700", color: theme.color.success }}>-{currency}{r.credit.toFixed(2)}</Text> : null}
-                    <Text style={{ fontSize: 11, color: theme.color.muted }}>Bal: {currency}{r.balance.toFixed(2)}</Text>
-                  </View>
-                </View>
-              ))
-            )}
-          </Card>
+            <Pressable
+              testID="btn-statement-pdf"
+              onPress={shareStatementPdf}
+              style={[styles.btnPill, { backgroundColor: theme.color.brandPrimary }]}
+            >
+              <Ionicons name="document-text-outline" size={16} color="#fff" />
+              <Text style={styles.btnPillTextText}>Statement PDF</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.btnRow}>
+            <Pressable
+              testID="btn-reconcile"
+              onPress={() => router.push({ pathname: "/reconcile", params: { customerId: selected.id } })}
+              style={styles.btnOutline}
+            >
+              <Ionicons name="repeat-outline" size={15} color={theme.color.onSurface} />
+              <Text style={styles.btnOutlineText}>Compare Statement</Text>
+            </Pressable>
+
+            <Pressable
+              testID="btn-debit-credit"
+              onPress={() => setNoteKind("credit")}
+              style={styles.btnOutline}
+            >
+              <Ionicons name="pricetag-outline" size={15} color={theme.color.onSurface} />
+              <Text style={styles.btnOutlineText}>Debit / Credit Note</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.btnRow}>
+            <Pressable
+              testID="btn-print"
+              onPress={printStatement}
+              style={[styles.btnOutline, { flex: 1 }]}
+            >
+              <Ionicons name="print-outline" size={15} color={theme.color.onSurface} />
+              <Text style={styles.btnOutlineText}>Print</Text>
+            </Pressable>
+
+            <Pressable
+              testID="btn-delete-customer"
+              disabled={deleting}
+              onPress={deleteCustomer}
+              style={[styles.btnOutlineDanger, { flex: 1 }]}
+            >
+              <Ionicons name="trash-outline" size={15} color={theme.color.error} />
+              <Text style={styles.btnOutlineDangerText}>Delete Customer</Text>
+            </Pressable>
+          </View>
+        </Card>
+
+        {/* Statement Timeline (Matching Vendor Layout) */}
+        <Text style={styles.sectionTitle}>Statement Timeline</Text>
+        {(statement?.ledger || []).length === 0 ? (
+          <Card><Text style={{ fontSize: 13, color: theme.color.muted }}>No transactions recorded yet.</Text></Card>
         ) : (
-          <Text style={{ color: theme.color.muted, textAlign: "center", marginTop: 40 }}>Select a customer from the Parties tab to view statement.</Text>
+          (statement?.ledger || []).map((r: any, idx: number) => {
+            const isInv = r.kind === "invoice";
+            const amt = r.debit || r.credit || 0;
+            return (
+              <Card key={idx} style={{ marginBottom: 8, padding: 12 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: isInv ? theme.color.error : theme.color.success }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
+                        {r.ref || (isInv ? "Invoice" : "Payment")} • {shortDate(r.date)}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 2 }}>{r.notes || "—"}</Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: isInv ? theme.color.error : theme.color.success }}>
+                    {isInv ? `+${currency}${amt.toFixed(2)}` : `-${currency}${amt.toFixed(2)}`}
+                  </Text>
+                </View>
+              </Card>
+            );
+          })
         )}
       </ScrollView>
+
+      {/* Note Modal */}
+      {noteKind ? (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 }}>
+            <View style={{ backgroundColor: theme.color.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: theme.color.border }}>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: 12 }}>
+                Issue Debit / Credit Note for {selected.name}
+              </Text>
+              <TextInput
+                placeholder="Amount"
+                placeholderTextColor={theme.color.muted}
+                keyboardType="numeric"
+                value={noteAmount}
+                onChangeText={setNoteAmount}
+                style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 10 }}
+              />
+              <TextInput
+                placeholder="Reason / Notes"
+                placeholderTextColor={theme.color.muted}
+                value={noteNotes}
+                onChangeText={setNoteNotes}
+                style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 16 }}
+              />
+              {noteError ? <Text style={{ color: theme.color.error, fontSize: 12, marginBottom: 10 }}>{noteError}</Text> : null}
+              <View style={{ flexDirection: "row", gap: 10, justifyContent: "flex-end" }}>
+                <Pressable onPress={() => setNoteKind(null)} style={{ padding: 10 }}>
+                  <Text style={{ color: theme.color.muted, fontWeight: "600" }}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={saveNote} disabled={noteBusy} style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }}>
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>Save Note</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -249,9 +410,26 @@ export default function CustomerDetailScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
-    actBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: theme.radius.md },
-    actBtnText: { color: "#fff", fontWeight: "600", fontSize: 12 },
+    top: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
+    avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.color.brandTertiary || "#e0f2fe", justifyContent: "center", alignItems: "center" },
+    avatarText: { fontSize: 16, fontWeight: "800", color: theme.color.brandPrimary },
+    name: { fontSize: 18, fontWeight: "800", color: theme.color.onSurface },
+    sub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
+    balBox: { backgroundColor: theme.color.surfaceSecondary, borderRadius: 12, padding: 16, marginBottom: 16, alignItems: "center" },
+    balLabel: { fontSize: 11, fontWeight: "700", color: theme.color.muted, letterSpacing: 0.5 },
+    balValue: { fontSize: 26, fontWeight: "800", marginVertical: 6 },
+    balGrid: { flexDirection: "row", justifyContent: "space-around", width: "100%", marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.color.border },
+    smLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "600" },
+    smVal: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface, marginTop: 2 },
+    btnRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+    btnPill: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 24 },
+    btnPillTextText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+    btnOutline: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    btnOutlineText: { color: theme.color.onSurface, fontWeight: "700", fontSize: 12 },
+    btnOutlineDanger: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: theme.color.error + "50", backgroundColor: theme.color.error + "10" },
+    btnOutlineDangerText: { color: theme.color.error, fontWeight: "700", fontSize: 12 },
+    sectionTitle: { fontSize: 16, fontWeight: "800", color: theme.color.onSurface, marginTop: 16, marginBottom: 12 },
   });
 }

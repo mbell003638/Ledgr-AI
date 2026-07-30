@@ -101,7 +101,15 @@ export class V2AppService {
   async updateExpense(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'expense', 'Edit expense'); return this.createExpense(input); }
   async updatePayment(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'supplier_payment', 'Edit supplier payment'); return this.createPayment(input); }
   async updateInvoice(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'invoice', 'Edit invoice'); return this.createInvoice(input); }
-  async updateSale(id: string, input: AnyRecord) { if (!(await this.ownsSource(id, 'cash_sale'))) throw new Error('Cash sale not found'); await this.documents.reverseSource(id, 'cash_sale', 'Edit cash sale'); return this.createSale(input); }
+  async updateSale(id: string, input: AnyRecord) {
+    const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
+    if (row?.type === 'invoice' || row?.type === 'credit_sale' || input.clientName || input.partyId) {
+      return this.updateInvoice(id, input);
+    }
+    const sourceType = row?.type && ['cash_sale', 'credit_sale', 'invoice'].includes(row.type) ? row.type : 'cash_sale';
+    await this.documents.reverseSource(id, sourceType, 'Edit sale');
+    return this.createSale(input);
+  }
   async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); await this.documents.reverseSource(id, row.type, 'Edit bill'); return this.createBill(input); }
   async updateReceipt(id: string, input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');

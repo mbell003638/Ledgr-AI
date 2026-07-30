@@ -4,7 +4,7 @@ import { V2SqlRepository } from './repository';
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = (n: number) => Math.round(Number(n) * 100) / 100;
 const paymentCode = (method: V2PaymentMethod) => {
-  if (method === 'cash') return V2_ACCOUNT_CODES.CASH;
+  if (method === 'cash') return '1010';
   if (method === 'bank') return V2_ACCOUNT_CODES.BANK;
   if (method === 'card') return V2_ACCOUNT_CODES.CARD;
   if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE;

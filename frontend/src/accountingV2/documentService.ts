@@ -79,6 +79,23 @@ export class V2DocumentService {
     return this.simplePosting(input, input.payable ? 'payable_expense' : 'expense', input.payable ? 'Payable expense' : 'Expense', V2_ACCOUNT_CODES.EXPENSES, credit);
   }
 
+  async listCashEntries(bookId: string) {
+    const rows = await this.repo.db.all<any>(`
+      SELECT e.id, e.date, l.debit, l.credit, e.memo as notes, l.party_id, s.type
+      FROM v2_journal_entries e
+      JOIN v2_journal_lines l ON e.id = l.journal_id
+      LEFT JOIN v2_sources s ON e.source_id = s.id
+      WHERE e.book_id = ? AND l.account_id = ?
+      ORDER BY e.date DESC, e.id DESC
+    `, [bookId, `${bookId}:account:1010`]);
+    
+    return rows.map(row => {
+      const isOut = row.credit > 0;
+      const amount = isOut ? row.credit : row.debit;
+      return { id: row.id, amount, direction: isOut ? 'out' : 'in', date: row.date, notes: row.notes, created_at: row.date };
+    });
+  }
+
   private async postReceiptInCurrentTransaction(input: ReceiptInput) {
     const amount = positive(input.amount); const party = await this.repo.db.first<any>('SELECT roles FROM v2_parties WHERE id=? AND book_id=?', [input.partyId, input.bookId]);
     if (!party || !JSON.parse(party.roles).includes('customer')) throw new Error('Customer party not found');
@@ -93,7 +110,7 @@ export class V2DocumentService {
   }
 
   private async simplePosting(input: any, type: string, memo: string, debitCode: string, creditAccount: string, partyId?: string) { const amount = positive(input.amount); return this.repoTx(async () => { const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, metadata: { total: amount, partyId, method: input.method } }; const journal = await this.insertSourceJournal(source, input, [{ accountId: `${input.bookId}:account:${debitCode}`, partyId, debit: amount, credit: 0 }, { accountId: creditAccount.includes(':account:') ? creditAccount : `${input.bookId}:account:${creditAccount}`, partyId, debit: 0, credit: amount }]); return { source, journal }; }); }
-  private paymentCode(method: V2PaymentMethod) { if (method === 'cash') return V2_ACCOUNT_CODES.CASH; if (method === 'bank') return V2_ACCOUNT_CODES.BANK; if (method === 'card') return V2_ACCOUNT_CODES.CARD; if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE; throw new Error('Unsupported payment method'); }
+  private paymentCode(method: V2PaymentMethod) { if (method === 'cash') return '1010'; if (method === 'bank') return V2_ACCOUNT_CODES.BANK; if (method === 'card') return V2_ACCOUNT_CODES.CARD; if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE; throw new Error('Unsupported payment method'); }
   private async repoTx<T>(fn: () => Promise<T>) { await this.repo.db.exec('BEGIN'); try { const x = await fn(); await this.repo.db.exec('COMMIT'); return x; } catch (e) { try { await this.repo.db.exec('ROLLBACK'); } catch {} throw e; } }
   private async receiptRow(id: string) { return this.sourceRow(id, 'receipt'); }
   private async sourceRow(id: string, type: string) { const row = await this.repo.db.first<any>('SELECT * FROM v2_sources WHERE id=? AND type=?', [id, type]); if (!row) throw new Error(`${type.replace(/_/g, ' ')} not found`); return row; }

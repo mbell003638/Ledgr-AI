@@ -126,7 +126,18 @@ export const fmt = (n: number | null | undefined, currencySymbol = '$') => {
 
 export const shortDate = (iso?: string) => {
   if (!iso) return '';
+  const str = String(iso).slice(0, 10);
+  const parts = str.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const dt = new Date(y, m, d);
+      return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  }
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso.slice(0, 10);
+  if (isNaN(d.getTime())) return str;
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 };

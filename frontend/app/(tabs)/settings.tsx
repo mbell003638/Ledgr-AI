@@ -102,7 +102,10 @@ export default function SettingsScreen() {
           basis: v2.basis,
           selectedPersonas: v2.selectedPersonas,
           activePersona: v2.activePersona,
-          retailPartnership: v2.retailPartnership,
+          retailPartnership: {
+            ...v2.retailPartnership,
+            enabled: style === "retail_partnership",
+          },
         });
       }
     } catch { /* v2 update fallback */ }
@@ -203,11 +206,11 @@ export default function SettingsScreen() {
       try {
         await api.updateV2BookConfig({
           basis: accountingBasis,
-          style: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
+          style: accountingStyle,
           selectedPersonas,
           activePersona,
           retailPartnership: {
-            enabled: selectedPersonas.includes("retail"),
+            enabled: accountingStyle === "retail_partnership",
             commissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
@@ -222,7 +225,7 @@ export default function SettingsScreen() {
         accountingBasis,
         selectedPersonas,
         activePersona,
-        accountingStyle: selectedPersonas.includes("retail") ? "retail_partnership" : "standard",
+        accountingStyle,
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
@@ -325,6 +328,7 @@ export default function SettingsScreen() {
       await api.resetAll();
       setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
       setConfirmReset(false);
+      await load();
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Reset failed" });
     } finally { setResetting(false); }

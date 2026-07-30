@@ -20,17 +20,43 @@ export default function InventoryForm() {
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<any>(null);
   const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [history, setHistory] = useState<any[]>([]);
+
+  const [openingStock, setOpeningStock] = useState(0);
+  const [editingOpening, setEditingOpening] = useState(false);
+  const [openingInput, setOpeningInput] = useState("");
+
+  const loadData = async () => {
+    try {
+      const [r, list, settings] = await Promise.all([
+        api.expectedInventory(),
+        api.listInventory(),
+        api.getSettings(),
+      ]);
+      setExpected(r.expected);
+      setInfo(r);
+      setHistory(Array.isArray(list) ? list : []);
+      const op = Number(settings.openingInventory || 0);
+      setOpeningStock(op);
+      setOpeningInput(String(op));
+    } catch (e) { console.warn(e); }
+    finally { setLoading(false); }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await api.expectedInventory();
-        setExpected(r.expected);
-        setInfo(r);
-      } catch (e) { console.warn(e); }
-      finally { setLoading(false); }
-    })();
+    loadData();
   }, []);
+
+  const saveOpeningStock = async () => {
+    const val = parseFloat(openingInput);
+    if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
+    try {
+      await api.updateSettings({ openingInventory: val });
+      setOpeningStock(val);
+      setEditingOpening(false);
+      loadData();
+    } catch (e: any) { setError(e.message); }
+  };
 
   const save = async () => {
     const act = parseFloat(actual);
@@ -38,9 +64,18 @@ export default function InventoryForm() {
     setSaving(true); setError("");
     try {
       await api.createInventory({ date, expectedStock: expected, actualStock: act, notes });
-      router.back();
+      setActual("");
+      setNotes("");
+      loadData();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
+  };
+
+  const deleteAudit = async (id: string) => {
+    try {
+      await api.deleteInventory(id);
+      loadData();
+    } catch (e: any) { setError(e.message); }
   };
 
   const [closing, setClosing] = useState(false);
@@ -64,23 +99,52 @@ export default function InventoryForm() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Pressable testID="btn-close-inv" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
-        <Text style={styles.headerTitle}>Inventory Audit</Text>
+        <Text style={styles.headerTitle}>Stock & Physical Count</Text>
         <View style={{ width: 26 }} />
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
           {loading ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
             <>
+              {/* Opening Stock Card */}
+              <Card style={{ marginBottom: theme.spacing.md }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Opening Stock Balance</Text>
+                    <Text style={styles.hint}>Initial inventory value at start of period</Text>
+                  </View>
+                  {!editingOpening ? (
+                    <Pressable onPress={() => setEditingOpening(true)} style={styles.openingValBox}>
+                      <Text style={styles.openingValText}>{fmt(openingStock)}</Text>
+                      <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
+                    </Pressable>
+                  ) : (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <TextInput
+                        value={openingInput}
+                        onChangeText={setOpeningInput}
+                        keyboardType="decimal-pad"
+                        style={styles.openingInput}
+                        autoFocus
+                      />
+                      <Pressable onPress={saveOpeningStock} style={styles.openingSaveBtn}>
+                        <Ionicons name="checkmark" size={16} color="#fff" />
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              </Card>
+
               <Card>
-                <Text style={styles.label}>Expected Stock (USD value)</Text>
+                <Text style={styles.label}>Live System Stock (USD value)</Text>
                 <Text style={styles.expected} testID="inv-expected">{fmt(expected)}</Text>
                 {info?.lastAudit ? (
                   <Text style={styles.hint}>Last audit: {info.lastAudit.date} at {fmt(info.lastAudit.actualStock)}. Purchases since: {fmt(info.purchasesSince)}. Sales since: {fmt(info.salesSince)}.</Text>
                 ) : (
-                  <Text style={styles.hint}>First audit. Purchases: {fmt(info?.purchasesSince)} • Sales: {fmt(info?.salesSince)}</Text>
+                  <Text style={styles.hint}>Opening Stock: {fmt(info?.openingInventory)} • Purchases: +{fmt(info?.purchasesSince)} • Sales COGS: -{fmt(info?.salesSince)}</Text>
                 )}
 
-                <Text style={[styles.label, { marginTop: 16 }]}>Actual Stock (physical count value, USD)</Text>
+                <Text style={[styles.label, { marginTop: 16 }]}>Physical Stock Count (Shelf Count, USD)</Text>
                 <TextInput
                   testID="input-actual-stock"
                   value={actual}
@@ -110,6 +174,31 @@ export default function InventoryForm() {
               <Pressable testID="btn-save-inv" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
                 {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Audit</Text>}
               </Pressable>
+
+              {history.length > 0 && (
+                <Card style={{ marginTop: theme.spacing.lg }}>
+                  <Text style={[styles.label, { marginBottom: theme.spacing.md }]}>Audit History Logs</Text>
+                  {history.map((item) => {
+                    const varVal = Number(item.variance || 0);
+                    return (
+                      <View key={item.id} style={styles.historyRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.historyTitle}>{item.date} · Counted: {fmt(item.actualStock)}</Text>
+                          <Text style={styles.historySub}>Expected: {fmt(item.expectedStock)}{item.notes ? ` · ${item.notes}` : ''}</Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 4 }}>
+                          <Text style={[styles.historyVariance, { color: varVal === 0 ? theme.color.muted : varVal > 0 ? theme.color.success : theme.color.error }]}>
+                            {varVal > 0 ? "+" : ""}{fmt(varVal)}
+                          </Text>
+                          <Pressable onPress={() => deleteAudit(item.id)}>
+                            <Ionicons name="trash-outline" size={16} color={theme.color.muted} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </Card>
+              )}
 
               <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
                 <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
@@ -170,4 +259,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
   closeCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
   closeConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.brandPrimary },
   closeConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
+  openingValText: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary },
+  openingInput: { width: 90, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, color: theme.color.onSurface },
+  openingSaveBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center" },
+  historyRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border },
+  historyTitle: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+  historySub: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+  historyVariance: { fontSize: 13, fontWeight: "700" },
 }); }

@@ -338,7 +338,7 @@ export async function expectedInventory() {
   const purchasesSince = bills.reduce((sum: number, b: any) => sum + toUsd(b.amount), 0);
   const salesSince = sales.reduce((sum: number, x: any) => sum + toUsd(x.amount), 0);
   const expected = +(base + purchasesSince - salesSince).toFixed(2);
-  return { expected, lastAudit: last, purchasesSince: +purchasesSince.toFixed(2), salesSince: +salesSince.toFixed(2) };
+  return { expected, lastAudit: last, purchasesSince: +purchasesSince.toFixed(2), salesSince: +salesSince.toFixed(2), openingInventory: +(s.openingInventory || 0).toFixed(2) };
 }
 export async function createInventory(body: any) {
   return serialize(async () => {
@@ -463,11 +463,16 @@ export async function dashboard() {
 
   const grossProfit = +(totalSales - totalPurchases).toFixed(2);
   const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
-  const netProfit = +(grossProfit - commission - drawings).toFixed(2);
+  const netProfit = +(grossProfit - commission).toFixed(2);
 
   // Accrued commission is a liability until paid; commission payments settle it.
   const liabilities = +(totalPurchases - supplierPayments + commission - commissionPayments).toFixed(2);
-  const inventoryValue = invHistory[0] ? Number(invHistory[0].actualStock) : openingInv;
+  const lastAudit = invHistory[0];
+  const auditBase = lastAudit ? Number(lastAudit.actualStock) : openingInv;
+  const auditSinceDate = lastAudit ? (lastAudit.date || '') : periodStart;
+  const purchasesSinceAudit = bills.filter((b: any) => (b.date || '') > auditSinceDate).reduce((sum: number, b: any) => sum + toUsd(b.amount), 0);
+  const salesSinceAudit = sales.filter((x: any) => (x.date || '') > auditSinceDate).reduce((sum: number, x: any) => sum + toUsd(x.amount), 0);
+  const inventoryValue = +(auditBase + (lastAudit ? purchasesSinceAudit : totalPurchases) - salesSinceAudit).toFixed(2);
   // Cash on hand uses ONLY literal cash sales (not accrual revenue); receipts
   // against invoices already contribute via the manualCash (cashEntries) term.
   const cash = +(computeCash(openingCash, cashSalesTotal, supplierPayments, drawings, commissionPayments) + manualCash).toFixed(2);
@@ -1253,8 +1258,6 @@ export async function resetAll() {
   const s = await readSettings();
   const keep = {
     googleApiKey: s.googleApiKey || '',
-    openingCapital: s.openingCapital ?? 0,
-    partnerNames: s.partnerNames,
     currency: s.currency ?? 'USD',
     taxLabel: s.taxLabel ?? 'None',
     taxLabelCustom: s.taxLabelCustom ?? '',
@@ -1268,13 +1271,10 @@ export async function resetAll() {
     upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
     logo: s.logo ?? '',
-    managerCommissionPct: s.managerCommissionPct ?? 0,
-    extraAssets: s.extraAssets ?? [],
-    extraLiabilities: s.extraLiabilities ?? [],
-    investors: Array.isArray(s.investors) ? s.investors : [],
     lockEnabled: s.lockEnabled ?? false,
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
+    accountingStyle: s.accountingStyle ?? 'standard',
     accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
   };
   await Promise.all([
@@ -1294,7 +1294,19 @@ export async function resetAll() {
     backendClearColl('deliveryNotes'),
     backendClearColl('cashEntries'),
   ]);
-  await writeSettings({ ...keep, currentPeriodStart: '1970-01-01', openingInventory: 0, openingCash: 0 });
+  const today = new Date().toISOString().slice(0, 10);
+  await writeSettings({
+    ...keep,
+    currentPeriodStart: today,
+    openingInventory: 0,
+    openingCash: 0,
+    openingCapital: 0,
+    managerCommissionPct: 0,
+    extraAssets: [],
+    extraLiabilities: [],
+    investors: [],
+    partnerNames: [],
+  });
   return { ok: true };
 }
 
@@ -1339,10 +1351,29 @@ export async function updateInvoice(id: string, inv: any) {
   return serialize(async () => {
     const items = await readColl<any>('invoices');
     const idx = items.findIndex((x: any) => x.id === id);
-    if (idx === -1) throw new Error('Invoice not found');
-    items[idx] = { ...items[idx], ...inv };
-    await writeColl('invoices', items);
-    return items[idx];
+    if (idx !== -1) {
+      items[idx] = { ...items[idx], ...inv };
+      await writeColl('invoices', items);
+    }
+    const debtors = await readColl<any>('debtors');
+    let debtorChanged = false;
+    for (const d of debtors) {
+      if (Array.isArray(d.ledger)) {
+        for (const entry of d.ledger) {
+          if (entry.invoiceId === id || entry.ref === id || entry.id === id) {
+            if (inv.date) entry.date = inv.date;
+            if (inv.total != null || inv.amount != null) {
+              const newAmt = Number(inv.total ?? inv.amount);
+              entry.amount = newAmt;
+              entry.debit = newAmt;
+            }
+            debtorChanged = true;
+          }
+        }
+      }
+    }
+    if (debtorChanged) await writeColl('debtors', debtors);
+    return idx !== -1 ? items[idx] : inv;
   });
 }
 export async function deleteInvoice(id: string) {

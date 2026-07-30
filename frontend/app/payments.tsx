@@ -92,7 +92,10 @@ export default function PaymentsScreen() {
       <TransactionDetail
         title={getRecipientName(selected)}
         subtitle={`${TYPE_LABEL[selected.type]} • ${currSym}${Number(selected.amount).toFixed(2)}`}
-        onEdit={() => router.push({ pathname: "/payment-form", params: { id: selected.id } } as any)}
+        onEdit={() => {
+          setSelected(null);
+          router.push({ pathname: "/payment-form", params: { id: selected.id } } as any);
+        }}
         onReversalDelete={() => remove(selected)}
         onShare={() => shareTransaction(documentFor(selected))}
         onPrint={() => printTransaction(documentFor(selected))}

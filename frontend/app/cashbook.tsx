@@ -35,10 +35,17 @@ export default function CashBookScreen() {
   const [saving, setSaving] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
+  const [openingCash, setOpeningCash] = useState(0);
+  const [editingOpening, setEditingOpening] = useState(false);
+  const [openingInput, setOpeningInput] = useState("");
+
   const load = useCallback(async () => {
     try {
       const [list, settings] = await Promise.all([api.listCashEntries(), api.getSettings()]);
       setEntries(list);
+      const op = Number(settings.openingCash || 0);
+      setOpeningCash(op);
+      setOpeningInput(String(op));
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -49,8 +56,20 @@ export default function CashBookScreen() {
   const totals = useMemo(() => {
     const ins = entries.filter((e) => e.direction === "in").reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const outs = entries.filter((e) => e.direction === "out").reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    return { ins, outs, net: ins - outs };
-  }, [entries]);
+    const net = openingCash + ins - outs;
+    return { ins, outs, net, opening: openingCash };
+  }, [entries, openingCash]);
+
+  const saveOpeningCash = async () => {
+    const val = parseFloat(openingInput);
+    if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
+    try {
+      await api.updateSettings({ openingCash: val });
+      setOpeningCash(val);
+      setEditingOpening(false);
+      load();
+    } catch (e: any) { Alert.alert("Error", e.message || "Failed to save"); }
+  };
 
   const resetForm = () => {
     setEditId(null); setDirection("in"); setAmount(""); setDate(todayStr()); setNotes(""); setFormOpen(false);
@@ -78,7 +97,6 @@ export default function CashBookScreen() {
   };
 
   const remove = async (e: CashEntry) => {
-    // Deleting a cash record is sensitive — gate behind device lock.
     const ok = await requireAuth("Authenticate to delete this cash entry");
     if (!ok) return;
     confirmAction(
@@ -103,6 +121,38 @@ export default function CashBookScreen() {
           </Pressable>
         }
       />
+
+      {/* Opening Cash Card */}
+      <View style={styles.openingCard}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={styles.openingBadge}>
+            <Ionicons name="wallet-outline" size={18} color={theme.color.brandPrimary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.openingTitle}>Opening Cash Balance</Text>
+            <Text style={styles.openingSub}>Initial cash on hand at start of period</Text>
+          </View>
+        </View>
+        {!editingOpening ? (
+          <Pressable onPress={() => setEditingOpening(true)} style={styles.openingValBox}>
+            <Text style={styles.openingValText}>{fmt(openingCash, currSym)}</Text>
+            <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
+          </Pressable>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <TextInput
+              value={openingInput}
+              onChangeText={setOpeningInput}
+              keyboardType="decimal-pad"
+              style={styles.openingInput}
+              autoFocus
+            />
+            <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}>
+              <Ionicons name="checkmark" size={16} color="#fff" />
+            </Pressable>
+          </View>
+        )}
+      </View>
 
       {formOpen && (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -141,8 +191,8 @@ export default function CashBookScreen() {
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="cash-outline" size={40} color={theme.color.muted} />}
-              title="No cash movements yet"
-              hint="Tap + to record a manual cash in or cash out."
+              title="No manual cash entries yet"
+              hint="Opening cash is active. Tap + to record cash in or out."
             />
           }
           renderItem={({ item }) => (
@@ -169,6 +219,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg },
   addBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center", marginTop: theme.spacing.md },
+  openingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, padding: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border },
+  openingBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.color.brandPrimary + "18", justifyContent: "center", alignItems: "center" },
+  openingTitle: { fontSize: 13, fontWeight: "700", color: theme.color.onSurface },
+  openingSub: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+  openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
+  openingValText: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary },
+  openingInput: { width: 90, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, color: theme.color.onSurface },
+  openingSaveBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center" },
   form: { marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md, padding: theme.spacing.lg, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, gap: 8 },
   segRow: { flexDirection: "row", gap: 8 },
   segBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border },

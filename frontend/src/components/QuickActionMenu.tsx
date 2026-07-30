@@ -6,13 +6,23 @@ import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/context/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { OpeningBalancesModal } from '@/src/components/OpeningBalancesModal';
+import { api } from '@/src/api';
 
 const { width, height } = Dimensions.get('window');
 
 export default function QuickActionMenu() {
   const [isOpen, setIsOpen] = useState(false);
+  const [openingModalVisible, setOpeningModalVisible] = useState(false);
+  const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
+
+  React.useEffect(() => {
+    api.getSettings().then((s: any) => {
+      setIsPartnerMode(s.accountingStyle === "retail_partnership");
+    }).catch(() => {});
+  }, [isOpen]);
 
   const progress = useSharedValue(0);
 
@@ -136,13 +146,31 @@ export default function QuickActionMenu() {
               </Pressable>
               
               {/* Action Row: Party */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/suppliers'); }}>
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { 
+                closeMenu(); 
+                router.push('/suppliers?action=create');
+              }}>
                 <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
                   <Text style={{ fontSize: 20 }}>👥</Text>
                 </View>
                 <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>Add Party</Text>
-                  <Text style={styles.actionSubtitle}>New customer or vendor</Text>
+                  <Text style={styles.actionTitle}>{isPartnerMode ? "Add Party / Investor" : "Add Party"}</Text>
+                  <Text style={styles.actionSubtitle}>{isPartnerMode ? "Customer, supplier or investor" : "Customer or supplier"}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+              </Pressable>
+
+              {/* Action Row: Opening Balances */}
+              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { 
+                closeMenu(); 
+                setOpeningModalVisible(true);
+              }}>
+                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
+                  <Text style={{ fontSize: 20 }}>⚙️</Text>
+                </View>
+                <View style={styles.actionDetails}>
+                  <Text style={styles.actionTitle}>Opening Balances</Text>
+                  <Text style={styles.actionSubtitle}>Setup starting cash, stock & equity</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
               </Pressable>
@@ -151,6 +179,11 @@ export default function QuickActionMenu() {
           </View>
         </Animated.View>
       </Modal>
+
+      <OpeningBalancesModal
+        visible={openingModalVisible}
+        onClose={() => setOpeningModalVisible(false)}
+      />
     </>
   );
 }

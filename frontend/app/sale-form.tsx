@@ -31,11 +31,18 @@ export default function SaleForm() {
 
   useEffect(() => {
     (async () => {
-      const isV2 = await api.v2BookVersion(api.activeBookId()).catch(() => null);
-      if (isV2 === 2) {
-        const list = await api.listSales();
+      if (editId) {
+        const list = await api.listSalesAndInvoices();
         const it = list.find((x: any) => x.id === editId);
-        if (it) { setAmount(String(it.amount)); setNotes(it.notes || ""); setDate(it.date); }
+        if (it) {
+          setAmount(String(it.amount));
+          setNotes(it.notes || "");
+          if (it.date) setDate(it.date);
+          if (it.type === "invoice" || it.clientName || it.partyId || (it.notes && it.notes.toLowerCase().includes("credit sale"))) {
+            setSaleType("party");
+            setCustomerName(it.clientName || it.partyId || "");
+          }
+        }
       }
       try {
         const d = await api.listDebtors();
@@ -91,7 +98,19 @@ export default function SaleForm() {
       const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
 
       if (editId) {
-        await api.updateSale(editId, { date, amount: amt, currency, notes: finalNotes });
+        if (saleType === "party" || customerName.trim()) {
+          await api.updateInvoice(editId, {
+            clientName: customerName.trim(),
+            clientPhone: customerPhone.trim(),
+            date,
+            lines: formattedLines,
+            total: amt,
+            taxRate: 0,
+            notes: finalNotes || undefined,
+          });
+        } else {
+          await api.updateSale(editId, { date, amount: amt, currency, notes: finalNotes });
+        }
       } else if (saleType === "cash") {
         await api.createSale({ date, amount: amt, currency, notes: finalNotes });
       } else {

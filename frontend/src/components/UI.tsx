@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ViewStyle, StyleProp, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 
 import { api } from "@/src/api";
@@ -10,11 +11,15 @@ export function ScreenHeader({ title, subtitle, testID, rightAction }: { title: 
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [bizName, setBizName] = React.useState<string | null>(null);
   
-  React.useEffect(() => {
-    api.getSettings().then(s => {
-      setBizName(s.businessName || "Main Account");
-    }).catch(() => {});
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      let active = true;
+      api.getSettings().then(s => {
+        if (active) setBizName(s.businessName || "Main Account");
+      }).catch(() => {});
+      return () => { active = false; };
+    }, [])
+  );
 
   return (
     <View style={styles.header} testID={testID}>

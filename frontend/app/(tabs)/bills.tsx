@@ -58,7 +58,11 @@ export default function BillsScreen() {
         <TransactionDetail
           title={suppliers[selected.supplierId] || "Vendor Bill"}
           subtitle={`${fmt(selected.amount, selected.currency)} • ${shortDate(selected.date)}`}
-          onEdit={() => router.push({ pathname: "/bill-form", params: { id: selected.id } })}
+          onEdit={() => {
+            const id = selected.id;
+            setSelected(null);
+            router.push({ pathname: "/bill-form", params: { id } });
+          }}
           onReversalDelete={() => reverseBill(selected)}
           onShare={() => shareTransaction(documentFor(selected))}
           onPrint={() => printTransaction(documentFor(selected))}
@@ -132,19 +136,30 @@ export default function BillsScreen() {
               hint="Tap the + button to log a vendor purchase."
             />
           }
-          renderItem={({ item }) => (
-            <Pressable
-              testID={`bill-${item.id}`}
-              onPress={() => setSelected(item)}
-              style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{suppliers[item.supplierId] || "Unknown supplier"}</Text>
-                <Text style={styles.cardSub}>{shortDate(item.date)} • {item.paymentType === "cash" ? "Cash" : "Credit"}{item.invoiceNo ? ` • #${item.invoiceNo}` : ""}</Text>
-              </View>
-              <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const supName = suppliers[item.supplierId] || "";
+            const isCash = item.paymentType === "cash";
+            const typeLabel = isCash
+              ? "Cash Purchase"
+              : `Credit Purchase${supName ? ` (${supName})` : ""}`;
+            const displaySub = item.notes && item.notes.trim()
+              ? `${typeLabel} — ${item.notes.trim()}`
+              : `${shortDate(item.date)} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
+
+            return (
+              <Pressable
+                testID={`bill-${item.id}`}
+                onPress={() => setSelected(item)}
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{supName || "Vendor Purchase"}</Text>
+                  <Text style={styles.cardSub}>{displaySub}</Text>
+                </View>
+                <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
+              </Pressable>
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -153,7 +168,7 @@ export default function BillsScreen() {
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: theme.spacing.lg },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
   addBtn: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: theme.color.brandPrimary,
