@@ -17,13 +17,17 @@ declare module "lucide-react-native" {
   export const Cube: LucideIcon;
   export const Box: LucideIcon;
   export const FileText: LucideIcon;
+  export const Grid3X3: LucideIcon;
+  export const Grid3x3: LucideIcon;
   export const Mic: LucideIcon;
   export const Package: LucideIcon;
   export const PieChart: LucideIcon;
   export const Receipt: LucideIcon;
+  export const Settings: LucideIcon;
   export const Sparkles: LucideIcon;
   export const Tag: LucideIcon;
   export const TrendingUp: LucideIcon;
+  export const Users: LucideIcon;
   export const Wallet: LucideIcon;
 }
 

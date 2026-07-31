@@ -3,7 +3,7 @@ import { Tabs } from "expo-router";
 import { Platform, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Grid3x3 as Grid3X3, Users, PieChart, Settings } from "lucide-react-native";
 import { useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
@@ -158,7 +158,7 @@ export default function TabsLayout() {
           name="index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "grid" : "grid-outline"} size={22} color={color} />,
+            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Grid3X3} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-home",
           }}
         />
@@ -166,7 +166,7 @@ export default function TabsLayout() {
           name="suppliers"
           options={{
             title: "Parties",
-            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />,
+            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Users} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-suppliers",
           }}
         />
@@ -182,7 +182,7 @@ export default function TabsLayout() {
           name="reports"
           options={{
             title: "Reports",
-            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "pie-chart" : "pie-chart-outline"} size={22} color={color} />,
+            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={PieChart} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-reports",
           }}
         />
@@ -190,7 +190,7 @@ export default function TabsLayout() {
           name="settings"
           options={{
             title: "Settings",
-            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />,
+            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Settings} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-settings",
           }}
         />
