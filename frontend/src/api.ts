@@ -616,13 +616,10 @@ export const api = {
     return closeBooks({ actualStock, openingInventory: Number(settings.openingInventory || 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
   },
   resetAll: async () => {
-    // 1. First reset legacy collections while preserving settings (businessName, hasOnboarded, etc.)
-    const res = await db.resetAll();
-
-    // 2. Safely wipe V2 SQLite tables in child -> parent foreign key order
+    // 1. Wipe all V2 SQLite tables in child -> parent foreign key order
     const runner = activeSqlRunner();
     if (runner) {
-      const tablesInOrder = [
+      const allV2TablesInOrder = [
         'v2_journal_lines',
         'v2_journal_entries',
         'v2_invoice_allocations',
@@ -631,14 +628,32 @@ export const api = {
         'v2_inventory_counts',
         'v2_reconciliations',
         'v2_period_closes',
-        'v2_journal_postings'
+        'v2_journal_postings',
+        'v2_parties',
+        'v2_members',
+        'v2_periods',
+        'v2_accounts',
+        'v2_personas',
+        'v2_books'
       ];
-      for (const t of tablesInOrder) {
+      for (const t of allV2TablesInOrder) {
         await runner.run(`DELETE FROM ${t}`).catch(() => {});
       }
+      await runner.run(`DELETE FROM meta WHERE key LIKE 'v2_%'`).catch(() => {});
+      await runner.run(`DELETE FROM settings`).catch(() => {});
     }
 
-    return res;
+    // 2. Wipe all AsyncStorage keys
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const keysToRemove = keys.filter(k => k.startsWith('ledgr_') || k.startsWith('ledgr:'));
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove);
+      }
+    } catch { /* defensive */ }
+
+    // 3. Clear legacy memory/collections
+    await db.resetAll().catch(() => {});
   },
 
   // AI
