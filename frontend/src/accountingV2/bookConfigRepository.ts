@@ -33,13 +33,13 @@ export class V2BookConfigRepository {
     if (!selected.length) selected.push('custom');
     return this.tx(async () => {
       await this.db.run(
-        'INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?)',
+        'INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, style=excluded.style, basis=excluded.basis',
         [book.id, book.name, book.style, book.basis, book.createdAt],
       );
       for (let index = 0; index < selected.length; index += 1) {
         const type = selected[index];
         await this.db.run(
-          'INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?)',
+          'INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
           [personaId(book.id, type), book.id, type, 1, index === 0 ? 1 : 0, '{}'],
         );
       }

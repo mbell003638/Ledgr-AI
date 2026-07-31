@@ -71,22 +71,22 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
 
   await db.exec('BEGIN');
   try {
-    await db.run('INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?)',
+    await db.run('INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, style=excluded.style, basis=excluded.basis',
       [book.id, book.name, book.style, book.basis, book.createdAt]);
     for (const account of defaultAccounts(id)) {
-      await db.run('INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,?)',
+      await db.run('INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
         [account.id, id, account.code, account.name, account.type, account.paymentMethod || null, 1]);
     }
-    await db.run('INSERT INTO v2_periods(id,book_id,start_date,end_date,status,close_snapshot) VALUES(?,?,?,?,?,?)',
+    await db.run('INSERT INTO v2_periods(id,book_id,start_date,end_date,status,close_snapshot) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
       [periodId, id, options.period.startDate, options.period.endDate, 'open', null]);
     for (let index = 0; index < personas.length; index += 1) {
       const type = personas[index];
-      await db.run('INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?)',
+      await db.run('INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
         [`${id}:persona:${type}`, id, type, 1, index === 0 ? 1 : 0, '{}']);
     }
     for (let index = 0; index < members.length; index += 1) {
       const member = members[index];
-      await db.run('INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
+      await db.run('INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, opening_contribution=excluded.opening_contribution, current_capital=excluded.current_capital, profit_share_pct=excluded.profit_share_pct',
         [`${id}:member:${index + 1}`, id, member.name.trim(), member.openingContribution, member.openingContribution, member.profitSharePct]);
     }
     await db.run('INSERT INTO meta(key,value) VALUES(?,?)', [versionKey(id), String(V2_BOOK_VERSION)]);

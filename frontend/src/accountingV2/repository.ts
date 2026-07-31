@@ -18,8 +18,8 @@ export class V2SqlRepository {
 
   async createBook(book: V2Book, accounts: V2Account[]) {
     return this.tx(async () => {
-      await this.db.run('INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?)', [book.id, book.name, book.style, book.basis, book.createdAt]);
-      for (const a of accounts) await this.db.run('INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,?)', [a.id, a.bookId, a.code, a.name, a.type, a.paymentMethod || null, a.active ? 1 : 0]);
+      await this.db.run('INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, style=excluded.style, basis=excluded.basis', [book.id, book.name, book.style, book.basis, book.createdAt]);
+      for (const a of accounts) await this.db.run('INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING', [a.id, a.bookId, a.code, a.name, a.type, a.paymentMethod || null, a.active ? 1 : 0]);
       return book;
     });
   }
