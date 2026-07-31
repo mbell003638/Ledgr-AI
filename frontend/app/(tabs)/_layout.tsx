@@ -3,10 +3,7 @@ import { Tabs } from "expo-router";
 import { Platform, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Grid3X3 from "lucide-react-native/icons/grid-3x3";
-import Users from "lucide-react-native/icons/users";
-import PieChart from "lucide-react-native/icons/chart-pie";
-import Settings from "lucide-react-native/icons/settings";
+import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
@@ -161,7 +158,7 @@ export default function TabsLayout() {
           name="index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Grid3X3} color={color} focused={focused} />,
+            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "grid" : "grid-outline"} size={22} color={color} />,
             tabBarButtonTestID: "tab-home",
           }}
         />
@@ -169,7 +166,7 @@ export default function TabsLayout() {
           name="suppliers"
           options={{
             title: "Parties",
-            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Users} color={color} focused={focused} />,
+            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />,
             tabBarButtonTestID: "tab-suppliers",
           }}
         />
@@ -185,7 +182,7 @@ export default function TabsLayout() {
           name="reports"
           options={{
             title: "Reports",
-            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={PieChart} color={color} focused={focused} />,
+            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "pie-chart" : "pie-chart-outline"} size={22} color={color} />,
             tabBarButtonTestID: "tab-reports",
           }}
         />
@@ -193,7 +190,7 @@ export default function TabsLayout() {
           name="settings"
           options={{
             title: "Settings",
-            tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Settings} color={color} focused={focused} />,
+            tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />,
             tabBarButtonTestID: "tab-settings",
           }}
         />

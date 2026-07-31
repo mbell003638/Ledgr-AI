@@ -16,22 +16,24 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { Easing, interpolate, interpolateColor, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
 import { GlowPressable } from "@/src/components/GlowPressable";
-import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
-import ArrowLeftRight from "lucide-react-native/icons/arrow-left-right";
-import Banknote from "lucide-react-native/icons/banknote";
-import BarChart2 from "lucide-react-native/icons/chart-no-axes-column";
-import BookOpen from "lucide-react-native/icons/book-open";
-import Calendar from "lucide-react-native/icons/calendar";
-import Cube from "lucide-react-native/icons/box";
-import FileText from "lucide-react-native/icons/file-text";
-import Mic from "lucide-react-native/icons/mic";
-import Package from "lucide-react-native/icons/package";
-import PieChart from "lucide-react-native/icons/chart-pie";
-import Receipt from "lucide-react-native/icons/receipt";
-import Sparkles from "lucide-react-native/icons/sparkles";
-import Tag from "lucide-react-native/icons/tag";
-import TrendingUp from "lucide-react-native/icons/trending-up";
-import Wallet from "lucide-react-native/icons/wallet";
+import {
+  ArrowDownLeft,
+  ArrowLeftRight,
+  Banknote,
+  BarChart2,
+  BookOpen,
+  Calendar,
+  Box as Cube,
+  FileText,
+  Mic,
+  Package,
+  PieChart,
+  Receipt,
+  Sparkles,
+  Tag,
+  TrendingUp,
+  Wallet
+} from "lucide-react-native";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;

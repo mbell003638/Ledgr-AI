@@ -15,6 +15,7 @@ declare module "lucide-react-native" {
   export const BookOpen: LucideIcon;
   export const Calendar: LucideIcon;
   export const Cube: LucideIcon;
+  export const Box: LucideIcon;
   export const FileText: LucideIcon;
   export const Mic: LucideIcon;
   export const Package: LucideIcon;
