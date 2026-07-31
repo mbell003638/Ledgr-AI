@@ -13,6 +13,7 @@ import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 type PayType = "supplier_payment" | "drawing" | "commission_payment";
 type Payment = {
@@ -165,7 +166,7 @@ export default function PaymentsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
         ListEmptyComponent={<Empty icon={<Ionicons name="cash-outline" size={40} color={theme.color.muted} />} title="No payments yet" hint="Tap + to record money paid." />}
         renderItem={({ item }) => (
-          <Pressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} style={styles.row}>
+          <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.type === "supplier_payment" ? "#F0D8D8" : "#E8E8E8" }]}>
               <Ionicons name={item.type === "supplier_payment" ? "arrow-up-circle-outline" : "wallet-outline"} size={18} color={theme.color.brandPrimary} />
             </View>
@@ -174,7 +175,7 @@ export default function PaymentsScreen() {
               <Text style={styles.rowSub}>{shortDate(item.date)}{item.method ? ` · ${item.method}` : ""}</Text>
             </View>
             <Text style={styles.rowAmount}>{currSym}{Number(item.amount).toFixed(2)}</Text>
-          </Pressable>
+          </GlowPressable>
         )}
       />
     </SafeAreaView>

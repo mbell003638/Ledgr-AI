@@ -12,6 +12,7 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 
 type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string };
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 const todayStr = () => {
   const d = new Date();
@@ -196,7 +197,7 @@ export default function CashBookScreen() {
             />
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => openEdit(item)} onLongPress={() => remove(item)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}>
+            <GlowPressable onPress={() => openEdit(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.card}>
               <View style={[styles.dirBadge, { backgroundColor: item.direction === "in" ? theme.color.success : theme.color.warning }]}>
                 <Ionicons name={item.direction === "in" ? "arrow-down" : "arrow-up"} size={16} color="#fff" />
               </View>
@@ -207,7 +208,7 @@ export default function CashBookScreen() {
               <Text style={[styles.amount, { color: item.direction === "in" ? theme.color.success : theme.color.warning }]}>
                 {item.direction === "in" ? "+" : "−"} {fmt(item.amount, currSym)}
               </Text>
-            </Pressable>
+            </GlowPressable>
           )}
         />
       )}

@@ -7,6 +7,7 @@ import { Linking } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -14,6 +15,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { printHtml } from "@/src/utils/print";
 import { showAlert } from "@/src/utils/alerts";
+import { GlowPressable } from "@/src/components/GlowPressable";
 import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
@@ -66,6 +68,17 @@ export default function ReportsScreen() {
   const [from, setFrom] = useState(() => rangePreset("This Month").from);
   const [to, setTo] = useState(() => rangePreset("This Month").to);
   const [reportSource, setReportSource] = useState<"v2" | "legacy">("legacy");
+  const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
+  const [dateEdges, setDateEdges] = useState({ left: false, right: true });
+
+  const updateRailEdges = useCallback((event: any, setter: React.Dispatch<React.SetStateAction<{ left: boolean; right: boolean }>>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const x = Math.max(0, contentOffset.x);
+    setter({
+      left: x > 3,
+      right: x + layoutMeasurement.width < contentSize.width - 3,
+    });
+  }, []);
 
   const fmt = useCallback((n: number | null | undefined) => fmtBase(n, currSym), [currSym]);
 
@@ -681,34 +694,64 @@ export default function ReportsScreen() {
         title="Reports" 
         subtitle="Financial statements"
         rightAction={
-          <Pressable
+          <GlowPressable
             testID="btn-custom-report"
             onPress={() => router.push("/custom-report")}
-            style={({ pressed }) => [styles.customReportBtn, pressed && { opacity: 0.85 }]}
+            topHighlight={false}
+            haptic
+            hoverLift={-1}
+            style={styles.customReportBtn}
           >
             <Ionicons name="options-outline" size={16} color={theme.color.brandPrimary} />
             <Text style={styles.customReportBtnText}>Custom Report</Text>
-          </Pressable>
+          </GlowPressable>
         }
       />
 
       {/* Report category segments */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}>
-        {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital" && s !== "Drawings")).map((s) => (
-          <Pressable key={s} testID={`report-seg-${s}`} onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
-            <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.filterRail}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}
+          scrollEventThrottle={16} onScroll={(event) => updateRailEdges(event, setSegmentEdges)}>
+          {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital" && s !== "Drawings")).map((s) => (
+            <GlowPressable
+              key={s}
+              testID={`report-seg-${s}`}
+              topHighlight={false}
+              haptic
+              hoverLift={0}
+              glowRadius={8}
+              hoverScale={1.03}
+              restingBorderColor={seg === s ? theme.color.brandPrimary : theme.color.border}
+              onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
+              <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
+            </GlowPressable>
+          ))}
+        </ScrollView>
+        {segmentEdges.left && <LinearGradient pointerEvents="none" colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft]} />}
+        {segmentEdges.right && <LinearGradient pointerEvents="none" colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight]} />}
+      </View>
 
       {/* Date range preset filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll} contentContainerStyle={styles.dateRow}>
-        {RANGE_PRESETS.map((p) => (
-          <Pressable key={p} onPress={() => applyPreset(p)} style={[styles.dateChip, rangePresetSel === p && styles.dateChipActive]}>
-            <Text style={[styles.dateChipText, rangePresetSel === p && styles.dateChipTextActive]}>{p}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.filterRail}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll} contentContainerStyle={styles.dateRow}
+          scrollEventThrottle={16} onScroll={(event) => updateRailEdges(event, setDateEdges)}>
+          {RANGE_PRESETS.map((p) => (
+            <GlowPressable
+              key={p}
+              topHighlight={false}
+              haptic
+              hoverLift={0}
+              hoverScale={1.03}
+              glowRadius={8}
+              restingBorderColor={rangePresetSel === p ? theme.color.brandPrimary : theme.color.border}
+              onPress={() => applyPreset(p)} style={[styles.dateChip, rangePresetSel === p && styles.dateChipActive]}>
+              <Text style={[styles.dateChipText, rangePresetSel === p && styles.dateChipTextActive]}>{p}</Text>
+            </GlowPressable>
+          ))}
+        </ScrollView>
+        {dateEdges.left && <LinearGradient pointerEvents="none" colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft]} />}
+        {dateEdges.right && <LinearGradient pointerEvents="none" colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight]} />}
+      </View>
 
       {/* Custom date inputs (shown when Custom selected) */}
       {rangePresetSel === "Custom" && (
@@ -721,22 +764,22 @@ export default function ReportsScreen() {
             <Text style={styles.customLabel}>To</Text>
             <TextInput value={to} onChangeText={setTo} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
-          <Pressable onPress={() => load()} style={styles.applyBtn}>
+          <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={() => load()} style={styles.applyBtn}>
             <Text style={styles.applyText}>Apply</Text>
-          </Pressable>
+          </GlowPressable>
         </View>
       )}
 
       {/* Share bar */}
       <View style={styles.shareBar}>
-        <Pressable onPress={shareWhatsApp} style={[styles.shareBtn, { backgroundColor: "#25D366" }]}>
+        <GlowPressable topHighlight={false} haptic hoverLift={-1} onPress={shareWhatsApp} style={[styles.shareBtn, { backgroundColor: "#25D366" }]}>
           <Ionicons name="logo-whatsapp" size={16} color="#fff" />
           <Text style={styles.shareBtnText}>WhatsApp</Text>
-        </Pressable>
-        <Pressable onPress={sharePdf} style={[styles.shareBtn, { backgroundColor: theme.color.brandPrimary }]}>
+        </GlowPressable>
+        <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={sharePdf} style={[styles.shareBtn, { backgroundColor: theme.color.brandPrimary }]}>
           <Ionicons name="document-outline" size={16} color="#fff" />
           <Text style={styles.shareBtnText}>PDF</Text>
-        </Pressable>
+        </GlowPressable>
       </View>
 
       {loading ? (
@@ -1074,27 +1117,31 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-  segScroll: { height: 44, flexGrow: 0, marginTop: theme.spacing.xs },
+  filterRail: { position: "relative" },
+  railFade: { position: "absolute", top: 0, bottom: 0, width: 34, zIndex: 10 },
+  railFadeLeft: { left: 0 },
+  railFadeRight: { right: 0 },
+  segScroll: { height: 56, flexGrow: 0, marginTop: theme.spacing.xs, marginBottom: 6, overflow: "visible" },
   segRow: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 8,
+    flexDirection: "row", alignItems: "center", paddingLeft: theme.spacing.md, paddingRight: 44, paddingVertical: 10, gap: 6,
   },
   seg: {
-    paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20,
+    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20,
     backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
   },
   segActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   segText: { color: theme.color.muted, fontWeight: "600", fontSize: 13 },
   segTextActive: { color: "#fff", fontWeight: "700" },
-  dateScroll: { height: 36, flexGrow: 0, marginVertical: 6 },
+  dateScroll: { height: 52, flexGrow: 0, marginTop: 4, marginBottom: 8, overflow: "visible" },
   dateRow: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 6,
+    flexDirection: "row", alignItems: "center", paddingLeft: theme.spacing.md, paddingRight: 44, paddingVertical: 10, gap: 4,
   },
   dateChip: {
-    paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12,
+    paddingVertical: 4, paddingHorizontal: 7, borderRadius: 12,
     backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
   },
   dateChipActive: { backgroundColor: theme.color.surfaceTertiary, borderColor: theme.color.brandPrimary },
-  dateChipText: { color: theme.color.muted, fontWeight: "600", fontSize: 11 },
+  dateChipText: { color: theme.color.muted, fontWeight: "600", fontSize: 10 },
   dateChipTextActive: { color: theme.color.brandPrimary, fontWeight: "700" },
   customRow: { flexDirection: "row", gap: 8, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, alignItems: "flex-end" },
   customLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "600", marginBottom: 4 },

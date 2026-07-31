@@ -8,6 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
+import { GlowPressable } from "@/src/components/GlowPressable";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 import { sanitizePartyName } from "@/src/accountingV2/appService";
@@ -172,11 +173,20 @@ export default function PartiesScreen() {
 
       <View style={styles.filters}>
         {availableFilters.map((x) => (
-          <Pressable key={x} onPress={() => setFilter(x)} style={[styles.filter, filter === x && styles.filterOn]}>
+          <GlowPressable
+            key={x}
+            haptic
+            topHighlight={false}
+            hoverLift={0}
+            hoverScale={1}
+            restingBorderColor={filter === x ? theme.color.brandPrimary : theme.color.border}
+            onPress={() => setFilter(x)}
+            style={[styles.filter, filter === x && styles.filterOn]}
+          >
             <Text style={[styles.filterText, filter === x && { color: '#fff' }]}>
               {x === 'all' ? 'All' : x === 'customer' ? 'Customers' : x === 'supplier' ? 'Suppliers' : 'Investors'}
             </Text>
-          </Pressable>
+          </GlowPressable>
         ))}
       </View>
 
@@ -196,7 +206,15 @@ export default function PartiesScreen() {
             />
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => open(item)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}>
+            <GlowPressable
+              haptic
+              topHighlight={false}
+              hoverLift={0}
+              hoverScale={1}
+              restingBorderColor={theme.color.border}
+              onPress={() => open(item)}
+              style={styles.card}
+            >
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{item.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</Text>
               </View>
@@ -209,7 +227,7 @@ export default function PartiesScreen() {
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
                 {item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>{item.role === 'partner' ? 'View capital ledger' : 'Settled'}</Text> : null}
               </View>
-            </Pressable>
+            </GlowPressable>
           )}
         />
       )}
@@ -220,6 +238,7 @@ export default function PartiesScreen() {
         title="Create Party"
         subtitle="Select the type of contact you want to add"
         actions={createActions}
+        animatedActions
       />
 
       <OpeningBalancesModal
@@ -242,7 +261,7 @@ function makeStyles(t: any) {
     filterOn: { backgroundColor: t.color.brandPrimary, borderColor: t.color.brandPrimary },
     filterText: { fontWeight: '700', fontSize: 12, color: t.color.onSurface, textTransform: 'capitalize' },
     list: { paddingHorizontal: t.spacing.lg, paddingBottom: 140, gap: t.spacing.md },
-    card: { flexDirection: 'row', backgroundColor: t.color.surfaceSecondary, borderRadius: t.radius.lg, padding: t.spacing.lg, borderWidth: 1, borderColor: t.color.border, alignItems: 'center', gap: t.spacing.md, elevation: 1, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+    card: { flexDirection: 'row', backgroundColor: t.color.surfaceSecondary, borderRadius: t.radius.lg, padding: t.spacing.lg, borderWidth: 1, borderColor: t.color.border, alignItems: 'center', gap: t.spacing.md, elevation: 0, shadowOpacity: 0, shadowRadius: 0 },
     avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: t.color.brandTertiary, justifyContent: 'center', alignItems: 'center' },
     avatarText: { color: t.color.brandPrimary, fontWeight: '800' },
     name: { fontSize: 15, fontWeight: '700', color: t.color.onSurface },

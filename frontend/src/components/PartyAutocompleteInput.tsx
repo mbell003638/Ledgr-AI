@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TextInput, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
 
+import { GlowPressable } from "@/src/components/GlowPressable";
 type PartyItem = { id: string; name: string; phone?: string; role?: string };
 
 interface Props {
@@ -84,8 +85,18 @@ export function PartyAutocompleteInput({
       {focused && matches.length > 0 && (
         <View style={styles.dropdown}>
           <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled style={{ maxHeight: 150 }}>
-            {matches.map((item) => (
-              <Pressable key={item.id} onPress={() => select(item)} style={styles.dropdownRow}>
+            {matches.map((item, index) => (
+              <GlowPressable
+                key={item.id}
+                topHighlight={false}
+                animateBorder={false}
+                haptic
+                hoverLift={0}
+                hoverScale={1.008}
+                pressScale={0.98}
+                onPress={() => select(item)}
+                style={[styles.dropdownRow, index === matches.length - 1 && styles.dropdownRowLast]}
+              >
                 <Ionicons name="person-circle-outline" size={18} color={theme.color.brandPrimary} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.dropdownTitle}>{item.name}</Text>
@@ -94,7 +105,7 @@ export function PartyAutocompleteInput({
                 <View style={styles.roleBadge}>
                   <Text style={styles.roleText}>{item.role === "both" ? "Both" : item.role === "customer" ? "Customer" : "Supplier"}</Text>
                 </View>
-              </Pressable>
+              </GlowPressable>
             ))}
           </ScrollView>
         </View>
@@ -105,7 +116,7 @@ export function PartyAutocompleteInput({
 
 function makeStyles(theme: any) {
   return StyleSheet.create({
-    container: { zIndex: 10 },
+    container: { zIndex: 10, position: "relative" },
     label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface, marginBottom: 4 },
     input: {
       borderWidth: 1,
@@ -117,20 +128,13 @@ function makeStyles(theme: any) {
       color: theme.color.onSurface,
     },
     dropdown: {
-      position: "absolute",
-      top: 70,
-      left: 0,
-      right: 0,
+      marginTop: 6,
       backgroundColor: theme.color.surfaceSecondary,
       borderRadius: theme.radius.md,
       borderWidth: 1,
       borderColor: theme.color.border,
-      elevation: 6,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      zIndex: 999,
+      overflow: "hidden",
+      zIndex: 20,
     },
     dropdownRow: {
       flexDirection: "row",
@@ -141,14 +145,15 @@ function makeStyles(theme: any) {
       borderBottomWidth: 1,
       borderBottomColor: theme.color.border,
     },
+    dropdownRowLast: { borderBottomWidth: 0 },
     dropdownTitle: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
     dropdownSub: { fontSize: 11, color: theme.color.muted },
     roleBadge: {
-      backgroundColor: theme.color.surfaceTertiary,
+      backgroundColor: theme.color.brandPrimary + "18",
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 4,
     },
-    roleText: { fontSize: 10, fontWeight: "700", color: theme.color.muted, textTransform: "uppercase" },
+    roleText: { fontSize: 10, fontWeight: "700", color: theme.color.brandPrimary, textTransform: "uppercase" },
   });
 }

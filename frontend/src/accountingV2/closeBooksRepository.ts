@@ -165,6 +165,7 @@ export class V2CloseBooksRepository {
     for (const row of rows) {
       let metadata: any = {};
       try { metadata = JSON.parse(row.metadata || '{}'); } catch { metadata = {}; }
+      if (metadata.reversed || metadata.deleted) continue;
       const memberId = String(metadata.memberId || '');
       const amount = cents(Number(metadata.total || 0));
       if (!memberId || amount <= 0) continue;

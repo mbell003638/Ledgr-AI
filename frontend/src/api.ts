@@ -2,11 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, sanitizePartyName } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
+import { resetAllV2AccountingData } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
   listBooks as beListBooks,
@@ -244,6 +245,25 @@ export const api = {
     if (!name) return null;
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      if (await service.activeContext()) {
+        const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
+        const party = existing || await service.ensureParty(name, role, details);
+        const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
+        if (!roles.includes(role)) await service.ensureParty(name, role, details);
+        try {
+          const legacy = role === 'customer' ? await db.listDebtors() : await db.listSuppliers();
+          if (!legacy.some((item: any) => norm(item.name) === norm(name))) {
+            if (role === 'customer') await db.createDebtor({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
+            else await db.createSupplier({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
+          }
+        } catch { /* V2 remains authoritative */ }
+        return { id: party.id, name: party.name, role: roles.length > 1 ? 'both' : role };
+      }
+    }
+
     const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
     const dMatch = debtors.find((x: any) => norm(x.name) === norm(name));
     const sMatch = suppliers.find((x: any) => norm(x.name) === norm(name));
@@ -276,11 +296,24 @@ export const api = {
 
   searchParties: async (query: string) => {
     const q = (query || '').trim().toLowerCase();
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      if (await service.activeContext()) {
+        const parties = await service.listParties();
+        return parties
+          .filter((party: any) => !q || party.name.toLowerCase().includes(q))
+          .map((party: any) => ({
+            id: party.id, name: party.name, phone: party.phone || '',
+            role: party.roles.length > 1 ? 'both' : party.roles[0],
+          }));
+      }
+    }
     const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
-    const map = new Map<string, { id: string; name: string; phone?: string; role: string }>();
+    const map = new Map<string, { id: string; name: string; phone: string; role: string }>();
 
     for (const d of debtors as any[]) {
-      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone, role: 'customer' });
+      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone || '', role: 'customer' });
     }
     for (const s of suppliers as any[]) {
       const k = s.name.trim().toLowerCase();
@@ -288,7 +321,7 @@ export const api = {
       if (existing) {
         existing.role = 'both';
       } else {
-        map.set(k, { id: s.id, name: s.name, phone: s.phone, role: 'supplier' });
+        map.set(k, { id: s.id, name: s.name, phone: s.phone || '', role: 'supplier' });
       }
     }
 
@@ -308,11 +341,10 @@ export const api = {
       for (const s of suppliers) v1Map.set(s.id, s.name);
       for (const d of debtors) v1Map.set(d.id, d.name);
       return v2Parties.map(p => {
-        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id || /^v2:(customer|supplier|partner):/i.test(p.name);
+        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id;
         if (isId && v1Map.get(p.id)) {
           p.name = v1Map.get(p.id);
         }
-        p.name = sanitizePartyName(p.name);
         return p;
       });
     }
@@ -336,46 +368,20 @@ export const api = {
     const service=new V2AppService(runner); return (await service.activeContext()) ? service.listSalesAndInvoices() : db.listSales();
   },
   // Suppliers
-  listSuppliers: async () => {
-    const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      const context = await service.activeContext();
-      if (context) {
-        const v2Parties = await service.listParties();
-        const suppliers = v2Parties.filter(p => p.roles.includes('supplier') || p.roles.includes('partner') || p.roles.includes('both'));
-        const legacySuppliers = await db.listSuppliers();
-        const v2Mapped = suppliers.map(p => ({
-          id: p.id,
-          name: p.name,
-          phone: p.phone,
-          email: p.email,
-          balance: p.payable,
-          bills: []
-        }));
-        const knownIds = new Set(v2Mapped.map(s => s.id));
-        for (const leg of legacySuppliers) {
-          if (!knownIds.has(leg.id)) v2Mapped.push(leg);
-        }
-        return v2Mapped;
-      }
-    }
-    return db.listSuppliers();
-  },
+  listSuppliers: () => db.listSuppliers(),
   createSupplier: (s: any) => db.createSupplier(s),
-  updateSupplier: (id: string, s: any) => db.updateSupplier(id, s),
+  updateSupplier: async (id: string, s: any) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.updateParty(id, s); }
+    return db.updateSupplier(id, s);
+  },
   getSupplier: async (id: string) => {
-    const suppliers = await api.listSuppliers();
-    return suppliers.find((s: any) => s.id === id) || db.getSupplier(id);
+    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'supplier'); if (detail) return detail; }
+    return db.getSupplier(id);
   },
   deleteSupplier: async (id: string) => {
-    const runner = activeSqlRunner();
-    if (runner && id.startsWith('v2:')) {
-      await runner.run('UPDATE v2_parties SET archived=1 WHERE id=?', [id]).catch(() => {});
-    }
-    try { await db.deleteSupplier(id); } catch {}
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.archiveParty(id); }
+    return db.deleteSupplier(id);
   },
-
   listBills: async () => {
     const runner = activeSqlRunner();
     if (!runner) return db.listBills();
@@ -616,44 +622,27 @@ export const api = {
     return closeBooks({ actualStock, openingInventory: Number(settings.openingInventory || 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
   },
   resetAll: async () => {
-    // 1. Wipe all V2 SQLite tables in child -> parent foreign key order
     const runner = activeSqlRunner();
-    if (runner) {
-      const allV2TablesInOrder = [
-        'v2_journal_lines',
-        'v2_journal_entries',
-        'v2_invoice_allocations',
-        'v2_receipt_allocations',
-        'v2_sources',
-        'v2_inventory_counts',
-        'v2_reconciliations',
-        'v2_period_closes',
-        'v2_journal_postings',
-        'v2_parties',
-        'v2_members',
-        'v2_periods',
-        'v2_accounts',
-        'v2_personas',
-        'v2_books'
-      ];
-      for (const t of allV2TablesInOrder) {
-        await runner.run(`DELETE FROM ${t}`).catch(() => {});
-      }
-      await runner.run(`DELETE FROM meta WHERE key LIKE 'v2_%'`).catch(() => {});
-      await runner.run(`DELETE FROM settings`).catch(() => {});
-    }
-
-    // 2. Wipe all AsyncStorage keys
+    const today = new Date().toISOString().slice(0, 10);
+    const originalBookId = beActiveBookId();
+    const originalV2Active = runner ? await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'") : null;
     try {
-      const keys = await AsyncStorage.getAllKeys();
-      const keysToRemove = keys.filter(k => k.startsWith('ledgr_') || k.startsWith('ledgr:'));
-      if (keysToRemove.length > 0) {
-        await AsyncStorage.multiRemove(keysToRemove);
+      if (runner) {
+        await resetAllV2AccountingData(runner, today);
       }
-    } catch { /* defensive */ }
-
-    // 3. Clear legacy memory/collections
-    await db.resetAll().catch(() => {});
+      const books = await beListBooks();
+      for (const book of books) {
+        await beSetActiveBook(book.id);
+        await db.resetAll();
+      }
+      return { ok: true };
+    } finally {
+      await beSetActiveBook(originalBookId);
+      if (runner) {
+        if (originalV2Active?.value) await runner.run("INSERT INTO meta(key,value) VALUES('v2_active_book_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [originalV2Active.value]);
+        else await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
+      }
+    }
   },
 
   // AI
@@ -670,59 +659,27 @@ export const api = {
   deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
 
   // Debtors
-  listDebtors: async () => {
-    const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      const context = await service.activeContext();
-      if (context) {
-        const v2Parties = await service.listParties();
-        const debtors = v2Parties.filter(p => p.roles.includes('customer') || p.roles.includes('partner') || p.roles.includes('both'));
-        const legacyDebtors = await db.listDebtors();
-        const v2Mapped = debtors.map(p => ({
-          id: p.id,
-          name: p.name,
-          phone: p.phone,
-          email: p.email,
-          totalInvoiced: p.receivable,
-          totalPaid: 0,
-          balance: p.receivable,
-          payments: []
-        }));
-        const knownIds = new Set(v2Mapped.map(d => d.id));
-        for (const leg of legacyDebtors) {
-          if (!knownIds.has(leg.id)) v2Mapped.push(leg);
-        }
-        return v2Mapped;
-      }
-    }
-    return db.listDebtors();
+  listDebtors: () => db.listDebtors(),
+  getCustomer: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail; }
+    return (await db.listDebtors()).find((item: any) => item.id === id) || null;
   },
   createDebtor: (d: any) => db.createDebtor(d),
-  updateDebtor: (id: string, d: any) => db.updateDebtor(id, d),
+  updateDebtor: async (id: string, d: any) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.updateParty(id, d); }
+    return db.updateDebtor(id, d);
+  },
   deleteDebtor: async (id: string) => {
-    const runner = activeSqlRunner();
-    if (runner && id.startsWith('v2:')) {
-      await runner.run('UPDATE v2_parties SET archived=1 WHERE id=?', [id]).catch(() => {});
-    }
-    try { await db.deleteDebtor(id); } catch {}
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.archiveParty(id); }
+    return db.deleteDebtor(id);
   },
   addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
   deleteDebtorPayment: (debtorId: string, paymentId: string) => db.deleteDebtorPayment(debtorId, paymentId),
   updateDebtorPayment: (debtorId: string, paymentId: string, u: any) => db.updateDebtorPayment(debtorId, paymentId, u),
   getDebtorStatement: async (id: string) => {
-    const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      const context = await service.activeContext();
-      if (context) {
-        const v2Stmt = await service.getPartyStatement(id);
-        if (v2Stmt && v2Stmt.ledger.length > 0) return v2Stmt;
-      }
-    }
-    try { return await db.getDebtorStatement(id); } catch { return { ledger: [], balance: 0 }; }
+    const runner = activeSqlRunner(); if (runner) { const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail.statement; }
+    return db.getDebtorStatement(id);
   },
-
   // Date-range reports
   pnlRange: (from: string, to: string) => db.pnlRange(from, to),
   creditorsReport: (from?: string, to?: string) => db.creditorsReport(from, to),

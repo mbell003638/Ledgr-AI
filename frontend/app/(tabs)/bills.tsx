@@ -12,6 +12,7 @@ import { printTransaction, shareTransaction } from "@/src/utils/transactionActio
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
+import { GlowPressable } from "@/src/components/GlowPressable";
 export default function BillsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -147,17 +148,20 @@ export default function BillsScreen() {
               : `${shortDate(item.date)} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
 
             return (
-              <Pressable
+              <GlowPressable
                 testID={`bill-${item.id}`}
                 onPress={() => setSelected(item)}
-                style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+                haptic
+                topHighlight={false}
+                restingBorderColor={theme.color.border}
+                style={styles.card}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle}>{supName || "Vendor Purchase"}</Text>
                   <Text style={styles.cardSub}>{displaySub}</Text>
                 </View>
                 <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
-              </Pressable>
+              </GlowPressable>
             );
           }}
         />

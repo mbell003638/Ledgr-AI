@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, Modal, Platform, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 export type ActionSheetItem = {
   id: string;
@@ -17,9 +18,10 @@ interface Props {
   title?: string;
   subtitle?: string;
   actions: ActionSheetItem[];
+  animatedActions?: boolean;
 }
 
-export function ActionSheetModal({ visible, onClose, title = "Options", subtitle, actions }: Props) {
+export function ActionSheetModal({ visible, onClose, title = "Options", subtitle, actions, animatedActions = false }: Props) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -30,23 +32,42 @@ export function ActionSheetModal({ visible, onClose, title = "Options", subtitle
           <View style={styles.handleBar} />
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          <ScrollView style={{ maxHeight: 320, marginTop: 12 }}>
-            {actions.map((act) => (
-              <Pressable
-                key={act.id}
-                onPress={() => {
-                  onClose();
-                  act.onPress();
-                }}
-                style={({ pressed }) => [styles.actionRow, pressed && styles.actionRowPressed]}
-              >
+          <ScrollView style={{ maxHeight: 320, marginTop: 12 }} contentContainerStyle={{ paddingHorizontal: 2, paddingTop: 2 }}>
+            {actions.map((act) => {
+              const content = <>
                 <View style={[styles.iconContainer, act.destructive && { backgroundColor: theme.color.errorBg }]}>
                   <Ionicons name={act.icon} size={20} color={act.destructive ? theme.color.error : theme.color.brandPrimary} />
                 </View>
                 <Text style={[styles.actionLabel, act.destructive && { color: theme.color.error }]}>{act.label}</Text>
                 <Ionicons name="chevron-forward" size={16} color={theme.color.muted} />
-              </Pressable>
-            ))}
+              </>;
+              const select = () => {
+                onClose();
+                act.onPress();
+              };
+              return animatedActions ? (
+                <GlowPressable
+                  key={act.id}
+                  haptic
+                  topHighlight={false}
+                  hoverLift={0}
+                  hoverScale={1}
+                  restingBorderColor={theme.color.border}
+                  onPress={select}
+                  style={styles.actionRow}
+                >
+                  {content}
+                </GlowPressable>
+              ) : (
+                <Pressable
+                  key={act.id}
+                  onPress={select}
+                  style={({ pressed }) => [styles.actionRow, pressed && styles.actionRowPressed]}
+                >
+                  {content}
+                </Pressable>
+              );
+            })}
           </ScrollView>
           <Pressable onPress={onClose} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>Cancel</Text>

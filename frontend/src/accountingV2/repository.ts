@@ -12,6 +12,7 @@ export type V2ReconciliationError = {
 
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+let savepointSequence = 0;
 
 export class V2SqlRepository {
   constructor(readonly db: SqlRunner) {}
@@ -184,8 +185,18 @@ export class V2SqlRepository {
   }
 
   private async tx<T>(fn: () => Promise<T>): Promise<T> {
-    await this.db.exec('BEGIN');
-    try { const result = await fn(); await this.db.exec('COMMIT'); return result; }
-    catch (e) { try { await this.db.exec('ROLLBACK'); } catch { /* preserve original error */ } throw e; }
+    const savepoint = `v2_repo_${++savepointSequence}`;
+    await this.db.exec(`SAVEPOINT ${savepoint}`);
+    try {
+      const result = await fn();
+      await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      return result;
+    } catch (e) {
+      try {
+        await this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      } catch { /* preserve original error */ }
+      throw e;
+    }
   }
 }

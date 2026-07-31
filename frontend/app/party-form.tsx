@@ -30,9 +30,7 @@ export default function PartyForm() {
           const s = await api.getSupplier(editId);
           setName(s.name || ""); setPhone(s.phone || ""); setEmail(s.email || ""); setNotes(s.notes || "");
         } else {
-          // getDebtor doesn't exist in api.ts, so we'll fetch from db directly or listDebtors
-          const ds = await api.listDebtors();
-          const d = ds.find((x: any) => x.id === editId);
+          const d = await api.getCustomer(editId);
           if (d) {
             setName(d.name || ""); setPhone(d.phone || ""); setEmail(d.email || ""); setNotes(d.notes || "");
           }

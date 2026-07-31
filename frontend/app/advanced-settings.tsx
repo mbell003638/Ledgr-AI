@@ -12,26 +12,68 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   const isExpanded = expandedKey === title;
   return (
     <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
-      <Pressable onPress={() => setExpandedKey(isExpanded ? null : title)} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12 }}>
+      <GlowPressable
+        topHighlight={false}
+        haptic
+        animateBorder
+        restingBorderColor="transparent"
+        hoverBorderColor={theme.color.brandPrimary}
+        pressScale={0.97}
+        hoverScale={1.008}
+        hoverLift={-2}
+        onPress={() => setExpandedKey(isExpanded ? null : title)}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          minHeight: 48,
+          paddingVertical: 12,
+          paddingHorizontal: 10,
+          marginHorizontal: -10,
+          borderWidth: 1,
+          borderRadius: 14,
+        }}
+      >
         <View style={{ flex: 1, paddingRight: 16 }}>
           <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }}>{title}</Text>
           {subtitle && <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>}
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
-      </Pressable>
+      </GlowPressable>
       {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
 
 const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: any) => (
-  <Pressable onPress={onPress} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border }}>
+  <GlowPressable
+    topHighlight={false}
+    animateBorder={false}
+    pressScale={0.97}
+    hoverScale={1.008}
+    haptic
+    hoverLift={-2}
+    onPress={onPress}
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: 48,
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      marginHorizontal: -10,
+      borderWidth: 0,
+      borderBottomWidth: isLast ? 0 : 1,
+      borderBottomColor: theme.color.border,
+      borderRadius: 14,
+    }}
+  >
     <View style={{ flex: 1, paddingRight: 16 }}>
       <Text style={[{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }, rightElement?.titleStyle]}>{title}</Text>
       {subtitle && <Text style={[{ fontSize: 12, color: theme.color.muted, marginTop: 4 }, rightElement?.subtitleStyle]}>{subtitle}</Text>}
     </View>
     {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
-  </Pressable>
+  </GlowPressable>
 );
 
 import * as ImagePicker from "expo-image-picker";
@@ -41,6 +83,7 @@ import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
+import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
@@ -425,7 +468,7 @@ export default function AdvancedSettingsScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>

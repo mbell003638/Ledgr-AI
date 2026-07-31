@@ -13,6 +13,7 @@ import { Empty, Card } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
+import { GlowPressable } from "@/src/components/GlowPressable";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 type Mode = "cash_sale" | "against_invoice" | "advance";
@@ -167,7 +168,7 @@ export default function ReceiptsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
         ListEmptyComponent={<Empty icon={<Ionicons name="receipt-outline" size={40} color={theme.color.muted} />} title="No receipts yet" hint="Tap + to record money received." />}
         renderItem={({ item }) => (
-          <Pressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} style={styles.row}>
+          <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.mode === "cash_sale" ? "#DCE8DC" : item.mode === "advance" ? "#F0E4D0" : "#D8E4F0" }]}>
               <Ionicons name={item.mode === "cash_sale" ? "cart-outline" : item.mode === "advance" ? "arrow-down-circle-outline" : "document-text-outline"} size={18} color={theme.color.brandPrimary} />
             </View>
@@ -176,7 +177,7 @@ export default function ReceiptsScreen() {
               <Text style={styles.rowSub}>{item.clientName || "Walk-in"} · {shortDate(item.date)}{item.method ? ` · ${item.method}` : ""}</Text>
             </View>
             <Text style={styles.rowAmount}>{currSym}{Number(item.amount).toFixed(2)}</Text>
-          </Pressable>
+          </GlowPressable>
         )}
       />
 

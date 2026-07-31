@@ -2,6 +2,9 @@ export const lightColors = {
   surface: '#F6F7F5',
   onSurface: '#111513',
   surfaceSecondary: '#FFFFFF',
+  glassSurface: 'rgba(255, 255, 255, 0.88)',
+  glassSurfaceHover: 'rgba(255, 255, 255, 1)',
+  glassBorder: '#E2E5DF',
   onSurfaceSecondary: '#1C221F',
   surfaceTertiary: '#EAECE7',
   onSurfaceTertiary: '#3B4540',
@@ -30,6 +33,9 @@ export const darkColors: typeof lightColors = {
   surface: '#0E1210',
   onSurface: '#F1F3EE',
   surfaceSecondary: '#171B18',
+  glassSurface: 'rgba(23, 27, 24, 0.78)',
+  glassSurfaceHover: 'rgba(32, 37, 31, 0.92)',
+  glassBorder: 'rgba(255, 255, 255, 0.09)',
   onSurfaceSecondary: '#E5E8E2',
   surfaceTertiary: '#20251F',
   onSurfaceTertiary: '#C8CDC4',
@@ -58,6 +64,9 @@ export const navyGoldColors: typeof lightColors = {
   surface: '#000000',
   onSurface: '#f5f6f8',
   surfaceSecondary: '#0A0A0C',
+  glassSurface: 'rgba(18, 20, 28, 0.75)',
+  glassSurfaceHover: 'rgba(28, 30, 42, 0.90)',
+  glassBorder: 'rgba(255, 255, 255, 0.09)',
   onSurfaceSecondary: '#ffffff',
   surfaceTertiary: '#141418',
   onSurfaceTertiary: '#d0d4e4',
@@ -86,6 +95,9 @@ export const amoledBlueColors: typeof lightColors = {
   surface: '#000000',
   onSurface: '#E8EAED',
   surfaceSecondary: '#0A0A0E',
+  glassSurface: 'rgba(18, 19, 26, 0.78)',
+  glassSurfaceHover: 'rgba(26, 28, 40, 0.92)',
+  glassBorder: 'rgba(255, 255, 255, 0.09)',
   onSurfaceSecondary: '#F0F2F5',
   surfaceTertiary: '#12131A',
   onSurfaceTertiary: '#B0B8C8',
@@ -111,12 +123,49 @@ export const amoledBlueColors: typeof lightColors = {
 };
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
-export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
+export const radius = {
+  sm: 6,
+  md: 12,
+  input: 14,
+  button: 16,
+  kpi: 18,
+  lg: 20,
+  card: 22,
+  hero: 24,
+  sheet: 32,
+  pill: 999,
+};
 export const font = { displayBold: '700' as const, displaySemi: '600' as const, body: '400' as const, medium: '500' as const };
 
+// Motion and effect values are shared by the native pilot so the HTML
+// prototype's glow and spring language stays consistent across components.
+export const effects = {
+  topHighlightOpacity: 0.4,
+  glowOpacity: 0.35,
+  glowRadius: 20,
+  strongGlowRadius: 28,
+  glassOpacity: 0.78,
+};
+
+export const motion = {
+  fast: 200,
+  standard: 250,
+  expressive: 350,
+  longPress: 450,
+  spring: { damping: 18, stiffness: 220, mass: 0.7 },
+  sheetSpring: { damping: 18, stiffness: 190, mass: 0.8 },
+};
+
 // Static fallback (used by files not yet refactored, defaults to light)
-export const theme = { color: lightColors, spacing, radius, font };
-export type ThemeType = { color: typeof lightColors; spacing: typeof spacing; radius: typeof radius; font: typeof font };
+export const theme = { color: lightColors, spacing, radius, font, effects, motion };
+export type ThemeType = {
+  color: typeof lightColors;
+  spacing: typeof spacing;
+  radius: typeof radius;
+  font: typeof font;
+  effects: typeof effects;
+  motion: typeof motion;
+};
 
 export const fmt = (n: number | null | undefined, currencySymbol = '$') => {
   const v = Number(n ?? 0);
