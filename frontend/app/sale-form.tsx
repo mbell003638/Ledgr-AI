@@ -10,6 +10,8 @@ import { Card } from "@/src/components/UI";
 
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
+import { sanitizePartyName } from "@/src/accountingV2/appService";
+
 export default function SaleForm() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -40,7 +42,7 @@ export default function SaleForm() {
           if (it.date) setDate(it.date);
           if (it.type === "invoice" || it.clientName || it.partyId || (it.notes && it.notes.toLowerCase().includes("credit sale"))) {
             setSaleType("party");
-            setCustomerName(it.clientName || it.partyId || "");
+            setCustomerName(sanitizePartyName(it.partyName || it.clientName || ""));
           }
         }
       }

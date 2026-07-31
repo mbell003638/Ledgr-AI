@@ -64,6 +64,7 @@ export class V2AppService {
 
   async listParties() {
     const context = await this.activeContext(); if (!context) return [];
+    await this.db.run(`UPDATE v2_parties SET name = REPLACE(REPLACE(REPLACE(name, 'v2:customer:', ''), 'v2:supplier:', ''), 'v2:partner:', '') WHERE name LIKE 'v2:%'`).catch(() => {});
     const rows = await this.db.all<any>('SELECT id,name,phone,email,roles,archived FROM v2_parties WHERE book_id=? AND archived=0 ORDER BY name', [context.bookId]);
     const result = [];
     for (const row of rows) {
@@ -75,17 +76,60 @@ export class V2AppService {
   }
 
   async listSalesAndInvoices() {
-    const context=await this.activeContext(); if(!context)return [];
-    const rows=await this.db.all<any>("SELECT id,type,date,reference,metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_sale','invoice') ORDER BY date DESC,id DESC",[context.bookId]);
-    const result=[];
-    for(const row of rows){const meta=JSON.parse(row.metadata||'{}');if(meta.deleted)continue;const open=row.type==='invoice'?await this.repo.invoiceOpen(row.id):0;result.push({id:row.id,type:row.type,date:row.date,reference:row.reference,amount:Number(meta.total||0),partyId:meta.partyId,status:row.type==='cash_sale'?'paid':open<=0?'paid':open<Number(meta.total||0)?'partial':'unpaid',openAmount:open,notes:meta.notes,method:meta.method});}
+    const context = await this.activeContext(); if (!context) return [];
+    const rows = await this.db.all<any>("SELECT id,type,date,reference,metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_sale','invoice') ORDER BY date DESC,id DESC", [context.bookId]);
+    const result = [];
+    const parties = await this.db.all<any>('SELECT id,name FROM v2_parties WHERE book_id=?', [context.bookId]);
+    const partyMap = new Map<string, string>();
+    for (const p of parties) partyMap.set(p.id, sanitizePartyName(p.name));
+
+    for (const row of rows) {
+      const meta = JSON.parse(row.metadata || '{}');
+      if (meta.deleted || meta.reversed) continue;
+      const open = row.type === 'invoice' ? await this.repo.invoiceOpen(row.id) : 0;
+      const pName = meta.partyId ? (partyMap.get(meta.partyId) || sanitizePartyName(meta.clientName || '')) : '';
+      result.push({
+        id: row.id,
+        type: row.type,
+        date: row.date,
+        reference: row.reference,
+        amount: Number(meta.total || 0),
+        partyId: meta.partyId,
+        partyName: pName,
+        status: row.type === 'cash_sale' ? 'paid' : open <= 0 ? 'paid' : open < Number(meta.total || 0) ? 'partial' : 'unpaid',
+        openAmount: open,
+        notes: meta.notes,
+        method: meta.method
+      });
+    }
     return result;
   }
 
   async listBills() {
     const context = await this.activeContext(); if (!context) return [];
     const rows = await this.db.all<any>("SELECT id,type,date,metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_purchase','credit_purchase') ORDER BY date DESC,id DESC", [context.bookId]);
-    return rows.flatMap((row) => { const meta = JSON.parse(row.metadata || '{}'); return meta.deleted ? [] : [{ id: row.id, sourceType: row.type, date: row.date, amount: Number(meta.total || 0), supplierId: meta.partyId, paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit', method: meta.method, invoiceNo: meta.invoiceNo || '', notes: meta.notes || '', photo: meta.photo || '' }]; });
+    const parties = await this.db.all<any>('SELECT id,name FROM v2_parties WHERE book_id=?', [context.bookId]);
+    const partyMap = new Map<string, string>();
+    for (const p of parties) partyMap.set(p.id, sanitizePartyName(p.name));
+
+    return rows.flatMap((row) => {
+      const meta = JSON.parse(row.metadata || '{}');
+      if (meta.deleted || meta.reversed) return [];
+      const sName = meta.partyId ? (partyMap.get(meta.partyId) || sanitizePartyName(meta.supplierName || '')) : '';
+      return [{
+        id: row.id,
+        sourceType: row.type,
+        date: row.date,
+        amount: Number(meta.total || 0),
+        supplierId: meta.partyId,
+        supplierName: sName,
+        paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit',
+        method: meta.method,
+        invoiceNo: meta.invoiceNo || '',
+        notes: meta.notes || '',
+        photo: meta.photo || ''
+      }];
+    });
   }
 
   async createSale(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postCashSale(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), reference: input.reference, metadata: { notes: input.notes } }); }
