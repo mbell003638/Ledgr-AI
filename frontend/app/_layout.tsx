@@ -173,19 +173,36 @@ function AppOpeningSplashScreen() {
 
 // ---------- Root Layout ----------
 export default function RootLayout() {
+  const [storageReady, setStorageReady] = useState(false);
+
   useEffect(() => {
-    // Hide splash screen immediately on mount with ZERO delay
+    let cancelled = false;
+
+    // Replace the native splash immediately with the in-app opening screen.
     SplashScreen.hideAsync().catch(() => {});
 
-    // Initialize storage & permissions in background without holding UI
-    initStorage().catch(() => {});
+    // Do not mount the router until the persisted active book and SQLite
+    // backend are ready. Otherwise the onboarding gate can read the temporary
+    // AsyncStorage fallback and incorrectly treat a returning user as new.
+    initStorage()
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setStorageReady(true);
+      });
 
     if (Platform.OS !== "web") {
       ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
       ImagePicker.requestCameraPermissionsAsync().catch(() => {});
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  if (!storageReady) {
+    return <AppOpeningSplashScreen />;
+  }
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
