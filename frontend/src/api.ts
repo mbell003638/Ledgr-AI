@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, sanitizePartyName } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
@@ -308,10 +308,11 @@ export const api = {
       for (const s of suppliers) v1Map.set(s.id, s.name);
       for (const d of debtors) v1Map.set(d.id, d.name);
       return v2Parties.map(p => {
-        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id;
+        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id || /^v2:(customer|supplier|partner):/i.test(p.name);
         if (isId && v1Map.get(p.id)) {
           p.name = v1Map.get(p.id);
         }
+        p.name = sanitizePartyName(p.name);
         return p;
       });
     }

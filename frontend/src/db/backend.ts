@@ -15,6 +15,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { COLLECTIONS, CollectionName, SqlRunner } from './schema';
 import { initializeV2Book, accountingBookVersion } from '../accountingV2/appBootstrap';
 import {
@@ -189,6 +190,11 @@ export async function clearColl(c: CollectionName): Promise<void> {
 export async function initStorage(): Promise<{ mode: StorageMode; migration?: any; error?: string }> {
   // Restore which book (account) was last active before touching storage.
   try { await loadActiveBook(); } catch { /* stay on default */ }
+  if (Platform.OS === 'web') {
+    mode = 'async';
+    runner = null;
+    return { mode };
+  }
   try {
     // Lazy import so a failure to load expo-sqlite can't crash module load.
     const { getExpoRunner } = require('./expoRunner');

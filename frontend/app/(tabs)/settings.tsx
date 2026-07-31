@@ -326,9 +326,8 @@ export default function SettingsScreen() {
     setResetting(true); setStatus(null);
     try {
       await api.resetAll();
-      setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
       setConfirmReset(false);
-      await load();
+      router.replace("/onboarding");
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Reset failed" });
     } finally { setResetting(false); }

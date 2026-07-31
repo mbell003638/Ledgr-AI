@@ -10,6 +10,8 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
+import { sanitizePartyName } from "@/src/accountingV2/appService";
+
 type PartyRow = { id: string; name: string; phone?: string; role: "customer"|"supplier"|"partner"|"both"; receivable: number; payable: number };
 
 export default function PartiesScreen() {
@@ -36,7 +38,7 @@ export default function PartiesScreen() {
       if (v2.length) {
         const mapped: PartyRow[] = v2.map((p: any) => ({
           id: p.id,
-          name: p.name,
+          name: sanitizePartyName(p.name) || p.name,
           phone: p.phone,
           role: (p.roles.includes('partner') ? 'partner' : (p.roles.includes('customer') && p.roles.includes('supplier') ? 'both' : p.roles.includes('customer') ? 'customer' : 'supplier')) as PartyRow['role'],
           receivable: p.receivable,

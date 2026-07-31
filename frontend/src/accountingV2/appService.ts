@@ -13,7 +13,20 @@ const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'cash';
 const amount = (value: any) => Number(value);
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-const stablePartyId = (role: V2PartyRole, input: AnyRecord) => String(input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'] || `v2:${role}:${normalized(input[role === 'customer' ? 'clientName' : 'supplierName'])}`);
+export function sanitizePartyName(raw: string): string {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  while (/^v2:(customer|supplier|partner):/i.test(s)) {
+    s = s.replace(/^v2:(customer|supplier|partner):/i, '').trim();
+  }
+  return s;
+}
+
+const stablePartyId = (role: V2PartyRole, input: AnyRecord) => {
+  const rawId = String(input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'] || '');
+  if (rawId && /^v2:(customer|supplier|partner):/i.test(rawId)) return rawId;
+  return rawId || `v2:${role}:${normalized(input[role === 'customer' ? 'clientName' : 'supplierName'])}`;
+};
 
 export type V2ActiveContext = { bookId: string; periodId: string };
 export type V2CloseBooksAppInput = { actualStock: number; openingInventory: number; commissionPct: number; notes?: string };
@@ -37,7 +50,8 @@ export class V2AppService {
 
   private async party(input: AnyRecord, role: V2PartyRole, bookId: string) {
     const id = stablePartyId(role, input);
-    const name = String(input[role === 'customer' ? 'clientName' : 'supplierName'] || input.partyId || id).trim() || id;
+    const rawName = String(input[role === 'customer' ? 'clientName' : 'supplierName'] || input.partyId || id).trim() || id;
+    const name = sanitizePartyName(rawName) || rawName;
     const existing = await this.db.first('SELECT id FROM v2_parties WHERE id=? AND book_id=?', [id, bookId]);
     if (!existing) await this.repo.createParty({ id, bookId, name, phone: input.clientPhone || input.phone, email: input.email, roles: [role] });
     else {
@@ -55,7 +69,7 @@ export class V2AppService {
     for (const row of rows) {
       const ar = await this.db.first<{ balance:number }>(`SELECT COALESCE(SUM(l.debit-l.credit),0) balance FROM v2_journal_lines l JOIN v2_journal_entries j ON j.id=l.journal_id JOIN v2_accounts a ON a.id=l.account_id WHERE j.book_id=? AND l.party_id=? AND a.code='1100'`, [context.bookId,row.id]);
       const ap = await this.db.first<{ balance:number }>(`SELECT COALESCE(SUM(l.credit-l.debit),0) balance FROM v2_journal_lines l JOIN v2_journal_entries j ON j.id=l.journal_id JOIN v2_accounts a ON a.id=l.account_id WHERE j.book_id=? AND l.party_id=? AND a.code='2000'`, [context.bookId,row.id]);
-      result.push({ id:row.id,name:row.name,phone:row.phone,email:row.email,roles:JSON.parse(row.roles),receivable:Number(ar?.balance||0),payable:Number(ap?.balance||0),net:Number(ar?.balance||0)-Number(ap?.balance||0) });
+      result.push({ id:row.id,name:sanitizePartyName(row.name),phone:row.phone,email:row.email,roles:JSON.parse(row.roles),receivable:Number(ar?.balance||0),payable:Number(ap?.balance||0),net:Number(ar?.balance||0)-Number(ap?.balance||0) });
     }
     return result;
   }
@@ -110,19 +124,19 @@ export class V2AppService {
     return this.documents.reverseSource(id, 'cash_sale', 'Delete cash sale', true);
   }
   async deleteBill(id: string) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); return this.documents.reverseSource(id, row.type, 'Delete bill', true); }
-  async updateExpense(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'expense', 'Edit expense'); return this.createExpense(input); }
-  async updatePayment(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'supplier_payment', 'Edit supplier payment'); return this.createPayment(input); }
-  async updateInvoice(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'invoice', 'Edit invoice'); return this.createInvoice(input); }
+  async updateExpense(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'expense', 'Edit expense', true); return this.createExpense(input); }
+  async updatePayment(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'supplier_payment', 'Edit supplier payment', true); return this.createPayment(input); }
+  async updateInvoice(id: string, input: AnyRecord) { await this.documents.reverseSource(id, 'invoice', 'Edit invoice', true); return this.createInvoice(input); }
   async updateSale(id: string, input: AnyRecord) {
     const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
     if (row?.type === 'invoice' || row?.type === 'credit_sale' || input.clientName || input.partyId) {
       return this.updateInvoice(id, input);
     }
     const sourceType = row?.type && ['cash_sale', 'credit_sale', 'invoice'].includes(row.type) ? row.type : 'cash_sale';
-    await this.documents.reverseSource(id, sourceType, 'Edit sale');
+    await this.documents.reverseSource(id, sourceType, 'Edit sale', true);
     return this.createSale(input);
   }
-  async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); await this.documents.reverseSource(id, row.type, 'Edit bill'); return this.createBill(input); }
+  async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); await this.documents.reverseSource(id, row.type, 'Edit bill', true); return this.createBill(input); }
   async updateReceipt(id: string, input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     return this.documents.editReceipt(id, { ...input, ...c, date: String(input.date), amount: amount(input.amount), method: method(input.method) });
