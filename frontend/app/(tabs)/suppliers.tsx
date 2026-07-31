@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
@@ -91,10 +91,14 @@ export default function PartiesScreen() {
 
   useFocusEffect(useCallback(() => {
     load();
+  }, [load]));
+
+  useEffect(() => {
     if (params.action === 'create') {
       setPartyPromptVisible(true);
+      router.setParams({ action: undefined });
     }
-  }, [load, params.action]));
+  }, [params.action, router]);
 
   const visible = items.filter((x) => {
     if (filter === 'all') return true;
