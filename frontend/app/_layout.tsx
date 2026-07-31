@@ -85,6 +85,7 @@ function ThemedStack() {
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.surface } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
+        <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
         <Stack.Screen name="bill-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="party-form" options={{ presentation: "modal" }} />
         <Stack.Screen name="sale-form" options={{ presentation: "modal" }} />

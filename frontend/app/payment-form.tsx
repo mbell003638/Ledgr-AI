@@ -22,6 +22,7 @@ export default function PaymentForm() {
   const [supplierId, setSupplierId] = useState("");
   const [partnerName, setPartnerName] = useState("");
   const [partnerOptions, setPartnerOptions] = useState<string[]>([]);
+  const [isPartnerMode, setIsPartnerMode] = useState(false);
   const [amount, setAmount] = useState("");
   const currency = "USD";
   const [method, setMethod] = useState("cash");
@@ -38,6 +39,7 @@ export default function PaymentForm() {
         setSuppliers(s);
         if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
         const st = await api.getSettings();
+        setIsPartnerMode(st.accountingStyle === 'retail_partnership');
         setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
         if (editId) {
           const list = await api.listPayments();
@@ -71,13 +73,13 @@ export default function PaymentForm() {
       }
       if (!finalSupplierId) { setError("Select or enter a supplier"); return; }
     }
-    if (type === "drawing" && !partnerName.trim()) { setError("Enter partner name"); return; }
+    if (type === "drawing" && isPartnerMode && !partnerName.trim()) { setError("Select a partner"); return; }
     setSaving(true); setError("");
     try {
       const payload = {
         date, amount: amt, currency, type,
         supplierId: type === "supplier_payment" ? finalSupplierId : "",
-        partnerName: type === "drawing" ? partnerName.trim() : "",
+        partnerName: type === "drawing" && isPartnerMode ? partnerName.trim() : "",
         method, notes,
       };
       if (editId) await api.updatePayment(editId, payload);
@@ -107,7 +109,7 @@ export default function PaymentForm() {
           <Card>
             <Text style={styles.label}>Payment Type</Text>
             <View style={styles.segRowFull}>
-              {([["supplier_payment", "Supplier"], ["drawing", "Drawing"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
+              {([["supplier_payment", "Supplier"], ["drawing", isPartnerMode ? "Drawing" : "Owner Draw"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
                 <Pressable key={v} testID={`ptype-${v}`} onPress={() => setType(v)} style={[styles.segBtnFull, type === v && styles.segBtnActive]}>
                   <Text style={[styles.segText, type === v && styles.segTextActive]}>{lbl}</Text>
                 </Pressable>
@@ -128,7 +130,7 @@ export default function PaymentForm() {
                   }}
                 />
               </View>
-            ) : (
+            ) : type === "drawing" && isPartnerMode ? (
               <>
                 <Text style={[styles.label, { marginTop: 12 }]}>Partner Name</Text>
                 {partnerOptions.length > 0 && (
@@ -140,9 +142,11 @@ export default function PaymentForm() {
                     ))}
                   </ScrollView>
                 )}
-                <TextInput testID="input-partner-name" value={partnerName} onChangeText={setPartnerName} placeholder="e.g. Amit" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <TextInput testID="input-partner-name" value={partnerName} onChangeText={setPartnerName} placeholder="Select a partner" placeholderTextColor={theme.color.muted} style={styles.input} />
               </>
-            )}
+            ) : type === "drawing" ? (
+              <Text style={[styles.label, { marginTop: 12, color: theme.color.muted }]}>This withdrawal posts to the global Owner&apos;s Equity drawing account.</Text>
+            ) : null}
 
             <Text style={[styles.label, { marginTop: 12 }]}>Date (YYYY-MM-DD)</Text>
             <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />

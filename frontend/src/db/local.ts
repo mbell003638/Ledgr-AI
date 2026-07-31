@@ -368,13 +368,13 @@ export async function listCashEntries() {
   return (await readColl<any>('cashEntries')).sort((a: any, b: any) =>
     (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
 }
-export async function createCashEntry(e: { amount: number; direction: CashDirection; date: string; notes?: string }) {
+export async function createCashEntry(e: { id?: string; amount: number; direction: CashDirection; date: string; notes?: string; type?: string; investorId?: string; partnerName?: string }) {
   return serialize(async () => {
     const amt = Number(e.amount);
     if (!Number.isFinite(amt) || amt < 0) throw new Error('Amount must be a valid non-negative number.');
     if (e.direction !== 'in' && e.direction !== 'out') throw new Error('Direction must be in or out.');
     const items = await readColl<any>('cashEntries');
-    const item = { id: uuid(), amount: amt, direction: e.direction, date: e.date, notes: e.notes || '', created_at: nowIso() };
+    const item = { id: e.id || uuid(), amount: amt, direction: e.direction, date: e.date, notes: e.notes || '', type: e.type || '', investorId: e.investorId || '', partnerName: e.partnerName || '', created_at: nowIso() };
     items.push(item);
     await writeColl('cashEntries', items);
     return item;
@@ -665,6 +665,84 @@ export async function drawingsHistory() {
   }));
 }
 
+export type InvestorLedgerTransaction = {
+  id: string; date: string; type: 'opening_capital' | 'capital_injection' | 'drawing' | 'profit_allocation';
+  notes: string; amount: number;
+};
+export type InvestorLedgerDetail = {
+  id: string; name: string; profitSharePct: number; periodStart: string; periodEnd: string;
+  openingCapital: number; currentCapitalBalance: number; totalInjected: number;
+  totalDrawings: number; profitShare: number; transactions: InvestorLedgerTransaction[];
+};
+
+function legacyInvestor(settings: any, rawId: string) {
+  if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+  const id = decodeURIComponent(String(rawId || ''));
+  const investors = Array.isArray(settings.investors) ? settings.investors : [];
+  const found = investors.find((item: any) => String(item?.id || item?.name) === id || String(item?.name || '').toLowerCase() === id.toLowerCase());
+  if (!found) throw new Error('Investor not found');
+  return { ...found, id: String(found.id || found.name), name: String(found.name || '').trim() };
+}
+
+/** Partnership-only legacy fallback used when the active book is not V2-backed. */
+export async function investorLedgerDetail(rawId: string): Promise<InvestorLedgerDetail> {
+  const [settings, cashEntries, payments, periods, capital] = await Promise.all([
+    getSettings(), readColl<any>('cashEntries'), readColl<any>('payments'), readColl<any>('periods'), capitalStatement(),
+  ]);
+  const investor = legacyInvestor(settings, rawId);
+  const periodStart = settings.currentPeriodStart || '1970-01-01';
+  const periodEnd = new Date().toISOString().slice(0, 10);
+  const sameInvestor = (item: any) => {
+    const itemId = String(item?.investorId || '');
+    const itemName = String(item?.partnerName || '').trim().toLowerCase();
+    if (itemId && (itemId === investor.id || itemId === investor.name)) return true;
+    if (itemName && itemName === investor.name.toLowerCase()) return true;
+    const onlyInvestor = (settings.investors || []).length === 1;
+    const capitalNote = /capital|owner deposit|investment|injection/i.test(String(item?.type || '') + ' ' + String(item?.notes || ''));
+    return onlyInvestor && capitalNote;
+  };
+  const deposits: InvestorLedgerTransaction[] = cashEntries
+    .filter((entry: any) => entry.direction === 'in' && (entry.date || '') >= periodStart && sameInvestor(entry)
+      && (entry.type === 'capital_injection' || /capital|owner deposit|investment|injection/i.test(entry.notes || '')))
+    .map((entry: any) => ({ id: entry.id, date: entry.date, type: 'capital_injection', notes: entry.notes || 'Capital deposited', amount: +toUsd(entry.amount).toFixed(2) }));
+  const drawings: InvestorLedgerTransaction[] = payments
+    .filter((payment: any) => payment.type === 'drawing' && (payment.date || '') >= periodStart && sameInvestor(payment))
+    .map((payment: any) => ({ id: payment.id, date: payment.date, type: 'drawing', notes: payment.notes || 'Funds drawn', amount: +toUsd(payment.amount).toFixed(2) }));
+  const closedAllocations: InvestorLedgerTransaction[] = periods.flatMap((period: any) => {
+    const pct = Number(investor.profitSharePct || 0);
+    const amount = +(toUsd(period.netProfit) * pct / 100).toFixed(2);
+    return amount ? [{ id: `${period.id}:${investor.id}:profit`, date: period.endDate, type: 'profit_allocation' as const, notes: 'Period-close profit allocation', amount }] : [];
+  });
+  const capitalRow = (capital.investors || []).find((item: any) => item.id === investor.id || String(item.name).toLowerCase() === investor.name.toLowerCase());
+  const openingCapital = +toUsd(investor.amount).toFixed(2);
+  const totalInjected = +deposits.reduce((sum, item) => sum + item.amount, 0).toFixed(2);
+  const totalDrawings = +drawings.reduce((sum, item) => sum + item.amount, 0).toFixed(2);
+  const profitShare = +toUsd(Number(capitalRow?.profitShare || 0)).toFixed(2);
+
+  const transactions: InvestorLedgerTransaction[] = [
+    ...deposits, ...drawings, ...closedAllocations,
+    ...(openingCapital ? [{ id: `${investor.id}:opening`, date: periodStart, type: 'opening_capital' as const, notes: 'Opening capital carried into period', amount: openingCapital }] : []),
+  ].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  return {
+    id: investor.id, name: investor.name, profitSharePct: Number(investor.profitSharePct || 0), periodStart, periodEnd,
+    openingCapital, currentCapitalBalance: +(openingCapital + totalInjected + profitShare - totalDrawings).toFixed(2),
+    totalInjected, totalDrawings, profitShare, transactions,
+  };
+}
+
+export async function recordInvestorCapital(rawId: string, input: { amount: number; date: string; notes?: string }) {
+  if (!Number.isFinite(Number(input.amount)) || Number(input.amount) <= 0) throw new Error('Amount must be greater than zero');
+  const settings = await getSettings();
+  const investor = legacyInvestor(settings, rawId);
+  return createCashEntry({ amount: input.amount, direction: 'in', date: input.date, notes: input.notes || `Capital injection — ${investor.name}`, type: 'capital_injection', investorId: investor.id, partnerName: investor.name });
+}
+
+export async function recordInvestorDrawing(rawId: string, input: { amount: number; date: string; notes?: string }) {
+  if (!Number.isFinite(Number(input.amount)) || Number(input.amount) <= 0) throw new Error('Amount must be greater than zero');
+  const settings = await getSettings();
+  const investor = legacyInvestor(settings, rawId);
+  return createPayment({ amount: input.amount, date: input.date, notes: input.notes || `Drawing — ${investor.name}`, type: 'drawing', partnerName: investor.name, investorId: investor.id, method: 'cash' });
+}
 // Monthly profit trend for the last N months (chart data)
 export async function monthlyProfitTrend(months = 6) {
   const now = new Date();
@@ -1203,7 +1281,14 @@ export async function closePeriod(actualStock: number, notes = '') {
     // correctly picked up by the new period. Using tomorrow created a "dead zone" where
     // same-day post-close entries were excluded from the new period AND already frozen out
     // of the archived snapshot — silently vanishing from every report.
-    await updateSettings({ currentPeriodStart: nowDate, openingInventory: actualStock, openingCash: d.cash });
+    const settings = await getSettings();
+    let capitalCarry: Record<string, any> = {};
+    if (settings.accountingStyle === 'retail_partnership' && Array.isArray(settings.investors) && settings.investors.length) {
+      const details = await Promise.all(settings.investors.map((item: any) => investorLedgerDetail(String(item.id || item.name))));
+      const investors = details.map((item) => ({ id: item.id, name: item.name, amount: item.currentCapitalBalance, date: nowDate, profitSharePct: item.profitSharePct }));
+      capitalCarry = { investors, partnerNames: investors.map((item) => item.name), openingCapital: +investors.reduce((sum, item) => sum + item.amount, 0).toFixed(2) };
+    }
+    await updateSettings({ currentPeriodStart: nowDate, openingInventory: actualStock, openingCash: d.cash, ...capitalCarry });
     return period;
   });
 }

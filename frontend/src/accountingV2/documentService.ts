@@ -85,9 +85,9 @@ export class V2DocumentService {
       FROM v2_journal_entries e
       JOIN v2_journal_lines l ON e.id = l.journal_id
       LEFT JOIN v2_sources s ON e.source_id = s.id
-      WHERE e.book_id = ? AND l.account_id = ?
+      WHERE e.book_id = ? AND l.account_id IN (?,?)
       ORDER BY e.date DESC, e.id DESC
-    `, [bookId, `${bookId}:account:1010`]);
+    `, [bookId, `${bookId}:account:${V2_ACCOUNT_CODES.CASH}`, `${bookId}:account:${V2_ACCOUNT_CODES.BANK}`]);
     
     return rows.map(row => {
       const isOut = row.credit > 0;

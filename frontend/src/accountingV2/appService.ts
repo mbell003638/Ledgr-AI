@@ -5,6 +5,7 @@ import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
 import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense } from './postings';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
+import { V2InvestorLedgerService } from './investorLedgerService';
 import type { V2PaymentMethod, V2PartyRole } from './types';
 
 type AnyRecord = Record<string, any>;
@@ -77,7 +78,18 @@ export class V2AppService {
   async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference }); }
   async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'customer', c.bookId); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations }); }
   async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'supplier', c.bookId); const cash = input.paymentType === 'cash'; return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }
-  async createPayment(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'supplier', c.bookId); return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) }); }
+  async createPayment(input: AnyRecord) {
+    const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    if (input.type === 'drawing') {
+      const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [c.bookId]);
+      if (book?.style === 'retail_partnership') {
+        return new V2InvestorLedgerService(this.db).draw({ ...c, date: input.date, amount: amount(input.amount), memberId: String(input.investorId || input.partnerName || ''), notes: input.notes });
+      }
+      return this.documents.drawing({ ...c, date: input.date, amount: amount(input.amount), method: method(input.method) });
+    }
+    const partyId = await this.party(input, 'supplier', c.bookId);
+    return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
+  }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
 
   async ownsSource(id: string, type?: string) {

@@ -93,6 +93,20 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         investors: cleanedMembers,
         partnerNames: cleanedMembers.map((m) => m.name),
       });
+      if (isPartnerMode) {
+        try {
+          const config = await api.getV2BookConfig();
+          if (!config) throw new Error('No active versioned V2 book');
+          await api.updateV2BookConfig({
+            style: 'retail_partnership', basis: config.basis, selectedPersonas: config.selectedPersonas, activePersona: config.activePersona,
+            retailPartnership: {
+              ...config.retailPartnership,
+              enabled: true,
+              members: cleanedMembers.map((member) => ({ name: member.name, openingContribution: member.amount, profitSharePct: member.profitSharePct })),
+            },
+          });
+        } catch { /* legacy storage remains authoritative when V2 is unavailable */ }
+      }
 
       onClose();
       if (onSuccess) onSuccess();
@@ -159,10 +173,10 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 </>
               ) : null}
 
-              <View style={!isInvestorOnly ? { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border } : { marginTop: 4 }}>
+              {isPartnerMode ? <View style={!isInvestorOnly ? { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border } : { marginTop: 4 }}>
                 {!isInvestorOnly ? <Text style={styles.sectionHeader}>Investor Capital & Equity Setup</Text> : null}
                 {members.length === 0 ? (
-                  <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 12 }}>No investors added yet. Tap "+ Add Investor" below.</Text>
+                  <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 12 }}>No investors added yet. Tap &quot;+ Add Investor&quot; below.</Text>
                 ) : null}
                 {members.map((m, i) => (
                   <View key={i} style={styles.memberCard}>
@@ -208,7 +222,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
                   <Text style={styles.addMemberText}>Add Investor</Text>
                 </Pressable>
-              </View>
+              </View> : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </ScrollView>

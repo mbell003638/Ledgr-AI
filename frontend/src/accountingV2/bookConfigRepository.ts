@@ -123,12 +123,16 @@ export class V2BookConfigRepository {
         if (existing) await this.db.run('UPDATE v2_personas SET enabled = 1, active = ?, config = ? WHERE id = ?', [type === update.activePersona ? 1 : 0, personaConfig, existing.id]);
         else await this.db.run('INSERT INTO v2_personas(id,book_id,type,enabled,active,config) VALUES(?,?,?,?,?,?)', [personaId(bookId, type), bookId, type, 1, type === update.activePersona ? 1 : 0, personaConfig]);
       }
+      const existingMembers = await this.db.all<{ id: string; name: string; opening_contribution: number; current_capital: number }>('SELECT id,name,opening_contribution,current_capital FROM v2_members WHERE book_id=?', [bookId]);
       await this.db.run('DELETE FROM v2_members WHERE book_id = ?', [bookId]);
       for (const member of update.retailPartnership.members) {
         const id = memberId(bookId, member.id || member.name);
         const contribution = cents(member.openingContribution);
+        const previous = existingMembers.find((item) => item.id === id || item.name.trim().toLowerCase() === member.name.trim().toLowerCase());
+        const untouchedOpening = previous && Math.abs(Number(previous.current_capital) - Number(previous.opening_contribution)) <= 0.005;
+        const currentCapital = previous && !untouchedOpening ? cents(Number(previous.current_capital)) : contribution;
         await this.db.run('INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
-          [id, bookId, member.name.trim(), contribution, contribution, member.profitSharePct]);
+          [id, bookId, member.name.trim(), contribution, currentCapital, member.profitSharePct]);
       }
       return this.getBookConfig(bookId);
     });

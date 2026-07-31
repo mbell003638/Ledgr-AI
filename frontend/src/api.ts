@@ -7,6 +7,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
+import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -316,6 +317,19 @@ export const api = {
     }
     return [];
   },
+  listInvestors: async (): Promise<Array<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }>> => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') return [];
+    const runner = activeSqlRunner();
+    if (runner) {
+      const app = new V2AppService(runner); const context = await app.activeContext();
+      if (context) {
+        const rows = await runner.all<any>('SELECT id,name,opening_contribution,current_capital,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY name', [context.bookId]);
+        if (rows.length) return rows.map((row) => ({ id: row.id, name: row.name, openingCapital: Number(row.opening_contribution), currentCapital: Number(row.current_capital), profitSharePct: Number(row.profit_share_pct) }));
+      }
+    }
+    return (settings.investors || []).map((item: any) => ({ id: String(item.id || item.name), name: String(item.name), openingCapital: Number(item.amount || 0), currentCapital: Number(item.amount || 0), profitSharePct: Number(item.profitSharePct || 0) }));
+  },
   listSalesAndInvoices: async () => {
     const runner=activeSqlRunner(); if(!runner)return db.listSales();
     const service=new V2AppService(runner); return (await service.activeContext()) ? service.listSalesAndInvoices() : db.listSales();
@@ -368,7 +382,7 @@ export const api = {
       if (ctx) {
         const v2Entries = await service.documents.listCashEntries(ctx.bookId);
         const legacyEntries = await db.listCashEntries();
-        const all = [...v2Entries, ...legacyEntries].sort((a: any, b: any) =>
+        const all = [...new Map([...legacyEntries, ...v2Entries].map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
           (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
         );
         return all;
@@ -379,6 +393,59 @@ export const api = {
   createCashEntry: (e: any) => db.createCashEntry(e),
   updateCashEntry: (id: string, e: any) => db.updateCashEntry(id, e),
   deleteCashEntry: (id: string) => db.deleteCashEntry(id),
+
+  getInvestorLedger: async (id: string): Promise<InvestorLedgerDetail> => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    const runner = activeSqlRunner();
+    if (!runner) return db.investorLedgerDetail(id);
+    const app = new V2AppService(runner);
+    const context = await app.activeContext();
+    if (!context) return db.investorLedgerDetail(id);
+    const v2 = await new V2InvestorLedgerService(runner).detail(context.bookId, id);
+    let legacy: db.InvestorLedgerDetail | null = null;
+    try { legacy = await db.investorLedgerDetail(v2.name); } catch { /* no legacy member mirror */ }
+    if (!legacy) return v2;
+    const known = new Set(v2.transactions.map((item) => item.id));
+    const extras = legacy.transactions.filter((item) => !known.has(item.id) && (item.type === 'capital_injection' || item.type === 'drawing'));
+    const extraInjected = extras.filter((item) => item.type === 'capital_injection').reduce((sum, item) => sum + item.amount, 0);
+    const extraDrawings = extras.filter((item) => item.type === 'drawing').reduce((sum, item) => sum + item.amount, 0);
+    return {
+      ...v2,
+      totalInjected: Math.round((v2.totalInjected + extraInjected) * 100) / 100,
+      totalDrawings: Math.round((v2.totalDrawings + extraDrawings) * 100) / 100,
+      currentCapitalBalance: Math.round((v2.currentCapitalBalance + extraInjected - extraDrawings) * 100) / 100,
+      transactions: [...v2.transactions, ...extras].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
+    };
+  },
+  depositInvestorCapital: async (id: string, input: { amount: number; date: string; notes?: string }) => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    const runner = activeSqlRunner();
+    if (runner) {
+      const app = new V2AppService(runner); const context = await app.activeContext(input.date);
+      if (context) {
+        const result = await new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id });
+        try { await db.createCashEntry({ id: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' }); } catch {}
+        return result;
+      }
+    }
+    return db.recordInvestorCapital(id, input);
+  },
+  drawInvestorFunds: async (id: string, input: { amount: number; date: string; notes?: string }) => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    const runner = activeSqlRunner();
+    if (runner) {
+      const app = new V2AppService(runner); const context = await app.activeContext(input.date);
+      if (context) {
+        const result = await new V2InvestorLedgerService(runner).draw({ ...input, bookId: context.bookId, memberId: id });
+        try { await db.createPayment({ id: result.source.id, ...input, type: 'drawing', partnerName: String(result.source.metadata?.memberName || id), investorId: id, method: 'cash' }); } catch {}
+        return result;
+      }
+    }
+    return db.recordInvestorDrawing(id, input);
+  },
 
   // Dashboard & reports
   dashboard: async () => {

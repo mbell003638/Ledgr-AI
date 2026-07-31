@@ -148,6 +148,14 @@ describe('V2BookConfigRepository — persistent books and persona isolation', ()
         { id: 'book-a:member:owner-a', book_id: 'book-a', name: 'Alice', opening_contribution: 1200.13, current_capital: 1200.13, profit_share_pct: 60 },
         { id: 'book-a:member:owner-b', book_id: 'book-a', name: 'Bob', opening_contribution: 800, current_capital: 800, profit_share_pct: 40 },
       ]);
+
+      await runner.run('UPDATE v2_members SET current_capital=? WHERE id=?', [1500, 'book-a:member:owner-a']);
+      const saved = await reloaded.getBookConfig('book-a');
+      await reloaded.updateBookConfig('book-a', {
+        basis: saved.basis, style: saved.style, selectedPersonas: saved.selectedPersonas, activePersona: saved.activePersona,
+        retailPartnership: saved.retailPartnership,
+      });
+      expect(await runner.first('SELECT current_capital FROM v2_members WHERE id=?', ['book-a:member:owner-a'])).toEqual({ current_capital: 1500 });
     } finally { close(); }
   });
 

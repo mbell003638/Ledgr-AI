@@ -1,0 +1,214 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { api } from '@/src/api';
+import { Card, Empty } from '@/src/components/UI';
+import { useTheme } from '@/src/context/ThemeContext';
+import { fmt, shortDate } from '@/src/theme';
+import { getCurrencySymbol } from '@/src/db/local';
+import { isValidDateString } from '@/src/utils/dateValidation';
+import type { InvestorLedgerDetail, InvestorLedgerTransaction } from '@/src/accountingV2/investorLedgerService';
+
+type Action = 'deposit' | 'draw';
+const actionMeta = {
+  deposit: { title: 'Deposit Capital', subtitle: 'Debit Cash · Credit Partner Capital', icon: 'arrow-down-circle-outline' as const },
+  draw: { title: 'Draw Funds', subtitle: 'Debit Partner Drawings · Credit Cash', icon: 'arrow-up-circle-outline' as const },
+};
+
+export default function InvestorDetailScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const [data, setData] = useState<InvestorLedgerDetail | null>(null);
+  const [currency, setCurrency] = useState('$');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [action, setAction] = useState<Action | null>(null);
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    setError('');
+    try {
+      const settings = await api.getSettings();
+      if (settings.accountingStyle !== 'retail_partnership') {
+        router.replace('/(tabs)/suppliers' as any);
+        return;
+      }
+      const detail = await api.getInvestorLedger(id);
+      setData(detail);
+      setCurrency(getCurrencySymbol(settings.currency || 'USD'));
+    } catch (e: any) {
+      setError(e?.message || 'Could not load this investor ledger.');
+    } finally { setLoading(false); }
+  }, [id, router]);
+
+  useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+
+  const closeForm = () => { setAction(null); setAmount(''); setNotes(''); setFormError(''); };
+  const save = async () => {
+    if (!id || !action) return;
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) { setFormError('Enter an amount greater than zero.'); return; }
+    if (!isValidDateString(date)) { setFormError('Enter a valid date in YYYY-MM-DD format.'); return; }
+    setSaving(true); setFormError('');
+    try {
+      const input = { amount: value, date, notes: notes.trim() };
+      if (action === 'deposit') await api.depositInvestorCapital(id, input);
+      else await api.drawInvestorFunds(id, input);
+      closeForm();
+      setLoading(true);
+      await load();
+    } catch (e: any) { setFormError(e?.message || 'Could not post this transaction.'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 64 }} color={theme.color.brandPrimary} /></SafeAreaView>;
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <Pressable accessibilityLabel="Back to Parties" onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={24} color={theme.color.onSurface} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>{data?.name || 'Investor Ledger'}</Text>
+          {data ? <Text style={styles.headerSub}>{data.profitSharePct}% profit share · Active period</Text> : null}
+        </View>
+      </View>
+
+      {error || !data ? (
+        <Empty icon={<Ionicons name="alert-circle-outline" size={40} color={theme.color.error} />} title="Investor ledger unavailable" hint={error || 'Investor not found.'} />
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.hero}>
+            <Text style={styles.heroLabel}>CURRENT CAPITAL BALANCE</Text>
+            <Text style={styles.heroValue}>{fmt(data.currentCapitalBalance, currency)}</Text>
+            <Text style={styles.heroHint}>Opening + injections + profit share − drawings</Text>
+          </View>
+
+          <View style={styles.statsRow}>
+            <Summary label="Total Injected" value={fmt(data.totalInjected, currency)} color={theme.color.success} icon="arrow-down" styles={styles} />
+            <Summary label="Total Drawings" value={fmt(data.totalDrawings, currency)} color={theme.color.warning} icon="arrow-up" styles={styles} />
+            <Summary label="Profit Share" value={fmt(data.profitShare, currency)} color={data.profitShare < 0 ? theme.color.error : theme.color.brandPrimary} icon="pie-chart-outline" styles={styles} />
+          </View>
+
+          <View style={styles.actionsRow}>
+            <Pressable testID="investor-deposit-capital" onPress={() => setAction('deposit')} style={[styles.actionButton, { backgroundColor: theme.color.success }]}>
+              <Ionicons name="add-circle-outline" size={20} color="#fff" /><Text style={styles.actionText}>Deposit Capital</Text>
+            </Pressable>
+            <Pressable testID="investor-draw-funds" onPress={() => setAction('draw')} style={[styles.actionButton, styles.drawButton]}>
+              <Ionicons name="remove-circle-outline" size={20} color={theme.color.warning} /><Text style={[styles.actionText, { color: theme.color.warning }]}>Draw Funds</Text>
+            </Pressable>
+          </View>
+
+          <Card style={styles.ledgerCard}>
+            <View style={styles.sectionHeader}>
+              <View><Text style={styles.sectionTitle}>Transaction Ledger</Text><Text style={styles.sectionSub}>{shortDate(data.periodStart)} – {shortDate(data.periodEnd)}</Text></View>
+              <View style={styles.countBadge}><Text style={styles.countText}>{data.transactions.length}</Text></View>
+            </View>
+            {data.transactions.length ? data.transactions.map((item, index) => (
+              <TransactionRow key={item.id} item={item} currency={currency} isLast={index === data.transactions.length - 1} theme={theme} styles={styles} />
+            )) : <Empty title="No capital activity yet" hint="Deposits, drawings, and period-close allocations will appear here." />}
+          </Card>
+          <View style={{ height: 48 }} />
+        </ScrollView>
+      )}
+
+      <Modal visible={action !== null} transparent animationType={Platform.OS === 'web' ? 'fade' : 'slide'} onRequestClose={closeForm}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            {action ? <>
+              <View style={styles.sheetTitleRow}>
+                <View style={styles.sheetIcon}><Ionicons name={actionMeta[action].icon} size={22} color={theme.color.brandPrimary} /></View>
+                <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
+                <Pressable onPress={closeForm}><Ionicons name="close" size={24} color={theme.color.muted} /></Pressable>
+              </View>
+              <Text style={styles.label}>Amount</Text>
+              <TextInput testID="investor-action-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+              <Text style={styles.label}>Date</Text>
+              <TextInput value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+              <Text style={styles.label}>Notes</Text>
+              <TextInput value={notes} onChangeText={setNotes} placeholder="Optional transaction note" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 72 }]} multiline />
+              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+              <Pressable testID="investor-action-save" onPress={save} disabled={saving} style={styles.saveButton}>
+                {saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={styles.saveText}>Post {actionMeta[action].title}</Text>}
+              </Pressable>
+            </> : null}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+function Summary({ label, value, color, icon, styles }: any) {
+  return <View style={styles.summary}><Ionicons name={icon} size={17} color={color} /><Text style={styles.summaryLabel}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.summaryValue, { color }]}>{value}</Text></View>;
+}
+
+function TransactionRow({ item, currency, isLast, theme, styles }: { item: InvestorLedgerTransaction; currency: string; isLast: boolean; theme: any; styles: any }) {
+  const drawing = item.type === 'drawing';
+  const meta = item.type === 'capital_injection' ? { label: 'Capital Deposit', icon: 'arrow-down' as const, color: theme.color.success }
+    : drawing ? { label: 'Drawing', icon: 'arrow-up' as const, color: theme.color.warning }
+    : item.type === 'profit_allocation' ? { label: 'Profit Allocation', icon: 'pie-chart-outline' as const, color: theme.color.brandPrimary }
+    : { label: 'Opening Capital', icon: 'flag-outline' as const, color: theme.color.info };
+  return <View style={[styles.txRow, !isLast && styles.txDivider]}>
+    <View style={[styles.txIcon, { backgroundColor: meta.color + '18' }]}><Ionicons name={meta.icon} size={17} color={meta.color} /></View>
+    <View style={{ flex: 1 }}><Text style={styles.txTitle}>{meta.label}</Text><Text numberOfLines={1} style={styles.txNote}>{shortDate(item.date)} · {item.notes}</Text></View>
+    <Text style={[styles.txAmount, { color: drawing ? theme.color.warning : meta.color }]}>{drawing ? '−' : '+'}{fmt(item.amount, currency)}</Text>
+  </View>;
+}
+
+function makeStyles(theme: any) { return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.color.surface },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.color.border },
+  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: theme.color.onSurface },
+  headerSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
+  content: { padding: 18, gap: 16 },
+  hero: { padding: 22, borderRadius: theme.radius.lg, backgroundColor: theme.color.brandPrimary, shadowColor: theme.color.brandPrimary, shadowOpacity: .25, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  heroLabel: { fontSize: 11, fontWeight: '800', letterSpacing: .6, color: theme.color.onBrandPrimary, opacity: .8 },
+  heroValue: { fontSize: 34, fontWeight: '900', color: theme.color.onBrandPrimary, marginTop: 8, letterSpacing: -1 },
+  heroHint: { fontSize: 12, color: theme.color.onBrandPrimary, opacity: .72, marginTop: 5 },
+  statsRow: { flexDirection: 'row', gap: 8 },
+  summary: { flex: 1, minWidth: 0, padding: 12, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
+  summaryLabel: { fontSize: 10, color: theme.color.muted, marginTop: 8, fontWeight: '600' },
+  summaryValue: { fontSize: 14, color: theme.color.onSurface, marginTop: 4, fontWeight: '800' },
+  actionsRow: { flexDirection: 'row', gap: 10 },
+  actionButton: { flex: 1, minHeight: 50, borderRadius: theme.radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10 },
+  drawButton: { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.warning },
+  actionText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  ledgerCard: { padding: 0, overflow: 'hidden' },
+  sectionHeader: { padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: theme.color.border },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: theme.color.onSurface },
+  sectionSub: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
+  countBadge: { minWidth: 28, height: 28, borderRadius: 14, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.brandPrimary + '18' },
+  countText: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: '800' },
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginHorizontal: 16, paddingVertical: 14 },
+  txDivider: { borderBottomWidth: 1, borderBottomColor: theme.color.divider },
+  txIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  txTitle: { fontSize: 13, fontWeight: '700', color: theme.color.onSurface },
+  txNote: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
+  txAmount: { fontSize: 13, fontWeight: '800' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.56)' },
+  sheet: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: 22, paddingBottom: Platform.OS === 'ios' ? 38 : 24, borderWidth: 1, borderColor: theme.color.border },
+  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: theme.color.borderStrong, alignSelf: 'center', marginBottom: 18 },
+  sheetTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 18 },
+  sheetIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.color.brandPrimary + '18', alignItems: 'center', justifyContent: 'center' },
+  sheetTitle: { fontSize: 17, fontWeight: '800', color: theme.color.onSurface },
+  sheetSub: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
+  label: { fontSize: 12, fontWeight: '700', color: theme.color.onSurface, marginTop: 10 },
+  input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, color: theme.color.onSurface, borderRadius: theme.radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
+  formError: { color: theme.color.error, fontSize: 12, marginTop: 12 },
+  saveButton: { marginTop: 18, minHeight: 52, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: theme.color.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+}); }

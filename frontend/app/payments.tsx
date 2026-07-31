@@ -38,6 +38,7 @@ export default function PaymentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Payment | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
+  const [isPartnerMode, setIsPartnerMode] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +50,7 @@ export default function PaymentsScreen() {
       setSupplierMap(smap);
 
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
+      setIsPartnerMode(s.accountingStyle === 'retail_partnership');
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -75,7 +77,7 @@ export default function PaymentsScreen() {
 
   const getRecipientName = (p: Payment) => {
     if (p.type === "supplier_payment" && p.supplierId) return supplierMap[p.supplierId] || "Unknown Supplier";
-    if (p.type === "drawing") return p.partnerName || "Unknown Partner";
+    if (p.type === "drawing") return isPartnerMode ? (p.partnerName || "Unknown Partner") : "Owner's Equity";
     if (p.type === "commission_payment") return "Commission";
     return "Unknown";
   };

@@ -87,7 +87,8 @@ export class V2CloseBooksRepository {
       const grossProfit = cents(sales - cogs);
       const commission = grossProfit > 0 ? cents(grossProfit * input.commissionPct / 100) : 0;
       const netProfit = cents(grossProfit - commission - expenses);
-      const memberProfitShares = this.allocateProfit(members, netProfit, drawings);
+      const memberMovements = await this.memberMovements(input.bookId, input.periodId);
+      const memberProfitShares = this.allocateProfit(members, netProfit, drawings, memberMovements);
       const accountsPayable = cents(-balance('2000'));
       const customerAdvances = cents(-balance('2100'));
       const liabilities = cents(balances.filter((row) => row.type === 'liability').reduce((sum, row) => sum + Number(row.credit) - Number(row.debit), 0));
@@ -132,17 +133,47 @@ export class V2CloseBooksRepository {
     for (const line of lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [journalId, line.accountId, null, line.debit, line.credit, 'Period close']);
   }
 
-  private allocateProfit(members: MemberRow[], netProfit: number, drawings: number): MemberProfitShare[] {
-    let allocated = 0; let drawingsAllocated = 0;
+  private allocateProfit(
+    members: MemberRow[],
+    netProfit: number,
+    drawings: number,
+    movements: Map<string, { injections: number; drawings: number }> = new Map(),
+  ): MemberProfitShare[] {
+    let allocated = 0; let fallbackDrawingsAllocated = 0;
+    const attributedDrawings = cents([...movements.values()].reduce((sum, item) => sum + item.drawings, 0));
+    const unattributedDrawings = cents(Math.max(0, drawings - attributedDrawings));
     return members.map((member, index) => {
       const profitShare = index === members.length - 1 ? cents(netProfit - allocated) : cents(netProfit * Number(member.profit_share_pct) / 100);
       allocated = cents(allocated + profitShare);
-      const memberDrawings = index === members.length - 1 ? cents(drawings - drawingsAllocated) : cents(drawings * Number(member.profit_share_pct) / 100);
-      drawingsAllocated = cents(drawingsAllocated + memberDrawings);
+      const fallback = index === members.length - 1 ? cents(unattributedDrawings - fallbackDrawingsAllocated) : cents(unattributedDrawings * Number(member.profit_share_pct) / 100);
+      fallbackDrawingsAllocated = cents(fallbackDrawingsAllocated + fallback);
+      const movement = movements.get(member.id) || { injections: 0, drawings: 0 };
+      const memberDrawings = cents(movement.drawings + fallback);
       const openingCapital = cents(Number(member.current_capital));
       return { memberId: member.id, name: member.name, profitSharePct: Number(member.profit_share_pct), openingCapital,
-        profitShare, drawings: memberDrawings, closingCapital: cents(openingCapital + profitShare - memberDrawings) };
+        profitShare, drawings: memberDrawings, closingCapital: cents(openingCapital + movement.injections + profitShare - memberDrawings) };
     });
+  }
+
+  private async memberMovements(bookId: string, periodId: string) {
+    const rows = await this.db.all<{ type: string; metadata: string }>(
+      `SELECT s.type,s.metadata FROM v2_sources s JOIN v2_journal_entries j ON j.source_id=s.id
+       WHERE s.book_id=? AND j.period_id=? AND s.type IN ('capital_injection','drawing')`,
+      [bookId, periodId],
+    );
+    const result = new Map<string, { injections: number; drawings: number }>();
+    for (const row of rows) {
+      let metadata: any = {};
+      try { metadata = JSON.parse(row.metadata || '{}'); } catch { metadata = {}; }
+      const memberId = String(metadata.memberId || '');
+      const amount = cents(Number(metadata.total || 0));
+      if (!memberId || amount <= 0) continue;
+      const current = result.get(memberId) || { injections: 0, drawings: 0 };
+      if (row.type === 'capital_injection') current.injections = cents(current.injections + amount);
+      else current.drawings = cents(current.drawings + amount);
+      result.set(memberId, current);
+    }
+    return result;
   }
 
   private async period(bookId: string, periodId: string): Promise<PeriodRow> {

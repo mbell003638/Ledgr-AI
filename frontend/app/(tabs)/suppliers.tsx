@@ -31,7 +31,8 @@ export default function PartiesScreen() {
       const partnerActive = settings?.accountingStyle === "retail_partnership";
       setIsPartnerMode(partnerActive);
 
-      const v2 = await api.listParties().catch(() => []);
+      setFilter((current) => !partnerActive && current === 'partner' ? 'all' : current);
+      const [v2, investors] = await Promise.all([api.listParties().catch(() => []), api.listInvestors().catch(() => [])]);
       if (v2.length) {
         const mapped: PartyRow[] = v2.map((p: any) => ({
           id: p.id,
@@ -43,10 +44,10 @@ export default function PartiesScreen() {
         })).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
         // Inject partners from settings if in partner mode
-        if (partnerActive && Array.isArray(settings?.partnerNames)) {
-          for (const pName of settings.partnerNames) {
-            if (pName && !mapped.some((x) => x.name.toLowerCase() === pName.toLowerCase())) {
-              mapped.push({ id: `partner_${pName}`, name: pName, role: "partner", receivable: 0, payable: 0 });
+        if (partnerActive) {
+          for (const investor of investors) {
+            if (investor.name && !mapped.some((x) => x.name.toLowerCase() === investor.name.toLowerCase())) {
+              mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0 });
             }
           }
         }
@@ -72,10 +73,10 @@ export default function PartiesScreen() {
           byName.set(k, { id: d.id, name: d.name, phone: d.phone, role: 'customer', receivable: Number(d.balance) || 0, payable: 0 });
         }
       }
-      if (partnerActive && Array.isArray(settings?.partnerNames)) {
-        for (const pName of settings.partnerNames) {
-          if (pName && !byName.has(pName.toLowerCase())) {
-            byName.set(pName.toLowerCase(), { id: `partner_${pName}`, name: pName, role: "partner", receivable: 0, payable: 0 });
+      if (partnerActive) {
+        for (const investor of investors) {
+          if (investor.name && !byName.has(investor.name.toLowerCase())) {
+            byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0 });
           }
         }
       }
@@ -105,7 +106,7 @@ export default function PartiesScreen() {
 
   const open = (p: PartyRow) => {
     if (p.role === 'partner') {
-      setInvestorModalVisible(true);
+      if (isPartnerMode) router.push({ pathname: '/investor/[id]', params: { id: p.id } } as any);
       return;
     }
     const cId = p.id.includes('|') ? p.id.split('|')[1] : p.id;
@@ -200,7 +201,7 @@ export default function PartiesScreen() {
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
-                {item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
+                {item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>{item.role === 'partner' ? 'View capital ledger' : 'Settled'}</Text> : null}
               </View>
             </Pressable>
           )}
