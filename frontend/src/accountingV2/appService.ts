@@ -75,6 +75,40 @@ export class V2AppService {
     return result;
   }
 
+  async getPartyStatement(partyId: string) {
+    const context = await this.activeContext();
+    if (!context) return { ledger: [], balance: 0 };
+    const rows = await this.db.all<any>(`
+      SELECT j.id, j.date, j.memo, j.source_id, s.type as source_type, l.debit, l.credit, a.code as account_code
+      FROM v2_journal_lines l
+      JOIN v2_journal_entries j ON j.id = l.journal_id
+      JOIN v2_accounts a ON a.id = l.account_id
+      LEFT JOIN v2_sources s ON j.source_id = s.id
+      WHERE j.book_id = ? AND l.party_id = ?
+      ORDER BY j.date ASC, j.id ASC
+    `, [context.bookId, partyId]);
+
+    let running = 0;
+    const ledger = rows.map((r) => {
+      const d = Number(r.debit) || 0;
+      const c = Number(r.credit) || 0;
+      const isDebtorAccount = r.account_code === '1100';
+      const delta = isDebtorAccount ? (d - c) : (c - d);
+      running += delta;
+      const kind = r.source_type === 'invoice' ? 'invoice' : (r.source_type === 'receipt' ? 'payment' : 'entry');
+      return {
+        kind,
+        id: r.id,
+        date: r.date,
+        ref: r.memo || kind,
+        debit: d,
+        credit: c,
+        balance: running
+      };
+    });
+    return { ledger, balance: running };
+  }
+
   async listSalesAndInvoices() {
     const context = await this.activeContext(); if (!context) return [];
     const rows = await this.db.all<any>("SELECT id,type,date,reference,metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_sale','invoice') ORDER BY date DESC,id DESC", [context.bookId]);
