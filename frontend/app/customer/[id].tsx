@@ -144,25 +144,21 @@ export default function CustomerDetailScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [raw, settings] = await Promise.all([api.listDebtors(), api.getSettings()]);
+      const [customer, settings] = await Promise.all([id ? api.getCustomer(id) : null, api.getSettings()]);
       setBiz(settings);
       const code = settings.currency || "USD";
       setCurrCode(code);
       setCurrency(getCurrencySymbol(code));
 
-      const enriched = (raw as any[]).map((d) => {
-        const invoiced = Number(d.totalInvoiced) || 0;
-        const paid = Number(d.totalPaid) || 0;
-        return { ...d, totalInvoiced: invoiced, totalPaid: paid, balance: d.balance ?? invoiced - paid };
-      });
-
-      if (id) {
-        const found = enriched.find((d) => d.id === id);
-        if (found) {
-          setSelected(found);
-          const stmt = await api.getDebtorStatement(found.id);
-          setStatement(stmt);
-        }
+      if (customer) {
+        const invoiced = Number((customer as any).totalInvoiced) || 0;
+        const paid = Number((customer as any).totalPaid) || 0;
+        const found = { ...(customer as any), totalInvoiced: invoiced, totalPaid: paid, balance: (customer as any).balance ?? invoiced - paid };
+        setSelected(found);
+        setStatement(await api.getDebtorStatement(found.id));
+      } else {
+        setSelected(null);
+        setStatement(null);
       }
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }

@@ -7,6 +7,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
+import { resetAllV2AccountingData } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
   listBooks as beListBooks,
@@ -244,6 +245,25 @@ export const api = {
     if (!name) return null;
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      if (await service.activeContext()) {
+        const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
+        const party = existing || await service.ensureParty(name, role, details);
+        const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
+        if (!roles.includes(role)) await service.ensureParty(name, role, details);
+        try {
+          const legacy = role === 'customer' ? await db.listDebtors() : await db.listSuppliers();
+          if (!legacy.some((item: any) => norm(item.name) === norm(name))) {
+            if (role === 'customer') await db.createDebtor({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
+            else await db.createSupplier({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
+          }
+        } catch { /* V2 remains authoritative */ }
+        return { id: party.id, name: party.name, role: roles.length > 1 ? 'both' : role };
+      }
+    }
+
     const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
     const dMatch = debtors.find((x: any) => norm(x.name) === norm(name));
     const sMatch = suppliers.find((x: any) => norm(x.name) === norm(name));
@@ -276,11 +296,24 @@ export const api = {
 
   searchParties: async (query: string) => {
     const q = (query || '').trim().toLowerCase();
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      if (await service.activeContext()) {
+        const parties = await service.listParties();
+        return parties
+          .filter((party: any) => !q || party.name.toLowerCase().includes(q))
+          .map((party: any) => ({
+            id: party.id, name: party.name, phone: party.phone || '',
+            role: party.roles.length > 1 ? 'both' : party.roles[0],
+          }));
+      }
+    }
     const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
-    const map = new Map<string, { id: string; name: string; phone?: string; role: string }>();
+    const map = new Map<string, { id: string; name: string; phone: string; role: string }>();
 
     for (const d of debtors as any[]) {
-      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone, role: 'customer' });
+      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone || '', role: 'customer' });
     }
     for (const s of suppliers as any[]) {
       const k = s.name.trim().toLowerCase();
@@ -288,7 +321,7 @@ export const api = {
       if (existing) {
         existing.role = 'both';
       } else {
-        map.set(k, { id: s.id, name: s.name, phone: s.phone, role: 'supplier' });
+        map.set(k, { id: s.id, name: s.name, phone: s.phone || '', role: 'supplier' });
       }
     }
 
@@ -337,10 +370,18 @@ export const api = {
   // Suppliers
   listSuppliers: () => db.listSuppliers(),
   createSupplier: (s: any) => db.createSupplier(s),
-  updateSupplier: (id: string, s: any) => db.updateSupplier(id, s),
-  getSupplier: (id: string) => db.getSupplier(id),
-  deleteSupplier: (id: string) => db.deleteSupplier(id),
-
+  updateSupplier: async (id: string, s: any) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.updateParty(id, s); }
+    return db.updateSupplier(id, s);
+  },
+  getSupplier: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'supplier'); if (detail) return detail; }
+    return db.getSupplier(id);
+  },
+  deleteSupplier: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.archiveParty(id); }
+    return db.deleteSupplier(id);
+  },
   listBills: async () => {
     const runner = activeSqlRunner();
     if (!runner) return db.listBills();
@@ -582,28 +623,26 @@ export const api = {
   },
   resetAll: async () => {
     const runner = activeSqlRunner();
-    if (runner) {
-      await Promise.all([
-        'v2_sources', 'v2_journal_entries', 'v2_journal_lines', 'v2_parties',
-        'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
-        'v2_periods', 'v2_accounts', 'v2_personas', 'v2_books',
-        'v2_journal_postings', 'v2_period_closes', 'v2_reconciliations', 'v2_receipt_allocations'
-      ].map(t => runner.run(`DELETE FROM ${t}`).catch(() => {})));
-      await runner.run(`DELETE FROM meta WHERE key LIKE 'v2_%'`).catch(() => {});
-      await runner.run(`DELETE FROM settings`).catch(() => {});
-    }
-    
+    const today = new Date().toISOString().slice(0, 10);
+    const originalBookId = beActiveBookId();
+    const originalV2Active = runner ? await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'") : null;
     try {
-      const keys = await AsyncStorage.getAllKeys();
-      const keysToRemove = keys.filter(k => k.startsWith('ledgr_') || k.startsWith('ledgr:'));
-      if (keysToRemove.length > 0) {
-        await AsyncStorage.multiRemove(keysToRemove);
+      if (runner) {
+        await resetAllV2AccountingData(runner, today);
       }
-    } catch (e) {
-      // ignore
+      const books = await beListBooks();
+      for (const book of books) {
+        await beSetActiveBook(book.id);
+        await db.resetAll();
+      }
+      return { ok: true };
+    } finally {
+      await beSetActiveBook(originalBookId);
+      if (runner) {
+        if (originalV2Active?.value) await runner.run("INSERT INTO meta(key,value) VALUES('v2_active_book_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [originalV2Active.value]);
+        else await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
+      }
     }
-
-    return db.resetAll();
   },
 
   // AI
@@ -621,14 +660,26 @@ export const api = {
 
   // Debtors
   listDebtors: () => db.listDebtors(),
+  getCustomer: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail; }
+    return (await db.listDebtors()).find((item: any) => item.id === id) || null;
+  },
   createDebtor: (d: any) => db.createDebtor(d),
-  updateDebtor: (id: string, d: any) => db.updateDebtor(id, d),
-  deleteDebtor: (id: string) => db.deleteDebtor(id),
+  updateDebtor: async (id: string, d: any) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.updateParty(id, d); }
+    return db.updateDebtor(id, d);
+  },
+  deleteDebtor: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.archiveParty(id); }
+    return db.deleteDebtor(id);
+  },
   addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
   deleteDebtorPayment: (debtorId: string, paymentId: string) => db.deleteDebtorPayment(debtorId, paymentId),
   updateDebtorPayment: (debtorId: string, paymentId: string, u: any) => db.updateDebtorPayment(debtorId, paymentId, u),
-  getDebtorStatement: (id: string) => db.getDebtorStatement(id),
-
+  getDebtorStatement: async (id: string) => {
+    const runner = activeSqlRunner(); if (runner) { const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail.statement; }
+    return db.getDebtorStatement(id);
+  },
   // Date-range reports
   pnlRange: (from: string, to: string) => db.pnlRange(from, to),
   creditorsReport: (from?: string, to?: string) => db.creditorsReport(from, to),

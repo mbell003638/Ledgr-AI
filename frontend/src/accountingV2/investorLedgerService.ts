@@ -48,7 +48,7 @@ export class V2InvestorLedgerService {
     );
     const movements = sources.flatMap((row): InvestorLedgerTransaction[] => {
       const metadata = this.metadata(row.metadata);
-      if (!this.matchesMember(metadata, member)) return [];
+      if (metadata.reversed || metadata.deleted || !this.matchesMember(metadata, member)) return [];
       return [{
         id: row.id,
         date: row.date,

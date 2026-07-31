@@ -1341,27 +1341,6 @@ export async function importBackup(data: any) {
 }
 export async function resetAll() {
   const s = await readSettings();
-  const keep = {
-    googleApiKey: s.googleApiKey || '',
-    currency: s.currency ?? 'USD',
-    taxLabel: s.taxLabel ?? 'None',
-    taxLabelCustom: s.taxLabelCustom ?? '',
-    taxRate: s.taxRate ?? 0,
-    businessName: s.businessName ?? '',
-    businessAddress: s.businessAddress ?? '',
-    businessPhone: s.businessPhone ?? '',
-    businessEmail: s.businessEmail ?? '',
-    taxRegNo: s.taxRegNo ?? '',
-    bankAccount: s.bankAccount ?? '',
-    upiId: s.upiId ?? '',
-    paymentDetails: s.paymentDetails ?? '',
-    logo: s.logo ?? '',
-    lockEnabled: s.lockEnabled ?? false,
-    hasOnboarded: s.hasOnboarded ?? false,
-    businessType: s.businessType ?? '',
-    accountingStyle: s.accountingStyle ?? 'standard',
-    accountingBasis: s.accountingBasis === 'accrual' ? 'accrual' : 'cash',
-  };
   await Promise.all([
     backendClearColl('suppliers'),
     backendClearColl('bills'),
@@ -1381,16 +1360,17 @@ export async function resetAll() {
   ]);
   const today = new Date().toISOString().slice(0, 10);
   await writeSettings({
-    ...keep,
+    ...s,
     currentPeriodStart: today,
     openingInventory: 0,
     openingCash: 0,
     openingCapital: 0,
-    managerCommissionPct: 0,
     extraAssets: [],
     extraLiabilities: [],
-    investors: [],
-    partnerNames: [],
+    investors: Array.isArray(s.investors)
+      ? s.investors.map((investor: any) => ({ ...investor, amount: 0, openingCapital: 0, currentCapital: 0 }))
+      : [],
+    partnerNames: Array.isArray(s.partnerNames) ? s.partnerNames : [],
   });
   return { ok: true };
 }

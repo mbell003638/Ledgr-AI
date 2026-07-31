@@ -19,7 +19,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   for (const row of salesSources) {
     try {
       const meta = JSON.parse(row.metadata || '{}');
-      if (meta.deleted) continue;
+      if (meta.deleted || meta.reversed) continue;
       const amt = Number(meta.total ?? meta.amount ?? 0);
       totalSales += amt;
       const dateKey = (row.date || '').slice(0, 10);
@@ -36,7 +36,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   for (const row of purchaseSources) {
     try {
       const meta = JSON.parse(row.metadata || '{}');
-      if (meta.deleted) continue;
+      if (meta.deleted || meta.reversed) continue;
       totalPurchases += Number(meta.total || 0);
     } catch { /* parse fallback */ }
   }

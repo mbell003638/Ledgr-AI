@@ -120,4 +120,114 @@ describe('V2 application write integration', () => {
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
+
+  it('atomically replaces edited sales and excludes the reversed source from lists and totals', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const sale = await service.createSale({ date: '2026-07-10', amount: 25, method: 'cash' });
+      const edited = await service.updateSale(sale.source.id, { date: '2026-07-11', amount: 40, method: 'bank' });
+      expect((await service.listSalesAndInvoices()).map((item: any) => item.id)).toEqual([edited.source.id]);
+      const { getV2Dashboard } = await import('../src/accountingV2/v2Dashboard');
+      expect((await getV2Dashboard(runner, 'active-v2')).totalSales).toBe(40);
+      await expect(service.deleteSale(sale.source.id)).rejects.toThrow(/already been reversed/i);
+    } finally { close(); }
+  });
+
+  it('rolls back the reversal when an edited replacement is invalid', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const sale = await service.createSale({ date: '2026-07-10', amount: 25, method: 'cash' });
+      await expect(service.updateSale(sale.source.id, { date: '2026-07-11', amount: 0, method: 'cash' })).rejects.toThrow(/positive/i);
+      expect(await runner.first("SELECT json_extract(metadata,'$.reversed') AS reversed FROM v2_sources WHERE id=?", [sale.source.id])).toEqual({ reversed: null });
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n)).toBe(0);
+      expect((await service.listSalesAndInvoices()).map((item: any) => item.id)).toEqual([sale.source.id]);
+    } finally { close(); }
+  });
+
+  it('returns display names separately and repairs recursively prefixed V2 party identities', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const invoice = await service.createInvoice({ date: '2026-07-02', total: 40, clientName: 'Amit' });
+      const canonicalId = String(invoice.source.metadata?.partyId);
+      const corruptId = 'v2:customer:v2:customer:amit';
+      await runner.run('INSERT INTO v2_parties(id,book_id,name,roles,archived) VALUES(?,?,?,?,0)', [corruptId, 'active-v2', corruptId, '["customer"]']);
+      await runner.run('UPDATE v2_journal_lines SET party_id=? WHERE party_id=?', [corruptId, canonicalId]);
+      await runner.run("UPDATE v2_sources SET metadata=json_set(metadata,'$.partyId',?) WHERE id=?", [corruptId, invoice.source.id]);
+
+      const parties = await service.listParties();
+      expect(parties.filter((party: any) => party.name === 'Amit')).toHaveLength(1);
+      expect(await runner.first('SELECT id FROM v2_parties WHERE id=?', [corruptId])).toBeNull();
+      const listed = await service.listSalesAndInvoices();
+      expect(listed[0]).toMatchObject({ partyId: canonicalId, clientName: 'Amit', partyName: 'Amit' });
+    } finally { close(); }
+  });
+  it('routes partnership drawing edits and deletes through V2 while preserving partner balances', async () => {
+    const node = makeNodeRunner();
+    await initializeV2Book(node.runner, {
+      book: { id: 'partnership', name: 'Partnership', style: 'retail_partnership' },
+      period: { id: 'partnership-period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      members: [{ name: 'Alice', openingContribution: 100, profitSharePct: 100 }],
+    });
+    const service = new V2AppService(node.runner);
+    const legacy = { updatePayment: jest.fn(), deletePayment: jest.fn() };
+    const router = createAppMutationRouter(service, legacy);
+    try {
+      const drawing = await service.createPayment({ date: '2026-07-10', amount: 20, type: 'drawing', investorId: 'partnership:member:1', notes: 'First' });
+      expect((await new (await import('../src/accountingV2/investorLedgerService')).V2InvestorLedgerService(node.runner).detail('partnership', 'partnership:member:1')).currentCapitalBalance).toBe(80);
+
+      const edited = await router.updatePayment(drawing.source.id, { date: '2026-07-11', amount: 35, type: 'drawing', notes: 'Edited' });
+      const ledger = new (await import('../src/accountingV2/investorLedgerService')).V2InvestorLedgerService(node.runner);
+      await expect(ledger.detail('partnership', 'partnership:member:1')).resolves.toMatchObject({ totalDrawings: 35, currentCapitalBalance: 65 });
+      expect((await ledger.detail('partnership', 'partnership:member:1')).transactions.filter((item) => item.type === 'drawing')).toHaveLength(1);
+      expect(legacy.updatePayment).toHaveBeenCalledTimes(1);
+
+      await router.deletePayment(edited.source.id);
+      await expect(ledger.detail('partnership', 'partnership:member:1')).resolves.toMatchObject({ totalDrawings: 0, currentCapitalBalance: 100 });
+      expect(legacy.deletePayment).toHaveBeenCalledTimes(1);
+      expect((await service.repo.reconcileBook('partnership')).balanced).toBe(true);
+    } finally { node.close(); }
+  });
+  it('rolls back all party identity repair mutations when one reference update fails', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const invoice = await service.createInvoice({ date: '2026-07-02', total: 40, clientName: 'Amit' });
+      const canonicalId = String(invoice.source.metadata?.partyId);
+      const corruptId = 'v2:customer:v2:customer:amit';
+      await runner.run('INSERT INTO v2_parties(id,book_id,name,roles,archived) VALUES(?,?,?,?,0)', [corruptId, 'active-v2', corruptId, '["customer"]']);
+      await runner.run('UPDATE v2_journal_lines SET party_id=? WHERE party_id=?', [corruptId, canonicalId]);
+      await runner.run("UPDATE v2_sources SET metadata=json_set(metadata,'$.partyId',?) WHERE id=?", [corruptId, invoice.source.id]);
+      await runner.exec("CREATE TRIGGER reject_party_repair BEFORE UPDATE OF party_id ON v2_journal_lines BEGIN SELECT RAISE(ABORT, 'repair rejected'); END;");
+
+      await expect(service.listParties()).rejects.toThrow(/repair rejected/i);
+      expect(await runner.first('SELECT id,name FROM v2_parties WHERE id=?', [corruptId])).toEqual({ id: corruptId, name: corruptId });
+      expect(await runner.first("SELECT json_extract(metadata,'$.partyId') AS partyId FROM v2_sources WHERE id=?", [invoice.source.id])).toEqual({ partyId: corruptId });
+      await runner.exec('DROP TRIGGER reject_party_repair');
+      await expect(service.listParties()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: canonicalId, name: 'Amit' })]));
+    } finally { close(); }
+  });
+  it('opens V2 customer and supplier details from party-list IDs with authoritative balances', async () => {
+    const { close, service } = await setup();
+    try {
+      const invoice = await service.createInvoice({ date: '2026-07-02', total: 100, clientName: 'Amit' });
+      const customerId = String(invoice.source.metadata?.partyId);
+      await service.createReceipt({ date: '2026-07-03', amount: 40, debtorId: customerId, method: 'cash', allocations: [{ invoiceId: invoice.source.id, amountApplied: 40 }] });
+      const supplierBill = await service.createBill({ date: '2026-07-04', amount: 75, supplierName: 'Supply Co', paymentType: 'credit' });
+      const supplierId = String(supplierBill.source.metadata?.partyId);
+      await service.createPayment({ date: '2026-07-05', amount: 25, supplierId, supplierName: 'Supply Co', type: 'supplier_payment', method: 'bank' });
+
+      const parties = await service.listParties();
+      expect(parties).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: customerId, name: 'Amit', receivable: 60 }),
+        expect.objectContaining({ id: supplierId, name: 'Supply Co', payable: 50 }),
+      ]));
+      await expect(service.getPartyDetail(customerId, 'customer')).resolves.toMatchObject({
+        id: customerId, name: 'Amit', totalInvoiced: 100, totalPaid: 40, balance: 60,
+        statement: { balance: 60 },
+      });
+      await expect(service.getPartyDetail(supplierId, 'supplier')).resolves.toMatchObject({
+        id: supplierId, name: 'Supply Co', billsTotal: 75, paymentsTotal: 25, balance: 50,
+      });
+      await expect(service.getPartyDetail(customerId, 'supplier')).resolves.toBeNull();
+    } finally { close(); }
+  });
 });

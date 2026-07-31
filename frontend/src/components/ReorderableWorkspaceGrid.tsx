@@ -367,7 +367,7 @@ function ReorderableWorkspaceTile({
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
-        layout={LinearTransition.springify().damping(18).stiffness(220)}
+        layout={Platform.OS === "android" ? undefined : LinearTransition.springify().damping(18).stiffness(220)}
         style={[{ width: tileWidth, height: TILE_HEIGHT }, dragStyle]}
       >
         <AnimatedPressable

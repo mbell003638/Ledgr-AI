@@ -4,6 +4,7 @@ import { V2SqlRepository } from './repository';
 const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = (n: number) => Math.round(Number(n) * 100) / 100;
 const positive = (n: number, label = 'Amount') => { const value = cents(n); if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be positive`); return value; };
+let savepointSequence = 0;
 
 export type ReceiptInput = { bookId: string; periodId: string; partyId: string; date: string; amount: number; method: V2PaymentMethod; reference?: string; allocations?: { invoiceSourceId: string; amount: number }[] };
 
@@ -60,6 +61,14 @@ export class V2DocumentService {
     });
   }
 
+  /** Reverse and replace one source as a single all-or-nothing edit. */
+  async replaceSource<T>(sourceId: string, expectedType: string, memo: string, createReplacement: () => Promise<T>): Promise<T> {
+    return this.repoTx(async () => {
+      await this.reverseSource(sourceId, expectedType, memo);
+      return createReplacement();
+    });
+  }
+
   async editReceipt(receiptSourceId: string, input: Omit<ReceiptInput, 'bookId'|'partyId'> & { partyId?: string; bookId?: string }) {
     return this.repoTx(async () => {
       const old = await this.receiptRow(receiptSourceId);
@@ -111,9 +120,30 @@ export class V2DocumentService {
 
   private async simplePosting(input: any, type: string, memo: string, debitCode: string, creditAccount: string, partyId?: string) { const amount = positive(input.amount); return this.repoTx(async () => { const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, metadata: { total: amount, partyId, method: input.method } }; const journal = await this.insertSourceJournal(source, input, [{ accountId: `${input.bookId}:account:${debitCode}`, partyId, debit: amount, credit: 0 }, { accountId: creditAccount.includes(':account:') ? creditAccount : `${input.bookId}:account:${creditAccount}`, partyId, debit: 0, credit: amount }]); return { source, journal }; }); }
   private paymentCode(method: V2PaymentMethod) { if (method === 'cash') return '1010'; if (method === 'bank') return V2_ACCOUNT_CODES.BANK; if (method === 'card') return V2_ACCOUNT_CODES.CARD; if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE; throw new Error('Unsupported payment method'); }
-  private async repoTx<T>(fn: () => Promise<T>) { await this.repo.db.exec('BEGIN'); try { const x = await fn(); await this.repo.db.exec('COMMIT'); return x; } catch (e) { try { await this.repo.db.exec('ROLLBACK'); } catch {} throw e; } }
+  private async repoTx<T>(fn: () => Promise<T>) {
+    const savepoint = `v2_document_${++savepointSequence}`;
+    await this.repo.db.exec(`SAVEPOINT ${savepoint}`);
+    try {
+      const x = await fn();
+      await this.repo.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      return x;
+    } catch (e) {
+      try {
+        await this.repo.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        await this.repo.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      } catch { /* preserve original error */ }
+      throw e;
+    }
+  }
   private async receiptRow(id: string) { return this.sourceRow(id, 'receipt'); }
-  private async sourceRow(id: string, type: string) { const row = await this.repo.db.first<any>('SELECT * FROM v2_sources WHERE id=? AND type=?', [id, type]); if (!row) throw new Error(`${type.replace(/_/g, ' ')} not found`); return row; }
+  private async sourceRow(id: string, type: string) {
+    const row = await this.repo.db.first<any>('SELECT * FROM v2_sources WHERE id=? AND type=?', [id, type]);
+    if (!row) throw new Error(`${type.replace(/_/g, ' ')} not found`);
+    let metadata: any = {};
+    try { metadata = JSON.parse(row.metadata || '{}'); } catch { /* malformed metadata is treated as empty */ }
+    if (metadata.reversed || metadata.deleted) throw new Error('Transaction has already been reversed');
+    return row;
+  }
   private async journalForSource(id: string) { const j = await this.repo.db.first<any>('SELECT * FROM v2_journal_entries WHERE source_id=?', [id]); if (!j) throw new Error('Receipt journal not found'); j.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [j.id]); return j; }
   private async insertSourceJournal(source: V2Source, input: any, lines: any[], reversalOf?: string) { await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {})]); const id = uid('je'); await this.repo.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, input.bookId, input.periodId, source.id, source.date, input.memo || '', new Date().toISOString(), reversalOf || null]); for (const l of lines) await this.repo.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null]); return { id, bookId: input.bookId, periodId: input.periodId, sourceId: source.id, date: source.date, memo: input.memo || '', lines }; }
   private async insertReversal(old: any, journal: any, memo: string) { const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { originalSourceId: old.id, total: JSON.parse(old.metadata || '{}').total } }; const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo }; const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit })); const out = await this.insertSourceJournal(source, input, lines, journal.id); return { source, journal: out }; }
