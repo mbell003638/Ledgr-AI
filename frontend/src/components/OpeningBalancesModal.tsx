@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { isValidDateString } from "@/src/utils/dateValidation";
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 interface Props {
   visible: boolean;
@@ -218,10 +219,10 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     </View>
                   </View>
                 ))}
-                <Pressable onPress={addMember} style={styles.addMemberBtn}>
+                <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addMember} style={styles.addMemberBtn}>
                   <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
                   <Text style={styles.addMemberText}>Add Investor</Text>
-                </Pressable>
+                </GlowPressable>
               </View> : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}

@@ -1,0 +1,166 @@
+import { Platform, View, type StyleProp, type ViewProps, type ViewStyle } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, {
+  Easing,
+  interpolate,
+  interpolateColor,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  withSequence,
+  withSpring,
+} from "react-native-reanimated";
+
+import { useTheme } from "@/src/context/ThemeContext";
+
+const AnimatedView = Animated.createAnimatedComponent(View);
+
+type AnimatedGlassSurfaceProps = Omit<ViewProps, "style"> & {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  topHighlight?: boolean;
+  shadowEnabled?: boolean;
+  surfaceColor?: string;
+  hoverSurfaceColor?: string;
+  restingBorderColor?: string;
+  prominent?: boolean;
+};
+
+/**
+ * Non-pressable glass surface that can safely contain buttons and inputs.
+ * On web it mirrors the prototype card hover; native keeps the same static
+ * glass/glow treatment while child controls provide touch feedback.
+ */
+export function AnimatedGlassSurface({
+  children,
+  style,
+  topHighlight = true,
+  shadowEnabled = true,
+  prominent = false,
+  surfaceColor,
+  hoverSurfaceColor,
+  restingBorderColor,
+  ...viewProps
+}: AnimatedGlassSurfaceProps) {
+  const theme = useTheme();
+  const reduceMotion = useReducedMotion();
+  const transformProgress = useSharedValue(0);
+  const surfaceProgress = useSharedValue(0);
+
+  const setHovered = (hovered: boolean) => {
+    const value = hovered ? 1 : 0;
+    transformProgress.value = reduceMotion || !hovered
+      ? 0
+      : withSequence(
+          withTiming(1, { duration: 80 }),
+          withSpring(0, theme.motion.spring),
+        );
+    surfaceProgress.value = reduceMotion
+      ? value
+      : withTiming(value, {
+          duration: theme.motion.standard,
+          easing: Easing.inOut(Easing.ease),
+        });
+  };
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      surfaceProgress.value,
+      [0, 1],
+      [surfaceColor ?? theme.color.glassSurface, hoverSurfaceColor ?? theme.color.glassSurfaceHover],
+    ),
+    borderColor: interpolateColor(
+      surfaceProgress.value,
+      [0, 1],
+      [restingBorderColor ?? theme.color.glassBorder, theme.color.brandPrimary],
+    ),
+    transform: [
+      { scale: reduceMotion ? 1 : 1 - interpolate(transformProgress.value, [0, 1], [0, 0.012]) },
+    ],
+    shadowColor: theme.color.brandPrimary,
+    shadowOpacity: shadowEnabled ? interpolate(
+      surfaceProgress.value,
+      [0, 1],
+      [0.08, prominent ? 0.48 : theme.effects.glowOpacity],
+    ) : 0,
+    shadowRadius: shadowEnabled ? interpolate(
+      surfaceProgress.value,
+      [0, 1],
+      [4, prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius],
+    ) : 0,
+    elevation: shadowEnabled ? interpolate(surfaceProgress.value, [0, 1], [2, prominent ? 12 : 8]) : 0,
+  }), [hoverSurfaceColor, prominent, reduceMotion, restingBorderColor, shadowEnabled, surfaceColor, theme]);
+
+  const topEdge = topHighlight && Platform.OS === "web" ? (
+    <LinearGradient
+      pointerEvents="none"
+      colors={["transparent", theme.color.brandPrimary, "transparent"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 2,
+        opacity: 0.35,
+      }}
+    />
+  ) : null;
+
+  if (Platform.OS !== "web") {
+    return (
+      <View
+        {...viewProps}
+        onPointerEnter={undefined}
+        onPointerLeave={undefined}
+        style={[
+          {
+            position: "relative",
+            backgroundColor: surfaceColor ?? theme.color.glassSurface,
+            borderWidth: 1,
+            borderColor: restingBorderColor ?? theme.color.glassBorder,
+          },
+          style,
+          {
+            elevation: 0,
+            shadowOpacity: 0,
+            shadowRadius: 0,
+          },
+        ]}
+      >
+        {children}
+        {topEdge}
+      </View>
+    );
+  }
+  return (
+    <AnimatedView
+      {...viewProps}
+      onPointerEnter={(event) => {
+        setHovered(true);
+        viewProps.onPointerEnter?.(event);
+      }}
+      onPointerLeave={(event) => {
+        setHovered(false);
+        viewProps.onPointerLeave?.(event);
+      }}
+      style={[
+        {
+          position: "relative",
+          overflow: "hidden",
+          backgroundColor: surfaceColor ?? theme.color.glassSurface,
+          borderWidth: 1,
+          borderColor: restingBorderColor ?? theme.color.glassBorder,
+          shadowOffset: { width: 0, height: 0 },
+        },
+        style,
+        animatedStyle,
+      ]}
+    >
+      {children}
+      {topEdge}
+    </AnimatedView>
+  );
+}

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api';
 import { Card, Empty } from '@/src/components/UI';
+import { GlowPressable } from '@/src/components/GlowPressable';
 import { useTheme } from '@/src/context/ThemeContext';
 import { fmt, shortDate } from '@/src/theme';
 import { getCurrencySymbol } from '@/src/db/local';
@@ -102,12 +103,12 @@ export default function InvestorDetailScreen() {
           </View>
 
           <View style={styles.actionsRow}>
-            <Pressable testID="investor-deposit-capital" onPress={() => setAction('deposit')} style={[styles.actionButton, { backgroundColor: theme.color.success }]}>
+            <GlowPressable testID="investor-deposit-capital" haptic prominent onPress={() => setAction('deposit')} style={[styles.actionButton, { backgroundColor: theme.color.success }]}>
               <Ionicons name="add-circle-outline" size={20} color="#fff" /><Text style={styles.actionText}>Deposit Capital</Text>
-            </Pressable>
-            <Pressable testID="investor-draw-funds" onPress={() => setAction('draw')} style={[styles.actionButton, styles.drawButton]}>
+            </GlowPressable>
+            <GlowPressable testID="investor-draw-funds" haptic onPress={() => setAction('draw')} style={[styles.actionButton, styles.drawButton]}>
               <Ionicons name="remove-circle-outline" size={20} color={theme.color.warning} /><Text style={[styles.actionText, { color: theme.color.warning }]}>Draw Funds</Text>
-            </Pressable>
+            </GlowPressable>
           </View>
 
           <Card style={styles.ledgerCard}>
@@ -140,9 +141,9 @@ export default function InvestorDetailScreen() {
               <Text style={styles.label}>Notes</Text>
               <TextInput value={notes} onChangeText={setNotes} placeholder="Optional transaction note" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 72 }]} multiline />
               {formError ? <Text style={styles.formError}>{formError}</Text> : null}
-              <Pressable testID="investor-action-save" onPress={save} disabled={saving} style={styles.saveButton}>
+              <GlowPressable testID="investor-action-save" prominent haptic onPress={save} disabled={saving} style={styles.saveButton}>
                 {saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={styles.saveText}>Post {actionMeta[action].title}</Text>}
-              </Pressable>
+              </GlowPressable>
             </> : null}
           </View>
         </KeyboardAvoidingView>
@@ -175,16 +176,16 @@ function makeStyles(theme: any) { return StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '800', color: theme.color.onSurface },
   headerSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
   content: { padding: 18, gap: 16 },
-  hero: { padding: 22, borderRadius: theme.radius.lg, backgroundColor: theme.color.brandPrimary, shadowColor: theme.color.brandPrimary, shadowOpacity: .25, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
+  hero: { padding: 22, borderRadius: theme.radius.hero, backgroundColor: theme.color.brandPrimary, shadowColor: theme.color.brandPrimary, shadowOpacity: .25, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 5 },
   heroLabel: { fontSize: 11, fontWeight: '800', letterSpacing: .6, color: theme.color.onBrandPrimary, opacity: .8 },
   heroValue: { fontSize: 34, fontWeight: '900', color: theme.color.onBrandPrimary, marginTop: 8, letterSpacing: -1 },
   heroHint: { fontSize: 12, color: theme.color.onBrandPrimary, opacity: .72, marginTop: 5 },
   statsRow: { flexDirection: 'row', gap: 8 },
-  summary: { flex: 1, minWidth: 0, padding: 12, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
+  summary: { flex: 1, minWidth: 0, padding: 12, borderRadius: theme.radius.kpi, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
   summaryLabel: { fontSize: 10, color: theme.color.muted, marginTop: 8, fontWeight: '600' },
   summaryValue: { fontSize: 14, color: theme.color.onSurface, marginTop: 4, fontWeight: '800' },
   actionsRow: { flexDirection: 'row', gap: 10 },
-  actionButton: { flex: 1, minHeight: 50, borderRadius: theme.radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10 },
+  actionButton: { flex: 1, minHeight: 50, borderRadius: theme.radius.button, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 10 },
   drawButton: { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.warning },
   actionText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   ledgerCard: { padding: 0, overflow: 'hidden' },
@@ -200,15 +201,15 @@ function makeStyles(theme: any) { return StyleSheet.create({
   txNote: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
   txAmount: { fontSize: 13, fontWeight: '800' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.56)' },
-  sheet: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: 22, paddingBottom: Platform.OS === 'ios' ? 38 : 24, borderWidth: 1, borderColor: theme.color.border },
+  sheet: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.sheet, borderTopRightRadius: theme.radius.sheet, padding: 22, paddingBottom: Platform.OS === 'ios' ? 38 : 24, borderWidth: 1, borderColor: theme.color.border },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: theme.color.borderStrong, alignSelf: 'center', marginBottom: 18 },
   sheetTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 18 },
   sheetIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.color.brandPrimary + '18', alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 17, fontWeight: '800', color: theme.color.onSurface },
   sheetSub: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
   label: { fontSize: 12, fontWeight: '700', color: theme.color.onSurface, marginTop: 10 },
-  input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, color: theme.color.onSurface, borderRadius: theme.radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
+  input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, color: theme.color.onSurface, borderRadius: theme.radius.input, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   formError: { color: theme.color.error, fontSize: 12, marginTop: 12 },
-  saveButton: { marginTop: 18, minHeight: 52, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  saveButton: { marginTop: 18, minHeight: 52, borderRadius: theme.radius.button, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   saveText: { color: theme.color.onBrandPrimary, fontWeight: '800', fontSize: 14 },
 }); }

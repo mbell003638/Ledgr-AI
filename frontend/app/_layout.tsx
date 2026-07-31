@@ -1,14 +1,25 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, Pressable } from "react-native";
+import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
+
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { initStorage } from "@/src/db/backend";
 
+// Keep scrolling functional while removing platform scrollbar chrome globally.
+// Individual screens can still opt in explicitly if a visible indicator is needed.
+[ScrollView, FlatList, SectionList].forEach((ScrollComponent) => {
+  const component = ScrollComponent as any;
+  component.defaultProps = {
+    ...component.defaultProps,
+    showsVerticalScrollIndicator: false,
+    showsHorizontalScrollIndicator: false,
+  };
+});
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -73,7 +84,7 @@ function ThemedStack() {
         style={{
           flex: 1,
           width: "100%",
-          maxWidth: isWideWeb ? 480 : undefined,
+          maxWidth: isWideWeb ? 440 : undefined,
           backgroundColor: theme.color.surface,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 0 },
@@ -173,7 +184,30 @@ function AppOpeningSplashScreen() {
 }
 
 // ---------- Root Layout ----------
+function WebScrollbarStyles() {
+  if (Platform.OS !== "web") return null;
+  return React.createElement("style", {
+    dangerouslySetInnerHTML: {
+      __html: `
+        html, body, #root, #root *, body > div, body > div * {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        html::-webkit-scrollbar, body::-webkit-scrollbar,
+        #root::-webkit-scrollbar, #root *::-webkit-scrollbar,
+        body > div::-webkit-scrollbar, body > div *::-webkit-scrollbar {
+          width: 0 !important;
+          height: 0 !important;
+          display: none !important;
+          background: transparent !important;
+        }
+      `,
+    },
+  } as any);
+}
+
 export default function RootLayout() {
+
   const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
@@ -209,6 +243,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
+        <WebScrollbarStyles />
             <ThemedStack />
           </ThemeProvider>
         </SafeAreaProvider>

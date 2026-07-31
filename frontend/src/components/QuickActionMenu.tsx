@@ -1,15 +1,79 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Dimensions, Modal } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, interpolate, Extrapolation } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import { useTheme } from '@/src/context/ThemeContext';
-import { LinearGradient } from 'expo-linear-gradient';
-import { OpeningBalancesModal } from '@/src/components/OpeningBalancesModal';
-import { api } from '@/src/api';
+import React, { useState } from "react";
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import Animated, {
+  Extrapolation,
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
+import { BlurView } from "expo-blur";
+import { useRouter } from "expo-router";
+import { useTheme } from "@/src/context/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
+import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
+import { GlowPressable } from "@/src/components/GlowPressable";
+import { api } from "@/src/api";
 
-const { width, height } = Dimensions.get('window');
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+type QuickActionRowProps = {
+  icon: string;
+  iconBackground: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+};
+
+function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: QuickActionRowProps) {
+  const theme = useTheme();
+  const reduceMotion = useReducedMotion();
+  const hover = useSharedValue(0);
+  const pressed = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: `rgba(255,255,255,${0.08 * Math.max(hover.value, pressed.value)})`,
+    transform: [
+      { translateX: reduceMotion ? 0 : 4 * hover.value },
+      { scale: reduceMotion ? 1 : 1 - pressed.value * 0.015 },
+    ],
+  }), [reduceMotion]);
+
+  const setHover = (value: number) => {
+    hover.value = reduceMotion ? value : withTiming(value, { duration: theme.motion.fast });
+  };
+  const setPressed = (value: number) => {
+    pressed.value = reduceMotion ? value : withSpring(value, theme.motion.spring);
+  };
+
+  return (
+    <AnimatedPressable
+      onHoverIn={() => setHover(1)}
+      onHoverOut={() => setHover(0)}
+      onPressIn={() => {
+        setPressed(1);
+        if (Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
+      }}
+      onPressOut={() => setPressed(0)}
+      onPress={onPress}
+      style={[styles.actionRow, animatedStyle]}
+    >
+      <View style={[styles.actionIconCircle, { backgroundColor: iconBackground }]}>
+        <Text style={{ fontSize: 20 }}>{icon}</Text>
+      </View>
+      <View style={styles.actionDetails}>
+        <Text style={[styles.actionTitle, { color: theme.color.onSurface }]}>{title}</Text>
+        <Text style={[styles.actionSubtitle, { color: theme.color.muted }]}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+    </AnimatedPressable>
+  );
+}
 
 export default function QuickActionMenu() {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,279 +81,245 @@ export default function QuickActionMenu() {
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(0);
+  const fabHover = useSharedValue(0);
+  const fabPressed = useSharedValue(0);
 
   React.useEffect(() => {
-    api.getSettings().then((s: any) => {
-      setIsPartnerMode(s.accountingStyle === "retail_partnership");
+    api.getSettings().then((settings: any) => {
+      setIsPartnerMode(settings.accountingStyle === "retail_partnership");
     }).catch(() => {});
   }, [isOpen]);
 
-  const progress = useSharedValue(0);
-
-  const toggleMenu = () => {
-    if (isOpen) {
-      progress.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.ease) });
-      setTimeout(() => setIsOpen(false), 250);
-    } else {
-      setIsOpen(true);
-      progress.value = withSpring(1, { damping: 15, stiffness: 150 });
+  const openMenu = () => {
+    setIsOpen(true);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
+    progress.value = reduceMotion ? 1 : withSpring(1, theme.motion.sheetSpring);
   };
 
   const closeMenu = () => {
-    if (isOpen) toggleMenu();
+    if (!isOpen) return;
+    progress.value = reduceMotion
+      ? 0
+      : withTiming(0, { duration: theme.motion.fast, easing: Easing.out(Easing.cubic) });
+    setTimeout(() => setIsOpen(false), reduceMotion ? 0 : theme.motion.fast);
   };
 
-  const overlayStyle = useAnimatedStyle(() => {
-    return {
-      opacity: progress.value,
-    };
-  });
+  const toggleMenu = () => {
+    if (isOpen) closeMenu();
+    else openMenu();
+  };
 
-  const menuStyle = useAnimatedStyle(() => {
-    return {
-      opacity: progress.value,
-      transform: [
-        { translateY: interpolate(progress.value, [0, 1], [30, 0], Extrapolation.CLAMP) },
-        { scale: interpolate(progress.value, [0, 1], [0.95, 1], Extrapolation.CLAMP) },
-      ],
-    };
-  });
+  const overlayStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const menuStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: reduceMotion ? 0 : interpolate(progress.value, [0, 1], [32, 0], Extrapolation.CLAMP) },
+      { scale: reduceMotion ? 1 : interpolate(progress.value, [0, 1], [0.96, 1], Extrapolation.CLAMP) },
+    ],
+  }), [reduceMotion]);
+  const fabIconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [0, 45])}deg` }],
+  }));
+  const fabStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: reduceMotion ? 0 : -3 * fabHover.value },
+      { scale: reduceMotion ? 1 : 1 + fabHover.value * 0.08 - fabPressed.value * 0.04 },
+    ],
+    shadowOpacity: 0.42 + fabHover.value * 0.18,
+    shadowRadius: theme.effects.glowRadius + fabHover.value * 8,
+  }), [reduceMotion, theme]);
 
-  const fabIconStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ rotate: `${interpolate(progress.value, [0, 1], [0, 45])}deg` }],
-    };
-  });
+  const navigate = (route: string) => {
+    closeMenu();
+    router.push(route as any);
+  };
 
   return (
     <>
-      {/* FAB rendered absolutely over the tab bar */}
       <View style={styles.fabContainer}>
-        <Pressable
+        <AnimatedPressable
+          testID="quick-action-fab"
+          onHoverIn={() => { fabHover.value = reduceMotion ? 1 : withTiming(1, { duration: theme.motion.standard }); }}
+          onHoverOut={() => { fabHover.value = reduceMotion ? 0 : withTiming(0, { duration: theme.motion.standard }); }}
+          onPressIn={() => { fabPressed.value = reduceMotion ? 1 : withSpring(1, theme.motion.spring); }}
+          onPressOut={() => { fabPressed.value = reduceMotion ? 0 : withSpring(0, theme.motion.spring); }}
           onPress={toggleMenu}
-          style={({ pressed }) => [
+          style={[
             styles.fab,
-            { backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary },
-            { shadowColor: isOpen ? "#000" : theme.color.brandPrimary },
-            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+            {
+              backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary,
+              shadowColor: isOpen ? theme.color.muted : theme.color.brandPrimary,
+            },
+            fabStyle,
           ]}
         >
           <Animated.View style={fabIconStyle}>
-            <Ionicons name="add" size={38} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
+            <Ionicons name="add" size={28} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
           </Animated.View>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
-      {/* POPUP MENU MODAL */}
       <Modal transparent visible={isOpen} animationType="none" onRequestClose={closeMenu}>
         <Animated.View style={[styles.overlayContainer, overlayStyle]}>
           <Pressable style={styles.overlayPressable} onPress={closeMenu}>
-            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+            <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.72)" }]} />
           </Pressable>
         </Animated.View>
 
-        <Animated.View style={[styles.menuContainer, menuStyle]}>
-          <View style={styles.menuSolid}>
-            <View style={[styles.menuInner, { borderColor: 'rgba(255,255,255,0.15)' }]}>
-              
-              {/* AI Action */}
-              <Pressable 
-                style={({ pressed }) => [styles.aiAction, { borderColor: theme.color.brandPrimary + '4D' }, pressed && { opacity: 0.8 }]} 
-                onPress={() => { closeMenu(); router.push('/ask'); }}
-              >
-                <LinearGradient 
-                  colors={[theme.color.brandPrimary + '33', theme.color.brandPrimary + '0D']}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={[styles.aiIcon, { textShadowColor: theme.color.brandPrimary + '80' }]}>✨</Text>
-                <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
-              </Pressable>
+        <Animated.View
+          style={[
+            styles.menuContainer,
+            {
+              backgroundColor: theme.color.surfaceSecondary,
+              borderColor: theme.color.brandPrimary,
+              shadowColor: theme.color.brandPrimary,
+            },
+            menuStyle,
+          ]}
+        >
+          <LinearGradient
+            pointerEvents="none"
+            colors={["transparent", theme.color.brandPrimary, "transparent"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.menuHighlight}
+          />
+          <View style={styles.menuInner}>
+            <GlowPressable
+              prominent
+              haptic
+              onPress={() => navigate("/ask")}
+              style={[
+                styles.aiAction,
+                {
+                  borderColor: theme.color.brandPrimary,
+                  backgroundColor: theme.color.brandPrimary + "18",
+                },
+              ]}
+            >
+              <LinearGradient
+                pointerEvents="none"
+                colors={[theme.color.brandPrimary + "33", theme.color.brandPrimary + "0D"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={[styles.aiIcon, { textShadowColor: theme.color.brandPrimary + "80" }]}>✨</Text>
+              <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
+            </GlowPressable>
 
-              <View style={{ height: 8 }} />
-
-              {/* Action Row: Invoice */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/sale-form'); }}>
-                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(74, 222, 128, 0.15)' }]}>
-                  <Text style={{ fontSize: 20 }}>🧾</Text>
-                </View>
-                <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>Create Invoice</Text>
-                  <Text style={styles.actionSubtitle}>Record a new sale</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-              </Pressable>
-
-              {/* Action Row: Expense */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/bill-form'); }}>
-                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-                  <Text style={{ fontSize: 20 }}>💸</Text>
-                </View>
-                <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>Add Expense</Text>
-                  <Text style={styles.actionSubtitle}>Log a bill or purchase</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-              </Pressable>
-              
-              {/* Action Row: Payment */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { closeMenu(); router.push('/receipt-form'); }}>
-                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                  <Text style={{ fontSize: 20 }}>💵</Text>
-                </View>
-                <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>Receive Payment</Text>
-                  <Text style={styles.actionSubtitle}>Log incoming funds</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-              </Pressable>
-              
-              {/* Action Row: Party */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { 
-                closeMenu(); 
-                router.push('/suppliers?action=create');
-              }}>
-                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(168, 85, 247, 0.15)' }]}>
-                  <Text style={{ fontSize: 20 }}>👥</Text>
-                </View>
-                <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>{isPartnerMode ? "Add Party / Investor" : "Add Party"}</Text>
-                  <Text style={styles.actionSubtitle}>{isPartnerMode ? "Customer, supplier or investor" : "Customer or supplier"}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-              </Pressable>
-
-              {/* Action Row: Opening Balances */}
-              <Pressable style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: 'rgba(255,255,255,0.08)' }]} onPress={() => { 
-                closeMenu(); 
-                setOpeningModalVisible(true);
-              }}>
-                <View style={[styles.actionIconCircle, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
-                  <Text style={{ fontSize: 20 }}>⚙️</Text>
-                </View>
-                <View style={styles.actionDetails}>
-                  <Text style={styles.actionTitle}>Opening Balances</Text>
-                  <Text style={styles.actionSubtitle}>Setup starting cash, stock & equity</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-              </Pressable>
-
-            </View>
+            <View style={{ height: 8 }} />
+            <QuickActionRow icon="🧾" iconBackground="rgba(74,222,128,0.15)" title="Create Invoice" subtitle="Record a new sale" onPress={() => navigate("/sale-form")} />
+            <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Log a bill or purchase" onPress={() => navigate("/bill-form")} />
+            <QuickActionRow icon="💵" iconBackground="rgba(59,130,246,0.15)" title="Receive Payment" subtitle="Log incoming funds" onPress={() => navigate("/receipt-form")} />
+            <QuickActionRow
+              icon="👥"
+              iconBackground="rgba(168,85,247,0.15)"
+              title={isPartnerMode ? "Add Party / Investor" : "Add Party"}
+              subtitle={isPartnerMode ? "Customer, supplier or investor" : "Customer or supplier"}
+              onPress={() => navigate("/suppliers?action=create")}
+            />
+            <QuickActionRow
+              icon="⚙️"
+              iconBackground="rgba(234,179,8,0.15)"
+              title="Opening Balances"
+              subtitle="Setup starting cash, stock & equity"
+              onPress={() => {
+                closeMenu();
+                setTimeout(() => setOpeningModalVisible(true), theme.motion.fast);
+              }}
+            />
           </View>
         </Animated.View>
       </Modal>
 
-      <OpeningBalancesModal
-        visible={openingModalVisible}
-        onClose={() => setOpeningModalVisible(false)}
-      />
+      <OpeningBalancesModal visible={openingModalVisible} onClose={() => setOpeningModalVisible(false)} />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  overlayContainer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  overlayPressable: {
-    flex: 1,
-  },
+  overlayContainer: { ...StyleSheet.absoluteFillObject },
+  overlayPressable: { flex: 1 },
   menuContainer: {
-    position: 'absolute',
-    bottom: 110,
-    alignSelf: 'center',
-    width: '90%',
-    maxWidth: 400,
-    borderRadius: 32,
-    overflow: 'hidden',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 24 },
-    shadowOpacity: 0.6,
-    shadowRadius: 48,
-    elevation: 10,
-    transformOrigin: 'bottom',
-  },
-  menuSolid: {
-    flex: 1,
-    backgroundColor: '#141416', // Solid color as requested
-  },
-  menuInner: {
-    padding: 12,
+    position: "absolute",
+    bottom: 98,
+    alignSelf: "center",
+    width: "94%",
+    maxWidth: 410,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
     borderWidth: 1,
-    borderRadius: 32,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.42,
+    shadowRadius: 28,
+    elevation: 18,
+    transformOrigin: "bottom",
   },
+  menuHighlight: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    opacity: 0.8,
+  },
+  menuInner: { padding: 12 },
   aiAction: {
     borderRadius: 20,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   aiIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    fontSize: 22,
+    marginRight: 10,
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
-  aiText: {
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
+  aiText: { fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },
   actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 16,
   },
   actionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
   },
-  actionDetails: {
-    flex: 1,
-  },
-  actionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 2,
-  },
-  actionSubtitle: {
-    fontSize: 13,
-    color: '#a1a1aa',
-  },
+  actionDetails: { flex: 1 },
+  actionTitle: { fontSize: 15, fontWeight: "700", marginBottom: 2 },
+  actionSubtitle: { fontSize: 12 },
   fabContainer: {
-    position: 'absolute',
-    alignSelf: 'center',
-    bottom: 40, // Protrudes exactly above the 88px tab bar
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: "absolute",
+    alignSelf: "center",
+    bottom: 42,
+    justifyContent: "center",
+    alignItems: "center",
     zIndex: 110,
   },
   fab: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 8,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
   },
 });

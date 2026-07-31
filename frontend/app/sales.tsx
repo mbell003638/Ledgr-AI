@@ -12,6 +12,7 @@ import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 export default function SalesScreen() {
   const theme = useTheme();
@@ -156,17 +157,20 @@ export default function SalesScreen() {
             const displaySub = item.notes && item.notes.trim() ? item.notes.trim() : defaultSub;
 
             return (
-              <Pressable
+              <GlowPressable
                 testID={`sale-${item.id}`}
                 onPress={() => setSelected(item)}
-                style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+                haptic
+                topHighlight={false}
+                restingBorderColor={theme.color.border}
+                style={styles.card}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
                   <Text style={styles.cardSub}>{displaySub}</Text>
                 </View>
                 <Text style={styles.amount}>{fmt(item.amount, currSym)}</Text>
-              </Pressable>
+              </GlowPressable>
             );
           }}
         />

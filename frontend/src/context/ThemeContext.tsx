@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
-import { darkColors, lightColors, navyGoldColors, amoledBlueColors, spacing, radius, font, ThemeType } from '@/src/theme';
+import { darkColors, lightColors, navyGoldColors, amoledBlueColors, spacing, radius, font, effects, motion, ThemeType } from '@/src/theme';
 
 type Mode = 'light' | 'dark' | 'navy_gold' | 'amoled_blue' | 'system';
 
@@ -15,7 +15,7 @@ type Ctx = {
 };
 
 const defaultCtx: Ctx = {
-  theme: { color: lightColors, spacing, radius, font },
+  theme: { color: lightColors, spacing, radius, font, effects, motion },
   mode: 'system',
   effective: 'light',
   setMode: () => {},
@@ -53,7 +53,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(() => ({
     theme: {
       color: colorMap[effective],
-      spacing, radius, font,
+      spacing, radius, font, effects, motion,
     },
     mode, effective, setMode,
   }), [effective, mode]);

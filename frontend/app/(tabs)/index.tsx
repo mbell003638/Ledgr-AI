@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput, PanResponder, Animated, LayoutAnimation, Platform, UIManager } from "react-native";
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +13,25 @@ import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Haptics from "expo-haptics";
+import Animated, { Easing, interpolate, interpolateColor, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
+import { GlowPressable } from "@/src/components/GlowPressable";
+import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
+import ArrowLeftRight from "lucide-react-native/icons/arrow-left-right";
+import Banknote from "lucide-react-native/icons/banknote";
+import BarChart2 from "lucide-react-native/icons/chart-no-axes-column";
+import BookOpen from "lucide-react-native/icons/book-open";
+import Calendar from "lucide-react-native/icons/calendar";
+import Cube from "lucide-react-native/icons/box";
+import FileText from "lucide-react-native/icons/file-text";
+import Mic from "lucide-react-native/icons/mic";
+import Package from "lucide-react-native/icons/package";
+import PieChart from "lucide-react-native/icons/chart-pie";
+import Receipt from "lucide-react-native/icons/receipt";
+import Sparkles from "lucide-react-native/icons/sparkles";
+import Tag from "lucide-react-native/icons/tag";
+import TrendingUp from "lucide-react-native/icons/trending-up";
+import Wallet from "lucide-react-native/icons/wallet";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -32,22 +46,22 @@ type Dash = {
 };
 
 const TILES = [
-  { key: "bills", label: "Purchases", icon: "receipt-outline", route: "/bills", color: "#D6E5DB" },
-  { key: "sales", label: "Sales", icon: "trending-up-outline", route: "/sales", color: "#F3E4C8" },
-  { key: "receipts", label: "Receipts", icon: "receipt-outline", route: "/receipts", color: "#F0E4D0" },
-  { key: "payments", label: "Payments", icon: "cash-outline", route: "/payments", color: "#E8DAD0" },
-  { key: "cashbook", label: "Cash Book", icon: "swap-vertical-outline", route: "/cashbook", color: "#DCE8DC" },
-  { key: "invoices", label: "Invoices", icon: "document-text-outline", route: "/invoices", color: "#D8E4F0" },
-  { key: "quotes", label: "Quotes", icon: "pricetags-outline", route: "/quotes", color: "#E0E8F0" },
-  { key: "delivery", label: "Delivery Notes", icon: "cube-outline", route: "/delivery-notes", color: "#DCE4DC" },
-  { key: "expenses", label: "Expenses", icon: "wallet-outline", route: "/expenses", color: "#E4D8D8" },
-  { key: "inventory", label: "Stock", icon: "cube-outline", route: "/inventory-form", color: "#E3E9DA" },
-  { key: "assets", label: "Assets & Liabilities", icon: "pie-chart-outline", route: "/assets", color: "#D0D8E0" },
-  { key: "daybook", label: "Day Book", icon: "book-outline", route: "/daybook", color: "#DDE3EC" },
-  { key: "reports", label: "Reports", icon: "bar-chart-outline", route: "/reports", color: "#E0E0DA" },
-  { key: "monthly", label: "Monthly Report", icon: "calendar-outline", route: "/monthly-summary", color: "#EFDCC8" },
-  { key: "ask", label: "Ask AI", icon: "sparkles-outline", route: "/ask", color: "#D0E0D8" },
-  { key: "voice", label: "AI Assistant", icon: "mic-outline", route: "/voice", color: "#1C4030" },
+  { key: "bills", label: "Purchases", icon: Receipt, route: "/bills", iconColor: "#34D399", iconBackground: "rgba(214,229,219,0.20)" },
+  { key: "sales", label: "Sales", icon: TrendingUp, route: "/sales", iconColor: "#FBBF24", iconBackground: "rgba(243,228,200,0.20)" },
+  { key: "receipts", label: "Receipts", icon: ArrowDownLeft, route: "/receipts", iconColor: "#60A5FA", iconBackground: "rgba(240,228,208,0.20)" },
+  { key: "payments", label: "Payments", icon: Banknote, route: "/payments", iconColor: "#F87171", iconBackground: "rgba(232,218,208,0.20)" },
+  { key: "cashbook", label: "Cash Book", icon: ArrowLeftRight, route: "/cashbook", iconColor: "#C084FC", iconBackground: "rgba(220,232,220,0.20)" },
+  { key: "invoices", label: "Invoices", icon: FileText, route: "/invoices", iconColor: "#38BDF8", iconBackground: "rgba(216,228,240,0.20)" },
+  { key: "quotes", label: "Quotes", icon: Tag, route: "/quotes", iconColor: "#FACC15", iconBackground: "rgba(224,232,240,0.20)" },
+  { key: "delivery", label: "Delivery Notes", icon: Cube, route: "/delivery-notes", iconColor: "#A7F3D0", iconBackground: "rgba(220,228,220,0.20)" },
+  { key: "expenses", label: "Expenses", icon: Wallet, route: "/expenses", iconColor: "#F87171", iconBackground: "rgba(228,216,216,0.20)" },
+  { key: "inventory", label: "Stock", icon: Package, route: "/inventory-form", iconColor: "#34D399", iconBackground: "rgba(227,233,218,0.20)" },
+  { key: "assets", label: "Assets & Liabilities", icon: PieChart, route: "/assets", iconColor: "#818CF8", iconBackground: "rgba(208,216,224,0.20)" },
+  { key: "daybook", label: "Day Book", icon: BookOpen, route: "/daybook", iconColor: "#F472B6", iconBackground: "rgba(221,227,236,0.20)" },
+  { key: "reports", label: "Reports", icon: BarChart2, route: "/reports", iconColor: "#FBBF24", iconBackground: "rgba(224,224,218,0.20)" },
+  { key: "monthly", label: "Monthly Report", icon: Calendar, route: "/monthly-summary", iconColor: "#F97316", iconBackground: "rgba(239,220,200,0.20)" },
+  { key: "ask", label: "Ask AI", icon: Sparkles, route: "/ask", usesBrandIcon: true },
+  { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
 ] as const;
 
 // Persona-based customization: hide tiles that don't apply to a business type.
@@ -63,10 +77,76 @@ const HIDDEN_TILES: Record<string, string[]> = {
   // shop / vendor: show everything (default)
 };
 
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
+  const reduceMotion = useReducedMotion();
+  const hover = useSharedValue(0);
+  const pressed = useSharedValue(0);
+
+  const setHover = (value: number) => {
+    hover.value = reduceMotion
+      ? value
+      : withTiming(value, {
+          duration: theme.motion.expressive,
+          easing: Easing.bezier(0.34, 1.56, 0.64, 1),
+        });
+  };
+
+  const setPressed = (value: number) => {
+    pressed.value = reduceMotion
+      ? value
+      : withTiming(value, {
+          duration: theme.motion.standard,
+          easing: Easing.bezier(0.34, 1.56, 0.64, 1),
+        });
+  };
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const focus = Math.max(hover.value, pressed.value);
+    return {
+      borderColor: interpolateColor(focus, [0, 1], ["rgba(0,0,0,0)", theme.color.brandPrimary]),
+      transform: [
+        { translateY: reduceMotion ? 0 : interpolate(focus, [0, 1], [0, -5]) },
+        { scale: reduceMotion ? 1 : interpolate(focus, [0, 1], [1, 1.02]) },
+      ],
+      shadowColor: theme.color.brandPrimary,
+      shadowOpacity: Platform.OS === "web" ? interpolate(focus, [0, 1], [0.3, 0.5]) : 0,
+      shadowRadius: Platform.OS === "web" ? interpolate(focus, [0, 1], [30, 38]) : 0,
+      elevation: Platform.OS === "web" ? interpolate(focus, [0, 1], [8, 12]) : 0,
+    };
+  }, [reduceMotion, theme]);
+
+  return (
+    <AnimatedPressable
+      onHoverIn={() => setHover(1)}
+      onHoverOut={() => setHover(0)}
+      onPressIn={() => setPressed(1)}
+      onPressOut={() => setPressed(0)}
+      style={[{
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        marginBottom: 16,
+        shadowOffset: { width: 0, height: 10 },
+      }, animatedStyle]}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
 export default function Dashboard() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const scrollRef = useAnimatedRef<any>();
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
   const [dash, setDash] = useState<Dash | null>(null);
   const [daily, setDaily] = useState<any>(null);
   const localTodayStr = () => {
@@ -122,8 +202,6 @@ export default function Dashboard() {
     return [...ordered, ...Array.from(map.values())];
   }, [settings, customTileOrder]);
 
-  const [selectedSwapIndex, setSelectedSwapIndex] = useState<number | null>(null);
-  const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
 
   const recordTileUsage = async (key: string) => {
     try {
@@ -141,81 +219,20 @@ export default function Dashboard() {
     router.push(tile.route as any);
   };
 
-  const wiggleAnim = React.useRef(new Animated.Value(0)).current;
+  const moveTile = (fromIndex: number, toIndex: number) => {
+    const currentKeys = visibleTiles.map((tile) => tile.key);
+    if (
+      fromIndex < 0 ||
+      fromIndex >= currentKeys.length ||
+      toIndex < 0 ||
+      toIndex >= currentKeys.length ||
+      fromIndex === toIndex
+    ) return;
 
-  useEffect(() => {
-    if (isEditingGrid) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(wiggleAnim, { toValue: 1, duration: 130, useNativeDriver: true }),
-          Animated.timing(wiggleAnim, { toValue: -1, duration: 130, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    } else {
-      wiggleAnim.setValue(0);
-    }
-  }, [isEditingGrid]);
-
-  const wiggleStyle = {
-    transform: [
-      {
-        rotate: wiggleAnim.interpolate({
-          inputRange: [-1, 1],
-          outputRange: ["-1.2deg", "1.2deg"],
-        }),
-      },
-    ],
-  };
-
-  const swapTiles = (fromIndex: number, toIndex: number) => {
-    const currentKeys = visibleTiles.map((t) => t.key);
-    if (fromIndex < 0 || fromIndex >= currentKeys.length || toIndex < 0 || toIndex >= currentKeys.length) return;
-    const temp = currentKeys[fromIndex];
-    currentKeys[fromIndex] = currentKeys[toIndex];
-    currentKeys[toIndex] = temp;
-    if (Platform.OS !== "web") {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    }
+    const [moved] = currentKeys.splice(fromIndex, 1);
+    currentKeys.splice(toIndex, 0, moved);
     setCustomTileOrder(currentKeys);
-    setSelectedSwapIndex(null);
     AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(currentKeys)).catch(() => {});
-  };
-
-  const createPanResponder = (index: number) => {
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return isEditingGrid && (Math.abs(gestureState.dx) > 8 || Math.abs(gestureState.dy) > 8);
-      },
-      onPanResponderGrant: () => {
-        if (Platform.OS !== "web") {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
-        }
-        setActiveDragIndex(index);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        const colShift = gestureState.dx > 45 ? 1 : gestureState.dx < -45 ? -1 : 0;
-        const rowShift = Math.round(gestureState.dy / 75) * 2;
-        const targetIndex = index + colShift + rowShift;
-        if (targetIndex >= 0 && targetIndex < visibleTiles.length && targetIndex !== index) {
-          swapTiles(index, targetIndex);
-        }
-      },
-      onPanResponderRelease: () => {
-        if (Platform.OS !== "web") {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        }
-        setActiveDragIndex(null);
-      },
-      onPanResponderTerminate: () => {
-        if (Platform.OS !== "web") {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        }
-        setActiveDragIndex(null);
-      },
-    });
   };
 
   const sortTilesByPreset = async (preset: "alphabetical" | "frequent" | "recent" | "default") => {
@@ -224,7 +241,6 @@ export default function Dashboard() {
 
     if (preset === "default") {
       setCustomTileOrder([]);
-      setSelectedSwapIndex(null);
       await AsyncStorage.removeItem("ledgr_tile_order");
       return;
     }
@@ -244,14 +260,10 @@ export default function Dashboard() {
 
     const keys = sorted.map((t) => t.key);
     setCustomTileOrder(keys);
-    setSelectedSwapIndex(null);
     await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(keys));
   };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  // Reload whenever the day changes (even without refocusing)
-  useEffect(() => { load(); }, [dailyDate, load]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -326,8 +338,11 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Ledgr" subtitle="Your business finances, simplified" testID="dashboard-header" />
-      <ScrollView
+      <ScreenHeader title="Ledgr" subtitle="Your business finances, simplified" testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
+      <Animated.ScrollView
+        ref={scrollRef}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
         showsVerticalScrollIndicator={false}
@@ -338,36 +353,48 @@ export default function Dashboard() {
           <>
             {/* Period Filter Bar */}
             <View style={{ marginBottom: theme.spacing.md }}>
-              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <View style={styles.periodRow}>
                 {[
                   { id: "all", label: "All Time" },
                   { id: "today", label: "Today" },
                   { id: "this_month", label: "This Month" },
                   { id: "custom", label: "Custom Period" },
-                ].map((p) => (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => applyPeriod(p.id as any)}
-                    style={[{
-                      paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20,
-                      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary
-                    }, periodPreset === p.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "25" }]}
-                  >
-                    <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, periodPreset === p.id && { color: theme.color.brandPrimary }]}>
-                      {p.label}
-                    </Text>
-                  </Pressable>
-                ))}
+                ].map((p) => {
+                  const active = periodPreset === p.id;
+                  return (
+                    <GlowPressable
+                      key={p.id}
+                      topHighlight={false}
+                      haptic
+                      hoverLift={-2}
+                      hoverScale={1.03}
+                      restingBorderColor={active ? theme.color.brandPrimary : theme.color.glassBorder}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      onPress={() => applyPeriod(p.id as any)}
+                      style={[styles.periodPill, active && styles.periodPillActive]}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.78}
+                        style={[styles.periodPillText, active && styles.periodPillTextActive]}
+                      >
+                        {p.label}
+                      </Text>
+                    </GlowPressable>
+                  );
+                })}
               </View>
 
               {periodPreset === "custom" && (
-                <View style={{ flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" }}>
+                <View style={styles.customPeriodRow}>
                   <TextInput
                     value={fromDate}
                     onChangeText={setFromDate}
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
-                    style={{ flex: 1, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: theme.color.onSurface, fontSize: 13 }}
+                    style={styles.customDateInput}
                   />
                   <Text style={{ color: theme.color.muted, fontSize: 12 }}>to</Text>
                   <TextInput
@@ -375,11 +402,11 @@ export default function Dashboard() {
                     onChangeText={setToDate}
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
-                    style={{ flex: 1, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: theme.color.onSurface, fontSize: 13 }}
+                    style={styles.customDateInput}
                   />
                   <Pressable
                     onPress={() => applyPeriod("custom", fromDate, toDate)}
-                    style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
+                    style={styles.customFilterButton}
                   >
                     <Text style={{ color: theme.color.onBrandPrimary, fontWeight: "700", fontSize: 12 }}>Filter</Text>
                   </Pressable>
@@ -388,72 +415,75 @@ export default function Dashboard() {
             </View>
 
             {/* Net worth hero */}
-            <LinearGradient
-              colors={[theme.color.brandPrimary, theme.color.brandSecondary]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={styles.hero}
-            >
-              <Text style={styles.heroLabel}>Net Profit {rangeData ? `(${fromDate} to ${toDate})` : ((dash?.periodStart && dash.periodStart !== "1970-01-01") ? `since ${dash.periodStart}` : "")}</Text>
-              <Text style={styles.heroValue} testID="dashboard-net-profit">{fmt(displayNetProfit)}</Text>
-              <View style={styles.heroRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.heroSub}>Opening</Text>
-                  <Text style={styles.heroSubVal}>{fmt(dash?.openingBalance)}</Text>
+            <AnimatedHeroCard theme={theme}>
+              <LinearGradient
+                colors={[theme.color.brandPrimary, theme.color.brandSecondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.hero}
+              >
+                <Text style={styles.heroLabel}>Net Profit {rangeData ? `(${fromDate} to ${toDate})` : ((dash?.periodStart && dash.periodStart !== "1970-01-01") ? `since ${dash.periodStart}` : "")}</Text>
+                <Text style={styles.heroValue} testID="dashboard-net-profit">{fmt(displayNetProfit)}</Text>
+                <View style={styles.heroRow}>
+                  <View style={styles.heroMetric}>
+                    <Text style={styles.heroSub}>Opening</Text>
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.heroSubVal}>{fmt(dash?.openingBalance)}</Text>
+                  </View>
+                  <View style={styles.heroDivider} />
+                  <View style={[styles.heroMetric, styles.heroMetricInset]}>
+                    <Text style={styles.heroSub}>Closing</Text>
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.heroSubVal}>{fmt(dash?.closingBalance)}</Text>
+                  </View>
+                  <View style={styles.heroDivider} />
+                  <View style={[styles.heroMetric, styles.heroMetricInset]}>
+                    <Text style={styles.heroSub}>Net Worth</Text>
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.heroSubVal}>{fmt(dash?.netWorth)}</Text>
+                  </View>
                 </View>
-                <View style={{ width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" }} />
-                <View style={{ flex: 1, paddingLeft: theme.spacing.md }}>
-                  <Text style={styles.heroSub}>Closing</Text>
-                  <Text style={styles.heroSubVal}>{fmt(dash?.closingBalance)}</Text>
-                </View>
-                <View style={{ width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" }} />
-                <View style={{ flex: 1, paddingLeft: theme.spacing.md }}>
-                  <Text style={styles.heroSub}>Net Worth</Text>
-                  <Text style={styles.heroSubVal}>{fmt(dash?.netWorth)}</Text>
-                </View>
-              </View>
-            </LinearGradient>
+              </LinearGradient>
+            </AnimatedHeroCard>
 
             {/* Profit Flow breakdown */}
             {(displaySales || displayPurchases) ? (
-              <Card style={{ marginBottom: theme.spacing.lg }} testID="profit-flow">
+              <Card style={styles.homeSummaryCard} testID="profit-flow" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
                 <Text style={styles.sectionTitleInline}>Profit Flow</Text>
                 <View style={styles.pfRow}>
                   <Text style={styles.pfLabel}>Sales</Text>
-                  <Text style={[styles.pfVal, { color: theme.color.success }]}>+ {fmt(displaySales)}</Text>
+                  <Text numberOfLines={1} style={[styles.pfVal, { color: theme.color.success }]}>+ {fmt(displaySales)}</Text>
                 </View>
                 <View style={styles.pfRow}>
                   <Text style={styles.pfLabel}>Purchases (COGS)</Text>
-                  <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayPurchases)}</Text>
+                  <Text numberOfLines={1} style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayPurchases)}</Text>
                 </View>
                 <View style={[styles.pfRow, styles.pfStrong]}>
                   <Text style={[styles.pfLabel, { fontWeight: "700" }]}>Gross Profit</Text>
-                  <Text style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(displayGross)}</Text>
+                  <Text numberOfLines={1} style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(displayGross)}</Text>
                 </View>
                 {displayCommission > 0 ? (
                   <View style={styles.pfRow}>
                     <Text style={styles.pfLabel}>Manager Commission</Text>
-                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayCommission)}</Text>
+                    <Text numberOfLines={1} style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayCommission)}</Text>
                   </View>
                 ) : null}
                 {displayDrawings > 0 ? (
                   <View style={styles.pfRow}>
                     <Text style={styles.pfLabel}>Drawings</Text>
-                    <Text style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayDrawings)}</Text>
+                    <Text numberOfLines={1} style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayDrawings)}</Text>
                   </View>
                 ) : null}
                 <View style={[styles.pfRow, styles.pfStrong, { borderTopWidth: 2, borderTopColor: theme.color.brandPrimary, paddingTop: 8, marginTop: 4 }]}>
                   <Text style={[styles.pfLabel, { fontWeight: "700", color: theme.color.brandPrimary }]}>Net Profit</Text>
-                  <Text style={[styles.pfVal, { fontWeight: "700", color: theme.color.brandPrimary, fontSize: 16 }]}>{fmt(displayNetProfit)}</Text>
+                  <Text numberOfLines={1} style={[styles.pfVal, { fontWeight: "700", color: theme.color.brandPrimary, fontSize: 16 }]}>{fmt(displayNetProfit)}</Text>
                 </View>
               </Card>
             ) : null}
 
             {/* Daily quick summary — WhatsApp shareable */}
-            <Card style={styles.dailyCard} testID="daily-card">
+            <Card style={[styles.homeSummaryCard, styles.dailyCard]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={styles.dailyHead}>
                 <View>
-                  <Text style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
-                  <Text style={styles.dailyValue}>{fmt(daily?.netCash ?? 0)}</Text>
+                  <Text numberOfLines={1} style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.dailyValue}>{fmt(daily?.netCash ?? 0)}</Text>
                   <Text style={styles.dailySub}>
                     {daily?.salesCount ?? 0} sales • {daily?.billsCount ?? 0} bills • {daily?.paymentsCount ?? 0} payments
                   </Text>
@@ -475,15 +505,15 @@ export default function Dashboard() {
               <View style={styles.dailyStats}>
                 <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Sales</Text>
-                  <Text style={[styles.dailyStatValue, { color: theme.color.success }]}>{fmt(daily?.revenue ?? 0)}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={[styles.dailyStatValue, { color: theme.color.success }]}>{fmt(daily?.revenue ?? 0)}</Text>
                 </View>
                 <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Purchases</Text>
-                  <Text style={[styles.dailyStatValue, { color: theme.color.warning }]}>{fmt(daily?.purchases ?? 0)}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={[styles.dailyStatValue, { color: theme.color.warning }]}>{fmt(daily?.purchases ?? 0)}</Text>
                 </View>
                 <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Profit</Text>
-                  <Text style={styles.dailyStatValue}>{fmt(daily?.grossProfit ?? 0)}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.dailyStatValue}>{fmt(daily?.grossProfit ?? 0)}</Text>
                 </View>
               </View>
               <Pressable testID="btn-share-daily" onPress={shareDaily} style={styles.shareBtn}>
@@ -494,12 +524,12 @@ export default function Dashboard() {
 
             {/* KPI row — tap to open the underlying entries */}
             <View style={styles.kpiRow}>
-              <KpiTile label="Sales" value={fmt(dash?.totalSales)} testID="kpi-sales" onPress={() => router.push("/sales")} />
-              <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} testID="kpi-purchases" onPress={() => router.push("/bills")} />
+              <KpiTile label="Sales" value={fmt(dash?.totalSales)} valueColor={theme.color.success} icon={<TrendingUp width={14} height={14} color={theme.color.success} />} testID="kpi-sales" onPress={() => router.push("/sales")} />
+              <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} valueColor={theme.color.warning} icon={<Receipt width={14} height={14} color={theme.color.warning} />} testID="kpi-purchases" onPress={() => router.push("/bills")} />
             </View>
             <View style={styles.kpiRow}>
-              <KpiTile label="Cash" value={fmt(dash?.cash)} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
-              <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
+              <KpiTile label="Cash" value={fmt(dash?.cash)} icon={<ArrowLeftRight width={14} height={14} color="#60A5FA" />} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
+              <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
             </View>
 
             {/* Quick Workspaces Header */}
@@ -510,7 +540,7 @@ export default function Dashboard() {
               </View>
               {isEditingGrid ? (
                 <Pressable
-                  onPress={() => { setIsEditingGrid(false); setSelectedSwapIndex(null); }}
+                  onPress={() => setIsEditingGrid(false)}
                   style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 }}
                 >
                   <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>Done</Text>
@@ -520,97 +550,52 @@ export default function Dashboard() {
 
             {/* Re-order & Auto-Sort Floating Toolbar (visible during long-press edit mode) */}
             {isEditingGrid ? (
-              <Card style={{ marginBottom: theme.spacing.md, padding: 12, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.brandPrimary }}>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: theme.color.brandPrimary, marginBottom: 8 }}>
+              <Card style={styles.organizePanel}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: theme.color.brandPrimary, marginBottom: 4 }}>
                   Tile Organization & Auto-Sort
                 </Text>
-                <Text style={{ fontSize: 11, color: theme.color.muted, marginBottom: 10 }}>
-                  Tap any 2 tiles to swap their position, or select an auto-sort preset below:
+                <Text style={{ fontSize: 10, color: theme.color.muted, marginBottom: 6 }}>
+                  Drag a tile to move it, or choose an auto-sort preset:
                 </Text>
                 <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
                   <Pressable
                     onPress={() => sortTilesByPreset("recent")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>⚡ Most Recent</Text>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>⚡ Most Recent</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => sortTilesByPreset("frequent")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>🔥 Frequently Used</Text>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔥 Frequently Used</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => sortTilesByPreset("alphabetical")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.onSurface }}>🔤 A - Z</Text>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔤 A - Z</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => sortTilesByPreset("default")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }}
+                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: "600", color: theme.color.muted }}>🔄 Reset Default</Text>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.muted }}>🔄 Reset Default</Text>
                   </Pressable>
                 </View>
               </Card>
             ) : null}
 
-            {/* Quick Workspaces 2-Column Auto-Aligning Grid */}
-            <View style={styles.grid}>
-              {visibleTiles.map((t, idx) => {
-                const isBrand = t.key === "voice";
-                const isDraggingThis = activeDragIndex === idx;
-                const isSelectedForSwap = selectedSwapIndex === idx;
-                const pan = createPanResponder(idx);
-                return (
-                  <Animated.View
-                    key={t.key}
-                    {...(isEditingGrid ? pan.panHandlers : {})}
-                    style={[
-                      { width: "48%", marginBottom: theme.spacing.md },
-                      isEditingGrid && wiggleStyle,
-                      isDraggingThis && { zIndex: 99, transform: [{ scale: 1.08 }] },
-                    ]}
-                  >
-                    <Pressable
-                      testID={`tile-${t.key}`}
-                      delayLongPress={800}
-                      onPress={() => {
-                        if (isEditingGrid) {
-                          if (selectedSwapIndex === null) {
-                            setSelectedSwapIndex(idx);
-                          } else if (selectedSwapIndex === idx) {
-                            setSelectedSwapIndex(null);
-                          } else {
-                            swapTiles(selectedSwapIndex, idx);
-                          }
-                        } else {
-                          handleTilePress(t);
-                        }
-                      }}
-                      onLongPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                        setIsEditingGrid(true);
-                        setSelectedSwapIndex(idx);
-                      }}
-                      style={({ pressed }) => [
-                        styles.tile,
-                        { width: "100%", margin: 0, backgroundColor: isBrand ? theme.color.brandPrimary : theme.color.surfaceSecondary },
-                        isEditingGrid && { borderWidth: 1.5, borderColor: isSelectedForSwap || isDraggingThis ? theme.color.brandPrimary : theme.color.border },
-                        (isSelectedForSwap || isDraggingThis) && { backgroundColor: theme.color.brandPrimary + "15", shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
-                        pressed && !isEditingGrid && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-                      ]}
-                    >
-                      <View style={[styles.tileIcon, { backgroundColor: isBrand ? "rgba(255,255,255,0.15)" : t.color }]}>
-                        <Ionicons name={t.icon as any} size={22} color={isBrand ? "#fff" : theme.color.brandPrimary} />
-                      </View>
-                      <Text style={[styles.tileLabel, { color: isBrand ? "#fff" : theme.color.onSurface }]}>{t.label}</Text>
-                    </Pressable>
-                  </Animated.View>
-                );
-              })}
-            </View>
+            {/* Quick Workspaces — continuous One UI-style drag grid */}
+            <ReorderableWorkspaceGrid
+              items={visibleTiles}
+              editing={isEditingGrid}
+              scrollRef={scrollRef}
+              scrollY={scrollY}
+              onEditingChange={setIsEditingGrid}
+              onOrderChange={moveTile}
+              onTilePress={(tile: WorkspaceTileItem) => handleTilePress(tile as (typeof TILES)[number])}
+            />
 
             {/* Sales trend chart */}
             <Card style={{ marginTop: theme.spacing.lg }}>
@@ -636,22 +621,46 @@ export default function Dashboard() {
             <View style={{ height: 120 }} />
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
+  homeHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
+  homeHeaderTitle: { fontSize: 28, fontWeight: "700", letterSpacing: -0.5 },
+  homeHeaderSubtitle: { fontSize: 14, marginTop: 4 },
   scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl },
+  periodRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" },
+  periodPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    backgroundColor: theme.color.surfaceSecondary,
+  },
+  periodPillActive: {
+    borderColor: theme.color.brandPrimary,
+    backgroundColor: theme.color.brandPrimary + "25",
+  },
+  periodPillText: { fontSize: 12, fontWeight: "600", color: theme.color.onSurface },
+  periodPillTextActive: { color: theme.color.brandPrimary },
+  customPeriodRow: { flexDirection: "row", gap: 8, marginTop: 10, alignItems: "center" },
+  customDateInput: { flex: 1, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, color: theme.color.onSurface, fontSize: 13 },
+  customFilterButton: { backgroundColor: theme.color.brandPrimary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
   hero: {
     padding: theme.spacing.xl,
     borderRadius: theme.radius.lg,
-    marginBottom: theme.spacing.lg,
+    overflow: "hidden",
   },
   heroLabel: { color: "rgba(255,255,255,0.75)", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: "500" },
   heroValue: { color: "#fff", fontSize: 36, fontWeight: "700", marginTop: 6, letterSpacing: -1 },
   heroRow: { flexDirection: "row", marginTop: theme.spacing.lg, alignItems: "center" },
+  heroMetric: { flex: 1 },
+  heroMetricInset: { paddingLeft: theme.spacing.md },
+  heroDivider: { width: 1, height: 32, backgroundColor: "rgba(255,255,255,0.2)" },
   heroSub: { color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "500" },
   heroSubVal: { color: "#fff", fontSize: 16, fontWeight: "600", marginTop: 2 },
   kpiRow: { flexDirection: "row", gap: theme.spacing.md, marginBottom: theme.spacing.md },
@@ -668,10 +677,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: theme.color.surfaceSecondary,
     marginVertical: theme.spacing.xs,
-    elevation: 1,
+    elevation: Platform.OS === "web" ? 1 : 0,
     shadowColor: theme.color.muted,
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
+    shadowOpacity: Platform.OS === "web" ? 0.06 : 0,
+    shadowRadius: Platform.OS === "web" ? 3 : 0,
     shadowOffset: { width: 0, height: 1 },
   },
   tileIcon: {
@@ -683,6 +692,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   dailyCard: { marginBottom: theme.spacing.lg, padding: theme.spacing.lg },
   dailyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   dailyLabel: { fontSize: 12, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
+  homeSummaryCard: { marginBottom: theme.spacing.lg, marginVertical: theme.spacing.xs, padding: theme.spacing.lg, borderRadius: theme.radius.lg, backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border },
   dailyValue: { fontSize: 28, fontWeight: "700", color: theme.color.onSurface, marginTop: 4, letterSpacing: -0.5 },
   dailySub: { fontSize: 11, color: theme.color.muted, marginTop: 4 },
   dailyNav: { flexDirection: "row", gap: 6 },
@@ -697,4 +707,5 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfStrong: { borderTopWidth: 1, borderTopColor: theme.color.divider, marginTop: 4, paddingTop: 8 },
   pfLabel: { color: theme.color.onSurfaceTertiary, fontSize: 14 },
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
+  organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
 }); }

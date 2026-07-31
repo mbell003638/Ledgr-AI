@@ -24,6 +24,10 @@ export default function Root({ children }: PropsWithChildren) {
               body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
+              /* Hide only scrollbar chrome; scrolling remains fully functional. */
+              html, body, #root, #root *, body > div, body > div * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+              html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar, #root *::-webkit-scrollbar, body > div::-webkit-scrollbar, body > div *::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; background: transparent !important; }
+              ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-track { background: transparent !important; }
             `,
           }}
         />
