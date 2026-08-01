@@ -60,6 +60,28 @@ export class V2DocumentService {
     });
   }
 
+  /** Reverse and replace one source as a single all-or-nothing edit. */
+  async replaceSource<T>(sourceId: string, expectedType: string, memo: string, createReplacement: () => Promise<T>): Promise<T> {
+    return this.repoTx(async () => {
+      const old = await this.sourceRow(sourceId, expectedType);
+      await this.reverseSource(sourceId, expectedType, memo);
+      const res = await createReplacement();
+      const targetId = (res as any)?.source?.id || (res as any)?.replacement?.source?.id || (res as any)?.id;
+      if (targetId) {
+        const row = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [targetId]);
+        if (row) {
+          let meta: any = {};
+          try { meta = JSON.parse(row.metadata || '{}'); } catch {}
+          meta.isEdited = 1;
+          meta.editedAt = new Date().toISOString().slice(0, 10);
+          meta.originalDate = old.date;
+          meta.originalSourceId = sourceId;
+          await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(meta), targetId]);
+        }
+      }
+      return res;
+    });
+  }
   async editReceipt(receiptSourceId: string, input: Omit<ReceiptInput, 'bookId'|'partyId'> & { partyId?: string; bookId?: string }) {
     return this.repoTx(async () => {
       const old = await this.receiptRow(receiptSourceId);
