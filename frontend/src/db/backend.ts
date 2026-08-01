@@ -176,7 +176,7 @@ export async function writeSettings(s: any): Promise<void> {
 
 /** Clear a single collection (used by resetAll). */
 export async function clearColl(c: CollectionName): Promise<void> {
-  if (mode === 'sqlite' && runner && activeBook === DEFAULT_BOOK) {
+  if (mode === 'sqlite' && runner) {
     await sqlWrite(runner, c, []);
     return;
   }

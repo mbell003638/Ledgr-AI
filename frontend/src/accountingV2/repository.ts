@@ -183,9 +183,11 @@ export class V2SqlRepository {
     return { sql: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
   }
 
+  private txSequence = 0;
   private async tx<T>(fn: () => Promise<T>): Promise<T> {
-    await this.db.exec('BEGIN');
-    try { const result = await fn(); await this.db.exec('COMMIT'); return result; }
-    catch (e) { try { await this.db.exec('ROLLBACK'); } catch { /* preserve original error */ } throw e; }
+    const sp = `v2_repo_tx_${++this.txSequence}`;
+    await this.db.exec(`SAVEPOINT ${sp}`);
+    try { const result = await fn(); await this.db.exec(`RELEASE SAVEPOINT ${sp}`); return result; }
+    catch (e) { try { await this.db.exec(`ROLLBACK TO SAVEPOINT ${sp}`); await this.db.exec(`RELEASE SAVEPOINT ${sp}`); } catch { /* preserve original error */ } throw e; }
   }
 }

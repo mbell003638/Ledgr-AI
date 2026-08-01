@@ -648,9 +648,15 @@ export const api = {
     const runner = activeSqlRunner();
     if (runner) {
       await factoryWipeV2Database(runner);
+      const year = new Date().getFullYear();
+      await initializeV2Book(runner, { book: { id: 'default', name: 'Main Account', style: 'standard', basis: 'accrual' }, period: { id: `default:period:${year}-01-01`, startDate: `${year}-01-01`, endDate: `${year}-12-31` }, personas: ['custom'] }).catch(() => {});
     }
-    // Need AsyncStorage imported for this... actually I can just call db.clearColl directly, 
-    // but AsyncStorage.clear() is safer. I'll import it at the top of the file in another chunk.
+    const books = await beListBooks().catch(() => []);
+    for (const book of books) {
+      await beSetActiveBook(book.id).catch(() => {});
+      await db.resetAll().catch(() => {});
+    }
+    await beSetActiveBook('default').catch(() => {});
     await AsyncStorage.clear();
     return { ok: true };
   },

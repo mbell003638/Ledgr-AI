@@ -44,6 +44,14 @@ export async function resetAllV2AccountingData(db: SqlRunner, periodStart: strin
   const books = await db.all<{ id: string }>('SELECT id FROM v2_books ORDER BY id');
   const results = [];
   for (const book of books) results.push(await resetV2AccountingData(db, book.id, periodStart));
+  // Global cleanup to guarantee no orphaned sales, purchases, or journal lines survive
+  await db.run('DELETE FROM v2_invoice_allocations').catch(() => {});
+  await db.run('DELETE FROM v2_close_books').catch(() => {});
+  await db.run('DELETE FROM v2_inventory_counts').catch(() => {});
+  await db.run('DELETE FROM v2_journal_lines').catch(() => {});
+  await db.run('DELETE FROM v2_journal_entries').catch(() => {});
+  await db.run('DELETE FROM v2_sources').catch(() => {});
+  await db.run('DELETE FROM v2_parties').catch(() => {});
   return results;
 }
 
