@@ -93,7 +93,16 @@ export default function DayBook() {
                 <View key={e.id} style={styles.row}>
                   <View style={[styles.dot, { backgroundColor: e.color }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>{e.label}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Text style={styles.label}>{e.label}</Text>
+                      {(e as any).isEdited && (
+                        <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
+                            Edited {(e as any).editedAt ? `• ${shortDate((e as any).editedAt)}` : ""}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                     {e.sub ? <Text style={styles.sub}>{e.sub}</Text> : null}
                   </View>
                   <Text style={[styles.amount, { color: e.type === "sale" ? theme.color.success : e.type === "invoice" ? theme.color.muted : theme.color.error }]}>

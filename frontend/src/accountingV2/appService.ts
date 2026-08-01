@@ -79,7 +79,7 @@ export class V2AppService {
     const context = await this.activeContext();
     if (!context) return { ledger: [], balance: 0 };
     const rows = await this.db.all<any>(`
-      SELECT j.id, j.date, j.memo, j.source_id, s.type as source_type, l.debit, l.credit, a.code as account_code
+      SELECT j.id, j.date, j.memo, j.source_id, s.type as source_type, s.metadata as source_metadata, l.debit, l.credit, a.code as account_code, j.reversal_of
       FROM v2_journal_lines l
       JOIN v2_journal_entries j ON j.id = l.journal_id
       JOIN v2_accounts a ON a.id = l.account_id
@@ -88,14 +88,28 @@ export class V2AppService {
       ORDER BY j.date ASC, j.id ASC
     `, [context.bookId, partyId]);
 
+    const activeRows = rows.filter((r) => {
+      if (r.reversal_of) return false;
+      if (r.source_type && String(r.source_type).endsWith('_reversal')) return false;
+      if (r.source_metadata) {
+        try {
+          const meta = JSON.parse(r.source_metadata);
+          if (meta.reversed || meta.deleted || meta.isReversal) return false;
+        } catch {}
+      }
+      return true;
+    });
+
     let running = 0;
-    const ledger = rows.map((r) => {
+    const ledger = activeRows.map((r) => {
       const d = Number(r.debit) || 0;
       const c = Number(r.credit) || 0;
       const isDebtorAccount = r.account_code === '1100';
       const delta = isDebtorAccount ? (d - c) : (c - d);
       running += delta;
       const kind = r.source_type === 'invoice' ? 'invoice' : (r.source_type === 'receipt' ? 'payment' : 'entry');
+      let meta: any = {};
+      try { if (r.source_metadata) meta = JSON.parse(r.source_metadata); } catch {}
       return {
         kind,
         id: r.id,
@@ -103,7 +117,9 @@ export class V2AppService {
         ref: r.memo || kind,
         debit: d,
         credit: c,
-        balance: running
+        balance: running,
+        isEdited: !!(meta.isEdited || meta.editedAt),
+        editedAt: meta.editedAt || null,
       };
     });
     return { ledger, balance: running };
@@ -119,7 +135,7 @@ export class V2AppService {
 
     for (const row of rows) {
       const meta = JSON.parse(row.metadata || '{}');
-      if (meta.deleted || meta.reversed) continue;
+      if (meta.deleted || meta.reversed || meta.isReversal || String(row.type).endsWith('_reversal')) continue;
       const open = row.type === 'invoice' ? await this.repo.invoiceOpen(row.id) : 0;
       const pName = meta.partyId ? (partyMap.get(meta.partyId) || sanitizePartyName(meta.clientName || '')) : '';
       result.push({
@@ -133,7 +149,9 @@ export class V2AppService {
         status: row.type === 'cash_sale' ? 'paid' : open <= 0 ? 'paid' : open < Number(meta.total || 0) ? 'partial' : 'unpaid',
         openAmount: open,
         notes: meta.notes,
-        method: meta.method
+        method: meta.method,
+        isEdited: !!(meta.isEdited || meta.editedAt),
+        editedAt: meta.editedAt || null,
       });
     }
     return result;
@@ -148,7 +166,7 @@ export class V2AppService {
 
     return rows.flatMap((row) => {
       const meta = JSON.parse(row.metadata || '{}');
-      if (meta.deleted || meta.reversed) return [];
+      if (meta.deleted || meta.reversed || meta.isReversal || String(row.type).endsWith('_reversal')) return [];
       const sName = meta.partyId ? (partyMap.get(meta.partyId) || sanitizePartyName(meta.supplierName || '')) : '';
       return [{
         id: row.id,
@@ -161,7 +179,9 @@ export class V2AppService {
         method: meta.method,
         invoiceNo: meta.invoiceNo || '',
         notes: meta.notes || '',
-        photo: meta.photo || ''
+        photo: meta.photo || '',
+        isEdited: !!(meta.isEdited || meta.editedAt),
+        editedAt: meta.editedAt || null,
       }];
     });
   }
