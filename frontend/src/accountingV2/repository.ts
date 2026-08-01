@@ -119,11 +119,8 @@ export class V2SqlRepository {
   async reverseJournal(journalId: string, reason: string): Promise<V2JournalEntry> {
     const original = await this.db.first<{ id: string; book_id: string; period_id: string; source_id: string | null; date: string }>('SELECT id,book_id,period_id,source_id,date FROM v2_journal_entries WHERE id = ?', [journalId]);
     if (!original) throw new Error('Journal entry not found');
-    const existingReversal = await this.db.first<{ id: string; book_id: string; period_id: string; source_id: string | null; date: string; memo: string }>('SELECT id,book_id,period_id,source_id,date,memo FROM v2_journal_entries WHERE reversal_of = ?', [journalId]);
-    if (existingReversal) {
-      const existingLines = await this.db.all<{ account_id: string; party_id: string | null; debit: number; credit: number; memo: string | null }>('SELECT account_id,party_id,debit,credit,memo FROM v2_journal_lines WHERE journal_id = ? ORDER BY id', [existingReversal.id]);
-      return { id: existingReversal.id, bookId: existingReversal.book_id, periodId: existingReversal.period_id, sourceId: existingReversal.source_id || undefined, date: existingReversal.date, memo: existingReversal.memo, reversalOf: journalId, lines: existingLines.map(l => ({ accountId: l.account_id, partyId: l.party_id || undefined, debit: Number(l.debit), credit: Number(l.credit), memo: l.memo || undefined })) };
-    }
+    const existingReversal = await this.db.first<{ id: string }>('SELECT id FROM v2_journal_entries WHERE reversal_of = ?', [journalId]);
+    if (existingReversal) throw new Error('Journal entry already reversed');
     const lines = await this.db.all<{ account_id: string; party_id: string | null; debit: number; credit: number; memo: string | null }>('SELECT account_id,party_id,debit,credit,memo FROM v2_journal_lines WHERE journal_id = ? ORDER BY id', [journalId]);
     return this.postJournal({
       bookId: original.book_id, periodId: original.period_id, sourceId: original.source_id || undefined,

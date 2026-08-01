@@ -64,8 +64,18 @@ export class V2DocumentService {
   /** Reverse and replace one source as a single all-or-nothing edit. */
   async replaceSource<T>(sourceId: string, expectedType: string, memo: string, createReplacement: () => Promise<T>): Promise<T> {
     return this.repoTx(async () => {
+      const old = await this.sourceRow(sourceId, expectedType);
       await this.reverseSource(sourceId, expectedType, memo);
-      return createReplacement();
+      const res = await createReplacement();
+      if (res && typeof res === 'object' && 'source' in res && (res as any).source?.id) {
+        const replacementId = (res as any).source.id;
+        const now = new Date().toISOString();
+        await this.repo.db.run(
+          "UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.isEdited',1,'$.editedAt',?,'$.originalDate',?,'$.originalSourceId',?) WHERE id=?",
+          [now, old.date, sourceId, replacementId]
+        );
+      }
+      return res;
     });
   }
 
@@ -75,6 +85,13 @@ export class V2DocumentService {
       const reversal = await this.insertReversal(old, await this.journalForSource(receiptSourceId), 'Edit receipt');
       const next = await this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId });
       await this.repo.db.run('UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,\'{}\'),\'$.reversed\',1,\'$.reversalSourceId\',?) WHERE id=?', [reversal.source.id, receiptSourceId]);
+      if (next?.source?.id) {
+        const now = new Date().toISOString();
+        await this.repo.db.run(
+          "UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.isEdited',1,'$.editedAt',?,'$.originalDate',?,'$.originalSourceId',?) WHERE id=?",
+          [now, old.date, receiptSourceId, next.source.id]
+        );
+      }
       return { reversal, replacement: next };
     });
   }
@@ -146,5 +163,12 @@ export class V2DocumentService {
   }
   private async journalForSource(id: string) { const j = await this.repo.db.first<any>('SELECT * FROM v2_journal_entries WHERE source_id=?', [id]); if (!j) throw new Error('Receipt journal not found'); j.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [j.id]); return j; }
   private async insertSourceJournal(source: V2Source, input: any, lines: any[], reversalOf?: string) { await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {})]); const id = uid('je'); await this.repo.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, input.bookId, input.periodId, source.id, source.date, input.memo || '', new Date().toISOString(), reversalOf || null]); for (const l of lines) await this.repo.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null]); return { id, bookId: input.bookId, periodId: input.periodId, sourceId: source.id, date: source.date, memo: input.memo || '', lines }; }
-  private async insertReversal(old: any, journal: any, memo: string) { const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { originalSourceId: old.id, total: JSON.parse(old.metadata || '{}').total } }; const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo }; const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit })); const out = await this.insertSourceJournal(source, input, lines, journal.id); return { source, journal: out }; }
+  private async insertReversal(old: any, journal: any, memo: string) {
+    const oldMeta = JSON.parse(old.metadata || '{}');
+    const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { ...oldMeta, originalSourceId: old.id, total: oldMeta.total, isReversal: true } };
+    const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo };
+    const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit }));
+    const out = await this.insertSourceJournal(source, input, lines, journal.id);
+    return { source, journal: out };
+  }
 }

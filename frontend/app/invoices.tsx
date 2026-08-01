@@ -1091,7 +1091,17 @@ export default function InvoicesScreen() {
         ) : invoices.map((inv) => (
           <Pressable key={inv.id} onPress={() => setSelected(inv)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{inv.clientName}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <Text style={styles.name}>{inv.clientName}</Text>
+                {(inv as any).isEdited && (
+                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
+                      Edited {(inv as any).editedAt ? `• ${shortDate((inv as any).editedAt)}` : ""}
+                    </Text>
+                  </View>
+                )}
+
+              </View>
               <Text style={styles.sub}>{inv.invoiceNumber} · {shortDate(inv.date)}{inv.dueDate ? ` · Due ${shortDate(inv.dueDate)}` : ""}</Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>

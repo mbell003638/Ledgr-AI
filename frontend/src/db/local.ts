@@ -1112,7 +1112,14 @@ export async function getDebtorStatement(debtorId: string) {
   ]);
   const d = debtors.find((x: any) => x.id === debtorId);
   if (!d) throw new Error('Debtor not found');
-  const invoiceRows = (d.invoices || []).map((i: any) => ({
+  const activeInvoices = (d.invoices || []).filter((i: any) =>
+    !i.deleted && !i.reversed && !i.isReversal && !String(i.kind || i.status || '').includes('reversal')
+  );
+  const activePayments = (d.payments || []).filter((p: any) =>
+    !p.deleted && !p.reversed && !p.isReversal && !String(p.kind || p.status || '').includes('reversal')
+  );
+
+  const invoiceRows = activeInvoices.map((i: any) => ({
     kind: 'invoice' as const,
     id: i.id,
     date: (i.date || '').slice(0, 10),
@@ -1120,8 +1127,10 @@ export async function getDebtorStatement(debtorId: string) {
     status: i.status || 'unpaid',
     debit: toUsd(i.amount),   // increases what they owe
     credit: 0,
+    isEdited: !!(i.isEdited || i.editedAt),
+    editedAt: i.editedAt || null,
   }));
-  const paymentRows = (d.payments || []).map((p: any) => {
+  const paymentRows = activePayments.map((p: any) => {
     const receipt = p.receiptId ? receipts.find((r: any) => r.id === p.receiptId && r.debtorId === debtorId) : null;
     return {
       kind: 'payment' as const,
@@ -1133,10 +1142,12 @@ export async function getDebtorStatement(debtorId: string) {
       status: 'paid',
       debit: 0,
       credit: toUsd(p.amount),  // reduces what they owe
+      isEdited: !!(p.isEdited || p.editedAt || receipt?.isEdited || receipt?.editedAt),
+      editedAt: p.editedAt || receipt?.editedAt || null,
     };
   });
   // Credit notes (returns/discounts) reduce the balance; debit notes increase it.
-  const creditRows = creditNotes.filter((c: any) => c.debtorId === debtorId).map((c: any) => ({
+  const creditRows = creditNotes.filter((c: any) => c.debtorId === debtorId && !c.deleted && !c.reversed).map((c: any) => ({
     kind: 'credit_note' as const,
     id: c.id,
     date: (c.date || '').slice(0, 10),
@@ -1144,8 +1155,10 @@ export async function getDebtorStatement(debtorId: string) {
     status: c.reason || 'credit',
     debit: 0,
     credit: toUsd(c.amount),
+    isEdited: !!(c.isEdited || c.editedAt),
+    editedAt: c.editedAt || null,
   }));
-  const debitRows = debitNotes.filter((c: any) => c.debtorId === debtorId).map((c: any) => ({
+  const debitRows = debitNotes.filter((c: any) => c.debtorId === debtorId && !c.deleted && !c.reversed).map((c: any) => ({
     kind: 'debit_note' as const,
     id: c.id,
     date: (c.date || '').slice(0, 10),
@@ -1153,6 +1166,8 @@ export async function getDebtorStatement(debtorId: string) {
     status: c.reason || 'debit',
     debit: toUsd(c.amount),
     credit: 0,
+    isEdited: !!(c.isEdited || c.editedAt),
+    editedAt: c.editedAt || null,
   }));
   const rows = [...invoiceRows, ...paymentRows, ...creditRows, ...debitRows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   let running = 0;
@@ -1177,6 +1192,7 @@ export async function getDebtorStatement(debtorId: string) {
     balance: +(totalInvoiced + totalDebited - totalPaid - totalCredited).toFixed(2),
   };
 }
+
 
 // ---------- Date-range reports ----------
 export async function pnlRange(from: string, to: string) {

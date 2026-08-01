@@ -149,19 +149,40 @@ export class V2AppService {
       LEFT JOIN v2_journal_lines l ON l.journal_id=j.id AND l.party_id=? LEFT JOIN v2_accounts a ON a.id=l.account_id
       WHERE s.book_id=? AND json_extract(s.metadata,'$.partyId')=? AND s.type IN (${placeholders})
       GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, ...sourceTypes]);
-    const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
+    const active = rows.flatMap((row) => {
+      let metadata: AnyRecord = {};
+      try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; }
+      if (metadata.deleted || metadata.reversed || metadata.isReversal || String(row.type).endsWith('_reversal')) return [];
+      return [{ ...row, metadata }];
+    });
     const cents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
     if (role === 'customer') {
       let running = 0;
-      const ledger = active.map((row) => { const debit = cents(row.debit); const credit = cents(row.credit); running = cents(running + debit - credit); return { id: row.id, kind: row.type, date: row.date, ref: row.reference, notes: row.metadata.notes || '', debit, credit, balance: running }; });
+      const ledger = active.map((row) => {
+        const debit = cents(row.debit);
+        const credit = cents(row.credit);
+        running = cents(running + debit - credit);
+        return {
+          id: row.id,
+          kind: row.type,
+          date: row.date,
+          ref: row.reference,
+          notes: row.metadata.notes || '',
+          debit,
+          credit,
+          balance: running,
+          isEdited: !!(row.metadata.isEdited || row.metadata.editedAt),
+          editedAt: row.metadata.editedAt || null,
+        };
+      });
       const totalInvoiced = cents(active.filter((row) => row.type === 'invoice').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       const totalPaid = cents(active.filter((row) => row.type === 'receipt').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles,
-        payments: active.filter((row) => row.type === 'receipt').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '' })),
+        payments: active.filter((row) => row.type === 'receipt').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', isEdited: !!(row.metadata.isEdited || row.metadata.editedAt), editedAt: row.metadata.editedAt || null })),
         totalInvoiced, totalPaid, balance: running, statement: { ledger: ledger.slice().reverse(), balance: running } };
     }
-    const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
-    const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
+    const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit', isEdited: !!(row.metadata.isEdited || row.metadata.editedAt), editedAt: row.metadata.editedAt || null }));
+    const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '', isEdited: !!(row.metadata.isEdited || row.metadata.editedAt), editedAt: row.metadata.editedAt || null }));
     const billsTotal = cents(bills.reduce((sum, row) => sum + row.amount, 0)); const paymentsTotal = cents(payments.reduce((sum, row) => sum + row.amount, 0));
     const balance = cents(active.reduce((sum, row) => sum + Number(row.credit) - Number(row.debit), 0));
     return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), billsTotal, paymentsTotal, balance };
@@ -182,7 +203,12 @@ export class V2AppService {
     await this.repairPartyIdentities(context.bookId);
     const rows=await this.db.all<any>("SELECT s.id,s.type,s.date,s.reference,s.metadata,p.name AS party_name FROM v2_sources s LEFT JOIN v2_parties p ON p.id=json_extract(s.metadata,'$.partyId') WHERE s.book_id=? AND s.type IN ('cash_sale','invoice') ORDER BY s.date DESC,s.id DESC",[context.bookId]);
     const result=[];
-    for(const row of rows){const meta=JSON.parse(row.metadata||'{}');if(meta.deleted||meta.reversed)continue;const open=row.type==='invoice'?await this.repo.invoiceOpen(row.id):0;result.push({id:row.id,type:row.type,date:row.date,reference:row.reference,amount:Number(meta.total||0),partyId:meta.partyId,partyName:row.party_name,clientName:row.party_name,status:row.type==='cash_sale'?'paid':open<=0?'paid':open<Number(meta.total||0)?'partial':'unpaid',openAmount:open,notes:meta.notes,method:meta.method});}
+    for(const row of rows){
+      const meta=JSON.parse(row.metadata||'{}');
+      if(meta.deleted||meta.reversed||meta.isReversal||String(row.type).endsWith('_reversal'))continue;
+      const open=row.type==='invoice'?await this.repo.invoiceOpen(row.id):0;
+      result.push({id:row.id,type:row.type,date:row.date,reference:row.reference,amount:Number(meta.total||0),partyId:meta.partyId,partyName:row.party_name,clientName:row.party_name,status:row.type==='cash_sale'?'paid':open<=0?'paid':open<Number(meta.total||0)?'partial':'unpaid',openAmount:open,notes:meta.notes,method:meta.method,isEdited:!!(meta.isEdited||meta.editedAt),editedAt:meta.editedAt||null});
+    }
     return result;
   }
 
@@ -190,7 +216,7 @@ export class V2AppService {
     const context = await this.activeContext(); if (!context) return [];
     await this.repairPartyIdentities(context.bookId);
     const rows = await this.db.all<any>("SELECT s.id,s.type,s.date,s.metadata,p.name AS party_name FROM v2_sources s LEFT JOIN v2_parties p ON p.id=json_extract(s.metadata,'$.partyId') WHERE s.book_id=? AND s.type IN ('cash_purchase','credit_purchase') ORDER BY s.date DESC,s.id DESC", [context.bookId]);
-    return rows.flatMap((row) => { const meta = JSON.parse(row.metadata || '{}'); return meta.deleted || meta.reversed ? [] : [{ id: row.id, sourceType: row.type, date: row.date, amount: Number(meta.total || 0), supplierId: meta.partyId, supplierName: row.party_name, partyName: row.party_name, paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit', method: meta.method, invoiceNo: meta.invoiceNo || '', notes: meta.notes || '', photo: meta.photo || '' }]; });
+    return rows.flatMap((row) => { const meta = JSON.parse(row.metadata || '{}'); return meta.deleted || meta.reversed || meta.isReversal || String(row.type).endsWith('_reversal') ? [] : [{ id: row.id, sourceType: row.type, date: row.date, amount: Number(meta.total || 0), supplierId: meta.partyId, supplierName: row.party_name, partyName: row.party_name, paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit', method: meta.method, invoiceNo: meta.invoiceNo || '', notes: meta.notes || '', photo: meta.photo || '', isEdited: !!(meta.isEdited || meta.editedAt), editedAt: meta.editedAt || null }]; });
   }
 
   async createSale(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postCashSale(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), reference: input.reference, metadata: { notes: input.notes } }); }

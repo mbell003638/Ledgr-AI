@@ -191,9 +191,20 @@ export default function Expenses() {
             <Card>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "600", color: theme.color.onSurface, fontSize: 14 }}>{item.category}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <Text style={{ fontWeight: "600", color: theme.color.onSurface, fontSize: 14 }}>{item.category}</Text>
+                    {(item as any).isEdited && (
+                      <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
+                          Edited {(item as any).editedAt ? `• ${shortDate((item as any).editedAt)}` : ""}
+                        </Text>
+                      </View>
+                    )}
+
+                  </View>
                   <Text style={{ color: theme.color.muted, fontSize: 12, marginTop: 2 }}>{shortDate(item.date)}{item.notes ? ` · ${item.notes}` : ""}</Text>
                 </View>
+
                 <Text style={{ fontWeight: "700", color: theme.color.error, fontSize: 15 }}>{fmt(item.amount, currencySymbol)}</Text>
               </View>
             </Card>

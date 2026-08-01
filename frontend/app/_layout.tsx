@@ -7,7 +7,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 
+import * as ImagePicker from "expo-image-picker";
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
+
 import { initStorage } from "@/src/db/backend";
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.

@@ -171,7 +171,17 @@ export default function PaymentsScreen() {
               <Ionicons name={item.type === "supplier_payment" ? "arrow-up-circle-outline" : "wallet-outline"} size={18} color={theme.color.brandPrimary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{getRecipientName(item)} · {TYPE_LABEL[item.type]}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <Text style={styles.rowTitle}>{getRecipientName(item)} · {TYPE_LABEL[item.type]}</Text>
+                {(item as any).isEdited && (
+                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
+                      Edited {(item as any).editedAt ? `• ${shortDate((item as any).editedAt)}` : ""}
+                    </Text>
+                  </View>
+                )}
+
+              </View>
               <Text style={styles.rowSub}>{shortDate(item.date)}{item.method ? ` · ${item.method}` : ""}</Text>
             </View>
             <Text style={styles.rowAmount}>{currSym}{Number(item.amount).toFixed(2)}</Text>
