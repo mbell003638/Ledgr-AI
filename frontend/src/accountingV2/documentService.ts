@@ -56,8 +56,17 @@ export class V2DocumentService {
       }
       const original = await this.journalForSource(sourceId);
       const reversal = await this.insertReversal(source, original, memo);
-      await this.repo.db.run("UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.reversed',1,'$.deleted',?,'$.reversalSourceId',?) WHERE id=?", [deleted ? 1 : 0, reversal.source.id, sourceId]);
+      const row = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [sourceId]);
+      if (row) {
+        let meta: any = {};
+        try { meta = JSON.parse(row.metadata || '{}'); } catch {}
+        meta.reversed = 1;
+        meta.deleted = deleted ? 1 : 0;
+        meta.reversalSourceId = reversal.source.id;
+        await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(meta), sourceId]);
+      }
       return reversal;
+
     });
   }
 
@@ -89,17 +98,32 @@ export class V2DocumentService {
       const old = await this.receiptRow(receiptSourceId);
       const reversal = await this.insertReversal(old, await this.journalForSource(receiptSourceId), 'Edit receipt');
       const next = await this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId });
-      await this.repo.db.run('UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,\'{}\'),\'$.reversed\',1,\'$.reversalSourceId\',?) WHERE id=?', [reversal.source.id, receiptSourceId]);
+      // Update reversed flag on old source
+      const oldRow = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [receiptSourceId]);
+      if (oldRow) {
+        let meta: any = {};
+        try { meta = JSON.parse(oldRow.metadata || '{}'); } catch {}
+        meta.reversed = 1;
+        meta.reversalSourceId = reversal.source.id;
+        await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(meta), receiptSourceId]);
+      }
+      // Update isEdited metadata on replacement source
       if (next?.source?.id) {
-        const now = new Date().toISOString();
-        await this.repo.db.run(
-          "UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.isEdited',1,'$.editedAt',?,'$.originalDate',?,'$.originalSourceId',?) WHERE id=?",
-          [now, old.date, receiptSourceId, next.source.id]
-        );
+        const newRow = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [next.source.id]);
+        if (newRow) {
+          let meta: any = {};
+          try { meta = JSON.parse(newRow.metadata || '{}'); } catch {}
+          meta.isEdited = 1;
+          meta.editedAt = new Date().toISOString().slice(0, 10);
+          meta.originalDate = old.date;
+          meta.originalSourceId = receiptSourceId;
+          await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(meta), next.source.id]);
+        }
       }
       return { reversal, replacement: next };
     });
   }
+
 
   async drawing(input: { bookId: string; periodId: string; partyId?: string; date: string; amount: number; method: V2PaymentMethod }) {
     return this.simplePosting(input, 'drawing', 'Member drawing', V2_ACCOUNT_CODES.DRAWINGS, this.paymentCode(input.method), input.partyId);
