@@ -6,11 +6,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-
 import * as ImagePicker from "expo-image-picker";
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
-
 import { initStorage } from "@/src/db/backend";
+
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
 // Individual screens can still opt in explicitly if a visible indicator is needed.
@@ -130,8 +129,8 @@ function ThemedStack() {
   );
 }
 
-import * as ImagePicker from "expo-image-picker";
 import { Image, Animated, StyleSheet } from "react-native";
+
 
 function AppOpeningSplashScreen() {
   const scaleAnim = React.useRef(new Animated.Value(0.92)).current;
