@@ -24,40 +24,18 @@ export default function VoiceFab() {
 
   const pulseScale = useSharedValue(1);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await AudioModule.requestRecordingPermissionsAsync();
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      } catch (e) { console.warn(e); }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (phase === "recording") {
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-          withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) })
-        ),
-        -1,
-        true
-      );
-    } else {
-      pulseScale.value = withTiming(1);
-    }
-  }, [phase]);
-
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
       const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) throw new Error("Microphone permission required.");
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true }).catch(() => {});
       await recorder.prepareToRecordAsync();
       recorder.record();
       setPhase("recording");
     } catch (e: any) { setError(e.message); setPhase("error"); }
   };
+
 
   const stopAndProcess = async () => {
     setPhase("processing");

@@ -371,13 +371,6 @@ export default function SupplierDetail() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill" : "Payment"} • {shortDate(t.date)}</Text>
-                {t.isEdited && (
-                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
-                      Edited {t.editedAt ? `• ${shortDate(t.editedAt)}` : ""}
-                    </Text>
-                  </View>
-                )}
               </View>
 
               <Text style={styles.tlSub}>{t.notes || t.reference || t.invoiceNo || "—"}</Text>

@@ -63,6 +63,9 @@ export default function Onboarding() {
         activePersona: v2Personas[0],
         accountingStyle: v2Personas.includes('retail') ? 'retail_partnership' : 'standard',
       });
+      // Short async yield ensures SQLite database write transactions & settings flush
+      // cleanly before tab layout mounts dashboard queries on native Android.
+      await new Promise((r) => setTimeout(r, 150));
       router.replace("/(tabs)");
     } catch (e: any) {
       console.warn("onboarding finish error:", e);
@@ -71,6 +74,7 @@ export default function Onboarding() {
       setSaving(false);
     }
   };
+
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>

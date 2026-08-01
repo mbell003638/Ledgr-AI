@@ -351,13 +351,6 @@ export default function CustomerDetailScreen() {
                         <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
                           {r.kind === "invoice" ? "Credit sale invoice" : r.kind === "payment" ? "Customer payment" : r.ref || "Transaction"} • {shortDate(r.date)}
                         </Text>
-                        {r.isEdited && (
-                          <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
-                            <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
-                              Edited {r.editedAt ? `• ${shortDate(r.editedAt)}` : ""}
-                            </Text>
-                          </View>
-                        )}
                       </View>
 
                       <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 2 }}>{r.notes || "—"}</Text>
