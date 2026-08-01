@@ -370,7 +370,7 @@ export default function SupplierDetail() {
             <View style={[styles.timelineDot, { backgroundColor: t.kind === "bill" ? theme.color.error : theme.color.success }]} />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill" : "Payment"} • {shortDate(t.date)}</Text>
+                <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill / Purchase" : t.kind === "payment" ? "Payment sent" : t.ref || "Transaction"} • {shortDate(t.date)}{t.originalDate && t.originalDate !== t.date ? ` (was ${shortDate(t.originalDate)})` : ""}</Text>
               </View>
 
               <Text style={styles.tlSub}>{t.notes || t.reference || t.invoiceNo || "—"}</Text>

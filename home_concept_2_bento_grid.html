@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgr AI — Concept 2: Modern Bento Grid & Hero AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-dark: #0A0D12;
+      --card-surface: #141923;
+      --card-surface-hover: #1E2535;
+      --border-subtle: rgba(255, 255, 255, 0.07);
+      --accent-emerald: #10B981;
+      --accent-emerald-light: #D1FAE5;
+      --accent-gold: #F59E0B;
+      --accent-indigo: #6366F1;
+      --accent-pink: #EC4899;
+      --text-main: #FFFFFF;
+      --text-sub: #94A3B8;
+      --text-muted: #64748B;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px 10px;
+      background-image: 
+        radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 60%);
+    }
+
+    .app-frame {
+      width: 100%;
+      max-width: 440px;
+      background: #0B0E14;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 40px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 900px;
+      position: relative;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9), 0 0 50px rgba(99, 102, 241, 0.08);
+    }
+
+    /* Header Bar */
+    .header {
+      padding: 24px 20px 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #10B981, #059669);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+    }
+
+    .brand-title h3 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-title p {
+      font-size: 11px;
+      color: var(--text-sub);
+    }
+
+    .action-icons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--card-surface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-sub);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-circle:hover {
+      background: var(--card-surface-hover);
+      color: #fff;
+    }
+
+    /* Scrollable Container */
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 18px 95px 18px;
+      scrollbar-width: none;
+    }
+
+    .content-area::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Bento Grid System */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .bento-full {
+      grid-column: span 2;
+    }
+
+    /* Hero AI Bento Card */
+    .bento-ai-hero {
+      background: linear-gradient(135deg, #1A1C29 0%, #121824 100%);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      border-radius: 26px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+      transition: transform 0.25s ease, border-color 0.25s ease;
+    }
+
+    .bento-ai-hero:hover {
+      transform: translateY(-2px);
+      border-color: rgba(99, 102, 241, 0.6);
+    }
+
+    .ai-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 30px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      color: #A5B4FC;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .ai-hero-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 6px;
+      line-height: 1.2;
+    }
+
+    .ai-hero-desc {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-bottom: 16px;
+    }
+
+    .ai-quick-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .ai-action-btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.2s ease;
+    }
+
+    .ai-action-btn.accent {
+      background: linear-gradient(135deg, #6366F1, #4F46E5);
+      border: none;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+    }
+
+    .ai-action-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Bento App Tile */
+    .bento-tile {
+      background: var(--card-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 24px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 120px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .bento-tile:hover {
+      background: var(--card-surface-hover);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-3px);
+    }
+
+    .bento-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .bento-info {
+      margin-top: 14px;
+    }
+
+    .bento-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .bento-tag {
+      font-size: 11px;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+
+    .bento-count {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-emerald);
+      background: rgba(16, 185, 129, 0.12);
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+
+    /* Wide Bento Card */
+    .bento-wide {
+      grid-column: span 2;
+      flex-direction: row;
+      align-items: center;
+      min-height: 80px;
+    }
+
+    .bento-wide .bento-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .bento-wide .bento-info {
+      margin-top: 0;
+    }
+
+    /* Bottom Tab Navigation */
+    .bottom-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background: rgba(11, 14, 20, 0.95);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 16px;
+      z-index: 100;
+    }
+
+    .tab-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      color: var(--accent-indigo);
+    }
+
+    .center-plus-btn {
+      width: 54px;
+      height: 54px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #6366F1, #4F46E5);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: -28px;
+      box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    .center-plus-btn:hover {
+      transform: scale(1.08);
+    }
+
+    .concept-tag {
+      position: fixed;
+      top: 15px;
+      left: 15px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid var(--accent-indigo);
+      color: #A5B4FC;
+      padding: 6px 14px;
+      border-radius: 30px;
+      font-size: 12px;
+      font-weight: 700;
+      backdrop-filter: blur(10px);
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="concept-tag">Concept 2: Modern Bento Grid & Hero AI</div>
+
+  <div class="app-frame">
+    <!-- Header -->
+    <div class="header">
+      <div class="brand">
+        <div class="brand-icon">L</div>
+        <div class="brand-title">
+          <h3>Ledgr AI</h3>
+          <p>Smart Business Bookkeeping</p>
+        </div>
+      </div>
+      <div class="action-icons">
+        <div class="btn-circle"><i data-lucide="sliders-horizontal" style="width: 18px;"></i></div>
+        <div class="btn-circle"><i data-lucide="search" style="width: 18px;"></i></div>
+      </div>
+    </div>
+
+    <!-- Scroll Area -->
+    <div class="content-area">
+      
+      <div class="bento-grid">
+        
+        <!-- Hero AI Bento Card (Full Width) -->
+        <div class="bento-ai-hero bento-full">
+          <div class="ai-badge">
+            <i data-lucide="sparkles" style="width: 12px;"></i> Next-Gen Intelligence
+          </div>
+          <div class="ai-hero-title">Ask Ledgr AI Anything</div>
+          <div class="ai-hero-desc">Ask "Show me outstanding invoices" or dictate bills instantly.</div>
+          <div class="ai-quick-actions">
+            <div class="ai-action-btn accent">
+              <i data-lucide="mic" style="width: 15px;"></i> Voice Mode
+            </div>
+            <div class="ai-action-btn">
+              <i data-lucide="message-square" style="width: 15px;"></i> Text Chat
+            </div>
+          </div>
+        </div>
+
+        <!-- Bento 1: Purchases -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(16, 185, 129, 0.15); color: #34D399;">
+            <i data-lucide="shopping-cart" style="width: 22px;"></i>
+          </div>
+          <span class="bento-count">14 Paid</span>
+          <div class="bento-info">
+            <div class="bento-name">Purchases</div>
+            <div class="bento-tag">Vendor Bills</div>
+          </div>
+        </div>
+
+        <!-- Bento 2: Sales -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(245, 158, 11, 0.15); color: #FBBF24;">
+            <i data-lucide="trending-up" style="width: 22px;"></i>
+          </div>
+          <span class="bento-count">$4.2k</span>
+          <div class="bento-info">
+            <div class="bento-name">Sales</div>
+            <div class="bento-tag">Revenue</div>
+          </div>
+        </div>
+
+        <!-- Bento Wide: Cash Book -->
+        <div class="bento-tile bento-wide">
+          <div class="bento-left">
+            <div class="bento-icon" style="background: rgba(99, 102, 241, 0.15); color: #818CF8;">
+              <i data-lucide="arrow-left-right" style="width: 22px;"></i>
+            </div>
+            <div class="bento-info">
+              <div class="bento-name">Cash Book</div>
+              <div class="bento-tag">Daily Money Movement Register</div>
+            </div>
+          </div>
+          <i data-lucide="chevron-right" style="color: var(--text-muted); width: 20px;"></i>
+        </div>
+
+        <!-- Bento 3: Receipts -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(14, 165, 233, 0.15); color: #38BDF8;">
+            <i data-lucide="download" style="width: 22px;"></i>
+          </div>
+          <div class="bento-info">
+            <div class="bento-name">Receipts</div>
+            <div class="bento-tag">Customer Cash</div>
+          </div>
+        </div>
+
+        <!-- Bento 4: Payments -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(236, 72, 153, 0.15); color: #F472B6;">
+            <i data-lucide="upload" style="width: 22px;"></i>
+          </div>
+          <div class="bento-info">
+            <div class="bento-name">Payments</div>
+            <div class="bento-tag">Outflow</div>
+          </div>
+        </div>
+
+        <!-- Bento 5: Invoices -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(168, 85, 247, 0.15); color: #C084FC;">
+            <i data-lucide="file-spreadsheet" style="width: 22px;"></i>
+          </div>
+          <div class="bento-info">
+            <div class="bento-name">Invoices</div>
+            <div class="bento-tag">PDF Billing</div>
+          </div>
+        </div>
+
+        <!-- Bento 6: Quotes -->
+        <div class="bento-tile">
+          <div class="bento-icon" style="background: rgba(251, 146, 60, 0.15); color: #FB923C;">
+            <i data-lucide="clipboard-list" style="width: 22px;"></i>
+          </div>
+          <div class="bento-info">
+            <div class="bento-name">Quotes</div>
+            <div class="bento-tag">Estimates</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Navigation -->
+    <div class="bottom-bar">
+      <div class="tab-btn active">
+        <i data-lucide="layout-grid" style="width: 20px;"></i>
+        <span>Home</span>
+      </div>
+      <div class="tab-btn">
+        <div style="position: relative;">
+          <i data-lucide="users" style="width: 20px;"></i>
+        </div>
+        <span>Parties</span>
+      </div>
+
+      <div class="center-plus-btn">
+        <i data-lucide="plus" style="width: 26px;"></i>
+      </div>
+
+      <div class="tab-btn">
+        <i data-lucide="pie-chart" style="width: 20px;"></i>
+        <span>Reports</span>
+      </div>
+      <div class="tab-btn">
+        <i data-lucide="settings" style="width: 20px;"></i>
+        <span>Settings</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

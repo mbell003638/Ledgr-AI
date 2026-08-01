@@ -69,7 +69,8 @@ export default function SalesScreen() {
       <ScrollView contentContainerStyle={styles.list}>
         <TransactionDetail
           title={fmt(selected.amount, currSym)}
-          subtitle={`Sale • ${shortDate(selected.date)}`}
+          subtitle={`Sale • ${shortDate(selected.date)}${selected.originalDate && selected.originalDate !== selected.date ? ` (was ${shortDate(selected.originalDate)})` : ""}`}
+          badge={selected.isEdited ? (<View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}><Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>Edited {selected.editedAt ? `• ${shortDate(selected.editedAt)}` : ""}</Text></View>) : undefined}
           onEdit={() => {
             const id = selected.id;
             setSelected(null);
@@ -167,7 +168,7 @@ export default function SalesScreen() {
               >
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
+                    <Text style={styles.cardTitle}>{shortDate(item.date)}{item.originalDate && item.originalDate !== item.date ? ` (was ${shortDate(item.originalDate)})` : ""}</Text>
                     {item.isEdited && (
                       <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
                         <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>

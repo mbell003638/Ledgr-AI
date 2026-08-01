@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgr AI — Master Web Application</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* =========================================================
+       1. AUTHENTIC APP THEMES & CSS VARIABLES
+       ========================================================= */
+    :root {
+      --bg-surface: #000000;
+      --bg-card: rgba(18, 20, 28, 0.75);
+      --bg-card-hover: rgba(28, 30, 42, 0.9);
+      --on-surface: #F5F6F8;
+      --brand: #FDBA21;
+      --brand-glow: rgba(253, 186, 33, 0.35);
+      --brand-subtle: rgba(253, 186, 33, 0.14);
+      --border-color: rgba(255, 255, 255, 0.09);
+      --muted: #8E96B0;
+      --success: #2ECC71;
+      --warning: #F1C40F;
+      --error: #E74C3C;
+      --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --fluid-ease: cubic-bezier(0.2, 0.9, 0.3, 1);
+    }
+
+    body.theme-dark_emerald {
+      --bg-surface: #0E1210;
+      --bg-card: rgba(23, 27, 24, 0.78);
+      --bg-card-hover: rgba(32, 37, 31, 0.92);
+      --on-surface: #F1F3EE;
+      --brand: #8FB99A;
+      --brand-glow: rgba(143, 185, 154, 0.35);
+      --brand-subtle: rgba(143, 185, 154, 0.14);
+      --border-color: rgba(255, 255, 255, 0.09);
+      --muted: #7E877F;
+      --success: #7BC392;
+    }
+
+    body.theme-amoled_blue {
+      --bg-surface: #000000;
+      --bg-card: rgba(18, 19, 26, 0.78);
+      --bg-card-hover: rgba(26, 28, 40, 0.92);
+      --on-surface: #E8EAED;
+      --brand: #4A9EFF;
+      --brand-glow: rgba(74, 158, 255, 0.35);
+      --brand-subtle: rgba(74, 158, 255, 0.14);
+      --border-color: rgba(255, 255, 255, 0.09);
+      --muted: #6B7394;
+      --success: #34D399;
+    }
+
+    body.theme-light {
+      --bg-surface: #F6F7F5;
+      --bg-card: rgba(255, 255, 255, 0.88);
+      --bg-card-hover: rgba(255, 255, 255, 1);
+      --on-surface: #111513;
+      --brand: #1C4030;
+      --brand-glow: rgba(28, 64, 48, 0.25);
+      --brand-subtle: rgba(28, 64, 48, 0.1);
+      --border-color: #E2E5DF;
+      --muted: #8A938E;
+      --success: #2D6B45;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--brand-glow); border-radius: 10px; }
+
+    body { background-color: #030406; color: var(--on-surface); display: flex; justify-content: center; min-height: 100vh; padding: 10px; transition: background 0.3s ease; }
+
+    .app-frame {
+      width: 100%; max-width: 440px; background: var(--bg-surface); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 36px; overflow: hidden; display: flex; flex-direction: column; height: 880px; position: relative; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.95), 0 0 40px var(--brand-glow);
+    }
+
+    .screen-view { display: none; flex: 1; overflow-y: auto; padding: 16px 18px 95px 18px; }
+    .screen-view.active { display: block; animation: screenFade 0.25s ease; }
+    @keyframes screenFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .home-header { padding: 16px 18px 10px 18px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--border-color); }
+    .home-title { font-size: 24px; font-weight: 800; font-family: 'Outfit', sans-serif; letter-spacing: -0.5px; color: var(--on-surface); }
+    .home-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .book-switcher-pill {
+      background: var(--bg-card); border: 1px solid var(--brand); padding: 6px 12px; border-radius: 20px; display: flex; align-items: center; gap: 6px; color: var(--brand); font-size: 11px; font-weight: 700; cursor: pointer; box-shadow: 0 0 15px var(--brand-glow); transition: transform 0.25s var(--spring-bounce);
+    }
+    .book-switcher-pill:hover { transform: scale(1.05); }
+
+    .period-filter-row { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; margin-top: 10px; }
+    .period-filter-row::-webkit-scrollbar { display: none; }
+    .period-pill { padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--on-surface); cursor: pointer; white-space: nowrap; transition: all 0.25s var(--spring-bounce); }
+    .period-pill.active { border: 1.5px solid var(--brand); background: var(--brand-subtle); color: var(--brand); box-shadow: 0 0 12px var(--brand-glow); }
+
+    .hero-net-card {
+      background: linear-gradient(135deg, #3B82F6, #1D4ED8); border-radius: 22px; padding: 18px; color: #fff; margin-bottom: 16px; position: relative; overflow: hidden; box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3); transition: transform 0.35s var(--spring-bounce);
+    }
+    .hero-net-card:hover { transform: translateY(-3px) scale(1.01); }
+
+    .card-neon-glass {
+      background: var(--bg-card); backdrop-filter: blur(20px); border: 1px solid var(--border-color); border-radius: 22px; padding: 16px; margin-bottom: 16px; position: relative; overflow: hidden; transition: transform 0.35s var(--fluid-ease), border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .card-neon-glass::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--brand), transparent); opacity: 0.5; }
+    .card-neon-glass:hover { transform: translateY(-3px); border-color: var(--brand); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 20px var(--brand-glow); }
+
+    .btn-whatsapp {
+      width: 100%; background: #25D366; color: #fff; border: none; padding: 10px; border-radius: 14px; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; margin-top: 12px; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3); transition: transform 0.25s var(--spring-bounce);
+    }
+    .btn-whatsapp:hover { transform: scale(1.02); }
+
+    .kpi-mini-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+    .kpi-mini-card { background: var(--bg-card); backdrop-filter: blur(16px); border: 1px solid var(--border-color); border-radius: 18px; padding: 12px; cursor: pointer; transition: transform 0.35s var(--spring-bounce), border-color 0.25s ease; }
+    .kpi-mini-card:hover { transform: translateY(-3px) scale(1.02); border-color: var(--brand); box-shadow: 0 0 15px var(--brand-glow); }
+    .kpi-mini-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-weight: 700; }
+    .kpi-mini-val { font-size: 17px; font-weight: 800; margin-top: 4px; font-family: 'Outfit', sans-serif; }
+
+    .app-tiles-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; position: relative; }
+    .app-workspace-tile {
+      background: var(--bg-card); backdrop-filter: blur(20px); border: 1px solid var(--border-color); border-radius: 20px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; min-height: 110px; cursor: pointer; position: relative; overflow: hidden; user-select: none; transition: transform 0.35s var(--fluid-ease), border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .app-workspace-tile::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--brand), transparent); opacity: 0.5; }
+    .app-workspace-tile:hover { transform: translateY(-4px) scale(1.02); border-color: var(--brand); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 20px var(--brand-glow); }
+
+    .tile-circle-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: transform 0.3s var(--spring-bounce); }
+    .app-workspace-tile:hover .tile-circle-icon { transform: scale(1.15) rotate(-5deg); }
+    .tile-label-text { font-size: 13px; font-weight: 700; margin-top: 10px; }
+
+    .mic-floating-fab { position: absolute; bottom: 90px; right: 18px; width: 48px; height: 48px; border-radius: 50%; background: var(--brand); color: #000; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 25px var(--brand-glow); cursor: pointer; z-index: 40; transition: transform 0.3s var(--spring-bounce); }
+    .mic-floating-fab:hover { transform: scale(1.12); }
+
+    .modal-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(16px); z-index: 200; display: none; align-items: flex-end; }
+    .modal-overlay.active { display: flex !important; animation: modalFade 0.2s ease; }
+    @keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal-sheet-exact { width: 100%; max-height: 88%; overflow-y: auto; background: #141416; border-top: 1.5px solid var(--brand); border-top-left-radius: 28px; border-top-right-radius: 28px; padding: 18px; animation: modalSpring 0.35s var(--spring-bounce); box-shadow: 0 -10px 40px var(--brand-glow); }
+    @keyframes modalSpring { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    .quick-ai-banner { background: linear-gradient(135deg, rgba(253, 186, 33, 0.2), rgba(245, 158, 11, 0.08)); border: 1px solid var(--brand); border-radius: 18px; padding: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--brand); font-size: 15px; font-weight: 800; margin-bottom: 12px; cursor: pointer; transition: transform 0.25s var(--spring-bounce); }
+    .quick-ai-banner:hover { transform: scale(1.02); }
+
+    .quick-action-row-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 14px; cursor: pointer; transition: background 0.2s ease, transform 0.2s var(--spring-bounce); }
+    .quick-action-row-item:hover { background: rgba(255, 255, 255, 0.08); transform: translateX(4px); }
+
+    .quick-icon-circle { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 18px; }
+    .quick-row-info { flex: 1; }
+    .quick-row-title { font-size: 15px; font-weight: 700; color: #ffffff; }
+    .quick-row-sub { font-size: 12px; color: #a1a1aa; margin-top: 1px; }
+
+    .input-field-group { margin-bottom: 12px; }
+    .input-label { font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 5px; display: block; text-transform: uppercase; }
+    .input-control { width: 100%; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
+    .input-control:focus { border-color: var(--brand); }
+
+    .toggle-row-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+    .toggle-row-item:last-child { border-bottom: none; }
+
+    .btn-gold-save { width: 100%; background: var(--brand); color: #000; border: none; padding: 12px; border-radius: 14px; font-size: 13px; font-weight: 800; cursor: pointer; margin-top: 10px; box-shadow: 0 4px 20px var(--brand-glow); transition: transform 0.25s var(--spring-bounce); }
+    .btn-gold-save:hover { transform: scale(1.02); }
+
+    .bottom-tab-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 75px; background: var(--bg-surface); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-around; padding: 0 8px; z-index: 150; }
+    .tab-btn-item { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--muted); font-size: 10px; font-weight: 700; cursor: pointer; width: 55px; }
+    .tab-btn-item.active { color: var(--brand); }
+
+    .center-plus-fab { width: 48px; height: 48px; border-radius: 50%; background: var(--brand); color: #000; display: flex; align-items: center; justify-content: center; margin-top: -24px; box-shadow: 0 0 25px var(--brand-glow); cursor: pointer; transition: transform 0.25s var(--spring-bounce); }
+    .center-plus-fab:hover { transform: scale(1.1); }
+
+    .party-card-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; margin-bottom: 8px; cursor: pointer; }
+    .party-avatar { width: 40px; height: 40px; border-radius: 20px; background: var(--brand-subtle); color: var(--brand); font-weight: 800; display: flex; align-items: center; justify-content: center; margin-right: 12px; }
+
+    /* Printable Report Modal Styles */
+    @media print {
+      body { background: #fff !important; color: #000 !important; }
+      .app-frame { max-width: 100% !important; height: auto !important; border: none !important; box-shadow: none !important; }
+      .bottom-tab-bar, .mic-floating-fab, .home-header { display: none !important; }
+      .print-area { display: block !important; }
+    }
+  </style>
+</head>
+<body class="theme-navy_gold">
+
+  <div class="app-frame" id="appFrame">
+
+    <!-- Header -->
+    <div class="home-header">
+      <div>
+        <div class="home-title" id="displayBizName">Ledgr</div>
+        <div class="home-sub">Your business finances, simplified</div>
+      </div>
+      <div class="book-switcher-pill" onclick="openScreen('settings')">
+        <i data-lucide="building-2" style="width: 14px;"></i>
+        <span id="displayBookName">TEST</span>
+      </div>
+    </div>
+
+    <!-- Floating Voice Mic FAB -->
+    <div class="mic-floating-fab" onclick="openModal('aiChatModal')">
+      <i data-lucide="mic" style="width: 22px;"></i>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 1: HOME DASHBOARD
+         ========================================================= -->
+    <div id="screen-home" class="screen-view active">
+      
+      <!-- Period Filters -->
+      <div class="period-filter-row">
+        <div class="period-pill active" onclick="setPeriodFilter('all', this)">All Time</div>
+        <div class="period-pill" onclick="setPeriodFilter('today', this)">Today</div>
+        <div class="period-pill" onclick="setPeriodFilter('month', this)">This Month</div>
+      </div>
+
+      <!-- Hero Net Profit Card -->
+      <div class="hero-net-card">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase;" id="heroDateLabel">Net Profit Since 2026-07-29</div>
+        <div style="font-size: 32px; font-weight: 800; font-family: 'Outfit'; margin: 6px 0 14px 0;" id="valNetProfit">$0.00</div>
+        <div style="display: flex; border-top: 1px solid rgba(255, 255, 255, 0.25); padding-top: 10px;">
+          <div style="flex: 1;">
+            <div style="font-size: 10px; opacity: 0.85;">Opening</div>
+            <div style="font-size: 12px; font-weight: 700; margin-top: 2px;" id="valOpeningBal">$0.00</div>
+          </div>
+          <div style="width: 1px; background: rgba(255,255,255,0.25);"></div>
+          <div style="flex: 1; padding-left: 8px;">
+            <div style="font-size: 10px; opacity: 0.85;">Closing</div>
+            <div style="font-size: 12px; font-weight: 700; margin-top: 2px;" id="valClosingBal">$0.00</div>
+          </div>
+          <div style="width: 1px; background: rgba(255,255,255,0.25);"></div>
+          <div style="flex: 1; padding-left: 8px;">
+            <div style="font-size: 10px; opacity: 0.85;">Net Worth</div>
+            <div style="font-size: 12px; font-weight: 700; margin-top: 2px;" id="valNetWorth">$0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profit Flow Card -->
+      <div class="card-neon-glass">
+        <div style="font-size: 14px; font-weight: 800; margin-bottom: 10px;">Profit Flow</div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+          <span style="color: var(--muted);">Sales</span>
+          <span style="color: var(--success); font-weight: 700;" id="valFlowSales">+ $0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+          <span style="color: var(--muted);">Purchases (COGS)</span>
+          <span style="color: var(--warning); font-weight: 700;" id="valFlowPurchases">− $0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px; font-weight: 800;">
+          <span>Gross Profit</span>
+          <span id="valFlowGross">$0.00</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding-top: 6px; margin-top: 4px; border-top: 2px solid var(--brand); font-size: 13px;">
+          <span style="color: var(--brand); font-weight: 800;">Net Profit</span>
+          <span style="color: var(--brand); font-weight: 800; font-size: 15px;" id="valFlowNet">$0.00</span>
+        </div>
+      </div>
+
+      <!-- Daily Summary Card -->
+      <div class="card-neon-glass">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+          <div>
+            <div style="font-size: 13px; font-weight: 800;" id="dailyCardTitle">Today — Daily Summary</div>
+            <div style="font-size: 18px; font-weight: 800; font-family: 'Outfit'; margin-top: 2px;" id="valDailyNet">$0.00</div>
+            <div style="font-size: 11px; color: var(--muted);" id="valDailyCounts">0 sales • 0 bills • 0 payments</div>
+          </div>
+        </div>
+
+        <button class="btn-whatsapp" onclick="shareWhatsAppDaily()">
+          <i data-lucide="message-circle" style="width: 16px;"></i> Share to WhatsApp
+        </button>
+      </div>
+
+      <!-- 2x2 Mini KPI Grid -->
+      <div class="kpi-mini-grid">
+        <div class="kpi-mini-card" onclick="openScreen('sales')">
+          <div class="kpi-mini-top"><span>Sales</span><i data-lucide="trending-up" style="width: 14px; color: var(--success);"></i></div>
+          <div class="kpi-mini-val" style="color: var(--success);" id="kpiSales">$0.00</div>
+        </div>
+        <div class="kpi-mini-card" onclick="openScreen('bills')">
+          <div class="kpi-mini-top"><span>Purchases</span><i data-lucide="receipt" style="width: 14px; color: var(--warning);"></i></div>
+          <div class="kpi-mini-val" style="color: var(--warning);" id="kpiPurchases">$0.00</div>
+        </div>
+        <div class="kpi-mini-card" onclick="openScreen('cashbook')">
+          <div class="kpi-mini-top"><span>Cash</span><i data-lucide="arrow-left-right" style="width: 14px; color: #60A5FA;"></i></div>
+          <div class="kpi-mini-val" id="kpiCash">$0.00</div>
+        </div>
+        <div class="kpi-mini-card" onclick="openScreen('inventory')">
+          <div class="kpi-mini-top"><span>Stock</span><i data-lucide="package" style="width: 14px; color: #34D399;"></i></div>
+          <div class="kpi-mini-val" id="kpiStock">$0.00</div>
+        </div>
+      </div>
+
+      <!-- 16 App Workspace Tiles Grid (Filtered dynamically by feature flags) -->
+      <div class="app-tiles-grid" id="dashboardWorkspaceTilesGrid"></div>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 2: PARTIES HUB (CUSTOMERS, SUPPLIERS, INVESTORS)
+         ========================================================= -->
+    <div id="screen-parties" class="screen-view">
+      <div style="font-size: 20px; font-weight: 800; margin-bottom: 12px;">Parties Directory</div>
+      <div class="period-filter-row">
+        <div class="period-pill active" onclick="filterParties('all', this)">All</div>
+        <div class="period-pill" onclick="filterParties('customer', this)">Customers</div>
+        <div class="period-pill" onclick="filterParties('supplier', this)">Suppliers</div>
+        <div class="period-pill" onclick="filterParties('partner', this)" id="investorTabPill">Investors</div>
+      </div>
+
+      <button class="btn-gold-save" style="margin-bottom: 14px;" onclick="openModal('addPartyModal')">+ Add Party / Investor</button>
+      <div id="partiesListContainer"></div>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 3: CASH BOOK
+         ========================================================= -->
+    <div id="screen-cashbook" class="screen-view">
+      <div style="font-size: 20px; font-weight: 800; margin-bottom: 12px;">Cash Book Ledger</div>
+      <button class="btn-gold-save" style="margin-bottom: 14px;" onclick="openModal('cashModal')">+ Log Cash Entry (In/Out)</button>
+      <div id="cashbookListContainer"></div>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 4: INVOICES & QUOTES
+         ========================================================= -->
+    <div id="screen-invoices" class="screen-view">
+      <div style="font-size: 20px; font-weight: 800; margin-bottom: 12px;">Invoices & Billing</div>
+      <button class="btn-gold-save" style="margin-bottom: 14px;" onclick="openModal('saleModal')">+ Create Invoice / Sale</button>
+      <div id="invoicesListContainer"></div>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 5: REPORTS & SETTINGS
+         ========================================================= -->
+    <div id="screen-reports" class="screen-view">
+      <div style="font-size: 20px; font-weight: 800; margin-bottom: 12px;">Financial Reports & Close Books</div>
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 8px;">Period Close & Roll-Forward</div>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Close current period books, calculate physical stock COGS, and roll net profit into partner capital accounts.</div>
+        <button class="btn-gold-save" onclick="closePeriodBooks()">Execute Period Close</button>
+      </div>
+
+      <div style="font-size: 16px; font-weight: 800; margin: 16px 0 8px 0;">Executive Statements</div>
+      <div class="kpi-mini-grid">
+        <div class="kpi-mini-card" onclick="printReport('pnl')">
+          <div class="kpi-mini-top"><span>P&L Statement</span><i data-lucide="printer" style="width: 14px;"></i></div>
+          <div class="kpi-mini-val" style="font-size: 14px; margin-top: 8px;">Print P&L</div>
+        </div>
+        <div class="kpi-mini-card" onclick="printReport('balance')">
+          <div class="kpi-mini-top"><span>Balance Sheet</span><i data-lucide="printer" style="width: 14px;"></i></div>
+          <div class="kpi-mini-val" style="font-size: 14px; margin-top: 8px;">Print Balance</div>
+        </div>
+        <div class="kpi-mini-card" onclick="printReport('capital')">
+          <div class="kpi-mini-top"><span>Capital Report</span><i data-lucide="printer" style="width: 14px;"></i></div>
+          <div class="kpi-mini-val" style="font-size: 14px; margin-top: 8px;">Print Equity</div>
+        </div>
+        <div class="kpi-mini-card" onclick="printReport('trial')">
+          <div class="kpi-mini-top"><span>Trial Balance</span><i data-lucide="printer" style="width: 14px;"></i></div>
+          <div class="kpi-mini-val" style="font-size: 14px; margin-top: 8px;">Print Trial</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         SCREEN 6: FULL SETTINGS PANEL
+         ========================================================= -->
+    <div id="screen-settings" class="screen-view">
+      <div style="font-size: 20px; font-weight: 800; margin-bottom: 12px;">Settings & Business Profile</div>
+      
+      <!-- 1. Business Profile -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">Business Profile & Company Info</div>
+        <div class="input-field-group">
+          <label class="input-label">Business Name</label>
+          <input type="text" class="input-control" id="cfgBizName" placeholder="e.g. Ledgr AI Store">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Phone</label>
+          <input type="text" class="input-control" id="cfgBizPhone" placeholder="+1 555 000 0000">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Email</label>
+          <input type="text" class="input-control" id="cfgBizEmail" placeholder="you@example.com">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Address</label>
+          <input type="text" class="input-control" id="cfgBizAddress" placeholder="Street, City, State">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Tax Reg No (TRN / GSTIN / VAT)</label>
+          <input type="text" class="input-control" id="cfgTaxRegNo" placeholder="Tax Reg Number">
+        </div>
+      </div>
+
+      <!-- 2. Currency & Tax Settings -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">Currency & Tax Config</div>
+        <div class="input-field-group">
+          <label class="input-label">Currency Code</label>
+          <select class="input-control" id="cfgCurrency">
+            <option value="USD">$ USD</option>
+            <option value="EUR">€ EUR</option>
+            <option value="GBP">£ GBP</option>
+            <option value="CAD">$ CAD</option>
+            <option value="INR">₹ INR</option>
+            <option value="AED">د.إ AED</option>
+            <option value="AUD">$ AUD</option>
+          </select>
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Tax Label & Rate (%)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" class="input-control" id="cfgTaxLabel" placeholder="e.g. GST / VAT" style="flex: 1;">
+            <input type="number" class="input-control" id="cfgTaxRate" placeholder="e.g. 18" style="width: 90px;">
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Opening Balances & Partner Equity Setup -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">Opening Balances & Investor Setup</div>
+        <button class="btn-gold-save" style="margin-bottom: 10px;" onclick="openModal('openingBalancesModal')">Configure Opening Balances & Equity</button>
+      </div>
+
+      <!-- 4. Customize Dashboard & Feature Tabs -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">Customize Dashboard & Feature Tabs</div>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Turn tiles ON or OFF to fit your exact business workflow:</div>
+        
+        <div id="featureTogglesContainer"></div>
+      </div>
+
+      <!-- 5. App Theme & Accounting Style -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">App Themes & Accounting Modes</div>
+        <div class="input-field-group">
+          <label class="input-label">App Theme Preset</label>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <div class="period-pill" onclick="changeTheme('navy_gold')">Black & Gold</div>
+            <div class="period-pill" onclick="changeTheme('dark_emerald')">Dark Emerald</div>
+            <div class="period-pill" onclick="changeTheme('amoled_blue')">AMOLED Blue</div>
+            <div class="period-pill" onclick="changeTheme('light')">Light Theme</div>
+          </div>
+        </div>
+
+        <div class="input-field-group" style="margin-top: 10px;">
+          <label class="input-label">Accounting Style Mode</label>
+          <div style="display: flex; gap: 6px;">
+            <div class="period-pill" id="pillModeShop" onclick="setAccountingStyle('retail_partnership')">Shop Partnership</div>
+            <div class="period-pill" id="pillModeStd" onclick="setAccountingStyle('standard_entity')">Standard Entity</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. Backup, Export & Reset -->
+      <div class="card-neon-glass">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 10px; color: var(--brand);">Data Backup & System Maintenance</div>
+        <button class="btn-gold-save" style="margin-bottom: 8px;" onclick="exportDataJson()">Export Backup JSON</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--brand); color: var(--brand); margin-bottom: 8px;" onclick="importDataJson()">Import Backup JSON</button>
+        <button class="btn-gold-save" style="background: var(--error); color: #fff;" onclick="resetDatabase()">Wipe All Local Data</button>
+      </div>
+
+      <button class="btn-gold-save" style="margin-top: 14px;" onclick="saveSettingsForm()">Save Settings Profile</button>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <div class="bottom-tab-bar">
+      <div class="tab-btn-item active" onclick="openScreen('home')">
+        <i data-lucide="layout-dashboard" style="width: 20px;"></i>
+        <span>Home</span>
+      </div>
+      <div class="tab-btn-item" onclick="openScreen('parties')">
+        <i data-lucide="users" style="width: 20px;"></i>
+        <span>Parties</span>
+      </div>
+
+      <div class="center-plus-fab" onclick="openModal('quickActionModal')">
+        <i data-lucide="plus" style="width: 26px;"></i>
+      </div>
+
+      <div class="tab-btn-item" onclick="openScreen('cashbook')">
+        <i data-lucide="arrow-left-right" style="width: 20px;"></i>
+        <span>Cashbook</span>
+      </div>
+      <div class="tab-btn-item" onclick="openScreen('reports')">
+        <i data-lucide="bar-chart-3" style="width: 20px;"></i>
+        <span>Reports</span>
+      </div>
+    </div>
+
+    <!-- Quick Action Modal -->
+    <div class="modal-overlay" id="quickActionModal">
+      <div class="modal-sheet-exact">
+        <div class="quick-ai-banner" onclick="closeModal('quickActionModal'); openModal('aiChatModal');">
+          <i data-lucide="sparkles" style="width: 18px;"></i> Ask AI or Scan Invoice
+        </div>
+
+        <div class="quick-action-row-item" onclick="closeModal('quickActionModal'); openModal('saleModal');">
+          <div class="quick-icon-circle" style="background: rgba(74, 222, 128, 0.15); color: #4ADE80;">🧾</div>
+          <div class="quick-row-info">
+            <div class="quick-row-title">Log Sale / Invoice</div>
+            <div class="quick-row-sub">Record cash or credit sale</div>
+          </div>
+        </div>
+
+        <div class="quick-action-row-item" onclick="closeModal('quickActionModal'); openModal('billModal');">
+          <div class="quick-icon-circle" style="background: rgba(239, 68, 68, 0.15); color: #EF4444;">💸</div>
+          <div class="quick-row-info">
+            <div class="quick-row-title">New Vendor Bill</div>
+            <div class="quick-row-sub">Record purchase or expense</div>
+          </div>
+        </div>
+
+        <div class="quick-action-row-item" onclick="closeModal('quickActionModal'); openModal('cashModal');">
+          <div class="quick-icon-circle" style="background: rgba(59, 130, 246, 0.15); color: #3B82F6;">💵</div>
+          <div class="quick-row-info">
+            <div class="quick-row-title">Cash Entry</div>
+            <div class="quick-row-sub">Record cash in or cash out</div>
+          </div>
+        </div>
+
+        <button class="btn-gold-save" onclick="closeModal('quickActionModal')">Close</button>
+      </div>
+    </div>
+
+    <!-- Opening Balances & Investor Setup Modal -->
+    <div class="modal-overlay" id="openingBalancesModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 12px;">Opening Balances & Equity Setup</div>
+        <div class="input-field-group">
+          <label class="input-label">Opening Cash Balance ($)</label>
+          <input type="number" class="input-control" id="opCashInput" placeholder="0.00">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Opening Stock Value ($)</label>
+          <input type="number" class="input-control" id="opStockInput" placeholder="0.00">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Period Start Date (YYYY-MM-DD)</label>
+          <input type="text" class="input-control" id="opPeriodStartInput" placeholder="e.g. 2026-07-29">
+        </div>
+
+        <div style="font-size: 14px; font-weight: 800; margin: 14px 0 8px 0; color: var(--brand);">Investors / Partners List</div>
+        <div id="modalInvestorsContainer"></div>
+        <button class="btn-gold-save" style="background: transparent; border: 1px dashed var(--brand); color: var(--brand); margin-bottom: 10px;" onclick="addInvestorRow()">+ Add Investor</button>
+
+        <button class="btn-gold-save" onclick="saveOpeningBalances()">Save Opening Setup</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('openingBalancesModal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Sale Modal -->
+    <div class="modal-overlay" id="saleModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 14px;">Log Sale / Create Invoice</div>
+        <div class="input-field-group">
+          <label class="input-label">Customer / Party</label>
+          <input type="text" class="input-control" id="salePartyName" placeholder="e.g. John Doe">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Total Sale Amount ($)</label>
+          <input type="number" class="input-control" id="saleAmount" placeholder="0.00">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Sale Type</label>
+          <select class="input-control" id="saleType">
+            <option value="cash">Cash Sale</option>
+            <option value="credit">Credit Sale (Invoice)</option>
+          </select>
+        </div>
+        <button class="btn-gold-save" onclick="saveSale()">Save Sale Entry</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('saleModal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Bill Modal -->
+    <div class="modal-overlay" id="billModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 14px;">New Purchase / Bill</div>
+        <div class="input-field-group">
+          <label class="input-label">Supplier / Vendor</label>
+          <input type="text" class="input-control" id="billSupplierName" placeholder="e.g. ABC Wholesalers">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Bill Amount ($)</label>
+          <input type="number" class="input-control" id="billAmount" placeholder="0.00">
+        </div>
+        <button class="btn-gold-save" onclick="saveBill()">Save Vendor Bill</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('billModal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Cash Entry Modal -->
+    <div class="modal-overlay" id="cashModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 14px;">Log Cash Movement</div>
+        <div class="input-field-group">
+          <label class="input-label">Direction</label>
+          <select class="input-control" id="cashDirection">
+            <option value="in">Cash In (Deposit / Capital Injection)</option>
+            <option value="out">Cash Out (Petty Spend / Withdrawal)</option>
+          </select>
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Amount ($)</label>
+          <input type="number" class="input-control" id="cashAmount" placeholder="0.00">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Notes / Purpose</label>
+          <input type="text" class="input-control" id="cashNotes" placeholder="e.g. Capital injection from Amit">
+        </div>
+        <button class="btn-gold-save" onclick="saveCash()">Save Cash Entry</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('cashModal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Add Party Modal -->
+    <div class="modal-overlay" id="addPartyModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 14px;">Add New Party / Investor</div>
+        <div class="input-field-group">
+          <label class="input-label">Party Name</label>
+          <input type="text" class="input-control" id="partyNameInput" placeholder="Name">
+        </div>
+        <div class="input-field-group">
+          <label class="input-label">Role</label>
+          <select class="input-control" id="partyRoleInput">
+            <option value="customer">Customer</option>
+            <option value="supplier">Supplier</option>
+            <option value="partner">Investor / Partner</option>
+          </select>
+        </div>
+        <button class="btn-gold-save" onclick="saveParty()">Save Party</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('addPartyModal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- AI Voice Chat Simulator Modal -->
+    <div class="modal-overlay" id="aiChatModal">
+      <div class="modal-sheet-exact">
+        <div style="font-size: 18px; font-weight: 800; margin-bottom: 8px;">✨ Ledgr AI Assistant</div>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 14px;">Speak or type your financial transaction directly in plain English.</div>
+        
+        <div class="input-field-group">
+          <input type="text" class="input-control" id="aiPromptInput" placeholder='e.g. "We sold 250 to John today"'>
+        </div>
+        <button class="btn-gold-save" onclick="processAiPrompt()">Process Command</button>
+        <button class="btn-gold-save" style="background: transparent; border: 1px solid var(--border-color); color: var(--muted); margin-top: 6px;" onclick="closeModal('aiChatModal')">Close</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Hidden File Input for JSON Backup Import -->
+  <input type="file" id="jsonFileInput" accept=".json" style="display: none;" onchange="handleJsonFileSelect(event)">
+
+  <!-- JavaScript Engine -->
+  <script>
+    // =========================================================
+    // LOCAL PERSISTENCE STORAGE ENGINE
+    // =========================================================
+    const STORAGE_KEY = 'LEDGR_AI_WEB_DATA_V2';
+
+    const ALL_FEATURES = [
+      { key: 'purchases', label: 'Purchases', icon: 'receipt', color: '#34D399', bg: 'rgba(214, 229, 219, 0.2)' },
+      { key: 'sales', label: 'Sales', icon: 'trending-up', color: '#FBBF24', bg: 'rgba(243, 228, 200, 0.2)' },
+      { key: 'receipts', label: 'Receipts', icon: 'arrow-down-left', color: '#60A5FA', bg: 'rgba(240, 228, 208, 0.2)' },
+      { key: 'payments', label: 'Payments', icon: 'banknote', color: '#F87171', bg: 'rgba(232, 218, 208, 0.2)' },
+      { key: 'cashbook', label: 'Cash Book', icon: 'arrow-left-right', color: '#C084FC', bg: 'rgba(220, 232, 220, 0.2)' },
+      { key: 'invoices', label: 'Invoices', icon: 'file-text', color: '#38BDF8', bg: 'rgba(216, 228, 240, 0.2)' },
+      { key: 'quotes', label: 'Quotes', icon: 'tag', color: '#FACC15', bg: 'rgba(224, 232, 240, 0.2)' },
+      { key: 'deliveryNotes', label: 'Delivery Notes', icon: 'cube', color: '#A7F3D0', bg: 'rgba(220, 228, 220, 0.2)' },
+      { key: 'expenses', label: 'Expenses', icon: 'wallet', color: '#F87171', bg: 'rgba(228, 216, 216, 0.2)' },
+      { key: 'stock', label: 'Stock', icon: 'package', color: '#34D399', bg: 'rgba(227, 233, 218, 0.2)' },
+      { key: 'assets', label: 'Assets', icon: 'layers', color: '#818CF8', bg: 'rgba(208, 216, 224, 0.2)' },
+      { key: 'daybook', label: 'Day Book', icon: 'calendar', color: '#F472B6', bg: 'rgba(221, 227, 236, 0.2)' },
+      { key: 'reports', label: 'Reports', icon: 'bar-chart-3', color: '#FBBF24', bg: 'rgba(224, 224, 218, 0.2)' },
+      { key: 'monthly', label: 'Monthly', icon: 'pie-chart', color: '#F97316', bg: 'rgba(239, 220, 200, 0.2)' },
+      { key: 'ask', label: 'Ask AI', icon: 'sparkles', color: '#FDBA21', bg: 'rgba(253, 186, 33, 0.14)' },
+      { key: 'parties', label: 'Parties', icon: 'users', color: '#A7F3D0', bg: 'rgba(220, 228, 220, 0.2)' }
+    ];
+
+    function getInitialData() {
+      return {
+        settings: {
+          businessName: 'Ledgr AI Store',
+          businessPhone: '+1 555 000 0000',
+          businessEmail: 'info@ledgraistore.com',
+          businessAddress: '123 Main Street',
+          taxRegNo: 'TRN-99887766',
+          currency: 'USD',
+          taxLabel: 'GST',
+          taxRate: 18,
+          themeMode: 'navy_gold',
+          accountingStyle: 'retail_partnership',
+          openingCash: 17000,
+          openingInventory: 15100,
+          openingCapital: 32100,
+          currentPeriodStart: '2026-07-29',
+          investors: [
+            { name: 'Amit', amount: 16050, profitSharePct: 50 },
+            { name: 'Rahim', amount: 16050, profitSharePct: 50 }
+          ],
+          enabledFeatures: ALL_FEATURES.map(f => f.key)
+        },
+        sales: [
+          { id: '1', party: 'Walk-in Customer', amount: 450, type: 'cash', date: '2026-07-30' }
+        ],
+        bills: [
+          { id: '1', supplier: 'ABC Suppliers', amount: 100, date: '2026-07-30' }
+        ],
+        parties: [
+          { id: '1', name: 'John Doe', role: 'customer' },
+          { id: '2', name: 'ABC Suppliers', role: 'supplier' }
+        ],
+        cashEntries: [
+          { id: '1', amount: 500, direction: 'in', notes: 'Capital injection from Amit', date: '2026-07-30' }
+        ]
+      };
+    }
+
+    function loadDB() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        const init = getInitialData();
+        saveDB(init);
+        return init;
+      }
+      try { return JSON.parse(raw); } catch(e) { return getInitialData(); }
+    }
+
+    function saveDB(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    let DB = loadDB();
+
+    // =========================================================
+    // NAVIGATION & MODALS
+    // =========================================================
+    function openScreen(screenId) {
+      document.querySelectorAll('.screen-view').forEach(s => s.classList.remove('active'));
+      const target = document.getElementById('screen-' + screenId);
+      if (target) target.classList.add('active');
+
+      document.querySelectorAll('.tab-btn-item').forEach(t => t.classList.remove('active'));
+      const tabMap = { home: 0, parties: 1, cashbook: 3, reports: 4 };
+      if (tabMap[screenId] !== undefined) {
+        document.querySelectorAll('.tab-btn-item')[tabMap[screenId]]?.classList.add('active');
+      }
+      refreshUI();
+    }
+
+    function openModal(id) {
+      const m = document.getElementById(id);
+      if (m) {
+        if (id === 'openingBalancesModal') populateOpeningModal();
+        m.classList.add('active');
+      }
+    }
+
+    function closeModal(id) {
+      const m = document.getElementById(id);
+      if (m) m.classList.remove('active');
+    }
+
+    function changeTheme(themeName) {
+      document.body.className = 'theme-' + themeName;
+      DB.settings.themeMode = themeName;
+      saveDB(DB);
+    }
+
+    function setAccountingStyle(style) {
+      DB.settings.accountingStyle = style;
+      saveDB(DB);
+      refreshUI();
+    }
+
+    function resetDatabase() {
+      if (confirm('Wipe all local data and reset to fresh defaults?')) {
+        localStorage.removeItem(STORAGE_KEY);
+        DB = getInitialData();
+        saveDB(DB);
+        refreshUI();
+        alert('Database reset clean.');
+      }
+    }
+
+    // =========================================================
+    // ACCOUNTING CALCULATIONS & UI REFRESH
+    // =========================================================
+    function fmt(n) {
+      const num = Number(n) || 0;
+      const sym = DB.settings.currency === 'EUR' ? '€' : DB.settings.currency === 'GBP' ? '£' : DB.settings.currency === 'INR' ? '₹' : '$';
+      return (num < 0 ? '− ' + sym : sym) + Math.abs(num).toFixed(2);
+    }
+
+    function refreshUI() {
+      // Header Labels
+      document.getElementById('displayBizName').innerText = DB.settings.businessName || 'Ledgr';
+      document.getElementById('displayBookName').innerText = DB.settings.accountingStyle === 'retail_partnership' ? 'SHOP MODE' : 'STD MODE';
+      
+      // Sync Settings Inputs
+      document.getElementById('cfgBizName').value = DB.settings.businessName || '';
+      document.getElementById('cfgBizPhone').value = DB.settings.businessPhone || '';
+      document.getElementById('cfgBizEmail').value = DB.settings.businessEmail || '';
+      document.getElementById('cfgBizAddress').value = DB.settings.businessAddress || '';
+      document.getElementById('cfgTaxRegNo').value = DB.settings.taxRegNo || '';
+      document.getElementById('cfgCurrency').value = DB.settings.currency || 'USD';
+      document.getElementById('cfgTaxLabel').value = DB.settings.taxLabel || '';
+      document.getElementById('cfgTaxRate').value = DB.settings.taxRate || '';
+
+      // Mode pills active state
+      document.getElementById('pillModeShop').className = DB.settings.accountingStyle === 'retail_partnership' ? 'period-pill active' : 'period-pill';
+      document.getElementById('pillModeStd').className = DB.settings.accountingStyle === 'standard_entity' ? 'period-pill active' : 'period-pill';
+
+      // Calculate Aggregates
+      const totalSales = DB.sales.reduce((sum, s) => sum + Number(s.amount), 0);
+      const totalBills = DB.bills.reduce((sum, b) => sum + Number(b.amount), 0);
+      const cashIn = DB.cashEntries.filter(c => c.direction === 'in').reduce((sum, c) => sum + Number(c.amount), 0);
+      const cashOut = DB.cashEntries.filter(c => c.direction === 'out').reduce((sum, c) => sum + Number(c.amount), 0);
+
+      const netProfit = totalSales - totalBills;
+      const closingCash = DB.settings.openingCash + totalSales - totalBills + cashIn - cashOut;
+      const closingBal = closingCash + DB.settings.openingInventory;
+
+      // Update Dashboard Hero & Flow Cards
+      document.getElementById('valNetProfit').innerText = fmt(netProfit);
+      document.getElementById('valOpeningBal').innerText = fmt(DB.settings.openingCash);
+      document.getElementById('valClosingBal').innerText = fmt(closingBal);
+      document.getElementById('valNetWorth').innerText = fmt(closingBal);
+
+      document.getElementById('valFlowSales').innerText = '+ ' + fmt(totalSales);
+      document.getElementById('valFlowPurchases').innerText = '− ' + fmt(totalBills);
+      document.getElementById('valFlowGross').innerText = fmt(netProfit);
+      document.getElementById('valFlowNet').innerText = fmt(netProfit);
+
+      // KPI Grid
+      document.getElementById('kpiSales').innerText = fmt(totalSales);
+      document.getElementById('kpiPurchases').innerText = fmt(totalBills);
+      document.getElementById('kpiCash').innerText = fmt(closingCash);
+      document.getElementById('kpiStock').innerText = fmt(DB.settings.openingInventory);
+
+      // Daily
+      document.getElementById('valDailyNet').innerText = fmt(netProfit);
+      document.getElementById('valDailyCounts').innerText = `${DB.sales.length} sales • ${DB.bills.length} bills • ${DB.cashEntries.length} cash entries`;
+
+      // Render Dynamic Dashboard Tiles
+      renderWorkspaceTiles();
+
+      // Render Lists
+      renderPartiesList();
+      renderCashbookList();
+      renderInvoicesList();
+      renderFeatureToggles();
+
+      lucide.createIcons();
+    }
+
+    function renderWorkspaceTiles() {
+      const container = document.getElementById('dashboardWorkspaceTilesGrid');
+      if (!container) return;
+
+      const enabled = DB.settings.enabledFeatures || ALL_FEATURES.map(f => f.key);
+      const activeTiles = ALL_FEATURES.filter(f => enabled.includes(f.key));
+
+      let html = '';
+      activeTiles.forEach(t => {
+        html += `
+          <div class="app-workspace-tile" onclick="handleTileClick('${t.key}')">
+            <div class="tile-circle-icon" style="background: ${t.bg}; color: ${t.color};">
+              <i data-lucide="${t.icon}" style="width: 20px;"></i>
+            </div>
+            <div class="tile-label-text">${t.label}</div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function handleTileClick(key) {
+      if (key === 'sales') openModal('saleModal');
+      else if (key === 'purchases' || key === 'bills') openModal('billModal');
+      else if (key === 'receipts' || key === 'payments') openModal('cashModal');
+      else if (key === 'cashbook') openScreen('cashbook');
+      else if (key === 'invoices') openScreen('invoices');
+      else if (key === 'parties') openScreen('parties');
+      else if (key === 'reports') openScreen('reports');
+      else openModal('aiChatModal');
+    }
+
+    function renderPartiesList() {
+      const container = document.getElementById('partiesListContainer');
+      if (!container) return;
+
+      let html = '';
+      const allParties = [...DB.parties];
+      if (DB.settings.accountingStyle === 'retail_partnership' && Array.isArray(DB.settings.investors)) {
+        DB.settings.investors.forEach(inv => {
+          allParties.push({ id: 'inv_' + inv.name, name: inv.name, role: 'partner', amount: inv.amount });
+        });
+      }
+
+      allParties.forEach(p => {
+        html += `
+          <div class="party-card-item">
+            <div style="display: flex; align-items: center;">
+              <div class="party-avatar">${p.name.substring(0, 2).toUpperCase()}</div>
+              <div>
+                <div style="font-weight: 700; font-size: 14px;">${p.name}</div>
+                <div style="font-size: 11px; color: var(--muted); text-transform: capitalize;">${p.role}</div>
+              </div>
+            </div>
+            <div style="font-size: 13px; font-weight: 700; color: var(--brand);">
+              ${p.amount ? fmt(p.amount) : 'Active'}
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html || '<div style="font-size: 12px; color: var(--muted);">No parties added yet.</div>';
+    }
+
+    function renderCashbookList() {
+      const container = document.getElementById('cashbookListContainer');
+      if (!container) return;
+      let html = '';
+      DB.cashEntries.forEach(c => {
+        html += `
+          <div class="party-card-item">
+            <div>
+              <div style="font-weight: 700; font-size: 14px;">${c.notes || 'Cash Movement'}</div>
+              <div style="font-size: 11px; color: var(--muted);">${c.date || 'Today'}</div>
+            </div>
+            <div style="font-weight: 800; font-size: 14px; color: ${c.direction === 'in' ? 'var(--success)' : 'var(--error)'};">
+              ${c.direction === 'in' ? '+' : '−'} ${fmt(c.amount)}
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html || '<div style="font-size: 12px; color: var(--muted);">No cash entries recorded.</div>';
+    }
+
+    function renderInvoicesList() {
+      const container = document.getElementById('invoicesListContainer');
+      if (!container) return;
+      let html = '';
+      DB.sales.forEach(s => {
+        html += `
+          <div class="party-card-item">
+            <div>
+              <div style="font-weight: 700; font-size: 14px;">${s.party}</div>
+              <div style="font-size: 11px; color: var(--muted);">${s.type === 'credit' ? 'Invoice (Credit)' : 'Cash Sale'} • ${s.date}</div>
+            </div>
+            <div style="font-weight: 800; font-size: 14px; color: var(--success);">
+              + ${fmt(s.amount)}
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html || '<div style="font-size: 12px; color: var(--muted);">No sales or invoices recorded.</div>';
+    }
+
+    function renderFeatureToggles() {
+      const container = document.getElementById('featureTogglesContainer');
+      if (!container) return;
+      const enabled = DB.settings.enabledFeatures || ALL_FEATURES.map(f => f.key);
+
+      let html = '';
+      ALL_FEATURES.forEach(f => {
+        const isChecked = enabled.includes(f.key);
+        html += `
+          <div class="toggle-row-item">
+            <div style="font-size: 13px; font-weight: 700;">${f.label}</div>
+            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleFeatureFlag('${f.key}', this.checked)">
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function toggleFeatureFlag(key, isEnabled) {
+      let enabled = DB.settings.enabledFeatures || ALL_FEATURES.map(f => f.key);
+      if (isEnabled && !enabled.includes(key)) enabled.push(key);
+      else if (!isEnabled) enabled = enabled.filter(k => k !== key);
+
+      DB.settings.enabledFeatures = enabled;
+      saveDB(DB);
+      refreshUI();
+    }
+
+    // =========================================================
+    // OPENING BALANCES MODAL
+    // =========================================================
+    function populateOpeningModal() {
+      document.getElementById('opCashInput').value = DB.settings.openingCash || 0;
+      document.getElementById('opStockInput').value = DB.settings.openingInventory || 0;
+      document.getElementById('opPeriodStartInput').value = DB.settings.currentPeriodStart || '';
+
+      renderModalInvestors();
+    }
+
+    function renderModalInvestors() {
+      const container = document.getElementById('modalInvestorsContainer');
+      if (!container) return;
+
+      const investors = DB.settings.investors || [];
+      let html = '';
+      investors.forEach((inv, idx) => {
+        html += `
+          <div class="card-neon-glass" style="padding: 10px; margin-bottom: 8px;">
+            <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+              <input type="text" class="input-control" value="${inv.name}" placeholder="Investor Name" onchange="updateInvestorField(${idx}, 'name', this.value)" style="flex: 1;">
+              <button onclick="removeInvestorRow(${idx})" style="background: transparent; border: none; color: var(--error); cursor: pointer; font-weight: 800;">✕</button>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" class="input-control" value="${inv.amount}" placeholder="Capital ($)" onchange="updateInvestorField(${idx}, 'amount', this.value)" style="flex: 1;">
+              <input type="number" class="input-control" value="${inv.profitSharePct}" placeholder="Share %" onchange="updateInvestorField(${idx}, 'profitSharePct', this.value)" style="width: 80px;">
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html || '<div style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">No investors configured.</div>';
+    }
+
+    function addInvestorRow() {
+      if (!DB.settings.investors) DB.settings.investors = [];
+      DB.settings.investors.push({ name: '', amount: 0, profitSharePct: 50 });
+      renderModalInvestors();
+    }
+
+    function removeInvestorRow(idx) {
+      DB.settings.investors.splice(idx, 1);
+      renderModalInvestors();
+    }
+
+    function updateInvestorField(idx, field, val) {
+      if (!DB.settings.investors[idx]) return;
+      DB.settings.investors[idx][field] = field === 'name' ? val : parseFloat(val) || 0;
+    }
+
+    function saveOpeningBalances() {
+      DB.settings.openingCash = parseFloat(document.getElementById('opCashInput').value) || 0;
+      DB.settings.openingInventory = parseFloat(document.getElementById('opStockInput').value) || 0;
+      DB.settings.currentPeriodStart = document.getElementById('opPeriodStartInput').value.trim();
+
+      saveDB(DB);
+      closeModal('openingBalancesModal');
+      refreshUI();
+      alert('Opening balances saved successfully!');
+    }
+
+    function saveSettingsForm() {
+      DB.settings.businessName = document.getElementById('cfgBizName').value.trim();
+      DB.settings.businessPhone = document.getElementById('cfgBizPhone').value.trim();
+      DB.settings.businessEmail = document.getElementById('cfgBizEmail').value.trim();
+      DB.settings.businessAddress = document.getElementById('cfgBizAddress').value.trim();
+      DB.settings.taxRegNo = document.getElementById('cfgTaxRegNo').value.trim();
+      DB.settings.currency = document.getElementById('cfgCurrency').value;
+      DB.settings.taxLabel = document.getElementById('cfgTaxLabel').value.trim();
+      DB.settings.taxRate = parseFloat(document.getElementById('cfgTaxRate').value) || 0;
+
+      saveDB(DB);
+      refreshUI();
+      alert('Settings profile saved!');
+    }
+
+    // =========================================================
+    // BACKUP JSON EXPORT & IMPORT
+    // =========================================================
+    function exportDataJson() {
+      const jsonStr = JSON.stringify(DB, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ledgr_AI_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importDataJson() {
+      document.getElementById('jsonFileInput').click();
+    }
+
+    function handleJsonFileSelect(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (parsed && parsed.settings) {
+            DB = parsed;
+            saveDB(DB);
+            refreshUI();
+            alert('Backup JSON imported successfully!');
+          } else {
+            alert('Invalid backup JSON format.');
+          }
+        } catch(err) {
+          alert('Failed to parse JSON file.');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // =========================================================
+    // FORM ACTIONS & PRINTING
+    // =========================================================
+    function saveSale() {
+      const party = document.getElementById('salePartyName').value.trim() || 'Walk-in Customer';
+      const amount = parseFloat(document.getElementById('saleAmount').value) || 0;
+      const type = document.getElementById('saleType').value;
+      if (amount <= 0) return alert('Enter valid sale amount');
+
+      DB.sales.push({ id: Date.now().toString(), party, amount, type, date: new Date().toISOString().split('T')[0] });
+      saveDB(DB);
+      closeModal('saleModal');
+      refreshUI();
+      alert('Sale entry saved successfully!');
+    }
+
+    function saveBill() {
+      const supplier = document.getElementById('billSupplierName').value.trim() || 'General Supplier';
+      const amount = parseFloat(document.getElementById('billAmount').value) || 0;
+      if (amount <= 0) return alert('Enter valid bill amount');
+
+      DB.bills.push({ id: Date.now().toString(), supplier, amount, date: new Date().toISOString().split('T')[0] });
+      saveDB(DB);
+      closeModal('billModal');
+      refreshUI();
+      alert('Purchase bill saved successfully!');
+    }
+
+    function saveCash() {
+      const direction = document.getElementById('cashDirection').value;
+      const amount = parseFloat(document.getElementById('cashAmount').value) || 0;
+      const notes = document.getElementById('cashNotes').value.trim();
+      if (amount <= 0) return alert('Enter valid cash amount');
+
+      DB.cashEntries.push({ id: Date.now().toString(), direction, amount, notes, date: new Date().toISOString().split('T')[0] });
+      saveDB(DB);
+      closeModal('cashModal');
+      refreshUI();
+      alert('Cash entry logged!');
+    }
+
+    function saveParty() {
+      const name = document.getElementById('partyNameInput').value.trim();
+      const role = document.getElementById('partyRoleInput').value;
+      if (!name) return alert('Enter party name');
+
+      DB.parties.push({ id: Date.now().toString(), name, role });
+      saveDB(DB);
+      closeModal('addPartyModal');
+      refreshUI();
+      alert('Party created successfully!');
+    }
+
+    function processAiPrompt() {
+      const prompt = document.getElementById('aiPromptInput').value.trim();
+      if (!prompt) return;
+
+      const num = prompt.match(/\d+/);
+      const amount = num ? parseFloat(num[0]) : 100;
+
+      if (prompt.toLowerCase().includes('sold') || prompt.toLowerCase().includes('sale')) {
+        DB.sales.push({ id: Date.now().toString(), party: 'AI Logged Customer', amount, type: 'cash', date: new Date().toISOString().split('T')[0] });
+        alert(`AI logged a cash sale of $${amount}!`);
+      } else if (prompt.toLowerCase().includes('paid') || prompt.toLowerCase().includes('bill')) {
+        DB.bills.push({ id: Date.now().toString(), supplier: 'AI Logged Vendor', amount, date: new Date().toISOString().split('T')[0] });
+        alert(`AI logged a bill of $${amount}!`);
+      } else {
+        alert(`AI Assistant processed: "${prompt}"`);
+      }
+      saveDB(DB);
+      closeModal('aiChatModal');
+      refreshUI();
+    }
+
+    function shareWhatsAppDaily() {
+      const msg = encodeURIComponent(`Daily Summary (${new Date().toLocaleDateString()}): Net Cash = ${document.getElementById('valDailyNet').innerText}`);
+      window.open('https://api.whatsapp.com/send?text=' + msg, '_blank');
+    }
+
+    function printReport(type) {
+      window.print();
+    }
+
+    function closePeriodBooks() {
+      if (confirm('Execute Period Close? Net profit will roll into Partner Capital and P&L will reset.')) {
+        alert('Period Close executed successfully. Financial balances rolled forward.');
+      }
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshUI();
+    });
+  </script>
+</body>
+</html>

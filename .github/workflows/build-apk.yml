@@ -1,6 +1,9 @@
 name: Build Ledgr AI Android
 
 on:
+  push:
+    branches:
+      - anti-codex-sol
   workflow_dispatch:
 
 

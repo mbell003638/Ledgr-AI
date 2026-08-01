@@ -349,7 +349,7 @@ export default function CustomerDetailScreen() {
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
-                          {r.kind === "invoice" ? "Credit sale invoice" : r.kind === "payment" ? "Customer payment" : r.ref || "Transaction"} • {shortDate(r.date)}
+                          {r.kind === "invoice" ? "Credit sale invoice" : r.kind === "payment" ? "Customer payment" : r.ref || "Transaction"} • {shortDate(r.date)}{r.originalDate && r.originalDate !== r.date ? ` (was ${shortDate(r.originalDate)})` : ""}
                         </Text>
                       </View>
 

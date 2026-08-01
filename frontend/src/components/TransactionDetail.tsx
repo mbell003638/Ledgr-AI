@@ -15,6 +15,7 @@ export type TransactionDetailAction = {
 export type TransactionDetailProps = {
   title: string;
   subtitle?: string;
+  badge?: React.ReactNode;
   children?: React.ReactNode;
   onEdit?: () => void;
   onReversalDelete?: () => void;
@@ -27,6 +28,7 @@ export type TransactionDetailProps = {
 export function TransactionDetail({
   title,
   subtitle,
+  badge,
   children,
   onEdit,
   onReversalDelete,
@@ -48,7 +50,12 @@ export function TransactionDetail({
     <View style={styles.container} testID="transaction-detail">
       <View style={styles.heading}>
         <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {(subtitle || badge) && (
+          <View style={styles.subHeading}>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            {badge}
+          </View>
+        )}
       </View>
       {children ? <View style={styles.content}>{children}</View> : null}
       <View style={styles.actions} accessibilityRole="toolbar" accessibilityLabel="Transaction actions">
@@ -76,7 +83,8 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     container: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.color.border, overflow: "hidden" },
     heading: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
     title: { color: theme.color.onSurface, fontSize: 20, fontWeight: "700" },
-    subtitle: { color: theme.color.muted, fontSize: 13, marginTop: 4 },
+    subHeading: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 },
+    subtitle: { color: theme.color.muted, fontSize: 13 },
     content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg },
     actions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: theme.color.divider, padding: theme.spacing.sm, justifyContent: "space-between" },
     action: { alignItems: "center", flex: 1, gap: 4, paddingVertical: theme.spacing.sm, borderRadius: theme.radius.sm },

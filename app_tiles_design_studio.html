@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ledgr AI — App Tiles Design Studio (3 Styles)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-dark: #080A0E;
+      --card-bg: #121620;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-green: #10B981;
+      --accent-purple: #8B5CF6;
+      --text-main: #FFFFFF;
+      --text-sub: #94A3B8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 30px 20px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .header-title {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header-title h1 {
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #10B981, #6366F1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-title p {
+      color: var(--text-sub);
+      font-size: 14px;
+    }
+
+    /* Style Switcher Tabs */
+    .style-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 35px;
+    }
+
+    .tab-btn {
+      padding: 10px 20px;
+      border-radius: 30px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-sub);
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .tab-btn.active, .tab-btn:hover {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: var(--accent-green);
+      color: #34D399;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+    }
+
+    .style-section {
+      display: none;
+    }
+
+    .style-section.active {
+      display: block;
+    }
+
+    .section-headline {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #E2E8F0;
+    }
+
+    .preview-phone-wrap {
+      max-width: 440px;
+      margin: 0 auto;
+      background: #0B0E14;
+      border: 1px solid var(--border-color);
+      border-radius: 32px;
+      padding: 24px 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    }
+
+    /* ========================================================
+       STYLE 1: Premium Soft Elevated Cards with Pastel Badges
+       ======================================================== */
+    .grid-style-1 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .s1-tile {
+      background: #141824;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 24px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 125px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .s1-tile:hover {
+      transform: translateY(-4px);
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.15);
+    }
+
+    .s1-icon-container {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .s1-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #FFF;
+      margin-top: 14px;
+    }
+
+    .s1-sub {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+    }
+
+    /* Special AI Card S1 */
+    .s1-tile.ai-ask {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(16, 185, 129, 0.15));
+      border: 1px solid rgba(139, 92, 246, 0.4);
+    }
+
+    .s1-tile.ai-voice {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(6, 182, 212, 0.15));
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .ai-pill-tag {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+
+    /* ========================================================
+       STYLE 2: Modern Compact Horizontal Pills with Quick Add
+       ======================================================== */
+    .grid-style-2 {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .s2-tile {
+      background: #11151F;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .s2-tile:hover {
+      background: #19202E;
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateX(4px);
+    }
+
+    .s2-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .s2-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .s2-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .s2-sub {
+      font-size: 11px;
+      color: #64748B;
+    }
+
+    .s2-action-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94A3B8;
+      transition: all 0.2s ease;
+    }
+
+    .s2-tile:hover .s2-action-btn {
+      background: #10B981;
+      color: #fff;
+    }
+
+    /* ========================================================
+       STYLE 3: Glassmorphism Cards with Glowing Neon Accents
+       ======================================================== */
+    .grid-style-3 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .s3-tile {
+      background: rgba(20, 26, 38, 0.6);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 115px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.25s ease;
+    }
+
+    .s3-tile:hover {
+      border-color: #38BDF8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+      transform: scale(1.02);
+    }
+
+    .s3-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .s3-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .s3-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 12px;
+    }
+
+    .s3-sub {
+      font-size: 11px;
+      color: #94A3B8;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header-title">
+      <h1>Ledgr AI App Tile Design Studio</h1>
+      <p>Interactive preview of 3 modern UI concepts for the App Grid (including Ask AI & AI Assistant tiles)</p>
+    </div>
+
+    <!-- Style Selector Tabs -->
+    <div class="style-tabs">
+      <button class="tab-btn active" onclick="showStyle(1)">Style 1: Soft Elevated Cards</button>
+      <button class="tab-btn" onclick="showStyle(2)">Style 2: Compact Horizontal Pills</button>
+      <button class="tab-btn" onclick="showStyle(3)">Style 3: Neon Glassmorphism</button>
+    </div>
+
+    <!-- STYLE 1 PREVIEW -->
+    <div id="style-1" class="style-section active">
+      <div class="preview-phone-wrap">
+        <div class="section-headline">
+          <i data-lucide="sparkles" style="color: #10B981;"></i> Style 1: Soft Elevated Grid (Ask AI & Assistant Highlighted)
+        </div>
+        
+        <div class="grid-style-1">
+          
+          <!-- Ask AI Tile S1 -->
+          <div class="s1-tile ai-ask">
+            <span class="ai-pill-tag" style="background: rgba(139, 92, 246, 0.3); color: #DDD6FE;">AI Chat</span>
+            <div class="s1-icon-container" style="background: rgba(139, 92, 246, 0.25); color: #C4B5FD;">
+              <i data-lucide="sparkles" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Ask AI</div>
+              <div class="s1-sub">Smart Chat & Insights</div>
+            </div>
+          </div>
+
+          <!-- AI Assistant Voice Tile S1 -->
+          <div class="s1-tile ai-voice">
+            <span class="ai-pill-tag" style="background: rgba(16, 185, 129, 0.3); color: #A7F3D0;">Voice</span>
+            <div class="s1-icon-container" style="background: rgba(16, 185, 129, 0.25); color: #6EE7B7;">
+              <i data-lucide="mic" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">AI Assistant</div>
+              <div class="s1-sub">Hands-Free Dictation</div>
+            </div>
+          </div>
+
+          <!-- Purchases Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(16, 185, 129, 0.15); color: #34D399;">
+              <i data-lucide="shopping-bag" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Purchases</div>
+              <div class="s1-sub">Vendor Bills</div>
+            </div>
+          </div>
+
+          <!-- Sales Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(245, 158, 11, 0.15); color: #FBBF24;">
+              <i data-lucide="trending-up" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Sales</div>
+              <div class="s1-sub">Revenue Entries</div>
+            </div>
+          </div>
+
+          <!-- Receipts Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(59, 130, 246, 0.15); color: #60A5FA;">
+              <i data-lucide="receipt" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Receipts</div>
+              <div class="s1-sub">Money In</div>
+            </div>
+          </div>
+
+          <!-- Payments Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(239, 68, 68, 0.15); color: #F87171;">
+              <i data-lucide="arrow-up-right" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Payments</div>
+              <div class="s1-sub">Money Out</div>
+            </div>
+          </div>
+
+          <!-- Cash Book Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(168, 85, 247, 0.15); color: #C084FC;">
+              <i data-lucide="wallet" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Cash Book</div>
+              <div class="s1-sub">Daily Register</div>
+            </div>
+          </div>
+
+          <!-- Invoices Tile S1 -->
+          <div class="s1-tile">
+            <div class="s1-icon-container" style="background: rgba(14, 165, 233, 0.15); color: #38BDF8;">
+              <i data-lucide="file-text" style="width: 22px;"></i>
+            </div>
+            <div>
+              <div class="s1-title">Invoices</div>
+              <div class="s1-sub">PDF Creation</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- STYLE 2 PREVIEW -->
+    <div id="style-2" class="style-section">
+      <div class="preview-phone-wrap">
+        <div class="section-headline">
+          <i data-lucide="list" style="color: #6366F1;"></i> Style 2: Compact Horizontal Pills (Quick Action Focused)
+        </div>
+        
+        <div class="grid-style-2">
+
+          <!-- Ask AI Pill S2 -->
+          <div class="s2-tile" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(16, 185, 129, 0.12)); border-color: rgba(139, 92, 246, 0.3);">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(139, 92, 246, 0.3); color: #DDD6FE;">
+                <i data-lucide="sparkles" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">Ask AI Assistant</div>
+                <div class="s2-sub">Instant Bookkeeping Answers</div>
+              </div>
+            </div>
+            <div class="s2-action-btn" style="background: rgba(139, 92, 246, 0.3); color: #fff;">
+              <i data-lucide="arrow-right" style="width: 16px;"></i>
+            </div>
+          </div>
+
+          <!-- AI Voice Assistant Pill S2 -->
+          <div class="s2-tile" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.12)); border-color: rgba(16, 185, 129, 0.3);">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(16, 185, 129, 0.3); color: #A7F3D0;">
+                <i data-lucide="mic" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">AI Voice Assistant</div>
+                <div class="s2-sub">Dictate & Hands-Free</div>
+              </div>
+            </div>
+            <div class="s2-action-btn" style="background: rgba(16, 185, 129, 0.3); color: #fff;">
+              <i data-lucide="mic" style="width: 16px;"></i>
+            </div>
+          </div>
+
+          <!-- Purchases -->
+          <div class="s2-tile">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(16, 185, 129, 0.15); color: #34D399;">
+                <i data-lucide="shopping-bag" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">Purchases</div>
+                <div class="s2-sub">12 New Bills Added</div>
+              </div>
+            </div>
+            <div class="s2-action-btn">
+              <i data-lucide="plus" style="width: 16px;"></i>
+            </div>
+          </div>
+
+          <!-- Sales -->
+          <div class="s2-tile">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(245, 158, 11, 0.15); color: #FBBF24;">
+                <i data-lucide="trending-up" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">Sales</div>
+                <div class="s2-sub">Total Revenue Entries</div>
+              </div>
+            </div>
+            <div class="s2-action-btn">
+              <i data-lucide="plus" style="width: 16px;"></i>
+            </div>
+          </div>
+
+          <!-- Cash Book -->
+          <div class="s2-tile">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(168, 85, 247, 0.15); color: #C084FC;">
+                <i data-lucide="arrow-left-right" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">Cash Book</div>
+                <div class="s2-sub">Daily Cash Register</div>
+              </div>
+            </div>
+            <div class="s2-action-btn">
+              <i data-lucide="plus" style="width: 16px;"></i>
+            </div>
+          </div>
+
+          <!-- Invoices -->
+          <div class="s2-tile">
+            <div class="s2-left">
+              <div class="s2-icon" style="background: rgba(14, 165, 233, 0.15); color: #38BDF8;">
+                <i data-lucide="file-text" style="width: 20px;"></i>
+              </div>
+              <div>
+                <div class="s2-title">Invoices</div>
+                <div class="s2-sub">Create PDF Invoices</div>
+              </div>
+            </div>
+            <div class="s2-action-btn">
+              <i data-lucide="plus" style="width: 16px;"></i>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- STYLE 3 PREVIEW -->
+    <div id="style-3" class="style-section">
+      <div class="preview-phone-wrap">
+        <div class="section-headline">
+          <i data-lucide="zap" style="color: #38BDF8;"></i> Style 3: Neon Glassmorphism & Vibrant Borders
+        </div>
+
+        <div class="grid-style-3">
+          
+          <!-- Ask AI S3 -->
+          <div class="s3-tile" style="background: rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.5); box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(139, 92, 246, 0.3); color: #DDD6FE;">
+                <i data-lucide="sparkles" style="width: 22px;"></i>
+              </div>
+              <span style="font-size: 10px; font-weight: 800; color: #DDD6FE; background: rgba(139, 92, 246, 0.4); padding: 2px 8px; border-radius: 10px;">AI Chat</span>
+            </div>
+            <div>
+              <div class="s3-title">Ask AI</div>
+              <div class="s3-sub">Smart Chatbot</div>
+            </div>
+          </div>
+
+          <!-- AI Assistant Voice S3 -->
+          <div class="s3-tile" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.5); box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(16, 185, 129, 0.3); color: #A7F3D0;">
+                <i data-lucide="mic" style="width: 22px;"></i>
+              </div>
+              <span style="font-size: 10px; font-weight: 800; color: #A7F3D0; background: rgba(16, 185, 129, 0.4); padding: 2px 8px; border-radius: 10px;">Voice</span>
+            </div>
+            <div>
+              <div class="s3-title">AI Assistant</div>
+              <div class="s3-sub">Hands-Free</div>
+            </div>
+          </div>
+
+          <!-- Purchases S3 -->
+          <div class="s3-tile">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(16, 185, 129, 0.15); color: #34D399;">
+                <i data-lucide="shopping-bag" style="width: 22px;"></i>
+              </div>
+            </div>
+            <div>
+              <div class="s3-title">Purchases</div>
+              <div class="s3-sub">Bills</div>
+            </div>
+          </div>
+
+          <!-- Sales S3 -->
+          <div class="s3-tile">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(245, 158, 11, 0.15); color: #FBBF24;">
+                <i data-lucide="trending-up" style="width: 22px;"></i>
+              </div>
+            </div>
+            <div>
+              <div class="s3-title">Sales</div>
+              <div class="s3-sub">Revenue</div>
+            </div>
+          </div>
+
+          <!-- Cash Book S3 -->
+          <div class="s3-tile">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(168, 85, 247, 0.15); color: #C084FC;">
+                <i data-lucide="wallet" style="width: 22px;"></i>
+              </div>
+            </div>
+            <div>
+              <div class="s3-title">Cash Book</div>
+              <div class="s3-sub">Register</div>
+            </div>
+          </div>
+
+          <!-- Invoices S3 -->
+          <div class="s3-tile">
+            <div class="s3-top">
+              <div class="s3-icon" style="background: rgba(14, 165, 233, 0.15); color: #38BDF8;">
+                <i data-lucide="file-text" style="width: 22px;"></i>
+              </div>
+            </div>
+            <div>
+              <div class="s3-title">Invoices</div>
+              <div class="s3-sub">PDF Billing</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    function showStyle(num) {
+      document.querySelectorAll('.style-section').forEach(sec => sec.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      
+      document.getElementById('style-' + num).classList.add('active');
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>

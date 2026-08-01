@@ -58,7 +58,8 @@ export default function BillsScreen() {
       <ScrollView contentContainerStyle={styles.list}>
         <TransactionDetail
           title={suppliers[selected.supplierId] || "Vendor Bill"}
-          subtitle={`${fmt(selected.amount, selected.currency)} • ${shortDate(selected.date)}`}
+          subtitle={`${fmt(selected.amount, selected.currency)} • ${shortDate(selected.date)}${selected.originalDate && selected.originalDate !== selected.date ? ` (was ${shortDate(selected.originalDate)})` : ""}`}
+          badge={selected.isEdited ? (<View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}><Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>Edited {selected.editedAt ? `• ${shortDate(selected.editedAt)}` : ""}</Text></View>) : undefined}
           onEdit={() => {
             const id = selected.id;
             setSelected(null);
@@ -145,7 +146,7 @@ export default function BillsScreen() {
               : `Credit Purchase${supName ? ` (${supName})` : ""}`;
             const displaySub = item.notes && item.notes.trim()
               ? `${typeLabel} — ${item.notes.trim()}`
-              : `${shortDate(item.date)} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
+              : `${shortDate(item.date)}${item.originalDate && item.originalDate !== item.date ? ` (was ${shortDate(item.originalDate)})` : ""} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
 
             return (
               <GlowPressable

@@ -94,7 +94,7 @@ export default function DayBook() {
                   <View style={[styles.dot, { backgroundColor: e.color }]} />
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <Text style={styles.label}>{e.label}</Text>
+                      <Text style={styles.label}>{e.label}{(e as any).originalDate && (e as any).originalDate !== (e as any).date ? ` (was ${shortDate((e as any).originalDate)})` : ""}</Text>
                       {(e as any).isEdited && (
                         <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
                           <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
