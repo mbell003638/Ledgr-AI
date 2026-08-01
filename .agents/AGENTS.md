@@ -1,3 +1,5 @@
+# Project Rules & Customizations
 
-## Git Workflow Rule
-- **NEVER** run git add, git commit, or git push automatically. Always wait for the user's explicit instruction to commit or push changes to git, even for minor bug fixes or follow-up corrections.
+## Git & Workflow Execution Rules (STRICT MANDATE)
+- **NEVER commit or push git until explicitly asked for by the user.** (Do not run `git commit` or `git push` automatically under any circumstance).
+- **NEVER run or trigger any GitHub workflow if the user does not explicitly ask for it.** (Do not initiate `workflow_dispatch` or CI/CD builds automatically).
