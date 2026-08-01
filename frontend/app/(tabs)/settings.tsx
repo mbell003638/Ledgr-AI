@@ -325,7 +325,7 @@ export default function SettingsScreen() {
     }
     setResetting(true); setStatus(null);
     try {
-      await api.resetAll();
+      await api.factoryReset();
       setConfirmReset(false);
       router.replace("/onboarding");
     } catch (e: any) {

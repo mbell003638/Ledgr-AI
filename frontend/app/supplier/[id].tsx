@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { fmt as fmtBase, shortDate } from "@/src/theme";
+import { fmt as fmtBase, shortDate, fullDateTime } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
@@ -261,7 +261,7 @@ export default function SupplierDetail() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-back" onPress={() => router.back()} hitSlop={10}>
+        <Pressable testID="btn-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/suppliers"); }} hitSlop={10}>
           <Ionicons name="chevron-back" size={26} color={theme.color.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle}>Vendor Detail</Text>
@@ -369,16 +369,19 @@ export default function SupplierDetail() {
           >
             <View style={[styles.timelineDot, { backgroundColor: t.kind === "bill" ? theme.color.error : theme.color.success }]} />
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill" : "Payment"} • {shortDate(t.date)}</Text>
-                {t.isEdited && (
-                  <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
-                      Edited {t.editedAt ? `• ${shortDate(t.editedAt)}` : ""}
-                    </Text>
-                  </View>
-                )}
-              </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
+                          {t.kind === "bill" ? "Bill / Purchase" : t.kind === "payment" ? "Payment sent" : t.ref || "Transaction"} • {shortDate(t.date)}{t.originalDate && t.originalDate !== t.date ? ` (was ${shortDate(t.originalDate)})` : ""}
+                        </Text>
+                        {t.isEdited && (
+                          <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
+                            <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
+                              Edited {t.editedAt ? `• ${fullDateTime(t.editedAt)}` : ""}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
               <Text style={styles.tlSub}>{t.notes || t.reference || t.invoiceNo || "—"}</Text>
             </View>
             <Text style={[styles.tlAmount, { color: t.kind === "bill" ? theme.color.error : theme.color.success }]}>

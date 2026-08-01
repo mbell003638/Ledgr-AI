@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { fmt, shortDate } from "@/src/theme";
+import { fmt, shortDate, fullDateTime } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -144,25 +144,21 @@ export default function CustomerDetailScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [raw, settings] = await Promise.all([api.listDebtors(), api.getSettings()]);
+      const [customer, settings] = await Promise.all([id ? api.getCustomer(id) : null, api.getSettings()]);
       setBiz(settings);
       const code = settings.currency || "USD";
       setCurrCode(code);
       setCurrency(getCurrencySymbol(code));
 
-      const enriched = (raw as any[]).map((d) => {
-        const invoiced = Number(d.totalInvoiced) || 0;
-        const paid = Number(d.totalPaid) || 0;
-        return { ...d, totalInvoiced: invoiced, totalPaid: paid, balance: d.balance ?? invoiced - paid };
-      });
-
-      if (id) {
-        const found = enriched.find((d) => d.id === id);
-        if (found) {
-          setSelected(found);
-          const stmt = await api.getDebtorStatement(found.id);
-          setStatement(stmt);
-        }
+      if (customer) {
+        const invoiced = Number((customer as any).totalInvoiced) || 0;
+        const paid = Number((customer as any).totalPaid) || 0;
+        const found = { ...(customer as any), totalInvoiced: invoiced, totalPaid: paid, balance: (customer as any).balance ?? invoiced - paid };
+        setSelected(found);
+        setStatement(await api.getDebtorStatement(found.id));
+      } else {
+        setSelected(null);
+        setStatement(null);
       }
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
@@ -238,7 +234,7 @@ export default function CustomerDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-back" onPress={() => router.back()} hitSlop={10}>
+        <Pressable testID="btn-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/debtors"); }} hitSlop={10}>
           <Ionicons name="chevron-back" size={26} color={theme.color.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle}>Customer Detail</Text>
@@ -353,16 +349,17 @@ export default function CustomerDetailScreen() {
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
-                          {r.ref || (isInv ? "Invoice" : "Payment")} • {shortDate(r.date)}
+                          {r.kind === "invoice" ? "Credit sale invoice" : r.kind === "payment" ? "Customer payment" : r.ref || "Transaction"} • {shortDate(r.date)}{r.originalDate && r.originalDate !== r.date ? ` (was ${shortDate(r.originalDate)})` : ""}
                         </Text>
                         {r.isEdited && (
                           <View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}>
                             <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>
-                              Edited {r.editedAt ? `• ${shortDate(r.editedAt)}` : ""}
+                              Edited {r.editedAt ? `• ${fullDateTime(r.editedAt)}` : ""}
                             </Text>
                           </View>
                         )}
                       </View>
+
                       <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 2 }}>{r.notes || "—"}</Text>
                     </View>
                   </View>

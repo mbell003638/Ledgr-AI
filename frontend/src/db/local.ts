@@ -5,7 +5,9 @@ import {
   readSettings as backendReadSettings,
   writeSettings as backendWriteSettings,
   clearColl as backendClearColl,
+  activeSqlRunner,
 } from './backend';
+import { resetAllV2AccountingData } from '../accountingV2/resetBook';
 
 /**
  * Ledgr local database (single-user, on-device).
@@ -1392,6 +1394,16 @@ export async function resetAll() {
     investors: [],
     partnerNames: [],
   });
+
+  const runner = activeSqlRunner();
+  if (runner) {
+    try {
+      await resetAllV2AccountingData(runner, today);
+    } catch (err) {
+      console.warn("Failed to reset V2 database:", err);
+    }
+  }
+
   return { ok: true };
 }
 

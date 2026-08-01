@@ -180,7 +180,7 @@ export default function PaymentsScreen() {
                   </View>
                 )}
               </View>
-              <Text style={styles.rowSub}>{shortDate(item.date)}{item.method ? ` · ${item.method}` : ""}</Text>
+              <Text style={styles.rowSub}>{shortDate(item.date)}{(item as any).originalDate && (item as any).originalDate !== item.date ? ` (was ${shortDate((item as any).originalDate)})` : ""}{item.method ? ` · ${item.method}` : ""}</Text>
             </View>
             <Text style={styles.rowAmount}>{currSym}{Number(item.amount).toFixed(2)}</Text>
           </Pressable>

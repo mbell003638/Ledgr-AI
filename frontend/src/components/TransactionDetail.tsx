@@ -15,6 +15,7 @@ export type TransactionDetailAction = {
 export type TransactionDetailProps = {
   title: string;
   subtitle?: string;
+  badge?: React.ReactNode;
   children?: React.ReactNode;
   onEdit?: () => void;
   onReversalDelete?: () => void;
@@ -27,6 +28,7 @@ export type TransactionDetailProps = {
 export function TransactionDetail({
   title,
   subtitle,
+  badge,
   children,
   onEdit,
   onReversalDelete,
@@ -48,7 +50,10 @@ export function TransactionDetail({
     <View style={styles.container} testID="transaction-detail">
       <View style={styles.heading}>
         <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          {badge}
+        </View>
       </View>
       {children ? <View style={styles.content}>{children}</View> : null}
       <View style={styles.actions} accessibilityRole="toolbar" accessibilityLabel="Transaction actions">

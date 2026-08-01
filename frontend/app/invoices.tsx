@@ -957,7 +957,8 @@ export default function InvoicesScreen() {
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
           <TransactionDetail
             title={selected.invoiceNumber}
-            subtitle={`${selected.clientName} • ${shortDate(selected.date)}`}
+            subtitle={`${selected.clientName} • ${shortDate(selected.date)}${(selected as any).originalDate && (selected as any).originalDate !== selected.date ? ` (was ${shortDate((selected as any).originalDate)})` : ""}`}
+            badge={(selected as any).isEdited ? (<View style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: "rgba(245, 158, 11, 0.3)" }}><Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b" }}>Edited {(selected as any).editedAt ? `• ${shortDate((selected as any).editedAt)}` : ""}</Text></View>) : undefined}
             onEdit={() => openEdit(selected)}
             onReversalDelete={() => deleteInv(selected.id)}
             onShare={() => sharePdf(selected)}
@@ -1101,7 +1102,7 @@ export default function InvoicesScreen() {
                   </View>
                 )}
               </View>
-              <Text style={styles.sub}>{inv.invoiceNumber} · {shortDate(inv.date)}{inv.dueDate ? ` · Due ${shortDate(inv.dueDate)}` : ""}</Text>
+              <Text style={styles.sub}>{inv.invoiceNumber} · {shortDate(inv.date)}{(inv as any).originalDate && (inv as any).originalDate !== inv.date ? ` (was ${shortDate((inv as any).originalDate)})` : ""}{inv.dueDate ? ` · Due ${shortDate(inv.dueDate)}` : ""}</Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 4 }}>
               <Text style={{ fontWeight: "700", fontSize: 15, color: theme.color.onSurface }}>{currSym}{invTotal(inv).toFixed(2)}</Text>
