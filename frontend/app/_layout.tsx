@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import * as ImagePicker from "expo-image-picker";
+
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { initStorage } from "@/src/db/backend";
 
@@ -226,13 +226,14 @@ export default function RootLayout() {
         if (!cancelled) setStorageReady(true);
       });
 
-    if (Platform.OS !== "web") {
-      ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
-      ImagePicker.requestCameraPermissionsAsync().catch(() => {});
-    }
+    // Hard safety: never let storage init block the app for more than 4s.
+    const t = setTimeout(() => {
+      if (!cancelled) setStorageReady(true);
+    }, 4000);
 
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
   }, []);
 
