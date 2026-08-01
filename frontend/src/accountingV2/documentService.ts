@@ -67,13 +67,18 @@ export class V2DocumentService {
       const old = await this.sourceRow(sourceId, expectedType);
       await this.reverseSource(sourceId, expectedType, memo);
       const res = await createReplacement();
-      if (res && typeof res === 'object' && 'source' in res && (res as any).source?.id) {
-        const replacementId = (res as any).source.id;
-        const now = new Date().toISOString();
-        await this.repo.db.run(
-          "UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.isEdited',1,'$.editedAt',?,'$.originalDate',?,'$.originalSourceId',?) WHERE id=?",
-          [now, old.date, sourceId, replacementId]
-        );
+      const targetId = (res as any)?.source?.id || (res as any)?.replacement?.source?.id || (res as any)?.id;
+      if (targetId) {
+        const row = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [targetId]);
+        if (row) {
+          let meta: any = {};
+          try { meta = JSON.parse(row.metadata || '{}'); } catch {}
+          meta.isEdited = 1;
+          meta.editedAt = new Date().toISOString().slice(0, 10);
+          meta.originalDate = old.date;
+          meta.originalSourceId = sourceId;
+          await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(meta), targetId]);
+        }
       }
       return res;
     });
