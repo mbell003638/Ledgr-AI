@@ -2,11 +2,11 @@ import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
 import { V2CloseBooksRepository, type CloseBooksResult } from './closeBooksRepository';
 import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
-import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense, postOpeningBalance, postInventoryCount } from './postings';
+import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense, postOpeningBalance, postInventoryCount, postAssetTransaction, postLiabilityTransaction, type AssetAcquisitionMethod, type LiabilityRecognitionMethod } from './postings';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
-import type { V2PaymentMethod, V2PartyRole } from './types';
+import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -26,7 +26,13 @@ let partyRepairSequence = 0;
 const partyDisplayName = (value: any) => sanitizePartyName(value);
 const stablePartyId = (role: V2PartyRole, input: AnyRecord) => {
   const explicit = input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'];
-  if (explicit) return String(explicit);
+  if (explicit) {
+    let s = String(explicit).trim();
+    while (/^v2:(customer|supplier|partner):/i.test(s)) {
+      s = s.replace(/^v2:(customer|supplier|partner):/i, '').trim();
+    }
+    return `v2:${role}:${normalized(s)}`;
+  }
   return `v2:${role}:${normalized(partyDisplayName(input[role === 'customer' ? 'clientName' : 'supplierName']))}`;
 };
 
@@ -132,12 +138,17 @@ export class V2AppService {
     return result;
   }
 
-  /** Resolve a party detail view directly from the authoritative V2 ledger. */
   async getPartyDetail(id: string, role: 'customer' | 'supplier') {
     const context = await this.activeContext(); if (!context) return null;
     await this.repairPartyIdentities(context.bookId);
-    const party = await this.db.first<any>('SELECT id,name,phone,email,roles FROM v2_parties WHERE id=? AND book_id=? AND archived=0', [id, context.bookId]);
+    const cleanId = sanitizePartyName(id);
+    const canonicalId = `v2:${role}:${normalized(cleanId)}`;
+    const party = await this.db.first<any>(
+      'SELECT id,name,phone,email,roles FROM v2_parties WHERE (id=? OR id=? OR LOWER(name)=LOWER(?)) AND book_id=? AND archived=0',
+      [id, canonicalId, cleanId, context.bookId]
+    );
     if (!party) return null;
+    const targetPartyId = party.id;
     let roles: string[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
     if (!roles.includes(role)) return null;
     const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment'];
@@ -148,7 +159,7 @@ export class V2AppService {
       FROM v2_sources s LEFT JOIN v2_journal_entries j ON j.source_id=s.id
       LEFT JOIN v2_journal_lines l ON l.journal_id=j.id AND l.party_id=? LEFT JOIN v2_accounts a ON a.id=l.account_id
       WHERE s.book_id=? AND json_extract(s.metadata,'$.partyId')=? AND s.type IN (${placeholders})
-      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, ...sourceTypes]);
+      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, targetPartyId, context.bookId, targetPartyId, ...sourceTypes]);
     const active = rows.flatMap((row) => {
       let metadata: AnyRecord = {};
       try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; }
@@ -258,6 +269,110 @@ export class V2AppService {
       cash: input.cash != null ? amount(input.cash) : undefined,
       inventory: input.inventory != null ? amount(input.inventory) : undefined,
     });
+  }
+
+  async postV2OpeningBalances(input: { date?: string; cash?: number; inventory?: number; memo?: string }) {
+    const today = input.date || new Date().toISOString().slice(0, 10);
+    const c = await this.activeContext(today);
+    if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+
+    const existing = await this.db.first<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM v2_sources WHERE book_id=? AND type='opening_balance'",
+      [c.bookId]
+    );
+    if (existing && Number(existing.count) > 0) {
+      throw new Error('Opening balances have already been posted for this accounting period');
+    }
+
+    return postOpeningBalance(this.repo, {
+      ...c,
+      date: today,
+      cash: input.cash != null ? amount(input.cash) : undefined,
+      inventory: input.inventory != null ? amount(input.inventory) : undefined,
+    });
+  }
+
+  async recordV2InventoryCount(input: { date: string; value: number; notes?: string }) {
+    if (!input.date || !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+      throw new Error('A valid audit date (YYYY-MM-DD) is required');
+    }
+    const c = await this.activeContext(input.date);
+    if (!c) {
+      throw new Error('Audit date must fall within the active accounting period');
+    }
+    const val = amount(input.value);
+    if (isNaN(val) || val < 0) throw new Error('Inventory count value must be non-negative');
+
+    const invAcc = await this.db.first<{ balance: number }>(
+      'SELECT balance FROM v2_accounts WHERE id=?',
+      [`${c.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`]
+    );
+    const expected = invAcc ? Number(invAcc.balance || 0) : 0;
+
+    return postInventoryCount(this.repo, {
+      ...c,
+      date: input.date,
+      expectedStock: expected,
+      actualStock: val,
+      notes: input.notes,
+    });
+  }
+
+  async createAssetTransaction(input: {
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    acquisitionMethod?: AssetAcquisitionMethod;
+    memo?: string;
+  }) {
+    const c = await this.activeContext(input.date);
+    if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return postAssetTransaction(this.repo, { ...c, ...input, amount: amount(input.amount) });
+  }
+
+  async createLiabilityTransaction(input: {
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    recognitionMethod?: LiabilityRecognitionMethod;
+    paymentMethod?: 'cash' | 'bank';
+    memo?: string;
+  }) {
+    const c = await this.activeContext(input.date);
+    if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return postLiabilityTransaction(this.repo, { ...c, ...input, amount: amount(input.amount) });
+  }
+
+  async listAssetTransactions() {
+    const c = await this.activeContext();
+    if (!c) return [];
+    const rows = await this.db.all<any>("SELECT id, date, metadata FROM v2_sources WHERE book_id=? AND type='asset_transaction' ORDER BY date DESC, id DESC", [c.bookId]);
+    return rows.flatMap((r) => {
+      const meta = JSON.parse(r.metadata || '{}');
+      if (meta.deleted || meta.reversed || meta.isReversal) return [];
+      return [{ id: r.id, date: r.date, name: meta.name || '', category: meta.category || 'Other Assets', amount: Number(meta.total || 0), memo: meta.memo || '' }];
+    });
+  }
+
+  async listLiabilityTransactions() {
+    const c = await this.activeContext();
+    if (!c) return [];
+    const rows = await this.db.all<any>("SELECT id, date, metadata FROM v2_sources WHERE book_id=? AND type='liability_transaction' ORDER BY date DESC, id DESC", [c.bookId]);
+    return rows.flatMap((r) => {
+      const meta = JSON.parse(r.metadata || '{}');
+      if (meta.deleted || meta.reversed || meta.isReversal) return [];
+      return [{ id: r.id, date: r.date, name: meta.name || '', category: meta.category || 'Other Liabilities', amount: Number(meta.total || 0), memo: meta.memo || '' }];
+    });
+  }
+
+  async deleteAssetTransaction(id: string) {
+    return this.documents.reverseSource(id, 'asset_transaction', 'Delete asset entry', true);
+  }
+
+  async deleteLiabilityTransaction(id: string) {
+    return this.documents.reverseSource(id, 'liability_transaction', 'Delete liability entry', true);
   }
 
   async sourceType(id: string): Promise<string | null> {

@@ -8,6 +8,7 @@ import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountin
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { resetAllV2AccountingData, factoryWipeV2Database } from '@/src/accountingV2/resetBook';
+import type { AssetAcquisitionMethod, LiabilityRecognitionMethod } from '@/src/accountingV2/postings';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
   listBooks as beListBooks,
@@ -197,6 +198,84 @@ export const api = {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).updateActiveBookConfig(config);
+  },
+  postV2OpeningBalances: async (input: { date?: string; cash?: number; inventory?: number; memo?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 database is not active');
+    const service = new V2AppService(runner);
+    const res = await service.postV2OpeningBalances(input);
+    if (input.cash != null) await db.updateSettings({ openingCash: input.cash });
+    if (input.inventory != null) await db.updateSettings({ openingInventory: input.inventory });
+    return res;
+  },
+  recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.recordV2InventoryCount(input);
+    }
+    return db.createInventory({ date: input.date, expectedStock: 0, actualStock: input.value, notes: input.notes });
+  },
+  createAssetTransaction: async (input: {
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    acquisitionMethod?: AssetAcquisitionMethod;
+    memo?: string;
+  }) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.createAssetTransaction(input);
+    }
+    throw new Error('V2 database is not active');
+  },
+  createLiabilityTransaction: async (input: {
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    recognitionMethod?: LiabilityRecognitionMethod;
+    paymentMethod?: 'cash' | 'bank';
+    memo?: string;
+  }) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.createLiabilityTransaction(input);
+    }
+    throw new Error('V2 database is not active');
+  },
+  listAssetTransactions: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.listAssetTransactions();
+    }
+    return [];
+  },
+  listLiabilityTransactions: async () => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.listLiabilityTransactions();
+    }
+    return [];
+  },
+  deleteAssetTransaction: async (id: string) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.deleteAssetTransaction(id);
+    }
+  },
+  deleteLiabilityTransaction: async (id: string) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      return service.deleteLiabilityTransaction(id);
+    }
   },
   getSettings: () => db.getSettings(),
   updateSettings: async (s: any) => {

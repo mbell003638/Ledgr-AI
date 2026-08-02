@@ -3,7 +3,10 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.ts'],
-  // Only the pure accounting module is unit-tested here; RN screens need a
-  // separate jest-expo setup which isn't required for the accounting engine.
+  moduleNameMapper: {
+    '^react-native$': '<rootDir>/__tests__/helpers/reactNativeMock.js',
+    '^@react-native-async-storage/async-storage$': '<rootDir>/__tests__/helpers/asyncStorageMock.js',
+    '^@/(.*)$': '<rootDir>/$1',
+  },
   roots: ['<rootDir>/__tests__'],
 };

@@ -51,11 +51,11 @@ export default function InventoryForm() {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
     try {
-      await api.updateSettings({ openingInventory: val });
+      await api.postV2OpeningBalances({ inventory: val, date, memo: "Opening Inventory Balance" });
       setOpeningStock(val);
       setEditingOpening(false);
       loadData();
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setError(e.message || "Failed to save opening stock"); }
   };
 
   const save = async () => {
@@ -63,11 +63,11 @@ export default function InventoryForm() {
     if (isNaN(act) || act < 0) { setError("Enter a valid stock value"); return; }
     setSaving(true); setError("");
     try {
-      await api.createInventory({ date, expectedStock: expected, actualStock: act, notes });
+      await api.recordV2InventoryCount({ date, value: act, notes });
       setActual("");
       setNotes("");
       loadData();
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setError(e.message || "Failed to record inventory count"); }
     finally { setSaving(false); }
   };
 

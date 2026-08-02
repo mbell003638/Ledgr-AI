@@ -155,3 +155,85 @@ export async function postInventoryCount(repo: V2SqlRepository, input: { bookId:
   }
   return { countId, source: null, journal: null };
 }
+
+export type AssetAcquisitionMethod = 'cash' | 'bank' | 'credit' | 'owner_contribution';
+export type LiabilityRecognitionMethod = 'loan_received' | 'opening_balance' | 'expense_accrual';
+
+export async function postAssetTransaction(
+  repo: V2SqlRepository,
+  input: {
+    bookId: string;
+    periodId: string;
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    acquisitionMethod?: AssetAcquisitionMethod;
+    memo?: string;
+  }
+) {
+  const val = cents(input.amount);
+  const method: AssetAcquisitionMethod = input.acquisitionMethod || 'owner_contribution';
+  const assetAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.OTHER_ASSETS}`;
+  
+  let creditAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`;
+  if (method === 'cash') creditAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.CASH}`;
+  else if (method === 'bank') creditAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.BANK}`;
+  else if (method === 'credit') creditAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.OTHER_LIABILITIES}`;
+  else if (method === 'owner_contribution') creditAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`;
+
+  const source: V2Source = {
+    id: uid('asset_tx'), bookId: input.bookId, type: 'asset_transaction', date: input.date,
+    metadata: { total: val, name: input.name, category: input.category || 'Other Assets', acquisitionMethod: method, memo: input.memo }
+  };
+  const journal = await repo.postSourceJournal(source, {
+    bookId: input.bookId, periodId: input.periodId, date: input.date, memo: input.memo || `Asset (${method}): ${input.name}`,
+    lines: [
+      { accountId: assetAccountId, debit: val, credit: 0, memo: input.name },
+      { accountId: creditAccountId, debit: 0, credit: val, memo: input.name },
+    ]
+  });
+  return { source, journal };
+}
+
+export async function postLiabilityTransaction(
+  repo: V2SqlRepository,
+  input: {
+    bookId: string;
+    periodId: string;
+    date: string;
+    name: string;
+    category?: string;
+    amount: number;
+    recognitionMethod?: LiabilityRecognitionMethod;
+    paymentMethod?: 'cash' | 'bank';
+    memo?: string;
+  }
+) {
+  const val = cents(input.amount);
+  const method: LiabilityRecognitionMethod = input.recognitionMethod || 'opening_balance';
+  const liabilityAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.OTHER_LIABILITIES}`;
+  
+  let debitAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`;
+  if (method === 'loan_received') {
+    const pm = input.paymentMethod || 'bank';
+    debitAccountId = `${input.bookId}:account:${pm === 'cash' ? V2_ACCOUNT_CODES.CASH : V2_ACCOUNT_CODES.BANK}`;
+  } else if (method === 'expense_accrual') {
+    debitAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.EXPENSES}`;
+  } else if (method === 'opening_balance') {
+    debitAccountId = `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`;
+  }
+
+  const source: V2Source = {
+    id: uid('liability_tx'), bookId: input.bookId, type: 'liability_transaction', date: input.date,
+    metadata: { total: val, name: input.name, category: input.category || 'Other Liabilities', recognitionMethod: method, memo: input.memo }
+  };
+  const journal = await repo.postSourceJournal(source, {
+    bookId: input.bookId, periodId: input.periodId, date: input.date, memo: input.memo || `Liability (${method}): ${input.name}`,
+    lines: [
+      { accountId: debitAccountId, debit: val, credit: 0, memo: input.name },
+      { accountId: liabilityAccountId, debit: 0, credit: val, memo: input.name },
+    ]
+  });
+  return { source, journal };
+}

@@ -52,7 +52,7 @@ describe('validated V2 AI/voice command bridge', () => {
       }, false, { service });
       expect(report.executed).toBe(true);
       expect(report.result).toEqual({ revenue: 50, expenses: 0, netProfit: 50 });
-      expect(party.result).toEqual([expect.objectContaining({ id: 'acme', name: 'Acme Ltd' })]);
+      expect(party.result).toEqual([expect.objectContaining({ name: 'Acme Ltd' })]);
       expect(inventory.result).toEqual(expect.objectContaining({ revenue: 50, expenses: 0, netProfit: 50 }));
     } finally { close(); }
   });

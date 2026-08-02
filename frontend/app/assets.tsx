@@ -13,32 +13,30 @@ export default function AssetsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const today = new Date().toISOString().slice(0, 10);
-  const [assets, setAssets] = useState<{ date: string; name: string; category: string; amount: string }[]>([]);
-  const [liabilities, setLiabilities] = useState<{ date: string; name: string; category: string; amount: string }[]>([]);
+  const [assets, setAssets] = useState<{ id?: string; date: string; name: string; category: string; amount: string }[]>([]);
+  const [liabilities, setLiabilities] = useState<{ id?: string; date: string; name: string; category: string; amount: string }[]>([]);
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const s = await api.getSettings();
+      const [s, v2Assets, v2Liab] = await Promise.all([
+        api.getSettings(),
+        api.listAssetTransactions(),
+        api.listLiabilityTransactions(),
+      ]);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      setAssets(
-        (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
-          date: a.date || today,
-          name: a.name || "",
-          category: a.category || "Equipment",
-          amount: String(a.amount || ""),
-        }))
-      );
-      setLiabilities(
-        (Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({
-          date: l.date || today,
-          name: l.name || "",
-          category: l.category || "Loan",
-          amount: String(l.amount || ""),
-        }))
-      );
+      if (Array.isArray(v2Assets) && v2Assets.length > 0) {
+        setAssets(v2Assets.map((a: any) => ({ id: a.id, date: a.date, name: a.name, category: a.category, amount: String(a.amount || "") })));
+      } else {
+        setAssets((Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({ date: a.date || today, name: a.name || "", category: a.category || "Equipment", amount: String(a.amount || "") })));
+      }
+      if (Array.isArray(v2Liab) && v2Liab.length > 0) {
+        setLiabilities(v2Liab.map((l: any) => ({ id: l.id, date: l.date, name: l.name, category: l.category, amount: String(l.amount || "") })));
+      } else {
+        setLiabilities((Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({ date: l.date || today, name: l.name || "", category: l.category || "Loan", amount: String(l.amount || "") })));
+      }
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -48,14 +46,21 @@ export default function AssetsScreen() {
   const save = async () => {
     setSaving(true);
     try {
+      for (const a of assets) {
+        if (a.name.trim() && a.amount.trim() && !a.id) {
+          await api.createAssetTransaction({ date: a.date || today, name: a.name.trim(), category: a.category.trim(), amount: parseFloat(a.amount) || 0 });
+        }
+      }
+      for (const l of liabilities) {
+        if (l.name.trim() && l.amount.trim() && !l.id) {
+          await api.createLiabilityTransaction({ date: l.date || today, name: l.name.trim(), category: l.category.trim(), amount: parseFloat(l.amount) || 0 });
+        }
+      }
       await api.updateSettings({
-        extraAssets: assets
-          .map((a) => ({ date: a.date.trim() || today, name: a.name.trim(), category: a.category.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
-          .filter((a) => a.name),
-        extraLiabilities: liabilities
-          .map((l) => ({ date: l.date.trim() || today, name: l.name.trim(), category: l.category.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
-          .filter((l) => l.name),
+        extraAssets: assets.map((a) => ({ date: a.date || today, name: a.name.trim(), category: a.category.trim(), amount: parseFloat(a.amount) || 0 })).filter((a) => a.name),
+        extraLiabilities: liabilities.map((l) => ({ date: l.date || today, name: l.name.trim(), category: l.category.trim(), amount: parseFloat(l.amount) || 0 })).filter((l) => l.name),
       });
+      load();
     } catch (e: any) { console.warn(e); }
     finally { setSaving(false); }
   };
@@ -63,12 +68,24 @@ export default function AssetsScreen() {
   const updateAsset = (i: number, field: "date" | "name" | "category" | "amount", val: string) =>
     setAssets((p) => p.map((a, idx) => (idx === i ? { ...a, [field]: val } : a)));
   const addAsset = () => setAssets((p) => [...p, { date: today, name: "", category: "Equipment", amount: "" }]);
-  const removeAsset = (i: number) => setAssets((p) => p.filter((_, idx) => idx !== i));
+  const removeAsset = async (i: number) => {
+    const item = assets[i];
+    if (item?.id) {
+      try { await api.deleteAssetTransaction(item.id); } catch (e) { console.warn(e); }
+    }
+    setAssets((p) => p.filter((_, idx) => idx !== i));
+  };
 
   const updateLiability = (i: number, field: "date" | "name" | "category" | "amount", val: string) =>
     setLiabilities((p) => p.map((l, idx) => (idx === i ? { ...l, [field]: val } : l)));
   const addLiability = () => setLiabilities((p) => [...p, { date: today, name: "", category: "Loan", amount: "" }]);
-  const removeLiability = (i: number) => setLiabilities((p) => p.filter((_, idx) => idx !== i));
+  const removeLiability = async (i: number) => {
+    const item = liabilities[i];
+    if (item?.id) {
+      try { await api.deleteLiabilityTransaction(item.id); } catch (e) { console.warn(e); }
+    }
+    setLiabilities((p) => p.filter((_, idx) => idx !== i));
+  };
 
   const totalA = assets.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
   const totalL = liabilities.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);

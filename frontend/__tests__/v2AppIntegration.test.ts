@@ -33,7 +33,7 @@ describe('V2 application write integration', () => {
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_entries'))?.n)).toBe(6);
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_invoice_allocations'))?.n)).toBe(1);
       expect(await runner.first('SELECT id,roles FROM v2_parties WHERE id=?', [partyId])).toEqual({ id: partyId, roles: '["customer"]' });
-      expect(await runner.first('SELECT id,roles FROM v2_parties WHERE id=?', ['supplier-1'])).toEqual({ id: 'supplier-1', roles: '["supplier"]' });
+      expect(await runner.first('SELECT id,roles FROM v2_parties WHERE id=?', ['v2:supplier:supplier-1'])).toEqual({ id: 'v2:supplier:supplier-1', roles: '["supplier"]' });
     } finally { close(); }
   });
 
