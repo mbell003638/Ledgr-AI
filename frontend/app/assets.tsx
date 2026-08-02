@@ -12,8 +12,9 @@ import { ScreenHeader, Card } from "@/src/components/UI";
 export default function AssetsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const [assets, setAssets] = useState<{ name: string; amount: string }[]>([]);
-  const [liabilities, setLiabilities] = useState<{ name: string; amount: string }[]>([]);
+  const today = new Date().toISOString().slice(0, 10);
+  const [assets, setAssets] = useState<{ date: string; name: string; category: string; amount: string }[]>([]);
+  const [liabilities, setLiabilities] = useState<{ date: string; name: string; category: string; amount: string }[]>([]);
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,13 +25,17 @@ export default function AssetsScreen() {
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setAssets(
         (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
+          date: a.date || today,
           name: a.name || "",
+          category: a.category || "Equipment",
           amount: String(a.amount || ""),
         }))
       );
       setLiabilities(
         (Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({
+          date: l.date || today,
           name: l.name || "",
+          category: l.category || "Loan",
           amount: String(l.amount || ""),
         }))
       );
@@ -45,24 +50,24 @@ export default function AssetsScreen() {
     try {
       await api.updateSettings({
         extraAssets: assets
-          .map((a) => ({ name: a.name.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
+          .map((a) => ({ date: a.date.trim() || today, name: a.name.trim(), category: a.category.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
           .filter((a) => a.name),
         extraLiabilities: liabilities
-          .map((l) => ({ name: l.name.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
+          .map((l) => ({ date: l.date.trim() || today, name: l.name.trim(), category: l.category.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
           .filter((l) => l.name),
       });
     } catch (e: any) { console.warn(e); }
     finally { setSaving(false); }
   };
 
-  const updateAsset = (i: number, field: "name" | "amount", val: string) =>
+  const updateAsset = (i: number, field: "date" | "name" | "category" | "amount", val: string) =>
     setAssets((p) => p.map((a, idx) => (idx === i ? { ...a, [field]: val } : a)));
-  const addAsset = () => setAssets((p) => [...p, { name: "", amount: "" }]);
+  const addAsset = () => setAssets((p) => [...p, { date: today, name: "", category: "Equipment", amount: "" }]);
   const removeAsset = (i: number) => setAssets((p) => p.filter((_, idx) => idx !== i));
 
-  const updateLiability = (i: number, field: "name" | "amount", val: string) =>
+  const updateLiability = (i: number, field: "date" | "name" | "category" | "amount", val: string) =>
     setLiabilities((p) => p.map((l, idx) => (idx === i ? { ...l, [field]: val } : l)));
-  const addLiability = () => setLiabilities((p) => [...p, { name: "", amount: "" }]);
+  const addLiability = () => setLiabilities((p) => [...p, { date: today, name: "", category: "Loan", amount: "" }]);
   const removeLiability = (i: number) => setLiabilities((p) => p.filter((_, idx) => idx !== i));
 
   const totalA = assets.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
@@ -70,39 +75,57 @@ export default function AssetsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Assets & Liabilities" subtitle="Custom items on the balance sheet" />
+      <ScreenHeader title="Assets & Liabilities Register" subtitle="Multi-entry register on the balance sheet" />
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       >
         <Card>
-          <Text style={styles.cardTitle}>Custom Assets</Text>
-          <Text style={styles.hint}>Extra assets included on the balance sheet (e.g. Van, Equipment, Property).</Text>
+          <Text style={styles.cardTitle}>Custom Assets Register</Text>
+          <Text style={styles.hint}>Record individual equipment, vehicles, property, or investments with acquisition dates.</Text>
           {assets.map((a, i) => (
-            <View key={i} style={styles.entryRow}>
-              <TextInput
-                value={a.name}
-                onChangeText={(v) => updateAsset(i, "name", v)}
-                placeholder="Asset name"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 2 }]}
-              />
-              <TextInput
-                value={a.amount}
-                onChangeText={(v) => updateAsset(i, "amount", v)}
-                keyboardType="decimal-pad"
-                placeholder="Value"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <Pressable onPress={() => removeAsset(i)} style={styles.removeBtn}>
-                <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-              </Pressable>
+            <View key={i} style={{ marginBottom: theme.spacing.md, paddingBottom: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border }}>
+              <View style={styles.entryRow}>
+                <TextInput
+                  value={a.date}
+                  onChangeText={(v) => updateAsset(i, "date", v)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <TextInput
+                  value={a.name}
+                  onChangeText={(v) => updateAsset(i, "name", v)}
+                  placeholder="Asset Description"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 2 }]}
+                />
+              </View>
+              <View style={styles.entryRow}>
+                <TextInput
+                  value={a.category}
+                  onChangeText={(v) => updateAsset(i, "category", v)}
+                  placeholder="Category (e.g. Vehicle)"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1.5 }]}
+                />
+                <TextInput
+                  value={a.amount}
+                  onChangeText={(v) => updateAsset(i, "amount", v)}
+                  keyboardType="decimal-pad"
+                  placeholder="Value"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <Pressable onPress={() => removeAsset(i)} style={styles.removeBtn}>
+                  <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                </Pressable>
+              </View>
             </View>
           ))}
           <Pressable onPress={addAsset} style={styles.addBtn}>
             <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-            <Text style={styles.addText}>Add Asset</Text>
+            <Text style={styles.addText}>Add Asset Entry</Text>
           </Pressable>
           {assets.length > 0 && (
             <Text style={styles.total}>Total Assets: {fmt(totalA, currSym)}</Text>
@@ -110,33 +133,51 @@ export default function AssetsScreen() {
         </Card>
 
         <Card style={{ marginTop: theme.spacing.md }}>
-          <Text style={styles.cardTitle}>Custom Liabilities</Text>
-          <Text style={styles.hint}>Extra liabilities on the balance sheet (e.g. Loan, Rent due, Tax owed).</Text>
+          <Text style={styles.cardTitle}>Custom Liabilities Register</Text>
+          <Text style={styles.hint}>Record loans, credit cards, taxes, or payables with dates and categories.</Text>
           {liabilities.map((l, i) => (
-            <View key={i} style={styles.entryRow}>
-              <TextInput
-                value={l.name}
-                onChangeText={(v) => updateLiability(i, "name", v)}
-                placeholder="Liability name"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 2 }]}
-              />
-              <TextInput
-                value={l.amount}
-                onChangeText={(v) => updateLiability(i, "amount", v)}
-                keyboardType="decimal-pad"
-                placeholder="Amount"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <Pressable onPress={() => removeLiability(i)} style={styles.removeBtn}>
-                <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-              </Pressable>
+            <View key={i} style={{ marginBottom: theme.spacing.md, paddingBottom: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border }}>
+              <View style={styles.entryRow}>
+                <TextInput
+                  value={l.date}
+                  onChangeText={(v) => updateLiability(i, "date", v)}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <TextInput
+                  value={l.name}
+                  onChangeText={(v) => updateLiability(i, "name", v)}
+                  placeholder="Liability Description"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 2 }]}
+                />
+              </View>
+              <View style={styles.entryRow}>
+                <TextInput
+                  value={l.category}
+                  onChangeText={(v) => updateLiability(i, "category", v)}
+                  placeholder="Category (e.g. Loan)"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1.5 }]}
+                />
+                <TextInput
+                  value={l.amount}
+                  onChangeText={(v) => updateLiability(i, "amount", v)}
+                  keyboardType="decimal-pad"
+                  placeholder="Amount"
+                  placeholderTextColor={theme.color.muted}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <Pressable onPress={() => removeLiability(i)} style={styles.removeBtn}>
+                  <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+                </Pressable>
+              </View>
             </View>
           ))}
           <Pressable onPress={addLiability} style={styles.addBtn}>
             <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-            <Text style={styles.addText}>Add Liability</Text>
+            <Text style={styles.addText}>Add Liability Entry</Text>
           </Pressable>
           {liabilities.length > 0 && (
             <Text style={styles.total}>Total Liabilities: {fmt(totalL, currSym)}</Text>

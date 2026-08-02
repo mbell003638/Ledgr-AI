@@ -19,7 +19,7 @@ export default function InventoryForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<any>(null);
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [history, setHistory] = useState<any[]>([]);
 
   const [openingStock, setOpeningStock] = useState(0);
@@ -166,6 +166,15 @@ export default function InventoryForm() {
                     </Text>
                   </View>
                 )}
+
+                <Text style={[styles.label, { marginTop: 16 }]}>Audit Date (YYYY-MM-DD)</Text>
+                <TextInput
+                  value={date}
+                  onChangeText={setDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.color.muted}
+                  style={styles.input}
+                />
 
                 <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
                 <TextInput testID="input-inv-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
