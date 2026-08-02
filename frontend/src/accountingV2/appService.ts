@@ -2,7 +2,7 @@ import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
 import { V2CloseBooksRepository, type CloseBooksResult } from './closeBooksRepository';
 import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
-import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense } from './postings';
+import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense, postOpeningBalance, postInventoryCount } from './postings';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
@@ -237,6 +237,28 @@ export class V2AppService {
     return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
+  async createInventory(input: AnyRecord) {
+    const c = await this.activeContext(input.date);
+    if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return postInventoryCount(this.repo, {
+      ...c,
+      date: input.date || new Date().toISOString().slice(0, 10),
+      expectedStock: amount(input.expectedStock),
+      actualStock: amount(input.actualStock),
+      notes: input.notes,
+    });
+  }
+  async setOpeningBalances(input: { cash?: number; inventory?: number; date?: string }) {
+    const today = input.date || new Date().toISOString().slice(0, 10);
+    const c = await this.activeContext(today);
+    if (!c) return [];
+    return postOpeningBalance(this.repo, {
+      ...c,
+      date: today,
+      cash: input.cash != null ? amount(input.cash) : undefined,
+      inventory: input.inventory != null ? amount(input.inventory) : undefined,
+    });
+  }
 
   async sourceType(id: string): Promise<string | null> {
     const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [id]);

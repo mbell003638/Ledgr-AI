@@ -94,3 +94,64 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
 }
 export const postCreditNote = (repo: V2SqlRepository, input: any) => note(repo, input, 'credit_note');
 export const postDebitNote = (repo: V2SqlRepository, input: any) => note(repo, input, 'debit_note');
+
+export async function postOpeningBalance(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; cash?: number; inventory?: number }) {
+  const results = [];
+  if (input.cash && input.cash > 0) {
+    const amount = cents(input.cash);
+    const source: V2Source = { id: uid('op_cash'), bookId: input.bookId, type: 'opening_balance', date: input.date, metadata: { total: amount, asset: 'cash' } };
+    const journal = await repo.postSourceJournal(source, {
+      bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Opening Cash Balance',
+      lines: [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: amount },
+      ]
+    });
+    results.push({ source, journal });
+  }
+  if (input.inventory && input.inventory > 0) {
+    const amount = cents(input.inventory);
+    const source: V2Source = { id: uid('op_stock'), bookId: input.bookId, type: 'opening_balance', date: input.date, metadata: { total: amount, asset: 'inventory' } };
+    const journal = await repo.postSourceJournal(source, {
+      bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Opening Inventory Balance',
+      lines: [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: amount },
+      ]
+    });
+    await repo.db.run(
+      'INSERT INTO v2_inventory_counts(id,book_id,period_id,date,value) VALUES(?,?,?,?,?)',
+      [uid('inv_cnt'), input.bookId, input.periodId, input.date, amount]
+    ).catch(() => {});
+    results.push({ source, journal });
+  }
+  return results;
+}
+
+export async function postInventoryCount(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; expectedStock: number; actualStock: number; notes?: string }) {
+  const actual = cents(input.actualStock);
+  const expected = cents(input.expectedStock);
+  const diff = cents(actual - expected);
+  const countId = uid('inv_cnt');
+  await repo.db.run(
+    'INSERT INTO v2_inventory_counts(id,book_id,period_id,date,value) VALUES(?,?,?,?,?)',
+    [countId, input.bookId, input.periodId, input.date, actual]
+  );
+  if (Math.abs(diff) > 0.005) {
+    const gain = diff > 0;
+    const absDiff = Math.abs(diff);
+    const source: V2Source = { id: uid('inv_adj'), bookId: input.bookId, type: 'inventory_count', date: input.date, metadata: { expected, actual, variance: diff, notes: input.notes } };
+    const journal = await repo.postSourceJournal(source, {
+      bookId: input.bookId, periodId: input.periodId, date: input.date, memo: input.notes || 'Inventory Count Adjustment',
+      lines: gain ? [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: absDiff, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: 0, credit: absDiff },
+      ] : [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: absDiff, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: 0, credit: absDiff },
+      ]
+    });
+    return { countId, source, journal };
+  }
+  return { countId, source: null, journal: null };
+}

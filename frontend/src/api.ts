@@ -199,7 +199,19 @@ export const api = {
     return new V2AppService(runner).updateActiveBookConfig(config);
   },
   getSettings: () => db.getSettings(),
-  updateSettings: (s: any) => db.updateSettings(s),
+  updateSettings: async (s: any) => {
+    const res = await db.updateSettings(s);
+    const runner = activeSqlRunner();
+    if (runner && (s.openingCash != null || s.openingInventory != null)) {
+      try {
+        const service = new V2AppService(runner);
+        await service.setOpeningBalances({ cash: s.openingCash, inventory: s.openingInventory });
+      } catch (err) {
+        console.warn('Failed to post V2 opening balance:', err);
+      }
+    }
+    return res;
+  },
   testKey: async () => ai.testKey(await getAIConfig()),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
@@ -411,7 +423,19 @@ export const api = {
   // Inventory
   listInventory: () => db.listInventory(),
   expectedInventory: () => db.expectedInventory(),
-  createInventory: (i: any) => db.createInventory(i),
+  createInventory: async (i: any) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      const ctx = await service.activeContext(i.date);
+      if (ctx) {
+        const res = await service.createInventory(i);
+        try { await db.createInventory(i); } catch {}
+        return res;
+      }
+    }
+    return db.createInventory(i);
+  },
   deleteInventory: (id: string) => db.deleteInventory(id),
 
   // Cash Book (manual cash in/out ledger)
