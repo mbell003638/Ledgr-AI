@@ -14,6 +14,16 @@ async function setup() {
   return { ...node, repo, book };
 }
 
+describe('payment account mapping', () => {
+  it('posts cash receipts to Cash in Hand (1000), not Bank (1010)', async () => {
+    const { runner, close, repo, book } = await setup();
+    try {
+      const posted = await postCashSale(repo, { bookId: book.id, periodId: 'period-open', date: '2026-07-27', amount: 75, method: 'cash' });
+      const lines = await runner.all<{ account_id: string; debit: number; credit: number }>('SELECT account_id,debit,credit FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [posted.journal.id]);
+      expect(lines[0]).toEqual({ account_id: `${book.id}:account:1000`, debit: 75, credit: 0 });
+    } finally { close(); }
+  });
+});
 describe('persistent V2 cash-sale posting tracer', () => {
   it('atomically persists source, journal and balanced lines', async () => {
     const { runner, close, repo, book } = await setup();

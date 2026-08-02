@@ -307,6 +307,11 @@ export default function AdvancedSettingsScreen() {
         ...bizProfile,
         logo,
       });
+      try {
+        await api.postV2OpeningBalances({ date: periodStart.trim() || undefined, cash: openingCash.trim() ? parseFloat(openingCash) : 0, inventory: openingInventory.trim() ? parseFloat(openingInventory) : 0, memo: "Opening balances" });
+      } catch (e: any) {
+        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Failed" });

@@ -94,6 +94,12 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         investors: cleanedMembers,
         partnerNames: cleanedMembers.map((m) => m.name),
       });
+      // V2 accounting keeps opening balances in the dated double-entry ledger.
+      try {
+        await api.postV2OpeningBalances({ date: periodStart.trim() || undefined, cash: cashVal, inventory: invVal, memo: "Opening balances" });
+      } catch (e: any) {
+        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
       if (isPartnerMode) {
         try {
           const config = await api.getV2BookConfig();

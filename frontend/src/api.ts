@@ -198,6 +198,16 @@ export const api = {
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).updateActiveBookConfig(config);
   },
+  postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).postOpeningBalances(input);
+  },
+  recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).recordInventoryCount(input);
+  },
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
   testKey: async () => ai.testKey(await getAIConfig()),

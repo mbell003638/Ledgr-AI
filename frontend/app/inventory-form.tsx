@@ -19,7 +19,7 @@ export default function InventoryForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<any>(null);
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [history, setHistory] = useState<any[]>([]);
 
   const [openingStock, setOpeningStock] = useState(0);
@@ -52,6 +52,12 @@ export default function InventoryForm() {
     if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
     try {
       await api.updateSettings({ openingInventory: val });
+      try {
+        const settings = await api.getSettings();
+        await api.postV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
+      } catch (e: any) {
+        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
       setOpeningStock(val);
       setEditingOpening(false);
       loadData();
@@ -63,7 +69,14 @@ export default function InventoryForm() {
     if (isNaN(act) || act < 0) { setError("Enter a valid stock value"); return; }
     setSaving(true); setError("");
     try {
-      await api.createInventory({ date, expectedStock: expected, actualStock: act, notes });
+      let savedV2 = false;
+      try {
+        await api.recordV2InventoryCount({ date, value: act, notes });
+        savedV2 = true;
+      } catch (e: any) {
+        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
+      if (!savedV2) await api.createInventory({ date, expectedStock: expected, actualStock: act, notes });
       setActual("");
       setNotes("");
       loadData();
@@ -143,8 +156,9 @@ export default function InventoryForm() {
                 ) : (
                   <Text style={styles.hint}>Opening Stock: {fmt(info?.openingInventory)} • Purchases: +{fmt(info?.purchasesSince)} • Sales COGS: -{fmt(info?.salesSince)}</Text>
                 )}
-
-                <Text style={[styles.label, { marginTop: 16 }]}>Physical Stock Count (Shelf Count, USD)</Text>
+                <Text style={[styles.label, { marginTop: 16 }]}>Audit Date (YYYY-MM-DD)</Text>
+                <TextInput testID="input-inv-date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <Text style={styles.label}>Physical Stock Count (Shelf Count, USD)</Text>'
                 <TextInput
                   testID="input-actual-stock"
                   value={actual}

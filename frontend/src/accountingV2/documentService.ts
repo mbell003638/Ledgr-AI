@@ -119,7 +119,7 @@ export class V2DocumentService {
   }
 
   private async simplePosting(input: any, type: string, memo: string, debitCode: string, creditAccount: string, partyId?: string) { const amount = positive(input.amount); return this.repoTx(async () => { const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, metadata: { total: amount, partyId, method: input.method } }; const journal = await this.insertSourceJournal(source, input, [{ accountId: `${input.bookId}:account:${debitCode}`, partyId, debit: amount, credit: 0 }, { accountId: creditAccount.includes(':account:') ? creditAccount : `${input.bookId}:account:${creditAccount}`, partyId, debit: 0, credit: amount }]); return { source, journal }; }); }
-  private paymentCode(method: V2PaymentMethod) { if (method === 'cash') return '1010'; if (method === 'bank') return V2_ACCOUNT_CODES.BANK; if (method === 'card') return V2_ACCOUNT_CODES.CARD; if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE; throw new Error('Unsupported payment method'); }
+  private paymentCode(method: V2PaymentMethod) { if (method === 'cash') return V2_ACCOUNT_CODES.CASH; if (method === 'bank') return V2_ACCOUNT_CODES.BANK; if (method === 'card') return V2_ACCOUNT_CODES.CARD; if (method === 'mobile') return V2_ACCOUNT_CODES.MOBILE; throw new Error('Unsupported payment method'); }
   private async repoTx<T>(fn: () => Promise<T>) {
     const savepoint = `v2_document_${++savepointSequence}`;
     await this.repo.db.exec(`SAVEPOINT ${savepoint}`);

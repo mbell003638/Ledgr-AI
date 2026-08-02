@@ -6,12 +6,13 @@ import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayme
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
-import type { V2PaymentMethod, V2PartyRole } from './types';
+import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'cash';
 const amount = (value: any) => Number(value);
+const cents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 let partyRepairSequence = 0;
 const partyDisplayName = (value: any) => {
@@ -197,6 +198,44 @@ export class V2AppService {
     return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
+  /** Post opening cash/inventory against capital exactly once for an open period. */
+  async postOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const date = input.date || (await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=?', [context.periodId]))?.start_date;
+    if (!date) throw new Error('Opening balance date is required');
+    const cash = cents(input.cash); const inventory = cents(input.inventory);
+    if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
+    const sourceId = `${context.bookId}:opening:${context.periodId}`;
+    const existing = await this.db.first<any>('SELECT id,metadata FROM v2_sources WHERE id=? AND book_id=? AND type=\'opening_balance\'', [sourceId, context.bookId]);
+    if (existing) {
+      let prior: AnyRecord = {}; try { prior = JSON.parse(existing.metadata || '{}'); } catch { /* treat as invalid */ }
+      if (Number(prior.cash) === cash && Number(prior.inventory) === inventory && prior.date === date) return { sourceId, alreadyPosted: true };
+      throw new Error('Opening balances are already posted for this period; reverse them before changing the amounts');
+    }
+    const total = cents(cash + inventory);
+    if (total === 0) return { sourceId, alreadyPosted: false, journal: null };
+    const source: any = { id: sourceId, bookId: context.bookId, type: 'opening_balance', date, metadata: { cash, inventory, date } };
+    const lines: any[] = [];
+    if (cash) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
+    if (inventory) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
+    lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: total });
+    const journal = await this.repo.postSourceJournal(source, { bookId: context.bookId, periodId: context.periodId, date, memo: input.memo || 'Opening balances', lines });
+    return { sourceId, alreadyPosted: false, journal };
+  }
+
+  /** Record a dated physical inventory count in the authoritative V2 repository. */
+  async recordInventoryCount(input: { date: string; value: number; notes?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const value = cents(input.value);
+    if (!Number.isFinite(value) || value < 0) throw new Error('Inventory value must be non-negative');
+    const id = `${context.bookId}:inventory:${context.periodId}:${input.date}`;
+    const prior = await this.db.first('SELECT id FROM v2_inventory_counts WHERE id=?', [id]);
+    if (prior) { await this.db.run('UPDATE v2_inventory_counts SET value=? WHERE id=?', [value, id]); return { id, bookId: context.bookId, periodId: context.periodId, date: input.date, value }; }
+    const count = await new V2CloseBooksRepository(this.db).recordInventoryCount({ id, bookId: context.bookId, periodId: context.periodId, date: input.date, value });
+    return { ...count, notes: input.notes || '' };
+  }
 
   async sourceType(id: string): Promise<string | null> {
     const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [id]);
