@@ -11,7 +11,7 @@ import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetM
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
-type PartyRow = { id: string; name: string; phone?: string; role: "customer"|"supplier"|"partner"|"both"; receivable: number; payable: number };
+type PartyRow = { id: string; name: string; phone?: string; role: "customer"|"supplier"|"partner"|"both"; receivable: number; payable: number; capitalBalance?: number };
 
 export default function PartiesScreen() {
   const theme = useTheme();
@@ -44,12 +44,12 @@ export default function PartiesScreen() {
           payable: p.payable,
         })).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-        // Inject partners from settings if in partner mode
+        // Preserve member-ledger balances even when a V2 party row already exists.
         if (partnerActive) {
           for (const investor of investors) {
-            if (investor.name && !mapped.some((x) => x.name.toLowerCase() === investor.name.toLowerCase())) {
-              mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0 });
-            }
+            const existing = mapped.find((x) => x.name.toLowerCase() === investor.name.toLowerCase());
+            if (existing) { existing.role = "partner"; existing.capitalBalance = Number(investor.currentCapital || 0); }
+            else if (investor.name) mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
           }
         }
         setItems(mapped);
@@ -77,7 +77,7 @@ export default function PartiesScreen() {
       if (partnerActive) {
         for (const investor of investors) {
           if (investor.name && !byName.has(investor.name.toLowerCase())) {
-            byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0 });
+            byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
           }
         }
       }
@@ -223,7 +223,7 @@ export default function PartiesScreen() {
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
-                {item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>{item.role === 'partner' ? 'View capital ledger' : 'Settled'}</Text> : null}
+                {item.role === 'partner' ? <><Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text><Text style={styles.sub}>View capital ledger</Text></> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
               </View>
             </GlowPressable>
           )}

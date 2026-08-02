@@ -1375,6 +1375,13 @@ export async function resetAll() {
   return { ok: true };
 }
 
+/** Full device reset: clear accounting data and the business configuration. */
+export async function factoryReset() {
+  await resetAll();
+  await writeSettings({});
+  return { ok: true };
+}
+
 // ---------- Invoices ----------
 export async function listInvoices() {
   return (await readColl<any>('invoices')).sort((a: any, b: any) => (a.date > b.date ? -1 : 1));

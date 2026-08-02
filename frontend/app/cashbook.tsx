@@ -11,7 +11,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 
-type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string };
+type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string; origin?: "manual" | "v2"; editable?: boolean };
 import { GlowPressable } from "@/src/components/GlowPressable";
 
 const todayStr = () => {
@@ -37,6 +37,7 @@ export default function CashBookScreen() {
   const [formOpen, setFormOpen] = useState(false);
 
   const [openingCash, setOpeningCash] = useState(0);
+  const [openingDate, setOpeningDate] = useState("");
   const [editingOpening, setEditingOpening] = useState(false);
   const [openingInput, setOpeningInput] = useState("");
 
@@ -47,6 +48,7 @@ export default function CashBookScreen() {
       const op = Number(settings.openingCash || 0);
       setOpeningCash(op);
       setOpeningInput(String(op));
+      setOpeningDate(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr());
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -64,16 +66,17 @@ export default function CashBookScreen() {
   const saveOpeningCash = async () => {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(openingDate.trim())) { Alert.alert("Invalid", "Use an opening date in YYYY-MM-DD format."); return; }
     try {
       // Post to the authoritative V2 journal before mirroring the value into legacy settings.
       // This prevents the display setting from changing if the accounting period is locked.
       const settings = await api.getSettings();
       try {
-        await api.updateV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: openingDate.trim(), cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
       } catch (e: any) {
         if (!/requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({ openingCash: val });
+      await api.updateSettings({ openingCash: val, currentPeriodStart: openingDate.trim() });
       setOpeningCash(val);
       setEditingOpening(false);
       load();
@@ -86,6 +89,10 @@ export default function CashBookScreen() {
 
   const openAdd = () => { resetForm(); setFormOpen(true); };
   const openEdit = (e: CashEntry) => {
+    if (e.editable === false || e.origin === "v2") {
+      Alert.alert("Posted transaction", "This cash movement comes from another accounting transaction. Edit it from its original screen.");
+      return;
+    }
     setEditId(e.id); setDirection(e.direction); setAmount(String(e.amount)); setDate(e.date); setNotes(e.notes || ""); setFormOpen(true);
   };
 
@@ -148,17 +155,12 @@ export default function CashBookScreen() {
             <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
           </Pressable>
         ) : (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <TextInput
-              value={openingInput}
-              onChangeText={setOpeningInput}
-              keyboardType="decimal-pad"
-              style={styles.openingInput}
-              autoFocus
-            />
-            <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}>
-              <Ionicons name="checkmark" size={16} color="#fff" />
-            </Pressable>
+          <View style={{ gap: 6, alignItems: "flex-end" }}>
+            <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <TextInput value={openingDate} onChangeText={setOpeningDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
+              <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
+            </View>
           </View>
         )}
       </View>
@@ -205,7 +207,7 @@ export default function CashBookScreen() {
             />
           }
           renderItem={({ item }) => (
-            <GlowPressable onPress={() => openEdit(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.card}>
+            <GlowPressable onPress={() => openEdit(item)} onLongPress={item.editable === false ? undefined : () => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.card}>
               <View style={[styles.dirBadge, { backgroundColor: item.direction === "in" ? theme.color.success : theme.color.warning }]}>
                 <Ionicons name={item.direction === "in" ? "arrow-down" : "arrow-up"} size={16} color="#fff" />
               </View>
@@ -235,6 +237,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
   openingValText: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary },
   openingInput: { width: 90, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, color: theme.color.onSurface },
+  openingDateInput: { width: 112, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 5, fontSize: 12, color: theme.color.onSurface },
   openingSaveBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center" },
   form: { marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md, padding: theme.spacing.lg, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, gap: 8 },
   segRow: { flexDirection: "row", gap: 8 },

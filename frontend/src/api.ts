@@ -536,8 +536,10 @@ export const api = {
       const service = new V2AppService(runner);
       const ctx = await service.activeContext();
       if (ctx) {
-        const v2Entries = await service.documents.listCashEntries(ctx.bookId);
-        const legacyEntries = await db.listCashEntries();
+        // V2 rows are journal-derived movements. They stay visible, but must be
+        // changed from their original source document rather than as cash rows.
+        const v2Entries = (await service.documents.listCashEntries(ctx.bookId)).map((entry: any) => ({ ...entry, origin: 'v2', editable: false }));
+        const legacyEntries = (await db.listCashEntries()).map((entry: any) => ({ ...entry, origin: 'manual', editable: true }));
         const all = [...new Map([...legacyEntries, ...v2Entries].map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
           (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
         );
@@ -610,6 +612,15 @@ export const api = {
       const service = new V2AppService(runner);
       const ctx = await service.activeContext();
       if (ctx) {
+        // One-time migration for values entered before V2 was enabled. Never
+        // duplicate or overwrite an existing authoritative opening source.
+        const opening = await runner.first<{ id: string }>("SELECT id FROM v2_sources WHERE book_id=? AND type='opening_balance' LIMIT 1", [ctx.bookId]);
+        if (!opening) {
+          const settings = await db.getSettings();
+          const cash = Number(settings.openingCash || 0);
+          const inventory = Number(settings.openingInventory || 0);
+          if (cash > 0 || inventory > 0) await service.postOpeningBalances({ cash, inventory, memo: 'Opening balances (migrated)' });
+        }
         return getV2Dashboard(runner, ctx.bookId);
       }
     }
@@ -734,9 +745,18 @@ export const api = {
     const service = new V2AppService(runner);
     const closeBooks = createCloseBooksRouter(service, db.closePeriod);
     const settings = await db.getSettings();
-    return closeBooks({ actualStock, openingInventory: Number(settings.openingInventory || 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
+    // The V2 carried inventory count is authoritative. The setting is only
+    // a compatibility mirror and may still refer to the prior period.
+    const overview = await service.inventoryOverview();
+    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
+    if ((result as any)?.source === 'v2') {
+      const next = await runner.first<{ start_date: string }>("SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [(result as any).result.bookId]);
+      await db.updateSettings({ currentPeriodStart: next?.start_date || settings.currentPeriodStart, openingInventory: actualStock });
+    }
+    return result;
   },
-  resetAll: async () => {
+  // Clears books and ledgers only; device preferences and AI credentials remain.
+  clearAccountingData: async () => {
     const runner = activeSqlRunner();
     const today = new Date().toISOString().slice(0, 10);
     const originalBookId = beActiveBookId();
@@ -758,6 +778,25 @@ export const api = {
         else await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
       }
     }
+  },
+
+  resetAll: async () => api.clearAccountingData(),
+  factoryReset: async () => {
+    await api.clearAccountingData();
+    const originalBookId = beActiveBookId();
+    try {
+      for (const book of await beListBooks()) {
+        await beSetActiveBook(book.id);
+        await db.factoryReset();
+      }
+    } finally {
+      await beSetActiveBook(originalBookId);
+    }
+    await Promise.all([
+      storage.secureRemove(AI_API_KEY_KEY),
+      AsyncStorage.multiRemove([AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY, LEGACY_GEMINI_KEY, LEGACY_GEMINI_MODEL]),
+    ]);
+    return { ok: true };
   },
 
   aiSnapshot: (from: string, to: string) => buildAiSnapshot(from, to),

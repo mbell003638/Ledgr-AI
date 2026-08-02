@@ -133,6 +133,7 @@ export default function AdvancedSettingsScreen() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const updateAccountingStyle = async (style: "retail_partnership" | "standard") => {
@@ -240,12 +241,12 @@ export default function AdvancedSettingsScreen() {
   const save = async () => {
     if (periodStart.trim()) {
       if (!isValidDateString(periodStart.trim())) {
-        Alert.alert("Error", "Invalid date format. Please use YYYY-MM-DD.");
+        setStatus({ ok: false, msg: "Invalid date format. Please use YYYY-MM-DD." });
         return;
       }
       const today = new Date().toISOString().slice(0, 10);
       if (periodStart.trim() > today) {
-        Alert.alert("Error", "Period start date cannot be in the future, as it filters out current transactions.");
+        setStatus({ ok: false, msg: "Period start date cannot be in the future, as it filters out current transactions." });
         return;
       }
     }
@@ -386,8 +387,8 @@ export default function AdvancedSettingsScreen() {
     }
     setResetting(true); setStatus(null);
     try {
-      await api.resetAll();
-      setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
+      await api.clearAccountingData();
+      setStatus({ ok: true, msg: "Accounting data cleared. Preferences and AI configuration were preserved." });
       setConfirmReset(false);
       await load();
     } catch (e: any) {
@@ -395,6 +396,17 @@ export default function AdvancedSettingsScreen() {
     } finally { setResetting(false); }
   };
 
+  const doFactoryReset = async () => {
+    const ok = await requireAuth("Confirm full device factory reset");
+    if (!ok) { setConfirmFactoryReset(false); return; }
+    setResetting(true); setStatus(null);
+    try {
+      await api.factoryReset();
+      router.replace('/onboarding' as any);
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Factory reset failed" });
+    } finally { setResetting(false); setConfirmFactoryReset(false); }
+  };
   const updateMember = (i: number, field: "name" | "amount" | "profitSharePct", v: string) =>
     setMembers((prev) => prev.map((m, idx) => (idx === i ? { ...m, [field]: v } : m)));
   const addMember = () => setMembers((prev) => [...prev, { name: "", amount: "", profitSharePct: "" }]);
@@ -624,17 +636,28 @@ export default function AdvancedSettingsScreen() {
                 </View>
               </AccordionRow>
               <AccordionRow title="Danger Zone"
-                subtitle="Reset all ledgers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                subtitle="Clear accounting data or reset this device" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <Text style={styles.hint}>Wipes all suppliers, bills, sales, payments, inventory, and closed periods. Your Gemini API key is preserved.</Text>
+                  <Text style={styles.hint}>Clear accounting data removes books, transactions, parties, inventory and periods while preserving preferences and AI configuration. Factory reset also removes business settings and AI credentials.</Text>
                   {!confirmReset ? (
-                    <Pressable onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}><Ionicons name="trash-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Reset All Data…</Text></Pressable>
+                    <Pressable onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}><Ionicons name="trash-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Clear Accounting Data…</Text></Pressable>
                   ) : (
                     <View style={{ marginTop: theme.spacing.md }}>
                       <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This cannot be undone. Consider exporting a backup first.</Text>
                       <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
                         <Pressable onPress={() => setConfirmReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
-                        <Pressable onPress={doReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, delete everything</Text>}</Pressable>
+                        <Pressable onPress={doReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, clear accounting data</Text>}</Pressable>
+                      </View>
+                    </View>
+                  )}
+                  {!confirmFactoryReset ? (
+                    <Pressable onPress={() => setConfirmFactoryReset(true)} style={[styles.resetInitBtn, { borderColor: theme.color.error + "99" }]}><Ionicons name="warning-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Factory Reset Device…</Text></Pressable>
+                  ) : (
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This removes business configuration and the saved AI key, then returns to onboarding.</Text>
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                        <Pressable onPress={() => setConfirmFactoryReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
+                        <Pressable onPress={doFactoryReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, factory reset</Text>}</Pressable>
                       </View>
                     </View>
                   )}

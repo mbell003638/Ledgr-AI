@@ -20,6 +20,9 @@ export async function resetV2AccountingData(db: SqlRunner, bookId: string, perio
     await db.run('DELETE FROM v2_close_books WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_inventory_counts WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [bookId]);
+    // Reversal journals reference their original journal. Clear those links inside
+    // this reset transaction before deleting all journals in the book.
+    await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_sources WHERE book_id=?', [bookId]);
     await db.run('UPDATE v2_members SET opening_contribution=0,current_capital=0 WHERE book_id=?', [bookId]);

@@ -25,6 +25,7 @@ export default function InventoryForm() {
 
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
+  const [openingDateInput, setOpeningDateInput] = useState("");
   const [editingOpening, setEditingOpening] = useState(false);
   const [openingInput, setOpeningInput] = useState("");
 
@@ -45,6 +46,7 @@ export default function InventoryForm() {
       }
       const op = Number(settings.openingInventory || 0);
       setOpeningEffectiveDate(String(settings.currentPeriodStart || ""));
+      setOpeningDateInput(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : new Date().toISOString().slice(0, 10));
       setOpeningStock(op);
       setOpeningInput(String(op));
     } catch (e) { console.warn(e); }
@@ -58,15 +60,16 @@ export default function InventoryForm() {
   const saveOpeningStock = async () => {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(openingDateInput.trim())) { setError("Use an opening date in YYYY-MM-DD format"); return; }
     try {
       // Journal first; settings remain a legacy compatibility mirror for the V2 opening source.
       const settings = await api.getSettings();
       try {
-        await api.updateV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: openingDateInput.trim(), cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({ openingInventory: val });
+      await api.updateSettings({ openingInventory: val, currentPeriodStart: openingDateInput.trim() });
       setOpeningStock(val);
       setEditingOpening(false);
       loadData();
@@ -147,17 +150,12 @@ export default function InventoryForm() {
                       <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
                     </Pressable>
                   ) : (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <TextInput
-                        value={openingInput}
-                        onChangeText={setOpeningInput}
-                        keyboardType="decimal-pad"
-                        style={styles.openingInput}
-                        autoFocus
-                      />
-                      <Pressable onPress={saveOpeningStock} style={styles.openingSaveBtn}>
-                        <Ionicons name="checkmark" size={16} color="#fff" />
-                      </Pressable>
+                    <View style={{ gap: 6, alignItems: "flex-end" }}>
+                      <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
+                      <View style={{ flexDirection: "row", gap: 6 }}>
+                        <TextInput value={openingDateInput} onChangeText={setOpeningDateInput} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
+                        <Pressable onPress={saveOpeningStock} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -292,6 +290,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
   openingValText: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary },
   openingInput: { width: 90, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, color: theme.color.onSurface },
+  openingDateInput: { width: 112, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 5, fontSize: 12, color: theme.color.onSurface },
   openingSaveBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center" },
   historyRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border },
   historyTitle: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp } from "react-native";
+import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -76,7 +76,7 @@ export function KpiTile({ label, value, hint, icon, valueColor, testID, onPress 
         clipSafe={false}
         hoverLift={-5}
         hoverScale={1.02}
-        pressScale={0.972}
+        pressScale={0.955}
         restingBorderColor={theme.color.glassBorder}
         hoverBorderColor={theme.color.brandPrimary}
         testID={testID}
@@ -130,12 +130,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 18,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      // Professional elevation and shadow
-      elevation: 2,
-      shadowColor: theme.color.muted,
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 },
+      ...(Platform.OS === "web" ? { shadowColor: theme.color.muted, shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } } : {}),
       marginVertical: 0,
     },
     kpi: {
@@ -145,12 +140,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 14,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      // Consistent subtle shadow
-      elevation: 1,
-      shadowColor: theme.color.muted,
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
-      shadowOffset: { width: 0, height: 0.5 },
+      ...(Platform.OS === "web" ? { shadowColor: theme.color.muted, shadowOpacity: 0.06, shadowRadius: 3, shadowOffset: { width: 0, height: 0.5 } } : {}),
     },
     kpiTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     kpiLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "700" },
