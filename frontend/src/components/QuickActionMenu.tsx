@@ -14,7 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -32,7 +32,8 @@ type QuickActionRowProps = {
 
 function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: QuickActionRowProps) {
   const theme = useTheme();
-  const reduceMotion = useReducedMotion();
+  const { animationsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !animationsEnabled;
   const hover = useSharedValue(0);
   const pressed = useSharedValue(0);
 
@@ -81,7 +82,8 @@ export default function QuickActionMenu() {
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
-  const reduceMotion = useReducedMotion();
+  const { animationsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !animationsEnabled;
   const progress = useSharedValue(0);
   const fabHover = useSharedValue(0);
   const fabPressed = useSharedValue(0);

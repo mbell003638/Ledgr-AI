@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BarChart } from "react-native-gifted-charts";
 
 import { fmt } from "@/src/theme";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
@@ -81,7 +81,8 @@ const HIDDEN_TILES: Record<string, string[]> = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
-  const reduceMotion = useReducedMotion();
+  const { animationsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !animationsEnabled;
   const hover = useSharedValue(0);
   const pressed = useSharedValue(0);
 

@@ -12,7 +12,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
@@ -32,7 +32,24 @@ type AnimatedGlassSurfaceProps = Omit<ViewProps, "style"> & {
  * On web it mirrors the prototype card hover; native keeps the same static
  * glass/glow treatment while child controls provide touch feedback.
  */
-export function AnimatedGlassSurface({
+export function AnimatedGlassSurface(props: AnimatedGlassSurfaceProps) {
+  const theme = useTheme();
+  const { animationsEnabled } = useAnimations();
+  if (!animationsEnabled) {
+    const { children, style, surfaceColor, restingBorderColor } = props;
+    const { topHighlight: _topHighlight, hoverSurfaceColor: _hoverSurfaceColor, prominent: _prominent, shadowEnabled: _shadowEnabled, ...rest } = props;
+    return (
+      <View
+        {...rest}
+        style={[{ position: "relative", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder }, style]}
+      >
+        {children}
+      </View>
+    );
+  }
+  return <AnimatedGlassSurfaceImpl {...props} />;
+}
+function AnimatedGlassSurfaceImpl({
   children,
   style,
   topHighlight = true,

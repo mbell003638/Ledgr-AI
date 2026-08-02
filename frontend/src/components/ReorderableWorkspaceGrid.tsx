@@ -19,7 +19,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 
 export type WorkspaceTileItem = {
   key: string;
@@ -188,7 +188,8 @@ function ReorderableWorkspaceTile({
   onPress,
 }: ReorderableWorkspaceTileProps) {
   const theme = useTheme();
-  const reduceMotion = useReducedMotion();
+  const { animationsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !animationsEnabled;
   const isBrand = tile.usesBrandIcon === true;
   const solidBrand = tile.solidBrand === true;
   const isWeb = Platform.OS === "web";
@@ -199,6 +200,12 @@ function ReorderableWorkspaceTile({
   const pressed = useSharedValue(0);
 
   const animateHover = (value: number) => {
+    if (!animationsEnabled) {
+      hover.value = 0;
+      surfaceHover.value = 0;
+      iconHover.value = 0;
+      return;
+    }
     if (reduceMotion) {
       hover.value = value;
       surfaceHover.value = value;
@@ -249,7 +256,7 @@ function ReorderableWorkspaceTile({
 
 
   const gesture = useMemo(() => Gesture.Pan()
-    .activateAfterLongPress(theme.motion.longPress)
+    .activateAfterLongPress(animationsEnabled ? theme.motion.longPress : 999999)
     .onStart(() => {
       activeIndex.value = index;
       targetIndex.value = index;

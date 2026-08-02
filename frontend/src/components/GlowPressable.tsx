@@ -18,7 +18,7 @@ import Animated, {
   withTiming,
   withSequence,
 } from "react-native-reanimated";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -53,7 +53,29 @@ type GlowPressableProps = {
  * highlight runs along the top edge. Long-press drag motion is layered by the
  * workspace grid so this component remains useful for ordinary controls too.
  */
-export function GlowPressable({
+export function GlowPressable(props: GlowPressableProps) {
+  const { animationsEnabled } = useAnimations();
+  if (!animationsEnabled) {
+    const { children, style, testID, disabled, accessibilityRole, accessibilityState, onPress, onLongPress, onPressIn, onPressOut } = props;
+    return (
+      <Pressable
+        testID={testID}
+        disabled={disabled}
+        accessibilityRole={accessibilityRole}
+        accessibilityState={accessibilityState}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        style={[{ position: "relative", borderWidth: 1, borderColor: props.restingBorderColor ?? "transparent" }, style]}
+      >
+        {children}
+      </Pressable>
+    );
+  }
+  return <AnimatedGlowPressable {...props} />;
+}
+function AnimatedGlowPressable({
   children,
   style,
   testID,

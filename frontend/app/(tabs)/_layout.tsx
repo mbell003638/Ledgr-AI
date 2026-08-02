@@ -7,7 +7,7 @@ import Grid3X3 from "lucide-react-native/icons/grid-3x3";
 import Users from "lucide-react-native/icons/users";
 import PieChart from "lucide-react-native/icons/chart-pie";
 import Settings from "lucide-react-native/icons/settings";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
 
@@ -49,8 +49,8 @@ function PrototypeTabLabel({ color, focused, children }: { color: string; focuse
   );
 }
 
-function WebTabMotion({ brandColor }: { brandColor: string }) {
-  if (Platform.OS !== "web") return null;
+function WebTabMotion({ brandColor, enabled }: { brandColor: string; enabled: boolean }) {
+  if (Platform.OS !== "web" || !enabled) return null;
 
   // Preserve Expo Router's own anchor. Only its icon and short underline move,
   // avoiding the square focus/active outline and any document-reload behavior.
@@ -119,6 +119,7 @@ function WebTabMotion({ brandColor }: { brandColor: string }) {
 
 export default function TabsLayout() {
   const theme = useTheme();
+  const { animationsEnabled } = useAnimations();
   const insets = useSafeAreaInsets();
   // The prototype is 80px tall. A 64px content area plus the real bottom
   // inset keeps that proportion while clearing gesture and three-button bars.
@@ -126,7 +127,7 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
-      <WebTabMotion brandColor={theme.color.brandPrimary} />
+      <WebTabMotion brandColor={theme.color.brandPrimary} enabled={animationsEnabled} />
       <Tabs
         screenListeners={{
           tabPress: () => {

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform }
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
-import { useTheme } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { executeV2AiAction, validateV2AiAction, type V2AiValidationResult } from "@/src/accountingV2/aiActions";
 import { BlurView } from "expo-blur";
@@ -14,6 +14,7 @@ type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 export default function VoiceFab() {
   const theme = useTheme();
+  const { animationsEnabled } = useAnimations();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -35,6 +36,7 @@ export default function VoiceFab() {
 
   useEffect(() => {
     if (phase === "recording") {
+      if (!animationsEnabled) { pulseScale.value = 1; return; }
       pulseScale.value = withRepeat(
         withSequence(
           withTiming(1.1, { duration: 800, easing: Easing.inOut(Easing.ease) }),

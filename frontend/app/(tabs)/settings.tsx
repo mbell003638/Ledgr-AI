@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -68,7 +68,7 @@ const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: an
 
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
-import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
+import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
@@ -82,6 +82,7 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
+  const { animationsEnabled, setAnimationsEnabled } = useAnimations();
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
@@ -281,6 +282,7 @@ export default function SettingsScreen() {
         taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
         invoiceTheme,
         themeMode: mode,
+        animationsEnabled,
         ...bizProfile,
         logo,
       });
@@ -547,7 +549,16 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               </AccordionRow>
-            </Card>
+              <AccordionRow title="Animations" subtitle={animationsEnabled ? "Enabled - glow, hover and motion" : "Off - static interface for stability testing"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 }}>
+                  <View style={{ flex: 1, paddingRight: 16 }}>
+                    <Text style={{ color: theme.color.onSurface, fontSize: 14, fontWeight: "600" }}>Enable interface animations</Text>
+                    <Text style={{ color: theme.color.muted, fontSize: 12, marginTop: 4 }}>Controls glow, hover, bounce and drag motion. Defaults off.</Text>
+                  </View>
+                  <Switch value={animationsEnabled} onValueChange={async (enabled) => { setAnimationsEnabled(enabled); await api.updateSettings({ animationsEnabled: enabled }); }} trackColor={{ false: theme.color.border, true: theme.color.brandPrimary + "88" }} thumbColor={animationsEnabled ? theme.color.brandPrimary : theme.color.muted} />
+                </View>
+              </AccordionRow>
+</Card>
 
             <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
