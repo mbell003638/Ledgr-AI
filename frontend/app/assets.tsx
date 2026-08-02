@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,162 +8,162 @@ import { api } from "@/src/api";
 import { fmt } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
+import { GlowPressable } from "@/src/components/GlowPressable";
+
+type EntryMode = "asset" | "liability";
+type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
+
+const today = () => new Date().toISOString().slice(0, 10);
+const assetFunding = [
+  { id: "cash", label: "Cash" }, { id: "bank", label: "Bank" },
+  { id: "capital", label: "Owner Capital" }, { id: "liability", label: "Credit / Loan" },
+] as const;
+const liabilityRecognition = [
+  { id: "cash", label: "Cash received" }, { id: "bank", label: "Bank received" },
+  { id: "asset", label: "Asset acquired" }, { id: "expense", label: "Expense accrued" },
+] as const;
 
 export default function AssetsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const [assets, setAssets] = useState<{ name: string; amount: string }[]>([]);
-  const [liabilities, setLiabilities] = useState<{ name: string; amount: string }[]>([]);
+  const [mode, setMode] = useState<EntryMode>("asset");
+  const [entries, setEntries] = useState<BalanceEntry[]>([]);
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [date, setDate] = useState(today());
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [funding, setFunding] = useState<(typeof assetFunding)[number]["id"]>("cash");
+  const [recognition, setRecognition] = useState<(typeof liabilityRecognition)[number]["id"]>("cash");
 
   const load = useCallback(async () => {
     try {
-      const s = await api.getSettings();
-      setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      setAssets(
-        (Array.isArray(s.extraAssets) ? s.extraAssets : []).map((a: any) => ({
-          name: a.name || "",
-          amount: String(a.amount || ""),
-        }))
-      );
-      setLiabilities(
-        (Array.isArray(s.extraLiabilities) ? s.extraLiabilities : []).map((l: any) => ({
-          name: l.name || "",
-          amount: String(l.amount || ""),
-        }))
-      );
-    } catch (e) { console.warn(e); }
-    finally { setLoading(false); }
+      setError("");
+      const [settings, rows] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions()]);
+      setCurrSym(getCurrencySymbol(settings.currency || "USD"));
+      setEntries(rows as BalanceEntry[]);
+    } catch (e: any) {
+      setError(e?.message || "Could not load balance transactions.");
+    } finally { setLoading(false); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const resetForm = () => {
+    setDate(today()); setName(""); setCategory(""); setAmount(""); setNotes(""); setFunding("cash"); setRecognition("cash"); setError("");
+  };
+
   const save = async () => {
-    setSaving(true);
+    const value = Number(amount);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setError("Use a valid date in YYYY-MM-DD format."); return; }
+    if (!name.trim() || !Number.isFinite(value) || value <= 0) { setError("Enter a name and a positive amount."); return; }
+    setSaving(true); setError("");
     try {
-      await api.updateSettings({
-        extraAssets: assets
-          .map((a) => ({ name: a.name.trim(), amount: a.amount.trim() ? parseFloat(a.amount) : 0 }))
-          .filter((a) => a.name),
-        extraLiabilities: liabilities
-          .map((l) => ({ name: l.name.trim(), amount: l.amount.trim() ? parseFloat(l.amount) : 0 }))
-          .filter((l) => l.name),
-      });
-    } catch (e: any) { console.warn(e); }
+      if (mode === "asset") {
+        await api.createManualAsset({ date, name: name.trim(), category: category.trim() || "Other asset", amount: value, funding, notes: notes.trim() });
+      } else {
+        await api.createManualLiability({ date, name: name.trim(), category: category.trim() || "Other liability", amount: value, recognition, notes: notes.trim() });
+      }
+      resetForm();
+      await load();
+    } catch (e: any) { setError(e?.message || "Could not save this transaction."); }
     finally { setSaving(false); }
   };
 
-  const updateAsset = (i: number, field: "name" | "amount", val: string) =>
-    setAssets((p) => p.map((a, idx) => (idx === i ? { ...a, [field]: val } : a)));
-  const addAsset = () => setAssets((p) => [...p, { name: "", amount: "" }]);
-  const removeAsset = (i: number) => setAssets((p) => p.filter((_, idx) => idx !== i));
+  const remove = (entry: BalanceEntry) => {
+    Alert.alert("Reverse this transaction?", "It will be reversed with an equal and opposite journal entry, preserving the audit trail.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Reverse", style: "destructive", onPress: async () => {
+        try { await api.deleteManualBalanceTransaction(entry.id); await load(); }
+        catch (e: any) { setError(e?.message || "Could not reverse this transaction."); }
+      } },
+    ]);
+  };
 
-  const updateLiability = (i: number, field: "name" | "amount", val: string) =>
-    setLiabilities((p) => p.map((l, idx) => (idx === i ? { ...l, [field]: val } : l)));
-  const addLiability = () => setLiabilities((p) => [...p, { name: "", amount: "" }]);
-  const removeLiability = (i: number) => setLiabilities((p) => p.filter((_, idx) => idx !== i));
-
-  const totalA = assets.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
-  const totalL = liabilities.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const assetEntries = entries.filter((entry) => entry.type === "asset");
+  const liabilityEntries = entries.filter((entry) => entry.type === "liability");
+  const totalAssets = assetEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const totalLiabilities = liabilityEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const isAsset = mode === "asset";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Assets & Liabilities" subtitle="Custom items on the balance sheet" />
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-      >
+      <ScreenHeader title="Assets & Liabilities" subtitle="Dated balance-sheet transactions" />
+      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />} keyboardShouldPersistTaps="handled">
+        <Card style={styles.guidance}>
+          <Ionicons name="information-circle-outline" size={19} color={theme.color.brandPrimary} />
+          <Text style={styles.guidanceText}>Use this for shop/security deposits, equipment, loans, and accrued costs. Supplier dues are created automatically by Vendor Bills and cleared by Supplier Payments.</Text>
+        </Card>
+
+        <View style={styles.modeRow}>
+          <Pressable onPress={() => { setMode("asset"); setError(""); }} style={[styles.modeBtn, isAsset && styles.modeActive]}><Text style={[styles.modeText, isAsset && styles.modeTextActive]}>Add Asset</Text></Pressable>
+          <Pressable onPress={() => { setMode("liability"); setError(""); }} style={[styles.modeBtn, !isAsset && styles.modeActive]}><Text style={[styles.modeText, !isAsset && styles.modeTextActive]}>Add Liability</Text></Pressable>
+        </View>
+
         <Card>
-          <Text style={styles.cardTitle}>Custom Assets</Text>
-          <Text style={styles.hint}>Extra assets included on the balance sheet (e.g. Van, Equipment, Property).</Text>
-          {assets.map((a, i) => (
-            <View key={i} style={styles.entryRow}>
-              <TextInput
-                value={a.name}
-                onChangeText={(v) => updateAsset(i, "name", v)}
-                placeholder="Asset name"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 2 }]}
-              />
-              <TextInput
-                value={a.amount}
-                onChangeText={(v) => updateAsset(i, "amount", v)}
-                keyboardType="decimal-pad"
-                placeholder="Value"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <Pressable onPress={() => removeAsset(i)} style={styles.removeBtn}>
-                <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-              </Pressable>
-            </View>
-          ))}
-          <Pressable onPress={addAsset} style={styles.addBtn}>
-            <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-            <Text style={styles.addText}>Add Asset</Text>
-          </Pressable>
-          {assets.length > 0 && (
-            <Text style={styles.total}>Total Assets: {fmt(totalA, currSym)}</Text>
-          )}
+          <View style={styles.formTitleRow}>
+            <View style={styles.formIcon}><Ionicons name={isAsset ? "business-outline" : "document-text-outline"} size={19} color={theme.color.brandPrimary} /></View>
+            <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "Credit liability; debit the selected recognition account."}</Text></View>
+          </View>
+          <Text style={styles.label}>Transaction date</Text>
+          <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+          <Text style={styles.label}>{isAsset ? "Asset name" : "Liability name"}</Text>
+          <TextInput value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} placeholderTextColor={theme.color.muted} style={styles.input} />
+          <Text style={styles.label}>Category (optional)</Text>
+          <TextInput value={category} onChangeText={setCategory} placeholder={isAsset ? "Deposit, equipment, receivable" : "Loan, accrued rent, tax payable"} placeholderTextColor={theme.color.muted} style={styles.input} />
+          <Text style={styles.label}>Amount</Text>
+          <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+          <Text style={styles.label}>{isAsset ? "Funded from" : "Liability arose from"}</Text>
+          <View style={styles.chips}>
+            {(isAsset ? assetFunding : liabilityRecognition).map((option) => {
+              const active = isAsset ? funding === option.id : recognition === option.id;
+              return <Pressable key={option.id} onPress={() => isAsset ? setFunding(option.id as typeof funding) : setRecognition(option.id as typeof recognition)} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{option.label}</Text></Pressable>;
+            })}
+          </View>
+          <Text style={styles.label}>Notes (optional)</Text>
+          <TextInput value={notes} onChangeText={setNotes} placeholder="Reference or explanation" placeholderTextColor={theme.color.muted} style={[styles.input, styles.notes]} multiline />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <GlowPressable onPress={save} disabled={saving} haptic topHighlight={false} style={styles.saveBtn}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Post to Accounts</Text>}</GlowPressable>
         </Card>
 
-        <Card style={{ marginTop: theme.spacing.md }}>
-          <Text style={styles.cardTitle}>Custom Liabilities</Text>
-          <Text style={styles.hint}>Extra liabilities on the balance sheet (e.g. Loan, Rent due, Tax owed).</Text>
-          {liabilities.map((l, i) => (
-            <View key={i} style={styles.entryRow}>
-              <TextInput
-                value={l.name}
-                onChangeText={(v) => updateLiability(i, "name", v)}
-                placeholder="Liability name"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 2 }]}
-              />
-              <TextInput
-                value={l.amount}
-                onChangeText={(v) => updateLiability(i, "amount", v)}
-                keyboardType="decimal-pad"
-                placeholder="Amount"
-                placeholderTextColor={theme.color.muted}
-                style={[styles.input, { flex: 1 }]}
-              />
-              <Pressable onPress={() => removeLiability(i)} style={styles.removeBtn}>
-                <Ionicons name="trash-outline" size={18} color={theme.color.error} />
-              </Pressable>
-            </View>
-          ))}
-          <Pressable onPress={addLiability} style={styles.addBtn}>
-            <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-            <Text style={styles.addText}>Add Liability</Text>
-          </Pressable>
-          {liabilities.length > 0 && (
-            <Text style={styles.total}>Total Liabilities: {fmt(totalL, currSym)}</Text>
-          )}
-        </Card>
-
-        <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save</Text>}
-        </Pressable>
-
+        <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
+        <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={totalLiabilities} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
         <View style={{ height: 120 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function BalanceList({ title, icon, entries, total, currSym, styles, onDelete, theme }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onDelete: (entry: BalanceEntry) => void; theme: any }) {
+  return <Card style={styles.listCard}>
+    <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name={icon} size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>
+    {!entries.length ? <Text style={styles.empty}>No posted transactions yet.</Text> : entries.map((entry) => <View key={entry.id} style={styles.entry}>
+      <View style={{ flex: 1 }}><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryMeta}>{entry.date}{entry.category ? ` · ${entry.category}` : ""}{entry.notes ? ` · ${entry.notes}` : ""}</Text></View>
+      <View style={styles.entryRight}><Text style={styles.entryAmount}>{fmt(entry.amount, currSym)}</Text><Pressable onPress={() => onDelete(entry)} hitSlop={10}><Ionicons name="trash-outline" size={16} color={theme.color.muted} /></Pressable></View>
+    </View>)}
+    <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{fmt(total, currSym)}</Text></View>
+  </Card>;
+}
+
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
-  scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, paddingTop: theme.spacing.sm },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.xs },
-  hint: { fontSize: 12, color: theme.color.muted, marginBottom: theme.spacing.md },
-  entryRow: { flexDirection: "row", gap: 8, marginBottom: theme.spacing.sm, alignItems: "center" },
-  input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface, backgroundColor: theme.color.surface },
-  removeBtn: { padding: theme.spacing.sm },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: theme.spacing.sm },
-  addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-  total: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface, marginTop: theme.spacing.md, textAlign: "right" },
-  saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
-  saveText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  scroll: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.xxxl },
+  guidance: { flexDirection: "row", gap: 9, alignItems: "flex-start", marginBottom: theme.spacing.md },
+  guidanceText: { flex: 1, color: theme.color.muted, fontSize: 12, lineHeight: 18 },
+  modeRow: { flexDirection: "row", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, padding: 3, marginBottom: theme.spacing.md },
+  modeBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: theme.radius.sm }, modeActive: { backgroundColor: theme.color.brandPrimary },
+  modeText: { color: theme.color.muted, fontWeight: "700", fontSize: 13 }, modeTextActive: { color: theme.color.onBrandPrimary || "#fff" },
+  formTitleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: theme.spacing.md }, formIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface }, hint: { color: theme.color.muted, fontSize: 11, marginTop: 2 },
+  label: { fontSize: 12, fontWeight: "700", color: theme.color.onSurface, marginTop: theme.spacing.sm },
+  input: { marginTop: 5, borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface, backgroundColor: theme.color.surface }, notes: { minHeight: 65, textAlignVertical: "top" },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 6 }, chip: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 10 }, chipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary }, chipText: { color: theme.color.onSurface, fontSize: 12, fontWeight: "600" }, chipTextActive: { color: theme.color.onBrandPrimary || "#fff" },
+  error: { color: theme.color.error, fontSize: 12, marginTop: 10 }, saveBtn: { marginTop: theme.spacing.lg, backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, padding: theme.spacing.md, alignItems: "center" }, saveText: { color: theme.color.onBrandPrimary || "#fff", fontSize: 14, fontWeight: "800" },
+  listCard: { marginTop: theme.spacing.md }, listTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: theme.spacing.sm }, listIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
+  empty: { color: theme.color.muted, fontSize: 12, paddingVertical: theme.spacing.sm }, entry: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border }, entryName: { color: theme.color.onSurface, fontSize: 13, fontWeight: "700" }, entryMeta: { color: theme.color.muted, fontSize: 11, marginTop: 3 }, entryRight: { alignItems: "flex-end", gap: 7 }, entryAmount: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: theme.spacing.md, marginTop: 2 }, totalLabel: { color: theme.color.onSurface, fontSize: 13, fontWeight: "800" }, total: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
 }); }

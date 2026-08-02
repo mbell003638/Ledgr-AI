@@ -6,6 +6,7 @@ import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayme
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
+import { buildPersistentV2Reports } from './persistentReports';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
 
 type AnyRecord = Record<string, any>;
@@ -224,6 +225,33 @@ export class V2AppService {
     return { sourceId, alreadyPosted: false, journal };
   }
 
+  /** Replace the one opening-balance journal for an open period, preserving the reversal audit trail. */
+  async updateOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const date = input.date || (await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=?', [context.periodId]))?.start_date;
+    if (!date) throw new Error('Opening balance date is required');
+    const cash = cents(input.cash); const inventory = cents(input.inventory);
+    if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
+    const sources = await this.db.all<{ id: string; metadata: string }>("SELECT s.id,s.metadata FROM v2_sources s INNER JOIN v2_journal_entries j ON j.source_id=s.id WHERE s.book_id=? AND s.type='opening_balance' AND j.period_id=? ORDER BY j.posted_at DESC", [context.bookId, context.periodId]);
+    let active: { id: string; metadata: AnyRecord } | undefined;
+    for (const row of sources) {
+      let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { continue; }
+      if (!metadata.reversed && !metadata.deleted) { active = { id: row.id, metadata }; break; }
+    }
+    if (!active) return this.postOpeningBalances({ date, cash, inventory, memo: input.memo });
+    if (Number(active.metadata.cash) === cash && Number(active.metadata.inventory) === inventory && active.metadata.date === date) return { sourceId: active.id, alreadyPosted: true };
+    await this.documents.reverseSource(active.id, 'opening_balance', 'Update opening balances', true);
+    const total = cents(cash + inventory);
+    if (total === 0) return { sourceId: active.id, alreadyPosted: false, journal: null };
+    const source: any = { id: `${context.bookId}:opening:${context.periodId}:${Date.now().toString(36)}`, bookId: context.bookId, type: 'opening_balance', date, metadata: { cash, inventory, date } };
+    const lines: any[] = [];
+    if (cash) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
+    if (inventory) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
+    lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: total });
+    const journal = await this.repo.postSourceJournal(source, { bookId: context.bookId, periodId: context.periodId, date, memo: input.memo || 'Opening balances', lines });
+    return { sourceId: source.id, alreadyPosted: false, journal };
+  }
   /** Record a dated physical inventory count in the authoritative V2 repository. */
   async recordInventoryCount(input: { date: string; value: number; notes?: string }) {
     const context = await this.activeContext(input.date);
@@ -237,6 +265,111 @@ export class V2AppService {
     return { ...count, notes: input.notes || '' };
   }
 
+  /** Record a dated non-trading asset (for example, a shop/security deposit) with an explicit funding source. */
+  async recordManualAsset(input: { date: string; name: string; category?: string; amount: number; funding: 'cash' | 'bank' | 'capital' | 'liability'; notes?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const value = cents(input.amount);
+    const name = String(input.name || '').trim();
+    if (!name || !Number.isFinite(value) || value <= 0) throw new Error('Asset name and a positive amount are required');
+    await this.repo.ensureDefaultAccounts(context.bookId);
+    const creditCode = input.funding === 'bank' ? V2_ACCOUNT_CODES.BANK
+      : input.funding === 'capital' ? V2_ACCOUNT_CODES.CAPITAL
+      : input.funding === 'liability' ? V2_ACCOUNT_CODES.OTHER_LIABILITIES
+      : V2_ACCOUNT_CODES.CASH;
+    const source: any = {
+      id: `manual_asset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      bookId: context.bookId,
+      type: 'manual_asset',
+      date: input.date,
+      metadata: { name, category: String(input.category || 'Other asset'), total: value, funding: input.funding, notes: input.notes || '' },
+    };
+    const journal = await this.repo.postSourceJournal(source, {
+      bookId: context.bookId, periodId: context.periodId, date: input.date,
+      memo: `Asset: ${name}`,
+      lines: [
+        { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.OTHER_ASSETS}`, debit: value, credit: 0, memo: name },
+        { accountId: `${context.bookId}:account:${creditCode}`, debit: 0, credit: value, memo: input.notes || name },
+      ],
+    });
+    return { source, journal };
+  }
+
+  /** Record a dated non-trading liability. Supplier dues belong in vendor bills, not here. */
+  async recordManualLiability(input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense'; notes?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const value = cents(input.amount);
+    const name = String(input.name || '').trim();
+    if (!name || !Number.isFinite(value) || value <= 0) throw new Error('Liability name and a positive amount are required');
+    await this.repo.ensureDefaultAccounts(context.bookId);
+    const debitCode = input.recognition === 'bank' ? V2_ACCOUNT_CODES.BANK
+      : input.recognition === 'asset' ? V2_ACCOUNT_CODES.OTHER_ASSETS
+      : input.recognition === 'expense' ? V2_ACCOUNT_CODES.EXPENSES
+      : V2_ACCOUNT_CODES.CASH;
+    const source: any = {
+      id: `manual_liability_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      bookId: context.bookId,
+      type: 'manual_liability',
+      date: input.date,
+      metadata: { name, category: String(input.category || 'Other liability'), total: value, recognition: input.recognition, notes: input.notes || '' },
+    };
+    const journal = await this.repo.postSourceJournal(source, {
+      bookId: context.bookId, periodId: context.periodId, date: input.date,
+      memo: `Liability: ${name}`,
+      lines: [
+        { accountId: `${context.bookId}:account:${debitCode}`, debit: value, credit: 0, memo: input.notes || name },
+        { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.OTHER_LIABILITIES}`, debit: 0, credit: value, memo: name },
+      ],
+    });
+    return { source, journal };
+  }
+
+  /** Inventory screen data sourced exclusively from the V2 book when it is active. */
+  async inventoryOverview() {
+    const context = await this.activeContext();
+    if (!context) return null;
+    const period = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE id=? AND book_id=?', [context.periodId, context.bookId]);
+    if (!period) return null;
+    const closeRepo = new V2CloseBooksRepository(this.db);
+    const counts = await closeRepo.listInventoryCounts(context.bookId, context.periodId);
+    const expectedAt = async (to: string) => {
+      const report = await buildPersistentV2Reports(this.db, { bookId: context.bookId, to });
+      return cents(report.trialBalance.accounts.find((account) => account.code === V2_ACCOUNT_CODES.INVENTORY)?.normalBalance || 0);
+    };
+    const history = await Promise.all(counts.map(async (count) => {
+      const expectedStock = await expectedAt(count.date);
+      return { id: count.id, date: count.date, actualStock: count.value, expectedStock, variance: cents(count.value - expectedStock), notes: '' };
+    }));
+    const expected = await expectedAt(period.end_date);
+    const openingInventory = await expectedAt(period.start_date);
+    const lastAudit = history.length ? history[history.length - 1] : null;
+    return { expected, openingInventory, lastAudit, purchasesSince: 0, salesSince: 0, history: history.reverse() };
+  }
+
+  async deleteV2InventoryCount(id: string) {
+    const context = await this.activeContext();
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const count = await this.db.first<{ id: string }>('SELECT id FROM v2_inventory_counts WHERE id=? AND book_id=? AND period_id=?', [id, context.bookId, context.periodId]);
+    if (!count) throw new Error('Inventory count not found in the active period');
+    await this.db.run('DELETE FROM v2_inventory_counts WHERE id=?', [id]);
+  }
+  async listManualBalanceTransactions() {
+    const context = await this.activeContext();
+    if (!context) return [];
+    const rows = await this.db.all<any>("SELECT id,type,date,metadata FROM v2_sources WHERE book_id=? AND type IN ('manual_asset','manual_liability') ORDER BY date DESC,id DESC", [context.bookId]);
+    return rows.flatMap((row) => {
+      let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; }
+      if (metadata.reversed || metadata.deleted) return [];
+      return [{ id: row.id, type: row.type === 'manual_asset' ? 'asset' as const : 'liability' as const, date: row.date, name: String(metadata.name || ''), category: String(metadata.category || ''), amount: Number(metadata.total || 0), counterparty: String(metadata.funding || metadata.recognition || ''), notes: String(metadata.notes || '') }];
+    });
+  }
+
+  async deleteManualBalanceTransaction(sourceId: string) {
+    const type = await this.sourceType(sourceId);
+    if (type !== 'manual_asset' && type !== 'manual_liability') throw new Error('Manual balance transaction not found');
+    return this.documents.reverseSource(sourceId, type, 'Delete manual balance transaction', true);
+  }
   async sourceType(id: string): Promise<string | null> {
     const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [id]);
     return row?.type || null;

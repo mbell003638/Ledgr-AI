@@ -9,6 +9,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { api } from '@/src/api';
 import { v2ReportsOrFallback } from '@/src/accountingV2/runtime';
 import { buildCustomReport, customReportText, CUSTOM_REPORT_FIELDS, type CustomReportField, type CustomReportGroup, type CustomReportSectionId } from '@/src/accountingV2/customReports';
+import { buildStatementDocument } from '@/src/utils/statementDocument';
 
 const SECTIONS = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Sales', 'Purchases', 'Receipts', 'Expenses', 'Inventory & COGS', 'Debtors', 'Creditors'] as const;
 const SECTION_IDS: Record<string, CustomReportSectionId> = { 'Trial Balance': 'trialBalance', 'Profit & Loss': 'profit', 'Balance Sheet': 'balanceSheet', Sales: 'sales', Purchases: 'purchases', Receipts: 'receipts', Expenses: 'expenses', 'Inventory & COGS': 'inventory', Debtors: 'debtors', Creditors: 'creditors' };
@@ -67,141 +68,48 @@ export default function CustomReportScreen() {
     } finally { setBusy(false); }
   };
 
-  const buildStyledHtml = (text: string) => {
-    const lines = text.split('\n');
-    let bodyHtml = '';
-    let currentSection = '';
-    let tableRows = '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      if (trimmed === trimmed.toUpperCase() && trimmed.length > 3 && !trimmed.includes(':')) {
-        if (tableRows) {
-          bodyHtml += `<table><thead><tr><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${tableRows}</tbody></table>`;
-          tableRows = '';
-        }
-        currentSection = trimmed;
-        bodyHtml += `<div class="section-title">${currentSection}</div>`;
-      } else if (trimmed.includes(':')) {
-        const [label, val] = trimmed.split(':');
-        tableRows += `<tr><td>${label.trim()}</td><td class="num">${val ? val.trim() : ''}</td></tr>`;
-      } else {
-        tableRows += `<tr><td colspan="2" class="subheader">${trimmed}</td></tr>`;
-      }
-    }
-    if (tableRows) {
-      bodyHtml += `<table><thead><tr><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${tableRows}</tbody></table>`;
-    }
-
-    const tc = theme.color || {};
-    const primary = tc.surfaceInverse || tc.surface || "#1e202c";
-    const accent  = tc.brandPrimary || tc.brand || "#FDBA21";
-    const accentText = tc.onBrandPrimary || "#111111";
-
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <style>
-    @media print {
-      * {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      }
-      body { background: #fff !important; padding: 0 !important; }
-    }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
-    .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
-    .top-bg-container { position: absolute; top: 0; left: 0; width: 100%; height: 264px; z-index: 0; overflow: hidden; }
-    .bg-dark { position: absolute; top: 0; left: 0; width: 100%; height: 160px; background: ${primary}; }
-    .bg-white-slant { position: absolute; top: 0; left: 40%; width: 12px; height: 160px; background: #fff; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-slant { position: absolute; top: 160px; left: calc(40% - 46px); width: 100px; height: 100px; background: ${accent}; transform-origin: top left; transform: skewX(-20deg); }
-    .bg-yellow-rect { position: absolute; top: 160px; left: calc(40% - 46px); right: 0; height: 100px; background: ${accent}; }
-    .bg-yellow-border { position: absolute; top: 260px; left: 0; right: 0; height: 4px; background: ${accent}; }
-    .header-content { display: flex; height: 160px; position: relative; z-index: 10; }
-    .header-left { width: 40%; padding: 40px; display: flex; align-items: center; justify-content: center; }
-    .header-logo-text { font-size: 48px; font-weight: 900; color: #fff; letter-spacing: 2px; }
-    .header-right { width: 60%; padding: 35px 40px; box-sizing: border-box; }
-    .report-top-title { color: ${accent}; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-    .biz-name { font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 4px; text-transform: uppercase; }
-    .banner-content { display: flex; height: 100px; position: relative; z-index: 10; }
-    .banner-left { width: 40%; padding: 0 40px; display: flex; align-items: center; justify-content: center; }
-    .report-heading { font-size: 26px; font-weight: 900; color: #111; letter-spacing: 1.5px; text-transform: uppercase; margin: 0; }
-    .banner-right { width: 60%; display: flex; align-items: center; padding: 0 40px 0 20px; }
-    .banner-col { text-align: left; border-left: 1.5px solid rgba(0,0,0,0.6); padding-left: 15px; flex: 1; margin-left: 10px; }
-    .banner-col:first-child { border-left: none; padding-left: 0; margin-left: 0; }
-    .banner-label { font-size: 11px; font-weight: 700; color: #222; }
-    .banner-val { font-size: 13px; font-weight: 800; margin-top: 4px; color: #111; }
-    .content { padding: 40px; }
-    .section-title { font-size: 14px; font-weight: 800; color: ${primary}; background: #f9f9f9; padding: 10px 14px; border-left: 5px solid ${accent}; margin-top: 28px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
-    th { background: ${primary}; color: #ffffff; text-align: left; padding: 10px 14px; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-    td { padding: 10px 14px; border-bottom: 1px solid #eee; color: #333; }
-    tr:nth-child(even) td { background-color: #fafafa; }
-    .num { text-align: right; font-weight: 600; }
-    .subheader { font-weight: 700; color: ${primary}; background: #f4f5f7; font-size: 12px; text-transform: uppercase; }
-    .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; margin-top: 40px; }
-    .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-  </style>
-</head>
-<body>
-  <div class="page-container">
-    <div class="top-bg-container">
-      <div class="bg-dark"></div>
-      <div class="bg-white-slant"></div>
-      <div class="bg-yellow-slant"></div>
-      <div class="bg-yellow-rect"></div>
-      <div class="bg-yellow-border"></div>
-    </div>
-
-    <div class="header-content">
-      <div class="header-left">
-        <div class="header-logo-text">L</div>
-      </div>
-      <div class="header-right">
-        <div class="report-top-title">CUSTOM FINANCIAL STATEMENT</div>
-      </div>
-    </div>
-
-    <div class="banner-content">
-      <div class="banner-left">
-        <h1 class="report-heading">STATEMENT</h1>
-      </div>
-      <div class="banner-right">
-        <div class="banner-col">
-          <div class="banner-label">Period</div>
-          <div class="banner-val">${from} to ${to}</div>
-        </div>
-        <div class="banner-col">
-          <div class="banner-label">Generated</div>
-          <div class="banner-val">${new Date().toLocaleDateString()}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="content">
-      ${bodyHtml}
-    </div>
-
-    <div class="footer-bar">
-      <div class="thank-you">Generated by Ledgr</div>
-      <div>Official custom accounting report &middot; ${new Date().toLocaleDateString()}</div>
-    </div>
-  </div>
-</body>
-</html>`;
-  };
+  const buildStyledHtml = (text: string, businessName = "Ledgr") => buildStatementDocument({
+    businessName,
+    title: "Custom Financial Statement",
+    from,
+    to,
+    text,
+    accent: theme.color.brandPrimary,
+    landscape,
+  });
 
   const pdf = async () => {
     const text = preview || await generate();
-    const { uri } = await Print.printToFileAsync({ html: buildStyledHtml(text) });
+    const settings: any = await api.getSettings().catch(() => ({}));
+    const { uri } = await Print.printToFileAsync({ html: buildStyledHtml(text, String(settings.businessName || settings.name || 'Ledgr')) });
     if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share Custom Report' });
   };
 
-  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} style={styles.input} placeholder="To YYYY-MM-DD"/></View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <><View style={styles.preview}><Text style={styles.previewText}>{preview}</Text></View><View style={styles.actions}><Pressable onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF / Print</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} style={styles.input} placeholder="To YYYY-MM-DD"/></View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <><CustomReportPreview text={preview} styles={styles} theme={theme}/><View style={styles.actions}><Pressable onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF / Print</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
 }
 
-function makeStyles(t: any) { return StyleSheet.create({ container: { flex: 1, backgroundColor: t.color.surface }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: t.spacing.lg, borderBottomWidth: 1, borderColor: t.color.border }, title: { fontSize: 18, fontWeight: '800', color: t.color.onSurface }, content: { padding: t.spacing.lg, paddingBottom: 80 }, hint: { color: t.color.muted, lineHeight: 21 }, dates: { gap: 10, marginTop: 18 }, input: { backgroundColor: t.color.surfaceSecondary, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.md, padding: 13, color: t.color.onSurface }, section: { fontSize: 15, fontWeight: '700', color: t.color.onSurface, marginTop: 22, marginBottom: 10 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderWidth: 1, borderColor: t.color.border, borderRadius: 999, backgroundColor: t.color.surfaceSecondary }, chipOn: { backgroundColor: t.color.brandPrimary, borderColor: t.color.brandPrimary }, chipText: { fontSize: 13, fontWeight: '600', color: t.color.onSurface }, primary: { marginTop: 24, backgroundColor: t.color.brandPrimary, borderRadius: t.radius.md, padding: 15, alignItems: 'center' }, primaryText: { color: '#fff', fontWeight: '800' }, preview: { marginTop: 20, padding: 18, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.lg, backgroundColor: t.color.surfaceSecondary }, previewText: { color: t.color.onSurface, lineHeight: 20 }, actions: { flexDirection: 'row', gap: 10, marginTop: 12 }, secondary: { flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center', padding: 13, borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border }, secondaryText: { fontWeight: '700', color: t.color.brandPrimary } }); }
+function CustomReportPreview({ text, styles, theme }: { text: string; styles: any; theme: any }) {
+  const sections: { title: string; rows: string[] }[] = [];
+  let current: { title: string; rows: string[] } | undefined;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || /^Ledgr Custom Report$/i.test(line) || /^Period:/i.test(line) || /^Source:/i.test(line)) continue;
+    const heading = line === line.toUpperCase() && /[A-Z]/.test(line) && !line.includes(':');
+    if (heading) { current = { title: line, rows: [] }; sections.push(current); }
+    else { if (!current) { current = { title: 'REPORT', rows: [] }; sections.push(current); } current.rows.push(line); }
+  }
+  const renderRow = (line: string, index: number) => {
+    const fields = Object.fromEntries(line.split('|').map((part) => { const i = part.indexOf(':'); return i > -1 ? [part.slice(0, i).trim(), part.slice(i + 1).trim()] : ['detail', part.trim()]; }));
+    if (fields.accountName) {
+      const value = [fields.debit && `Dr ${fields.debit}`, fields.credit && `Cr ${fields.credit}`].filter(Boolean).join(' · ');
+      return <View key={`${line}-${index}`} style={styles.previewRow}><Text style={styles.previewKey}>{fields.accountName}{fields.accountCode ? ` (${fields.accountCode})` : ''}</Text><Text style={styles.previewValue}>{value || '—'}</Text></View>;
+    }
+    const first = line.indexOf(':');
+    if (first > -1 && !line.includes('|')) return <View key={`${line}-${index}`} style={styles.previewRow}><Text style={styles.previewKey}>{line.slice(0, first).trim()}</Text><Text style={styles.previewValue}>{line.slice(first + 1).trim()}</Text></View>;
+    return <Text key={`${line}-${index}`} style={styles.previewDetail}>{line.replace(/\|/g, ' · ')}</Text>;
+  };
+  return <View style={styles.preview}>
+    {sections.map((section) => <View key={section.title} style={styles.previewSection}><Text style={[styles.previewHeader, { color: theme.color.brandPrimary }]}>{section.title}</Text>{section.rows.map(renderRow)}</View>)}
+  </View>;
+}
+function makeStyles(t: any) { return StyleSheet.create({ container: { flex: 1, backgroundColor: t.color.surface }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: t.spacing.lg, borderBottomWidth: 1, borderColor: t.color.border }, title: { fontSize: 18, fontWeight: '800', color: t.color.onSurface }, content: { padding: t.spacing.lg, paddingBottom: 80 }, hint: { color: t.color.muted, lineHeight: 21 }, dates: { gap: 10, marginTop: 18 }, input: { backgroundColor: t.color.surfaceSecondary, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.md, padding: 13, color: t.color.onSurface }, section: { fontSize: 15, fontWeight: '700', color: t.color.onSurface, marginTop: 22, marginBottom: 10 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderWidth: 1, borderColor: t.color.border, borderRadius: 999, backgroundColor: t.color.surfaceSecondary }, chipOn: { backgroundColor: t.color.brandPrimary, borderColor: t.color.brandPrimary }, chipText: { fontSize: 13, fontWeight: '600', color: t.color.onSurface }, primary: { marginTop: 24, backgroundColor: t.color.brandPrimary, borderRadius: t.radius.md, padding: 15, alignItems: 'center' }, primaryText: { color: '#fff', fontWeight: '800' }, preview: { marginTop: 20, padding: 14, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.lg, backgroundColor: t.color.surfaceSecondary }, previewText: { color: t.color.onSurface, lineHeight: 20 }, previewSection: { marginBottom: 15 }, previewHeader: { fontSize: 12, fontWeight: '800', letterSpacing: .6, marginBottom: 6 }, previewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.color.border }, previewKey: { flex: 1, color: t.color.onSurface, fontSize: 12, fontWeight: '600' }, previewValue: { color: t.color.muted, fontSize: 11, textAlign: 'right', maxWidth: '48%' }, previewDetail: { color: t.color.muted, fontSize: 11, lineHeight: 16, paddingVertical: 4 }, actions: { flexDirection: 'row', gap: 10, marginTop: 12 }, secondary: { flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center', padding: 13, borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border }, secondaryText: { fontWeight: '700', color: t.color.brandPrimary } }); }

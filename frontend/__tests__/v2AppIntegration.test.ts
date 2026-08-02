@@ -230,4 +230,30 @@ describe('V2 application write integration', () => {
       await expect(service.getPartyDetail(customerId, 'supplier')).resolves.toBeNull();
     } finally { close(); }
   });
+  it('updates the single V2 opening source through a reversal trail instead of creating duplicate opening balances', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.updateOpeningBalances({ date: '2026-01-01', cash: 100, inventory: 20 });
+      await service.updateOpeningBalances({ date: '2026-01-01', cash: 75, inventory: 45 });
+      const active = await runner.first<any>("SELECT id,metadata FROM v2_sources WHERE type='opening_balance' AND json_extract(metadata,'$.reversed') IS NULL");
+      expect(JSON.parse(active.metadata)).toMatchObject({ cash: 75, inventory: 45 });
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n)).toBe(1);
+      expect((await service.repo.reconcileBook('active-v2')).balanced).toBe(true);
+    } finally { close(); }
+  });
+
+  it('includes manual assets and liabilities in the V2 dashboard and retains V2 inventory history', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.recordManualAsset({ date: '2026-07-01', name: 'Shop deposit', amount: 50, funding: 'capital' });
+      await service.recordManualLiability({ date: '2026-07-02', name: 'Equipment finance', amount: 10, recognition: 'asset' });
+      await service.recordInventoryCount({ date: '2026-07-03', value: 30, notes: 'Counted' });
+      const { getV2Dashboard } = await import('../src/accountingV2/v2Dashboard');
+      await expect(getV2Dashboard(runner, 'active-v2')).resolves.toMatchObject({ otherAssets: 60, otherLiabilities: 10, assets: 60, liabilities: 10, netWorth: 50 });
+      const overview = await service.inventoryOverview();
+      expect(overview?.history).toEqual(expect.arrayContaining([expect.objectContaining({ date: '2026-07-03', actualStock: 30 })]));
+      await service.deleteV2InventoryCount(String(overview?.history[0].id));
+      await expect(service.inventoryOverview()).resolves.toMatchObject({ history: [] });
+    } finally { close(); }
+  });
 });

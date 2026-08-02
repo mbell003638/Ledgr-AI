@@ -203,10 +203,35 @@ export const api = {
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).postOpeningBalances(input);
   },
+  updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).updateOpeningBalances(input);
+  },
   recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).recordInventoryCount(input);
+  },
+  createManualAsset: async (input: { date: string; name: string; category?: string; amount: number; funding: 'cash' | 'bank' | 'capital' | 'liability'; notes?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Manual asset transactions require SQLite storage');
+    return new V2AppService(runner).recordManualAsset(input);
+  },
+  createManualLiability: async (input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense'; notes?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Manual liability transactions require SQLite storage');
+    return new V2AppService(runner).recordManualLiability(input);
+  },
+  listManualBalanceTransactions: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return [];
+    return new V2AppService(runner).listManualBalanceTransactions();
+  },
+  deleteManualBalanceTransaction: async (sourceId: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Manual balance transactions require SQLite storage');
+    return new V2AppService(runner).deleteManualBalanceTransaction(sourceId);
   },
   getSettings: () => db.getSettings(),
   updateSettings: (s: any) => db.updateSettings(s),
@@ -419,6 +444,16 @@ export const api = {
   deletePayment: (id: string) => mutateTransaction('deletePayment', id),
 
   // Inventory
+  v2InventoryOverview: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return null;
+    return new V2AppService(runner).inventoryOverview();
+  },
+  deleteV2InventoryCount: async (id: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).deleteV2InventoryCount(id);
+  },
   listInventory: () => db.listInventory(),
   expectedInventory: () => db.expectedInventory(),
   createInventory: (i: any) => db.createInventory(i),

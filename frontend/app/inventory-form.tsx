@@ -21,22 +21,30 @@ export default function InventoryForm() {
   const [info, setInfo] = useState<any>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [history, setHistory] = useState<any[]>([]);
+  const [usingV2, setUsingV2] = useState(false);
 
   const [openingStock, setOpeningStock] = useState(0);
+  const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
   const [editingOpening, setEditingOpening] = useState(false);
   const [openingInput, setOpeningInput] = useState("");
 
   const loadData = async () => {
     try {
-      const [r, list, settings] = await Promise.all([
-        api.expectedInventory(),
-        api.listInventory(),
-        api.getSettings(),
-      ]);
-      setExpected(r.expected);
-      setInfo(r);
-      setHistory(Array.isArray(list) ? list : []);
+      const [v2, settings] = await Promise.all([api.v2InventoryOverview(), api.getSettings()]);
+      if (v2) {
+        setUsingV2(true);
+        setExpected(Number(v2.expected || 0));
+        setInfo(v2);
+        setHistory(Array.isArray(v2.history) ? v2.history : []);
+      } else {
+        setUsingV2(false);
+        const [legacyExpected, legacyHistory] = await Promise.all([api.expectedInventory(), api.listInventory()]);
+        setExpected(legacyExpected.expected);
+        setInfo(legacyExpected);
+        setHistory(Array.isArray(legacyHistory) ? legacyHistory : []);
+      }
       const op = Number(settings.openingInventory || 0);
+      setOpeningEffectiveDate(String(settings.currentPeriodStart || ""));
       setOpeningStock(op);
       setOpeningInput(String(op));
     } catch (e) { console.warn(e); }
@@ -51,13 +59,14 @@ export default function InventoryForm() {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
     try {
-      await api.updateSettings({ openingInventory: val });
+      // Journal first; settings remain a legacy compatibility mirror for the V2 opening source.
+      const settings = await api.getSettings();
       try {
-        const settings = await api.getSettings();
-        await api.postV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
+      await api.updateSettings({ openingInventory: val });
       setOpeningStock(val);
       setEditingOpening(false);
       loadData();
@@ -86,7 +95,8 @@ export default function InventoryForm() {
 
   const deleteAudit = async (id: string) => {
     try {
-      await api.deleteInventory(id);
+      if (usingV2) await api.deleteV2InventoryCount(id);
+      else await api.deleteInventory(id);
       loadData();
     } catch (e: any) { setError(e.message); }
   };
@@ -122,9 +132,14 @@ export default function InventoryForm() {
               {/* Opening Stock Card */}
               <Card style={{ marginBottom: theme.spacing.md }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Opening Stock Balance</Text>
-                    <Text style={styles.hint}>Initial inventory value at start of period</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                    <View style={styles.openingBadge}>
+                      <Ionicons name="cube-outline" size={18} color={theme.color.brandPrimary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Opening Stock Balance</Text>
+                      <Text style={styles.hint}>Initial inventory value at start of period{openingEffectiveDate ? ` · Effective ${openingEffectiveDate}` : ""}</Text>
+                    </View>
                   </View>
                   {!editingOpening ? (
                     <Pressable onPress={() => setEditingOpening(true)} style={styles.openingValBox}>
@@ -158,7 +173,7 @@ export default function InventoryForm() {
                 )}
                 <Text style={[styles.label, { marginTop: 16 }]}>Audit Date (YYYY-MM-DD)</Text>
                 <TextInput testID="input-inv-date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-                <Text style={styles.label}>Physical Stock Count (Shelf Count, USD)</Text>'
+                <Text style={[styles.label, { marginTop: 14 }]}>Physical Stock Count (Shelf Count, USD)</Text>
                 <TextInput
                   testID="input-actual-stock"
                   value={actual}
@@ -273,6 +288,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   closeCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
   closeConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.brandPrimary },
   closeConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  openingBadge: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
   openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
   openingValText: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary },
   openingInput: { width: 90, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, color: theme.color.onSurface },

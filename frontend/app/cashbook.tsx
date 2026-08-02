@@ -65,6 +65,14 @@ export default function CashBookScreen() {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
     try {
+      // Post to the authoritative V2 journal before mirroring the value into legacy settings.
+      // This prevents the display setting from changing if the accounting period is locked.
+      const settings = await api.getSettings();
+      try {
+        await api.updateV2OpeningBalances({ date: settings.currentPeriodStart || undefined, cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
+      } catch (e: any) {
+        if (!/requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      }
       await api.updateSettings({ openingCash: val });
       setOpeningCash(val);
       setEditingOpening(false);
