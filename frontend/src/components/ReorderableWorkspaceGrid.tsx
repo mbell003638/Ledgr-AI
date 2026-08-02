@@ -237,7 +237,7 @@ function ReorderableWorkspaceTile({
       borderColor: interpolateColor(focus, [0, 1], [solidBrand ? theme.color.brandPrimary : isBrand ? theme.color.brandPrimary + "80" : theme.color.glassBorder, solidBrand ? theme.color.brandSecondary : theme.color.brandPrimary]),
       transform: reduceMotion ? [] : [
         { translateY: interpolate(hover.value, [0, 1], [0, -5]) },
-        { scale: 1 + hover.value * 0.02 - pressed.value * 0.015 },
+        { scale: 1 + hover.value * 0.02 - pressed.value * 0.03 },
       ],
       shadowColor: theme.color.brandPrimary,
       shadowOpacity: isWeb ? interpolate(focus, [0, 1], [isBrand ? 0.16 : 0, theme.effects.glowOpacity]) : 0,
@@ -391,7 +391,7 @@ function ReorderableWorkspaceTile({
           onHoverOut={() => animateHover(0)}
           onPressIn={() => {
             animatePress(1);
-            if (!editing && Platform.OS !== "web") {
+            if (animationsEnabled && !editing && Platform.OS !== "web") {
               Haptics.selectionAsync().catch(() => {});
             }
           }}

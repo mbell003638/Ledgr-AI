@@ -120,6 +120,20 @@ async function call(
   return callOpenAI(cfg, prompt, parts, jsonSchema);
 }
 
+const AI_REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchAI(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('AI request timed out. Check your connection and try again.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 // ---------------- Gemini native ----------------
 async function callGemini(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
   const base = resolveBaseUrl(cfg);
@@ -131,7 +145,7 @@ async function callGemini(cfg: AIConfig, prompt: string, parts: any[], schema?: 
       ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
     },
   };
-  const res = await fetch(url, {
+  const res = await fetchAI(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -172,7 +186,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     headers['HTTP-Referer'] = 'https://ledgr.app';
     headers['X-Title'] = 'Ledgr';
   }
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetchAI(url, { method: 'POST', headers, body: JSON.stringify(body) });
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -199,7 +213,7 @@ async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema
     temperature: 0,
     messages: [{ role: 'user', content }],
   };
-  const res = await fetch(url, {
+  const res = await fetchAI(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -254,7 +268,7 @@ const PARSE_SCHEMA = {
   required: ['intent', 'summary'],
 };
 
-export async function parseCommand(cfg: AIConfig, text: string) {
+export async function parseCommand(cfg: AIConfig, text: string, currency = 'USD') {
   const today = new Date().toISOString().slice(0, 10);
   const prompt =
     `Today is ${today}. Parse this shop accounting voice command into JSON. ` +
@@ -264,7 +278,7 @@ export async function parseCommand(cfg: AIConfig, text: string) {
     "For a 'receipt', also set receiptMode: 'cash_sale' (walk-in paid now, no customer owed), " +
     "'against_invoice' (settling what a named customer already owes), or 'advance' (money before any invoice). " +
     "Set customerName when a customer is named, and method (cash/card/bank/upi) if stated. " +
-    'Use ISO date YYYY-MM-DD. All amounts are in USD. ' +
+    'Use ISO date YYYY-MM-DD. All amounts are in ' + currency + '. ' +
     "Provide a short human summary. Fields: intent, date, amount, currency, supplierName, customerName, partnerName, paymentType, receiptMode, method, notes, summary. " +
     'Command: ' + text;
   const out = await call(cfg, prompt, [], PARSE_SCHEMA);
@@ -283,11 +297,11 @@ const OCR_SCHEMA = {
   },
 };
 
-export async function ocrReceipt(cfg: AIConfig, imageBase64: string, mimeType = 'image/jpeg') {
+export async function ocrReceipt(cfg: AIConfig, imageBase64: string, mimeType = 'image/jpeg', currency = 'USD') {
   const prompt =
     'Extract from this receipt/invoice and return JSON with fields ' +
     'supplierName (business name), date (YYYY-MM-DD), amount (total number), ' +
-    'currency (always USD), invoiceNo, rawText (full text).';
+    'currency (use ' + currency + '), invoiceNo, rawText (full text).';
   const parts = [{ inlineData: { mimeType, data: imageBase64 } }];
   const out = await call(cfg, prompt, parts, OCR_SCHEMA);
   return parseJson(out);
@@ -345,8 +359,8 @@ export async function reconcileStatementAI(cfg: AIConfig, imageBase64: string, m
 
 // Knowledge about the app itself, so the assistant can explain how to use it.
 const APP_GUIDE =
-  "This app is Ledgr, a standalone (offline, on-device) bookkeeping app for small businesses " +
-  "(shops, service providers, retailers). All data is stored on the phone; nothing is sent to a server. " +
+  "This app is Ledgr, a bookkeeping app for small businesses (shops, service providers, retailers). " +
+  "Ledger data is stored on the phone. When the user explicitly uses an AI feature, only the prompt and relevant selected data, image, audio, or statement are sent directly to their chosen AI provider. " +
   "Main features and where to find them:\n" +
   "- Dashboard (Home): cash, inventory value, net worth, sales, purchases, profit at a glance.\n" +
   "- Purchases (Bills): record what you buy from suppliers/vendors (cash or credit).\n" +

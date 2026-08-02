@@ -7,13 +7,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BarChart } from "react-native-gifted-charts";
 
 import { fmt } from "@/src/theme";
-import { useAnimations, useTheme } from "@/src/context/ThemeContext";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Animated, { Easing, interpolate, interpolateColor, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
@@ -78,65 +78,24 @@ const HIDDEN_TILES: Record<string, string[]> = {
 };
 
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
-  const { animationsEnabled } = useAnimations();
-  const reduceMotion = useReducedMotion() || !animationsEnabled;
-  const hover = useSharedValue(0);
-  const pressed = useSharedValue(0);
-
-  const setHover = (value: number) => {
-    hover.value = reduceMotion
-      ? value
-      : withTiming(value, {
-          duration: theme.motion.expressive,
-          easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-        });
-  };
-
-  const setPressed = (value: number) => {
-    pressed.value = reduceMotion
-      ? value
-      : withTiming(value, {
-          duration: theme.motion.standard,
-          easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-        });
-  };
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const focus = Math.max(hover.value, pressed.value);
-    return {
-      borderColor: interpolateColor(focus, [0, 1], ["rgba(0,0,0,0)", theme.color.brandPrimary]),
-      transform: [
-        { translateY: reduceMotion ? 0 : interpolate(focus, [0, 1], [0, -5]) },
-        { scale: reduceMotion ? 1 : interpolate(focus, [0, 1], [1, 1.02]) },
-      ],
-      shadowColor: theme.color.brandPrimary,
-      shadowOpacity: Platform.OS === "web" ? interpolate(focus, [0, 1], [0.3, 0.5]) : 0,
-      shadowRadius: Platform.OS === "web" ? interpolate(focus, [0, 1], [30, 38]) : 0,
-      elevation: Platform.OS === "web" ? interpolate(focus, [0, 1], [8, 12]) : 0,
-    };
-  }, [reduceMotion, theme]);
-
+  // Keep the hero on the same safe transform-only touch treatment as every
+  // interactive dashboard tile. Native shadows are deliberately not animated.
   return (
-    <AnimatedPressable
-      onHoverIn={() => setHover(1)}
-      onHoverOut={() => setHover(0)}
-      onPressIn={() => setPressed(1)}
-      onPressOut={() => setPressed(0)}
-      style={[{
-        borderRadius: theme.radius.lg,
-        borderWidth: 1,
-        marginBottom: 16,
-        shadowOffset: { width: 0, height: 10 },
-      }, animatedStyle]}
+    <GlowPressable
+      topHighlight={false}
+      haptic={false}
+      clipSafe
+      pressScale={0.972}
+      restingBorderColor="transparent"
+      hoverBorderColor={theme.color.brandPrimary}
+      style={{ borderRadius: theme.radius.lg, marginBottom: 16, shadowOffset: { width: 0, height: 10 } }}
     >
       {children}
-    </AnimatedPressable>
+    </GlowPressable>
   );
 }
-
 export default function Dashboard() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -369,6 +328,7 @@ export default function Dashboard() {
                       haptic
                       hoverLift={-2}
                       hoverScale={1.03}
+                      pressScale={0.972}
                       restingBorderColor={active ? theme.color.brandPrimary : theme.color.glassBorder}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
@@ -405,12 +365,9 @@ export default function Dashboard() {
                     placeholderTextColor={theme.color.muted}
                     style={styles.customDateInput}
                   />
-                  <Pressable
-                    onPress={() => applyPeriod("custom", fromDate, toDate)}
-                    style={styles.customFilterButton}
-                  >
+                  <GlowPressable onPress={() => applyPeriod("custom", fromDate, toDate)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.customFilterButton}>
                     <Text style={{ color: theme.color.onBrandPrimary, fontWeight: "700", fontSize: 12 }}>Filter</Text>
-                  </Pressable>
+                  </GlowPressable>
                 </View>
               )}
             </View>
@@ -490,17 +447,17 @@ export default function Dashboard() {
                   </Text>
                 </View>
                 <View style={styles.dailyNav}>
-                  <Pressable testID="btn-day-prev" onPress={() => shiftDay(-1)} style={styles.dailyNavBtn}>
+                  <GlowPressable testID="btn-day-prev" onPress={() => shiftDay(-1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-back" size={18} color={theme.color.onSurface} />
-                  </Pressable>
+                  </GlowPressable>
                   {!isToday ? (
-                    <Pressable testID="btn-day-today" onPress={jumpToToday} style={[styles.dailyNavBtn, { paddingHorizontal: 10, width: undefined }]}>
+                    <GlowPressable testID="btn-day-today" onPress={jumpToToday} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={[styles.dailyNavBtn, { paddingHorizontal: 10, width: undefined }]}>
                       <Text style={{ color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 }}>Today</Text>
-                    </Pressable>
+                    </GlowPressable>
                   ) : null}
-                  <Pressable testID="btn-day-next" onPress={() => shiftDay(1)} style={styles.dailyNavBtn}>
+                  <GlowPressable testID="btn-day-next" onPress={() => shiftDay(1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-forward" size={18} color={theme.color.onSurface} />
-                  </Pressable>
+                  </GlowPressable>
                 </View>
               </View>
               <View style={styles.dailyStats}>
@@ -517,10 +474,10 @@ export default function Dashboard() {
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.dailyStatValue}>{fmt(daily?.grossProfit ?? 0)}</Text>
                 </View>
               </View>
-              <Pressable testID="btn-share-daily" onPress={shareDaily} style={styles.shareBtn}>
+              <GlowPressable testID="btn-share-daily" onPress={shareDaily} haptic prominent topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.shareBtn}>
                 <Ionicons name="logo-whatsapp" size={16} color="#fff" />
                 <Text style={styles.shareBtnText}>Share to WhatsApp</Text>
-              </Pressable>
+              </GlowPressable>
             </Card>
 
             {/* KPI row — tap to open the underlying entries */}

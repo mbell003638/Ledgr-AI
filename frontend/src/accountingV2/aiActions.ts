@@ -123,6 +123,51 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
   }
 }
 
+export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'record_inventory';
+export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation };
+export type AssistantProposalValidationResult = { ok: true; action: AssistantProposal } | { ok: false; errors: string[] };
+
+const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'record_inventory'];
+const assistantAmount = (value: unknown) => {
+  const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(amount) ? amount : NaN;
+};
+
+/** Validates the exact AI-proposed app action before the confirmation dialog is shown. */
+export function validateAssistantProposal(input: unknown, source: V2ActionSource): AssistantProposalValidationResult {
+  const value = record(input);
+  if (!value || !ASSISTANT_PROPOSAL_TYPES.includes(value.type as AssistantProposalType)) return { ok: false, errors: ['unsupported AI action'] };
+  const params = record(value.params) || {};
+  const type = value.type as AssistantProposalType;
+  const dateValue = params.date === undefined ? new Date().toISOString().slice(0, 10) : params.date;
+  if (!date(dateValue)) return { ok: false, errors: ['date must be a valid YYYY-MM-DD date'] };
+  const amount = assistantAmount(params.amount);
+  const needAmount = type !== 'add_debtor';
+  if (needAmount && (!Number.isFinite(amount) || (type === 'record_inventory' ? amount < 0 : amount <= 0))) return { ok: false, errors: ['amount must be valid and positive'] };
+  const requiredName = type === 'add_bill' ? 'supplierName'
+    : ['add_debtor', 'add_debtor_payment'].includes(type) ? 'name'
+    : ['create_invoice', 'create_quote'].includes(type) ? 'clientName'
+    : type === 'create_supplier_payment' ? 'supplierName'
+    : type === 'create_drawing' ? 'partnerName' : null;
+  if (requiredName && !text(params[requiredName])) return { ok: false, errors: [`${requiredName} is required`] };
+  const mode = params.mode;
+  if (type === 'create_receipt' && mode !== undefined && !['cash_sale', 'against_invoice', 'advance'].includes(String(mode))) return { ok: false, errors: ['receipt mode is invalid'] };
+  if (type === 'create_receipt' && mode === 'against_invoice' && !text(params.customerName)) return { ok: false, errors: ['customerName is required for an invoice receipt'] };
+  const paymentType = params.paymentType;
+  if (paymentType !== undefined && !['cash', 'credit'].includes(String(paymentType))) return { ok: false, errors: ['paymentType is invalid'] };
+  const method = params.method;
+  if (method !== undefined && !METHODS.includes(method as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
+  const normalized = { ...params, date: dateValue, ...(needAmount ? { amount } : {}) };
+  const name = String(params[requiredName || 'customerName'] || '').trim();
+  const summary = type.replace(/_/g, ' ') + (needAmount ? ` of ${amount.toFixed(2)}` : '') + (name ? ` for ${name}` : '');
+  return { ok: true, action: { source, type, params: normalized, confirmation: { required: true, preview: `Confirm ${summary} on ${dateValue}` } } };
+}
+
+export async function executeAssistantProposal<T>(validation: AssistantProposalValidationResult, confirmation: { confirmed: boolean }, executor: () => Promise<T> | T): Promise<T> {
+  if (!validation.ok) throw new Error(`Invalid AI action: ${validation.errors.join('; ')}`);
+  if (confirmation.confirmed !== true) throw new Error('AI action requires explicit confirmation');
+  return executor();
+}
 export async function executeV2AiAction<T>(
   validation: V2AiValidationResult,
   confirmation: { confirmed: boolean },

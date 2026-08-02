@@ -9,7 +9,7 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
-import { executeV2AiAction, validateV2AiAction } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, validateAssistantProposal } from "@/src/accountingV2/aiActions";
 import * as ImagePicker from "expo-image-picker";
 
 type Msg = { role: "user" | "assistant"; text: string };
@@ -28,14 +28,13 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
       await api.createBill({ supplierName: p.supplierName || "Unknown", amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", notes: p.notes || "" });
       return "Purchase recorded ✓";
     case "add_debtor":
-      await api.createDebtor({ name: p.name, phone: p.phone || "", notes: p.notes || "" });
-      return `Debtor "${p.name}" added ✓`;
+      await api.findOrCreateParty(p.name, "customer", { phone: p.phone || "" });
+      return `Customer "${p.name}" added ✓`;
     case "add_debtor_payment": {
-      const debtors: any[] = await api.listDebtors();
-      const debtor = debtors.find((d: any) => d.name?.toLowerCase() === (p.name || "").toLowerCase());
-      if (!debtor) return `Could not find debtor "${p.name}". Please add them first.`;
-      await api.addDebtorPayment(debtor.id, { amount: p.amount, date: p.date || today, notes: "" });
-      return `Payment from "${p.name}" recorded ✓`;
+      const customer = await api.findOrCreateParty(p.name, "customer");
+      if (!customer) return `Could not find customer "${p.name}".`;
+      await api.createReceipt({ mode: "advance", debtorId: customer.id, clientName: customer.name, amount: p.amount, date: p.date || today, method: "cash", notes: p.notes || "AI-recorded customer advance" });
+      return `Customer advance from "${customer.name}" recorded ✓`;
     }
     case "create_invoice": {
       const amt = Number(p.amount) || 0;
@@ -104,30 +103,9 @@ export default function AskBooks() {
 
   const buildContext = async (): Promise<string> => {
     const today = new Date();
-    const from = `${today.getFullYear()}-01-01`;
-    const to = today.toISOString().slice(0, 10);
-    const [s, dash, pnlYear, creditors, debtors, expenses, invoices] = await Promise.all([
-      api.getSettings(), api.dashboard(), api.pnlRange(from, to),
-      api.creditorsReport(), api.debtorsReport(), api.listExpenses(), api.listInvoices(),
-    ]);
-    const sym = getCurrencySymbol(s.currency || "USD");
-    const expenseByCat: Record<string, number> = {};
-    for (const e of expenses as any[]) expenseByCat[e.category] = (expenseByCat[e.category] || 0) + Number(e.amount);
-    return JSON.stringify({
-      currency: s.currency, currencySymbol: sym, businessName: s.businessName,
-      snapshot: {
-        cash: dash.cash, inventoryValue: dash.inventoryValue, netWorth: dash.netWorth,
-        totalSales: dash.totalSales, totalPurchases: dash.totalPurchases,
-        grossProfit: dash.grossProfit, netProfit: dash.netProfit,
-      },
-      yearToDate: pnlYear,
-      creditors: (creditors as any[]).filter((c) => c.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((c) => ({ name: c.name, owed: c.balance })),
-      debtors: (debtors as any[]).filter((d) => d.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((d) => ({ name: d.name, owes: d.balance })),
-      expensesByCategory: expenseByCat,
-      openInvoices: (invoices as any[]).filter((i) => i.status === "unpaid").sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 20).map((i) => ({ number: i.invoiceNumber, client: i.clientName, amount: i.total })),
-    });
+    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, today.toISOString().slice(0, 10));
+    return JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
   };
-
   const send = async (text: string) => {
     const q = text.trim();
     if (!q || loading) return;
@@ -142,30 +120,21 @@ export default function AskBooks() {
       const action = typeof res === "string" ? null : res?.action || null;
       setMessages((m) => [...m, { role: "assistant", text: answer }]);
       if (action && action.type) {
-        const v2Action = validateV2AiAction({
-          source: "ai", intent: "create_payment",
-          partyId: action.params?.clientName || action.params?.supplierName || action.params?.name || "AI action",
-          date: action.params?.date || new Date().toISOString().slice(0, 10),
-          amount: Number(action.params?.amount),
-          method: ["cash", "bank", "card", "mobile", "other"].includes(action.params?.method) ? action.params.method : "cash",
-          direction: action.type === "add_sale" || action.type === "create_receipt" || action.type === "add_debtor_payment" ? "received" : "paid",
-        });
-        if (!v2Action.ok || v2Action.action.access !== "write") {
-          const errors = v2Action.ok ? ["action is not a write"] : v2Action.errors;
-          setMessages((m) => [...m, { role: "assistant", text: `I couldn't validate that change: ${errors.join("; ")}` }]);
+        const proposal = validateAssistantProposal(action, 'ai');
+        if (!proposal.ok) {
+          setMessages((m) => [...m, { role: "assistant", text: `I couldn't validate that change: ${proposal.errors.join("; ")}` }]);
           return;
         }
-        const confirmationPreview = v2Action.action.confirmation.preview;
         Alert.alert(
           "Apply this change?",
-          confirmationPreview,
+          proposal.action.confirmation.preview,
           [
             { text: "Cancel", style: "cancel" },
             {
               text: "Apply",
               onPress: async () => {
                 try {
-                  const result = await executeV2AiAction(v2Action, { confirmed: true }, () => applyAction(action));
+                  const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(action));
                   setMessages((m) => [...m, { role: "assistant", text: result }]);
                 } catch (err: any) {
                   setMessages((m) => [...m, { role: "assistant", text: `Couldn't apply that: ${err?.message || "error"}` }]);
@@ -235,7 +204,7 @@ export default function AskBooks() {
                   if (res.canceled || !res.assets[0].base64) return;
                   setLoading(true);
                   const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
-                  const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
+                  const prompt = `Scanned receipt from ${ocr.supplierName || "vendor"}: ${ocr.amount ? `$${ocr.amount}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
                   send(prompt);
                 } catch (e: any) {
                   Alert.alert("Camera Error", e.message || "Failed to open camera");
@@ -255,7 +224,7 @@ export default function AskBooks() {
                   if (res.canceled || !res.assets[0].base64) return;
                   setLoading(true);
                   const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
-                  const prompt = `Scanned receipt from ${ocr.vendor || "vendor"}: ${ocr.total ? `$${ocr.total}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
+                  const prompt = `Scanned receipt from ${ocr.supplierName || "vendor"}: ${ocr.amount ? `$${ocr.amount}` : "amount unknown"} on ${ocr.date || "today"}. Please record this expense.`;
                   send(prompt);
                 } catch (e: any) {
                   Alert.alert("Library Error", e.message || "Failed to open library");

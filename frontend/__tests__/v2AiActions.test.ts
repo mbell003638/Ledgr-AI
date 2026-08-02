@@ -2,6 +2,8 @@ import {
   executeV2AiAction,
   validateV2AiAction,
   type V2WriteExecutor,
+  executeAssistantProposal,
+  validateAssistantProposal,
 } from '../src/accountingV2/aiActions';
 
 describe('V2 AI/voice action validation', () => {
@@ -94,5 +96,13 @@ describe('V2 AI/voice action validation', () => {
     await expect(executeV2AiAction(invalid, { confirmed: true }, executor)).rejects.toThrow(/invalid action/i);
     await expect(executeV2AiAction(read, { confirmed: true }, executor)).rejects.toThrow(/write action/i);
     expect(executor).not.toHaveBeenCalled();
+  });
+  it('validates the actual proposed AI action rather than a generic payment proxy', async () => {
+    const debtor = validateAssistantProposal({ type: 'add_debtor', params: { name: 'Amit' } }, 'ai');
+    expect(debtor).toMatchObject({ ok: true, action: { type: 'add_debtor', params: { name: 'Amit' } } });
+    expect(validateAssistantProposal({ type: 'add_bill', params: { amount: 25, date: '2026-01-01' } }, 'ai')).toEqual({ ok: false, errors: ['supplierName is required'] });
+    expect(validateAssistantProposal({ type: 'create_receipt', params: { amount: 10, date: '2026-01-01', mode: 'against_invoice' } }, 'ai')).toEqual({ ok: false, errors: ['customerName is required for an invoice receipt'] });
+    await expect(executeAssistantProposal(debtor, { confirmed: false }, () => 'bad')).rejects.toThrow(/explicit confirmation/i);
+    await expect(executeAssistantProposal(debtor, { confirmed: true }, () => 'saved')).resolves.toBe('saved');
   });
 });

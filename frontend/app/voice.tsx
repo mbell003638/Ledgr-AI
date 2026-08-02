@@ -9,7 +9,7 @@ import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
-import { executeV2AiAction, validateV2AiAction, type V2AiValidationResult } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -25,7 +25,7 @@ export default function VoiceModal() {
   const [parsed, setParsed] = useState<any>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [validatedAction, setValidatedAction] = useState<V2AiValidationResult | null>(null);
+  const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -71,18 +71,16 @@ export default function VoiceModal() {
         }
       }
 
-      const validation = validateV2AiAction({
-        source: "voice", intent: "create_payment",
-        partyId: p.supplierName || p.customerName || p.partnerName || "Voice transaction",
-        date: p.date || new Date().toISOString().slice(0, 10), amount: Number(p.amount),
-        method: ["cash", "bank", "card", "mobile", "other"].includes(p.method) ? p.method : "cash",
-        direction: p.intent === "sale" || p.intent === "receipt" ? "received" : "paid",
-      });
-      if (!validation.ok || validation.action.access !== "write") {
-        const errors = validation.ok ? ["action is not a write"] : validation.errors;
-        throw new Error(`Invalid voice action: ${errors.join("; ")}`);
-      }
-      setParsed(p);
+      const proposalByIntent: Record<string, any> = {
+        bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+        sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+        receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
+        supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+        drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+        inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
+      };
+      const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
+      if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);      setParsed(p);
       setValidatedAction(validation);
       setPhase("confirm");
     } catch (e: any) {
@@ -96,10 +94,10 @@ export default function VoiceModal() {
     setSaving(true);
     try {
       const date = parsed.date || new Date().toISOString().slice(0, 10);
-      const currency = "USD";
+      const currency = (await api.getSettings()).currency || "USD";
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
-      await executeV2AiAction(validatedAction, { confirmed: true }, async () => {
+      await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
       if (parsed.intent === "bill") {
         let sid = "";
         if (parsed.supplierName) {
@@ -156,8 +154,10 @@ export default function VoiceModal() {
           method: "cash", notes: parsed.notes || parsed.summary,
         });
       } else if (parsed.intent === "inventory") {
-        const info = await api.expectedInventory();
-        await api.createInventory({ date, expectedStock: info.expected, actualStock: parsed.amount, notes: parsed.notes || parsed.summary });
+        let postedV2 = false;
+          try { await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary }); postedV2 = true; }
+          catch (e: any) { if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e; }
+          if (!postedV2) { const info = await api.expectedInventory(); await api.createInventory({ date, expectedStock: info.expected, actualStock: parsed.amount, notes: parsed.notes || parsed.summary }); }
       } else {
         throw new Error("Could not determine intent. Please try again.");
       }

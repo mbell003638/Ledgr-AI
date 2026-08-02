@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage } from '@/src/utils/storage';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
@@ -7,6 +8,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
+import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
@@ -30,16 +32,26 @@ const LEGACY_GEMINI_KEY   = 'gemini_api_key';
 const LEGACY_GEMINI_MODEL = 'gemini_model';
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, apiKey, model, baseUrl, legacyKey, legacyModel] = await Promise.all([
+  const [provider, secureKey, storedKey, model, baseUrl, legacyKey, legacyModel, settings] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
+    storage.secureGet(AI_API_KEY_KEY, ''),
     AsyncStorage.getItem(AI_API_KEY_KEY),
     AsyncStorage.getItem(AI_MODEL_KEY),
     AsyncStorage.getItem(AI_BASE_URL_KEY),
     AsyncStorage.getItem(LEGACY_GEMINI_KEY),
     AsyncStorage.getItem(LEGACY_GEMINI_MODEL),
+    db.getSettings(),
   ]);
-  // Migrate legacy Gemini key on first run
-  const resolvedKey = apiKey ?? legacyKey ?? (await db.getSettings()).googleApiKey ?? '';
+  // Migrate every historical plaintext key into the device keychain/keystore.
+  const resolvedKey = secureKey || storedKey || legacyKey || settings.googleApiKey || '';
+  if (resolvedKey && !secureKey) {
+    await Promise.all([
+      storage.secureSet(AI_API_KEY_KEY, resolvedKey),
+      AsyncStorage.removeItem(AI_API_KEY_KEY),
+      AsyncStorage.removeItem(LEGACY_GEMINI_KEY),
+      db.updateSettings({ googleApiKey: '' }),
+    ]);
+  }
   const resolvedModel = model ?? legacyModel ?? 'gemini-2.0-flash-001';
   return {
     provider: (provider as ProviderId) ?? 'gemini',
@@ -50,14 +62,16 @@ export async function getAIConfig(): Promise<AIConfig> {
 }
 
 export async function setAIConfig(cfg: Partial<AIConfig>) {
-  const ops: Promise<void>[] = [];
+  const ops: Promise<unknown>[] = [];
   if (cfg.provider !== undefined) ops.push(AsyncStorage.setItem(AI_PROVIDER_KEY, cfg.provider));
-  if (cfg.apiKey  !== undefined) ops.push(AsyncStorage.setItem(AI_API_KEY_KEY,  cfg.apiKey));
-  if (cfg.model   !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY,    cfg.model));
+  if (cfg.apiKey !== undefined) {
+    ops.push(cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY));
+    ops.push(AsyncStorage.removeItem(AI_API_KEY_KEY));
+  }
+  if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, cfg.baseUrl));
   await Promise.all(ops);
 }
-
 // Legacy shims so existing screens (voice.tsx, bill-form.tsx) keep compiling
 export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
 export async function setGeminiKey(v: string) { await setAIConfig({ apiKey: v }); }
@@ -76,21 +90,32 @@ async function reconcileStatement(
 ) {
   const extracted = await ai.reconcileStatementAI(await getAIConfig(), imageBase64, mimeType);
 
-  // Pull our side of the ledger. For a customer, an invoice is a "bill" (debit /
-  // what they owe) and a receipt/payment is a "payment" (credit).
+  // V2 is authoritative whenever it is active. Legacy collections remain only as a fallback.
   let ourBills: any[] = [], ourPayments: any[] = [];
-  if (partyId && party === 'customer') {
+  const runner = activeSqlRunner();
+  const service = runner ? new V2AppService(runner) : null;
+  const context = service ? await service.activeContext() : null;
+  if (context && service && partyId) {
+    const detail: any = await service.getPartyDetail(partyId, party);
+    if (party === 'customer' && detail) {
+      ourBills = (detail.statement?.ledger || []).filter((item: any) => item.kind === 'invoice').map((item: any) => ({ amount: item.debit, date: item.date, reference: item.ref }));
+      ourPayments = (detail.payments || []).map((item: any) => ({ amount: item.amount, date: item.date }));
+    } else if (party === 'supplier' && detail) {
+      ourBills = detail.bills || [];
+      ourPayments = detail.payments || [];
+    }
+  } else if (partyId && party === 'customer') {
     const debtors = await db.listDebtors();
     const d = debtors.find((x: any) => x.id === partyId);
     if (d) {
       ourBills = (d.invoices || []).map((i: any) => ({ ...i, amount: i.amount, date: i.date, reference: i.invoiceNumber }));
-      ourPayments = (d.payments || []).map((p: any) => ({ ...p, amount: p.amount, date: p.date }));
+      ourPayments = (d.payments || []).map((item: any) => ({ ...item, amount: item.amount, date: item.date }));
     }
   } else if (partyId) {
     const all = await db.listBills();
-    ourBills = all.filter((b: any) => b.supplierId === partyId);
-    const pays = await db.listPayments();
-    ourPayments = pays.filter((p: any) => p.supplierId === partyId && p.type === 'supplier_payment');
+    ourBills = all.filter((item: any) => item.supplierId === partyId);
+    const payments = await db.listPayments();
+    ourPayments = payments.filter((item: any) => item.supplierId === partyId && item.type === 'supplier_payment');
   }
 
   const daysBetween = (a: string, b: string) => {
@@ -125,6 +150,51 @@ async function reconcileStatement(
   return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, partyId, party, supplierId: party === 'supplier' ? partyId : undefined };
 }
 
+async function buildAiSnapshot(from: string, to: string) {
+  const settings = await db.getSettings();
+  const runner = activeSqlRunner();
+  if (runner) {
+    const service = new V2AppService(runner);
+    const context = await service.activeContext();
+    if (context) {
+      const [dashboard, reports, parties, salesAndInvoices, expenseSources] = await Promise.all([
+        getV2Dashboard(runner, context.bookId),
+        buildPersistentV2Reports(runner, { bookId: context.bookId, from, to }),
+        service.listParties(),
+        service.listSalesAndInvoices(),
+        runner.all<any>("SELECT date,metadata FROM v2_sources WHERE book_id=? AND type='expense' AND date>=? AND date<=? ORDER BY date DESC", [context.bookId, from, to]),
+      ]);
+      const expensesByCategory: Record<string, number> = {};
+      for (const row of expenseSources) {
+        let meta: any = {}; try { meta = JSON.parse(row.metadata || '{}'); } catch { continue; }
+        if (!meta.reversed && !meta.deleted) expensesByCategory.General = (expensesByCategory.General || 0) + Number(meta.total || 0);
+      }
+      return {
+        source: 'v2', currency: settings.currency, businessName: settings.businessName,
+        snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
+        yearToDate: reports.profitAndLoss,
+        creditors: parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })),
+        debtors: parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })),
+        expensesByCategory,
+        openInvoices: salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 20).map((item: any) => ({ number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })),
+      };
+    }
+  }
+  const [dashboard, pnlYear, creditors, debtors, expenses, invoices] = await Promise.all([
+    db.dashboard(), db.pnlRange(from, to), db.creditorsReport(), db.debtorsReport(), db.listExpenses(), db.listInvoices(),
+  ]);
+  const expensesByCategory: Record<string, number> = {};
+  for (const expense of expenses as any[]) expensesByCategory[expense.category || 'General'] = (expensesByCategory[expense.category || 'General'] || 0) + Number(expense.amount || 0);
+  return {
+    source: 'legacy', currency: settings.currency, businessName: settings.businessName,
+    snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
+    yearToDate: pnlYear,
+    creditors: (creditors as any[]).filter((c) => c.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((c) => ({ name: c.name, owed: c.balance })),
+    debtors: (debtors as any[]).filter((d) => d.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((d) => ({ name: d.name, owes: d.balance })),
+    expensesByCategory,
+    openInvoices: (invoices as any[]).filter((i) => i.status === 'unpaid').sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 20).map((i) => ({ number: i.invoiceNumber, client: i.clientName, amount: i.total })),
+  };
+}
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
@@ -690,9 +760,10 @@ export const api = {
     }
   },
 
+  aiSnapshot: (from: string, to: string) => buildAiSnapshot(from, to),
   // AI
-  parseCommand: async (text: string) => ai.parseCommand(await getAIConfig(), text),
-  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType),
+  parseCommand: async (text: string) => { const settings = await db.getSettings(); return ai.parseCommand(await getAIConfig(), text, settings.currency || 'USD'); },
+  ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),

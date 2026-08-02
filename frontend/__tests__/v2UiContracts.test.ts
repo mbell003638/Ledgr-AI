@@ -18,24 +18,24 @@ describe('V2 UI contracts', () => {
   it.each(['ask.tsx', 'voice.tsx'])('%s routes writes through the explicit V2 confirmation gate', (screen) => {
     const source = readApp(screen);
 
-    expect(source).toContain('validateV2AiAction');
-    expect(source).toContain('executeV2AiAction');
-    expect(source).toMatch(/executeV2AiAction\([\s\S]*?\{\s*confirmed:\s*true\s*\}/);
+    expect(source).toContain('validateAssistantProposal');
+    expect(source).toContain('executeAssistantProposal');
+    expect(source).toMatch(/executeAssistantProposal\([\s\S]*?\{\s*confirmed:\s*true\s*\}/);
   });
 
   it('Ask AI does not invoke its write executor directly from the model response', () => {
     const source = readApp('ask.tsx');
 
     expect(source).not.toContain('await applyAction(action)');
-    expect(source).toContain('action.confirmation.preview');
+    expect(source).toContain('proposal.action.confirmation.preview');
   });
 
   it('voice validates the draft before showing confirmation and executes only from the confirm handler', () => {
     const source = readApp('voice.tsx');
-    const validationIndex = source.indexOf('validateV2AiAction');
+    const validationIndex = source.indexOf('validateAssistantProposal');
     const confirmPhaseIndex = source.indexOf('setPhase("confirm")');
     const confirmHandlerIndex = source.indexOf('const confirmSave');
-    const executeIndex = source.indexOf('await executeV2AiAction', confirmHandlerIndex);
+    const executeIndex = source.indexOf('await executeAssistantProposal', confirmHandlerIndex);
 
     expect(validationIndex).toBeGreaterThanOrEqual(0);
     expect(confirmPhaseIndex).toBeGreaterThan(validationIndex);

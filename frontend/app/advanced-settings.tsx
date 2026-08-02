@@ -276,7 +276,7 @@ export default function AdvancedSettingsScreen() {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
       await api.updateSettings({
-        googleApiKey: key.trim(),
+        googleApiKey: "", // API key is stored in the device secure keystore.
         managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
         accountingBasis,
         selectedPersonas,
