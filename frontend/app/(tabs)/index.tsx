@@ -456,8 +456,25 @@ export default function Dashboard() {
               </Card>
             ) : null}
 
-            {/* Daily quick summary — WhatsApp shareable */}
-            <Card style={[styles.homeSummaryCard, styles.dailyCard]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+            {/* Daily quick summary — WhatsApp shareable. Same press treatment as
+                the hero card (GlowPressable, pressScale 0.972, no haptic, clipSafe,
+                animationsEnabled bypass handled inside GlowPressable). Nested
+                controls (day-nav arrows, Today, WhatsApp share) are Pressables of
+                their own, so they claim their touches first — the card press only
+                fires on the body and opens the Day Book. */}
+            <GlowPressable
+              testID="daily-card-press"
+              accessibilityRole="button"
+              topHighlight={false}
+              haptic={false}
+              clipSafe
+              pressScale={0.972}
+              restingBorderColor="transparent"
+              hoverBorderColor={theme.color.brandPrimary}
+              onPress={() => router.push("/daybook")}
+              style={{ borderRadius: theme.radius.lg, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg }}
+            >
+            <Card style={[styles.homeSummaryCard, styles.dailyCard, { marginTop: 0, marginBottom: 0, marginVertical: 0 }]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={styles.dailyHead}>
                 <View>
                   <Text numberOfLines={1} style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
@@ -499,6 +516,7 @@ export default function Dashboard() {
                 <Text style={styles.shareBtnText}>Share to WhatsApp</Text>
               </GlowPressable>
             </Card>
+            </GlowPressable>
 
             {/* KPI row — tap to open the underlying entries */}
             <View style={styles.kpiRow}>
