@@ -5,7 +5,7 @@ import { dedupeLegacyMirrors } from '@/src/utils/ledgerDisplay';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, recordMirrorError } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
@@ -273,6 +273,42 @@ async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvo
     const r = await (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
     bumpDataVersion();
     return r;
+}
+
+/**
+ * [Finding A] Create a credit/debit note. The customer screen sends {customerId}
+ * and the supplier screen sends {supplierId}; db.createNote requires {debtorId}.
+ * We map those fields to a canonical shape, route the note through the V2 write
+ * path (so it hits the journal + party balance and is visible on party detail /
+ * statements), and keep a legacy mirror consistent with the other documents.
+ * Off the V2 path (no runner) we fall back to the legacy record alone.
+ */
+async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) {
+  const isSupplier = raw.supplierId != null || raw.role === 'supplier';
+  const partyId = raw.debtorId || raw.customerId || raw.supplierId || raw.partyId;
+  const partyName = raw.clientName || raw.customerName || raw.supplierName || raw.partyName || '';
+  const mapped = {
+    ...raw,
+    debtorId: partyId,
+    partyId,
+    role: isSupplier ? 'supplier' : 'customer',
+    clientName: isSupplier ? raw.clientName : partyName,
+    supplierName: isSupplier ? partyName : raw.supplierName,
+  };
+  const runner = activeSqlRunner();
+  if (runner && await new V2AppService(runner).activeContext(mapped.date)) {
+    const v2 = new V2AppService(runner);
+    const v2Res = await (name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
+    // Legacy mirror (best-effort, keyed by debtorId like the other documents).
+    try { await (db[name] as (value: any) => Promise<any>)({ ...mapped, invoiceId: mapped.invoiceId || mapped.invoiceSourceId || null }); }
+    catch (error) { recordMirrorError(name, error); }
+    bumpDataVersion();
+    const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
+    return { ...v2Res, id: v2Res.source?.id, noteNumber: v2Res.source?.reference || v2Res.source?.id, amount: total };
+  }
+  const r = await (db[name] as (value: any) => Promise<any>)(mapped);
+  bumpDataVersion();
+  return r;
 }
 
 /**
@@ -1043,13 +1079,20 @@ export const api = {
   updateQuote: async (id: string, q: any) => { const r = await db.updateQuote(id, q); bumpDataVersion(); return r; },
   deleteQuote: async (id: string) => { const r = await db.deleteQuote(id); bumpDataVersion(); return r; },
   setQuoteStatus: async (id: string, status: any) => { const r = await db.setQuoteStatus(id, status); bumpDataVersion(); return r; },
-  convertQuoteToInvoice: async (id: string, opts?: any) => { const r = await db.convertQuoteToInvoice(id, opts); bumpDataVersion(); return r; },
+  convertQuoteToInvoice: async (id: string, opts?: any) => {
+    // [Finding B] Route the invoice creation through the SAME V2 write path the
+    // invoices screen uses so the converted invoice is visible to the V2 ledger
+    // (dashboard, reports, party detail) — not stranded in the legacy collection.
+    const r = await db.convertQuoteToInvoice(id, opts, (payload: any) => createTransaction('createInvoice', payload));
+    bumpDataVersion();
+    return r;
+  },
 
   // Credit / Debit Notes (post-sale adjustments: discounts, returns, extra charges)
   listCreditNotes: (debtorId?: string) => db.listCreditNotes(debtorId),
   listDebitNotes: (debtorId?: string) => db.listDebitNotes(debtorId),
-  createCreditNote: async (n: any) => { const r = await db.createCreditNote(n); bumpDataVersion(); return r; },
-  createDebitNote: async (n: any) => { const r = await db.createDebitNote(n); bumpDataVersion(); return r; },
+  createCreditNote: async (n: any) => createNote('createCreditNote', n),
+  createDebitNote: async (n: any) => createNote('createDebitNote', n),
   deleteCreditNote: async (id: string) => { const r = await db.deleteCreditNote(id); bumpDataVersion(); return r; },
   deleteDebitNote: async (id: string) => { const r = await db.deleteDebitNote(id); bumpDataVersion(); return r; },
 
