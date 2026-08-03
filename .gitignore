@@ -86,3 +86,18 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Repo hygiene — agent scratch, generated logs, archived backend, media dumps
+# (see docs/AUDIT_FIXES.md — H1). These were previously tracked; history still
+# contains the blobs until a coordinated filter-repo/BFG rewrite is run.
+*.mp4
+*.jsonl
+CONVERSATION_LOG*
+invoices_history.txt
+test_reports/
+test_result.md
+.emergent/
+.agents/
+memory/
+*.ps1
+backend/
