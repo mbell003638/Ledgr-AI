@@ -26,6 +26,7 @@ import { V2InvestorLedgerService } from '../src/accountingV2/investorLedgerServi
 import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
 import { getV2Dashboard } from '../src/accountingV2/v2Dashboard';
 import { V2BookConfigRepository } from '../src/accountingV2/bookConfigRepository';
+import { postCashSale, postPurchase } from '../src/accountingV2/postings';
 
 async function seed(commissionPct: number) {
   const node = makeNodeRunner();
@@ -64,7 +65,54 @@ async function seed(commissionPct: number) {
   return { ...node, base, closeRepo, book, investor: new V2InvestorLedgerService(node.runner) };
 }
 
+/**
+ * Cash-basis cross-surface agreement (audit FIX 1 coverage). Reports, dashboard and the
+ * investor ledger all derive profit from the SAME journal-authoritative report path, so with a
+ * coherent cash-basis stack (cogs = cash purchases, net = gross − expenses) they must agree.
+ * The close snapshot intentionally stays accrual-derived and is not asserted here.
+ */
+async function seedCash(commissionPct: number) {
+  const node = makeNodeRunner();
+  await initSchema(node.runner);
+  const base = new V2SqlRepository(node.runner);
+  const book = { ...defaultBook('cash-consistency', 'Cash Consistency Shop', 'retail_partnership'), basis: 'cash' as const };
+  const configRepo = new V2BookConfigRepository(node.runner);
+  await configRepo.createBook(book, ['retail']);
+  for (const account of defaultAccounts(book.id)) {
+    await node.runner.run('INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,?)',
+      [account.id, book.id, account.code, account.name, account.type, account.paymentMethod || null, 1]);
+  }
+  await base.createPeriod({ id: 'p1', bookId: book.id, startDate: '2026-01-01', endDate: '2026-01-31', status: 'open' });
+  await configRepo.updateBookConfig(book.id, {
+    style: 'retail_partnership', basis: 'cash', selectedPersonas: ['retail'], activePersona: 'retail',
+    retailPartnership: { enabled: true, commissionPct, inventoryCadence: 'monthly', members: [{ id: 'm1', name: 'Solo', openingContribution: 0, profitSharePct: 100 }] },
+  });
+  await base.createParty({ id: 'sup', bookId: book.id, name: 'Supplier', roles: ['supplier'] });
+  await postCashSale(base, { bookId: book.id, periodId: 'p1', date: '2026-01-10', amount: 1000, method: 'cash' });
+  await postPurchase(base, { bookId: book.id, periodId: 'p1', partyId: 'sup', date: '2026-01-15', amount: 400, method: 'cash' });
+  return { ...node, book, investor: new V2InvestorLedgerService(node.runner) };
+}
+
 describe('cross-surface profit consistency', () => {
+  it('cash basis agrees across reports, dashboard, and investor (coherent gross/net)', async () => {
+    const { runner, close, book, investor } = await seedCash(0);
+    try {
+      const reports = await buildPersistentV2Reports(runner, { bookId: book.id });
+      // Coherent cash stack: cogs = cash purchase 400, gross = 1000 − 400, net = gross − 0.
+      expect(reports.profitAndLoss).toMatchObject({ revenue: 1000, cogs: 400, grossProfit: 600, expenses: 0, netProfit: 600 });
+
+      const dash = await getV2Dashboard(runner, book.id);
+      expect(dash.grossProfit).toBe(600);
+      expect(dash.netProfit).toBe(600);
+
+      const detail = await investor.detail(book.id, 'Solo');
+      expect(detail.profitShare).toBe(600); // 100% of 600
+
+      expect(new Set([reports.profitAndLoss.netProfit, dash.netProfit, detail.profitShare]).size).toBe(1);
+    } finally { close(); }
+  });
+
+
   it('agrees across reports, dashboard, investor, and close with no commission', async () => {
     const { runner, close, base, closeRepo, book, investor } = await seed(0);
     try {
