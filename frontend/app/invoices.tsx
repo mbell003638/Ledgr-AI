@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert, Share,
@@ -785,8 +785,12 @@ export default function InvoicesScreen() {
   };
 
   const saveInvoice = async () => {
-    if (!isValidDateString(date)) { setFormError("Invalid date format. Please use YYYY-MM-DD."); return; }
-    if (dueDate.trim() && !isValidDateString(dueDate.trim())) { setFormError("Invalid due date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setFormError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
+    const dueDateIso = dueDate.trim() ? normalizeDateInput(dueDate) : "";
+    if (dueDateIso && !isValidDateString(dueDateIso)) { setFormError(`Couldn't read "${dueDate.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dueDateIso !== dueDate) setDueDate(dueDateIso);
     if (!clientName.trim()) { setFormError("Client name is required"); return; }
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
@@ -797,7 +801,7 @@ export default function InvoicesScreen() {
       const label = taxLabelInput.trim();
       const payload = {
         clientName: clientName.trim(), clientPhone: clientPhone.trim(),
-        date, dueDate: dueDate.trim() || undefined,
+        date: dateIso, dueDate: dueDateIso || undefined,
         lines: validLines,
         notes: notes.trim(),
         terms: terms.trim() || undefined,
