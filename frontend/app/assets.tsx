@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, RefreshControl, Alert, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { fmt } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
@@ -46,12 +47,18 @@ export default function AssetsScreen() {
       const [settings, rows] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions()]);
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
       setEntries(rows as BalanceEntry[]);
+      loadedVersion.current = getDataVersion();
     } catch (e: any) {
       setError(e?.message || "Could not load balance transactions.");
     } finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const resetForm = () => {
     setDate(today()); setName(""); setCategory(""); setAmount(""); setNotes(""); setFunding("cash"); setRecognition("cash"); setError("");
