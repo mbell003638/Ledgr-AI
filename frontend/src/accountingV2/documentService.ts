@@ -1,10 +1,26 @@
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Party, type V2Source } from './types';
 import { V2SqlRepository } from './repository';
+import { round2 } from '../money';
 
 const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-const cents = (n: number) => Math.round(Number(n) * 100) / 100;
+const cents = round2;
 const positive = (n: number, label = 'Amount') => { const value = cents(n); if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be positive`); return value; };
+const today = () => new Date().toISOString().slice(0, 10);
+type JournalLineInput = { accountId: string; partyId?: string | null; debit: number; credit: number; memo?: string | null };
+/** Balance + validity guard mirroring the repository's assertBalanced (see [L1]). */
+function assertBalanced(lines: JournalLineInput[]) {
+  const rounded = lines.map((l) => ({ debit: cents(l.debit), credit: cents(l.credit) }));
+  const debit = rounded.reduce((s, l) => s + l.debit, 0);
+  const credit = rounded.reduce((s, l) => s + l.credit, 0);
+  if (!rounded.length
+    || rounded.some((l) => !Number.isFinite(l.debit) || !Number.isFinite(l.credit) || l.debit < 0 || l.credit < 0 || (l.debit > 0 && l.credit > 0) || (l.debit === 0 && l.credit === 0))
+    || Math.abs(debit - credit) > 0.005) {
+    throw new Error('Journal entry must balance after cent rounding and contain valid debit/credit lines');
+  }
+}
 let savepointSequence = 0;
+
+type PeriodStatusRow = { id: string; start_date: string; end_date: string; status: string };
 
 export type ReceiptInput = { bookId: string; periodId: string; partyId: string; date: string; amount: number; method: V2PaymentMethod; reference?: string; allocations?: { invoiceSourceId: string; amount: number }[] };
 
@@ -145,6 +161,65 @@ export class V2DocumentService {
     return row;
   }
   private async journalForSource(id: string) { const j = await this.repo.db.first<any>('SELECT * FROM v2_journal_entries WHERE source_id=?', [id]); if (!j) throw new Error('Receipt journal not found'); j.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [j.id]); return j; }
-  private async insertSourceJournal(source: V2Source, input: any, lines: any[], reversalOf?: string) { await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {})]); const id = uid('je'); await this.repo.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, input.bookId, input.periodId, source.id, source.date, input.memo || '', new Date().toISOString(), reversalOf || null]); for (const l of lines) await this.repo.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null]); return { id, bookId: input.bookId, periodId: input.periodId, sourceId: source.id, date: source.date, memo: input.memo || '', lines }; }
-  private async insertReversal(old: any, journal: any, memo: string) { const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { originalSourceId: old.id, total: JSON.parse(old.metadata || '{}').total } }; const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo }; const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit })); const out = await this.insertSourceJournal(source, input, lines, journal.id); return { source, journal: out }; }
+
+  private async periodRow(bookId: string, periodId: string): Promise<PeriodStatusRow | null> {
+    return this.repo.db.first<PeriodStatusRow>('SELECT id,start_date,end_date,status FROM v2_periods WHERE id=? AND book_id=?', [periodId, bookId]);
+  }
+
+  private async currentOpenPeriod(bookId: string, near: string): Promise<PeriodStatusRow> {
+    const containing = await this.repo.db.first<PeriodStatusRow>(
+      "SELECT id,start_date,end_date,status FROM v2_periods WHERE book_id=? AND status='open' AND start_date<=? AND end_date>=? ORDER BY start_date DESC LIMIT 1",
+      [bookId, near, near],
+    );
+    if (containing) return containing;
+    const latest = await this.repo.db.first<PeriodStatusRow>(
+      "SELECT id,start_date,end_date,status FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date DESC LIMIT 1",
+      [bookId],
+    );
+    if (!latest) throw new Error('No open accounting period to post into');
+    return latest;
+  }
+
+  /**
+   * Resolve where a journal may legally be written and flag whether it was moved.
+   * A direct write is allowed only into an OPEN period, dated within its bounds.
+   * Corrections to a source whose journal sits in a CLOSED period are never written
+   * into the closed period; they are redirected into the current open period, dated
+   * today (clamped to that period), so closed-period totals stay frozen (see [H2]/[H3]).
+   */
+  private async resolvePostingTarget(bookId: string, periodId: string, date: string): Promise<{ periodId: string; date: string; redirectedFrom?: string }> {
+    const period = await this.periodRow(bookId, periodId);
+    if (period && period.status === 'open' && date >= period.start_date && date <= period.end_date) {
+      return { periodId, date };
+    }
+    // Requested period is closed, missing, or the date is out of bounds → find an open period.
+    const open = await this.currentOpenPeriod(bookId, today());
+    const clamped = today() < open.start_date ? open.start_date : today() > open.end_date ? open.end_date : today();
+    return { periodId: open.id, date: clamped, redirectedFrom: periodId };
+  }
+
+  private async insertSourceJournal(source: V2Source, input: any, lines: any[], reversalOf?: string) {
+    assertBalanced(lines);
+    const target = await this.resolvePostingTarget(source.bookId, input.periodId, source.date);
+    const memo = input.memo || '';
+    await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, target.date, source.reference || null, JSON.stringify(source.metadata || {})]);
+    const id = uid('je');
+    await this.repo.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, source.bookId, target.periodId, source.id, target.date, memo, new Date().toISOString(), reversalOf || null]);
+    for (const l of lines) await this.repo.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null]);
+    return { id, bookId: source.bookId, periodId: target.periodId, sourceId: source.id, date: target.date, memo, lines };
+  }
+
+  private async insertReversal(old: any, journal: any, memo: string) {
+    // If the original journal lives in a closed period, the correcting entry lands in the
+    // current open period dated today; annotate the memo so the audit trail is explicit.
+    const originalPeriod = await this.periodRow(old.book_id, journal.period_id);
+    const closed = !originalPeriod || originalPeriod.status !== 'open';
+    const reference = old.reference || old.id;
+    const finalMemo = closed ? `${memo} — reversal of ${reference} dated ${old.date} (period closed)` : memo;
+    const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { originalSourceId: old.id, originalDate: old.date, total: JSON.parse(old.metadata || '{}').total, ...(closed ? { closedPeriodReversal: true } : {}) } };
+    const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo: finalMemo };
+    const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit }));
+    const out = await this.insertSourceJournal(source, input, lines, journal.id);
+    return { source, journal: out };
+  }
 }
