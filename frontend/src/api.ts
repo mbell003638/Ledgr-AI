@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { storage } from '@/src/utils/storage';
 import { bumpDataVersion } from '@/src/utils/dataVersion';
+import { dedupeLegacyMirrors } from '@/src/utils/ledgerDisplay';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
@@ -312,6 +313,36 @@ async function exportDivergenceWarnings(): Promise<string[]> {
   return warnings;
 }
 
+/**
+ * The ONE computation of an investor's live ledger detail: the V2
+ * journal-derived detail merged with any legacy-only capital movements that
+ * predate V2. Both the investor detail screen (api.getInvestorLedger) and the
+ * Parties list tile (api.listInvestors) MUST read the balance from here so the
+ * two surfaces can never disagree after a deposit/draw.
+ */
+async function mergedInvestorLedgerDetail(id: string): Promise<InvestorLedgerDetail> {
+  const runner = activeSqlRunner();
+  if (!runner) return db.investorLedgerDetail(id);
+  const app = new V2AppService(runner);
+  const context = await app.activeContext();
+  if (!context) return db.investorLedgerDetail(id);
+  const v2 = await new V2InvestorLedgerService(runner).detail(context.bookId, id);
+  let legacy: db.InvestorLedgerDetail | null = null;
+  try { legacy = await db.investorLedgerDetail(v2.name); } catch { /* no legacy member mirror */ }
+  if (!legacy) return v2;
+  const known = new Set(v2.transactions.map((item) => item.id));
+  const extras = legacy.transactions.filter((item) => !known.has(item.id) && (item.type === 'capital_injection' || item.type === 'drawing'));
+  const extraInjected = extras.filter((item) => item.type === 'capital_injection').reduce((sum, item) => sum + item.amount, 0);
+  const extraDrawings = extras.filter((item) => item.type === 'drawing').reduce((sum, item) => sum + item.amount, 0);
+  return {
+    ...v2,
+    totalInjected: Math.round((v2.totalInjected + extraInjected) * 100) / 100,
+    totalDrawings: Math.round((v2.totalDrawings + extraDrawings) * 100) / 100,
+    currentCapitalBalance: Math.round((v2.currentCapitalBalance + extraInjected - extraDrawings) * 100) / 100,
+    transactions: [...v2.transactions, ...extras].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
+  };
+}
+
 export const api = {
   // Persistent V2 runtime services are available after storage initialization.
   v2: () => {
@@ -561,7 +592,18 @@ export const api = {
       const app = new V2AppService(runner); const context = await app.activeContext();
       if (context) {
         const rows = await runner.all<any>('SELECT id,name,opening_contribution,current_capital,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY name', [context.bookId]);
-        if (rows.length) return rows.map((row) => ({ id: row.id, name: row.name, openingCapital: Number(row.opening_contribution), currentCapital: Number(row.current_capital), profitSharePct: Number(row.profit_share_pct) }));
+        if (rows.length) {
+          // v2_members.current_capital is the PERIOD-OPENING capital snapshot;
+          // the live balance is journal-derived. Compute it via the SAME
+          // merged-ledger path the investor detail screen uses so the Parties
+          // tile always shows Opening + injections + profit share − drawings.
+          return Promise.all(rows.map(async (row) => {
+            let currentCapital = Number(row.current_capital);
+            try { currentCapital = (await mergedInvestorLedgerDetail(row.id)).currentCapitalBalance; }
+            catch { /* keep the period-opening snapshot if the detail is unavailable */ }
+            return { id: row.id, name: row.name, openingCapital: Number(row.opening_contribution), currentCapital, profitSharePct: Number(row.profit_share_pct) };
+          }));
+        }
       }
     }
     return (settings.investors || []).map((item: any) => ({ id: String(item.id || item.name), name: String(item.name), openingCapital: Number(item.amount || 0), currentCapital: Number(item.amount || 0), profitSharePct: Number(item.profitSharePct || 0) }));
@@ -638,9 +680,24 @@ export const api = {
         // changed from their original source document rather than as cash rows.
         // The enriched read includes reversal linkage (reversal_of/posted_at/
         // source flags) so screens can collapse reverse+repost noise for display.
-        const v2Entries = (await service.listCashMovements()).map((entry: any) => ({ ...entry, origin: 'v2', editable: false }));
+        // Capital deposits keep the journal memo ("Capital deposit — <name>")
+        // and surface the user's own note as appended detail.
+        const v2Entries = (await service.listCashMovements()).map((entry: any) => ({
+          ...entry,
+          notes: entry.sourceType === 'capital_injection' && entry.sourceNotes && !String(entry.notes || '').includes(entry.sourceNotes)
+            ? `${entry.notes} — ${entry.sourceNotes}`
+            : entry.notes,
+          origin: 'v2',
+          editable: false,
+        }));
         const legacyEntries = (await db.listCashEntries()).map((entry: any) => ({ ...entry, origin: 'manual', editable: true }));
-        const all = [...new Map([...legacyEntries, ...v2Entries].map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
+        // Legacy rows that merely MIRROR a V2-journaled movement (investor
+        // capital mirrors, receipt bridge rows) carry different ids than their
+        // journal-derived twins, so the id-keyed merge below can't collapse
+        // them — dedupe on source linkage FIRST so screens list (and total)
+        // each movement exactly once.
+        const merged = dedupeLegacyMirrors([...legacyEntries, ...v2Entries] as any);
+        const all = [...new Map(merged.map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
           (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
         );
         return all;
@@ -655,26 +712,7 @@ export const api = {
   getInvestorLedger: async (id: string): Promise<InvestorLedgerDetail> => {
     const settings = await db.getSettings();
     if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
-    const runner = activeSqlRunner();
-    if (!runner) return db.investorLedgerDetail(id);
-    const app = new V2AppService(runner);
-    const context = await app.activeContext();
-    if (!context) return db.investorLedgerDetail(id);
-    const v2 = await new V2InvestorLedgerService(runner).detail(context.bookId, id);
-    let legacy: db.InvestorLedgerDetail | null = null;
-    try { legacy = await db.investorLedgerDetail(v2.name); } catch { /* no legacy member mirror */ }
-    if (!legacy) return v2;
-    const known = new Set(v2.transactions.map((item) => item.id));
-    const extras = legacy.transactions.filter((item) => !known.has(item.id) && (item.type === 'capital_injection' || item.type === 'drawing'));
-    const extraInjected = extras.filter((item) => item.type === 'capital_injection').reduce((sum, item) => sum + item.amount, 0);
-    const extraDrawings = extras.filter((item) => item.type === 'drawing').reduce((sum, item) => sum + item.amount, 0);
-    return {
-      ...v2,
-      totalInjected: Math.round((v2.totalInjected + extraInjected) * 100) / 100,
-      totalDrawings: Math.round((v2.totalDrawings + extraDrawings) * 100) / 100,
-      currentCapitalBalance: Math.round((v2.currentCapitalBalance + extraInjected - extraDrawings) * 100) / 100,
-      transactions: [...v2.transactions, ...extras].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
-    };
+    return mergedInvestorLedgerDetail(id);
   },
   depositInvestorCapital: async (id: string, input: { amount: number; date: string; notes?: string }) => {
     const settings = await db.getSettings();
@@ -684,7 +722,11 @@ export const api = {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);
       if (context) {
         const result = await new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id });
-        try { await db.createCashEntry({ id: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' }); } catch {}
+        // Legacy mirror for backup/export continuity. It carries the V2 source
+        // id BOTH as its own id and as explicit v2SourceId linkage so the Cash
+        // Book merge (dedupeLegacyMirrors) can always identify it as the same
+        // movement as the journal-derived row.
+        try { await db.createCashEntry({ id: result.source.id, v2SourceId: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' }); } catch {}
         bumpDataVersion();
         return result;
       }
