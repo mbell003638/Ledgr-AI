@@ -1,6 +1,61 @@
 import type { SqlRunner } from '../db/schema';
+import { V2_TABLES } from '../db/schema';
 
 const yearEnd = (date: string) => `${date.slice(0, 4)}-12-31`;
+
+/**
+ * FK-safe children-before-parents wipe order for a FACTORY reset. Covers EVERY
+ * v2_* table in the schema (same list v2Backup exports/imports) — the runtime
+ * guard in factoryResetV2Data throws if a new table is added to V2_TABLES
+ * without being added here.
+ */
+const V2_FACTORY_DELETE_ORDER: readonly string[] = [
+  'v2_journal_lines',
+  'v2_invoice_allocations',
+  'v2_close_books',
+  'v2_inventory_counts',
+  'v2_journal_entries', // self-referential reversal_of nulled first
+  'v2_sources',
+  'v2_members',
+  'v2_personas',
+  'v2_parties',
+  'v2_accounts',
+  'v2_periods',
+  'v2_books',
+];
+
+/**
+ * FACTORY reset for the authoritative V2 store: delete ALL rows from EVERY
+ * v2_* table (plus the V2 meta keys), atomically. Unlike resetV2AccountingData
+ * — which deliberately preserves book identity/configuration for the in-app
+ * "clear data" action — this is scorched earth. Leaving the v2_books row behind
+ * made onboarding's re-initialization crash with
+ * "UNIQUE constraint failed: v2_books.id" after a factory reset.
+ */
+export async function factoryResetV2Data(db: SqlRunner): Promise<void> {
+  const covered = new Set(V2_FACTORY_DELETE_ORDER);
+  const missing = (V2_TABLES as readonly string[]).filter((t) => !covered.has(t));
+  if (missing.length) throw new Error(`factoryResetV2Data: wipe order is missing table(s): ${missing.join(', ')}`);
+
+  await db.exec('SAVEPOINT v2_factory_reset');
+  try {
+    // Clear the self-referential reversal links so ON DELETE RESTRICT on
+    // reversal_of cannot reject the wholesale journal delete.
+    await db.run('UPDATE v2_journal_entries SET reversal_of=NULL');
+    for (const table of V2_FACTORY_DELETE_ORDER) {
+      await db.run(`DELETE FROM ${table}`);
+    }
+    await db.run("DELETE FROM meta WHERE key='v2_active_book_id'");
+    await db.run("DELETE FROM meta WHERE key LIKE 'v2_book_version:%'");
+    await db.exec('RELEASE SAVEPOINT v2_factory_reset');
+  } catch (error) {
+    try {
+      await db.exec('ROLLBACK TO SAVEPOINT v2_factory_reset');
+      await db.exec('RELEASE SAVEPOINT v2_factory_reset');
+    } catch { /* preserve the wipe failure */ }
+    throw error;
+  }
+}
 
 /** Clear one V2 book's accounting activity while preserving its identity/configuration. */
 export async function resetV2AccountingData(db: SqlRunner, bookId: string, periodStart: string) {
