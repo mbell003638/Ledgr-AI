@@ -103,12 +103,15 @@ function normalBalance(type: V2AccountType, debit: number, credit: number): numb
 /**
  * Cash-basis P&L (M3): recognizes revenue and expenses only when cash actually moves.
  *   revenue  = cash sales + amounts received against invoices (receipt→invoice allocations)
- *   expenses = cash-paid operating expenses + payments made to suppliers
- * COGS is still periodic (computed elsewhere and shown for reference), so it is NOT added
- * into the cash-basis expense total to avoid double-counting supplier payments. An unpaid
- * invoice therefore contributes to accrual revenue but never to cash revenue until received.
+ *   cogs     = cash-paid inventory purchases in the period (the cost of stock bought for cash)
+ *   expenses = cash-paid operating expenses + payments made to suppliers (EXCLUDING the cash
+ *              purchases now surfaced as cogs, so nothing is double-counted)
+ * This yields a single-basis, coherent stack: grossProfit = revenue − cogs and
+ * netProfit = grossProfit − expenses, so netProfit can never exceed grossProfit and
+ * grossProfit can never exceed revenue. An unpaid invoice therefore contributes to accrual
+ * revenue but never to cash revenue until received.
  * Note: the trial balance and balance sheet remain accrual/journal-derived; only the P&L
- * revenue/expense recognition changes with basis.
+ * revenue/cogs/expense recognition changes with basis.
  */
 function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) {
   const inRange = (date: string) => (!options.from || date >= options.from) && (!options.to || date <= options.to);
@@ -124,13 +127,17 @@ function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) 
     .reduce((sum, a) => cents(sum + Number(a.amount)), 0);
   const revenue = cents(cashSales + received);
 
+  // COGS (cash basis): the cost of inventory bought for cash in the period. Kept out of the
+  // expense total below so grossProfit and netProfit derive from disjoint buckets.
+  const cogs = live.filter((s) => s.type === 'cash_purchase' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+
   // Expenses: cash-paid operating expenses + cash paid to suppliers, both on their own date.
+  // Cash purchases are intentionally NOT included here (they land in cogs above).
   const cashExpenses = live.filter((s) => s.type === 'expense' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
   const supplierPayments = live.filter((s) => s.type === 'supplier_payment' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
-  const cashPurchases = live.filter((s) => s.type === 'cash_purchase' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
-  const expenses = cents(cashExpenses + supplierPayments + cashPurchases);
+  const expenses = cents(cashExpenses + supplierPayments);
 
-  return { revenue, expenses };
+  return { revenue, cogs, expenses };
 }
 
 /**
@@ -269,13 +276,24 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const accrualNetProfit = cents(accrualRevenue - accrualExpenses);
   let revenue = accrualRevenue;
   let expenses = accrualExpenses;
+  // Accrual `cogs` is the periodic 5000 balance (incl. any open-period estimate) and is
+  // already contained in `expenses` (COGS is an expense-type account), so accrual net profit
+  // is revenue − expenses. Cash basis uses a coherent, single-basis stack where cogs =
+  // cash-paid purchases (disjoint from `expenses`) and net = gross − expenses.
+  let cogsForPnl = cogs;
+  let grossProfit: number;
+  let netProfit: number;
   if (cashBasis) {
     const cash = cashBasisProfitAndLoss(store, options);
     revenue = cash.revenue;
+    cogsForPnl = cash.cogs;
     expenses = cash.expenses;
+    grossProfit = cents(revenue - cogsForPnl);
+    netProfit = cents(grossProfit - expenses);
+  } else {
+    grossProfit = cents(revenue - cogsForPnl);
+    netProfit = cents(revenue - expenses);
   }
-  const grossProfit = cents(revenue - cogs);
-  const netProfit = cents(revenue - expenses);
   const assets = sumType('asset');
   const liabilities = sumType('liability');
   const equity = sumType('equity');
@@ -300,7 +318,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       totals: { debit: totalDebit, credit: totalCredit, difference: trialDifference },
       balanced: Math.abs(trialDifference) <= TOLERANCE,
     },
-    profitAndLoss: { revenue, expenses, cogs, grossProfit, netProfit },
+    profitAndLoss: { revenue, expenses, cogs: cogsForPnl, grossProfit, netProfit },
     balanceSheet: {
       assets,
       liabilities,
