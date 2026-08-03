@@ -174,3 +174,11 @@ Validation after round 5: **51/51 suites, 352 tests passing; tsc clean.** Note: 
 | Daily-summary card in dashboard has no press feedback while hero card does; KPI tiles diverged | Daily card was a plain non-pressable Card; KPI tiles used pressScale 0.955 vs hero's 0.972 | Daily card wrapped in identical GlowPressable treatment (0.972, clipSafe) navigating to Day Book — child buttons unaffected; KPI tiles aligned to 0.972; contract test locks the consistency | `(tabs)/index.tsx`, `UI.tsx`, `v2UiContracts.test.ts` |
 
 Validation after round 6: **52/52 suites, 374 tests passing; tsc clean.**
+
+## Round 7 — opening-balance dead end (2026-08-03, device screenshot)
+
+| User report | Root cause | Fix | Files |
+| --- | --- | --- | --- |
+| "Opening balances are already posted for this period; reverse them before changing the amounts" — dead-end error when changing opening balance (incl. after factory reset + onboarding) | Guard at appService.ts:253 threw on ANY change when an opening source row existed (even already-reversed ones); the modal/advanced-settings called the raw post path directly, and zeroed-out openings left stale rows that blocked re-posting. Factory reset itself was clean — the guard was the culprit | Single self-correcting `applyOpeningBalances` engine (atomic savepoint): same-date amount change → delta; date change → auto reverse + repost; identical values → no-op; zero-out → reverse only; date in a closed period → actionable rejection naming the period. No path ever tells the user to "reverse" anything | `appService.ts`, `cashbook.tsx` + `OpeningBalancesModal.tsx` (messages), `__tests__/v2OpeningBalances.test.ts` (new, 7 tests incl. post-reset freshness) |
+
+Validation after round 7: **53/53 suites, 380 tests passing; tsc clean.**
