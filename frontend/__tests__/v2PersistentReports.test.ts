@@ -33,7 +33,7 @@ describe('persistent V2 reports', () => {
       if (result.source !== 'v2') throw new Error('Expected V2 report');
       expect(result.report.journalCount).toBe(2);
       expect(result.report.trialBalance.totals).toEqual({ debit: 1250, credit: 1250, difference: 0 });
-      expect(result.report.profitAndLoss).toEqual({ revenue: 250, expenses: 0, netProfit: 250 });
+      expect(result.report.profitAndLoss).toEqual({ revenue: 250, expenses: 0, cogs: 0, grossProfit: 250, netProfit: 250 });
       expect(result.report.balanceSheet).toMatchObject({ assets: 1250, equity: 1000, currentEarnings: 250, balanced: true });
       expect(fallback).not.toHaveBeenCalled();
     } finally { close(); }
