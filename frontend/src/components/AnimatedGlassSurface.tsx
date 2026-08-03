@@ -71,7 +71,9 @@ function AnimatedGlassSurfaceImpl({
       ? 0
       : withSequence(
           withTiming(1, { duration: 80 }),
-          withSpring(0, theme.motion.spring),
+          // Clamp the overshoot so the surface settles without a visible bounce,
+          // matching GlowPressable's calmed press motion for consistent feel.
+          withSpring(0, { ...theme.motion.spring, overshootClamping: true }),
         );
     surfaceProgress.value = reduceMotion
       ? value
