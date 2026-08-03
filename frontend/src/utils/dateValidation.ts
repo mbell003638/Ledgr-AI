@@ -39,6 +39,19 @@ function toAsciiDigits(raw: string): string {
   return out;
 }
 
+/**
+ * Dash lookalikes real keyboards emit for the "-" key. Samsung numeric keypads
+ * send U+2212 MINUS SIGN; paste/autocorrect can produce hyphens, en/em dashes,
+ * horizontal bars, and fullwidth forms. All folded to ASCII '-' BEFORE parsing
+ * so a visually perfect '2026−08−03' is read as '2026-08-03'.
+ *  U+2010 hyphen · U+2011 non-breaking hyphen · U+2012 figure dash ·
+ *  U+2013 en dash · U+2014 em dash · U+2015 horizontal bar · U+2212 minus sign ·
+ *  U+FE63 small hyphen-minus · U+FF0D fullwidth hyphen-minus
+ */
+const DASH_LOOKALIKES = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/g;
+// U+00AD soft hyphen is invisible — strip it entirely rather than folding.
+const SOFT_HYPHEN = /\u00AD/g;
+
 // Non-ASCII decimal digit blocks the app is realistically exposed to.
 const FOLD_DIGIT: Record<string, string> = (() => {
   const table: Record<string, string> = {};
@@ -68,7 +81,10 @@ const FOLD_DIGIT: Record<string, string> = (() => {
  *  - '2026-8-3'                       → '2026-08-03'   (single-digit m/d, year first)
  *  - '2026/8/3'                       → '2026-08-03'   (slash separators, year first)
  *  - '03/08/2026' / '3-8-2026'        → '2026-08-03'   (day-first, year last)
+ *  - '2026.08.03'                     → '2026-08-03'   (dot separators, some keypads)
  *  - Arabic-Indic / fullwidth digits  → folded to ASCII first
+ *  - Unicode dash lookalikes (U+2212 minus, en/em dash, …) folded to '-';
+ *    soft hyphens (U+00AD) stripped — Samsung keypads emit these for "-"
  *
  * Ambiguity rule: when a 4-digit group is present it is the year. A year-first
  * string is read Y-M-D; a year-last string is read day-first (D-M-Y), matching
@@ -79,7 +95,9 @@ export function normalizeDateInput(input: string | null | undefined): string {
   if (input == null) return '';
   // Fold exotic digits, then collapse ALL Unicode whitespace to nothing at the
   // edges and normalize any internal run to a single ASCII space for splitting.
-  const ascii = toAsciiDigits(String(input));
+  const ascii = toAsciiDigits(String(input))
+    .replace(SOFT_HYPHEN, '')
+    .replace(DASH_LOOKALIKES, '-');
   const cleaned = ascii.replace(/[\s  ​‌‍﻿]+/g, ' ').trim();
   if (!cleaned) return '';
 
