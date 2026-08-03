@@ -20,7 +20,14 @@ import { initStorage } from "@/src/db/backend";
     showsHorizontalScrollIndicator: false,
   };
 });
-LogBox.ignoreAllLogs(true);
+// Only touch LogBox in development. `ignoreAllLogs(true)` previously ran in
+// release too, hiding every warning from real users. In dev we suppress
+// nothing by default; add targeted strings below when a known-benign warning
+// is too noisy, e.g. LogBox.ignoreLogs(["Require cycle:", "Setting a timer"]).
+// Never ignore all logs, and never call LogBox outside this __DEV__ guard.
+if (__DEV__) {
+  LogBox.ignoreLogs([]);
+}
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ---------- Error Boundary ----------
