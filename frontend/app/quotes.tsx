@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
@@ -154,8 +154,12 @@ export default function QuotesScreen() {
 
   const save = async () => {
     setErr("");
-    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
-    if (validUntil.trim() && !isValidDateString(validUntil.trim())) { setErr("Invalid valid until date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setErr(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
+    const validUntilIso = validUntil.trim() ? normalizeDateInput(validUntil) : "";
+    if (validUntilIso && !isValidDateString(validUntilIso)) { setErr(`Couldn't read "${validUntil.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (validUntilIso !== validUntil) setValidUntil(validUntilIso);
     if (!clientName.trim()) { setErr("Enter a client name."); return; }
     const clean = lines.filter((l) => l.description.trim() || l.rate > 0);
     setSaving(true);
@@ -163,7 +167,7 @@ export default function QuotesScreen() {
       if (clientName.trim()) {
         await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       }
-      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, validUntil: validUntil.trim(), lines: clean, taxRate: taxRateDefault, taxLabel: taxLabelDefault, notes: notes.trim() };
+      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, validUntil: validUntilIso, lines: clean, taxRate: taxRateDefault, taxLabel: taxLabelDefault, notes: notes.trim() };
       if (editId) await api.updateQuote(editId, payload);
       else await api.createQuote(payload);
       setShowForm(false);
