@@ -6,9 +6,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BarChart } from "react-native-gifted-charts";
 
+import { InteractionManager } from "react-native";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
@@ -129,6 +131,10 @@ export default function Dashboard() {
     })();
   }, []);
 
+  // Remember the (data version, dailyDate) at which the dashboard last loaded,
+  // so a plain focus-return with nothing changed can skip the full re-read.
+  const loadedRef = React.useRef<{ version: number; date: string } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const [d, day, s] = await Promise.all([
@@ -139,6 +145,7 @@ export default function Dashboard() {
       setDash(d);
       setDaily(day);
       setSettings(s);
+      loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
       console.warn("dash", e);
     } finally {
@@ -223,7 +230,14 @@ export default function Dashboard() {
     await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(keys));
   };
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    const last = loadedRef.current;
+    const upToDate = last != null && last.version === getDataVersion() && last.date === dailyDate;
+    if (upToDate) return; // nothing changed since last load — instant return
+    // Defer the heavy dashboard aggregation past the tab/entering animation.
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load, dailyDate]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
