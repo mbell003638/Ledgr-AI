@@ -2,6 +2,7 @@ import type { SqlRunner } from '../db/schema';
 import type { V2Book } from './types';
 import type { PersonaId, V2BookConfig } from './config';
 import { defaultBookConfig } from './config';
+import { round2 } from '../money';
 
 export type StoredPersona = {
   id: string;
@@ -23,7 +24,8 @@ export type V2BookConfigUpdate = Pick<V2BookConfig, 'style' | 'basis' | 'selecte
 const personaId = (bookId: string, type: PersonaId) => `${bookId}:persona:${type}`;
 const memberKey = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'member';
 const memberId = (bookId: string, value: string) => `${bookId}:member:${memberKey(value)}`;
-const cents = (value: number) => Math.round(value * 100) / 100;
+const cents = round2;
+let configSavepointSequence = 0;
 
 export class V2BookConfigRepository {
   constructor(readonly db: SqlRunner) {}
@@ -205,8 +207,21 @@ export class V2BookConfigRepository {
   }
 
   private async tx<T>(fn: () => Promise<T>): Promise<T> {
-    await this.db.exec('BEGIN');
-    try { const value = await fn(); await this.db.exec('COMMIT'); return value; }
-    catch (error) { try { await this.db.exec('ROLLBACK'); } catch { /* preserve original */ } throw error; }
+    // [Vault H3] Use SAVEPOINT (not raw BEGIN/COMMIT) so this never collides with an
+    // outer transaction opened by the sqlite store ("cannot start a transaction within
+    // a transaction"). Matches the savepoint pattern in V2SqlRepository.
+    const savepoint = `v2_config_${++configSavepointSequence}`;
+    await this.db.exec(`SAVEPOINT ${savepoint}`);
+    try {
+      const value = await fn();
+      await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      return value;
+    } catch (error) {
+      try {
+        await this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      } catch { /* preserve original */ }
+      throw error;
+    }
   }
 }
