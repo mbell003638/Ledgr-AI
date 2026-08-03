@@ -147,6 +147,36 @@ describe('V2 UI contracts', () => {
     expect(source).toMatch(/TILES\.filter/);
   });
 
+  it('dashboard daily-summary card and KPI tiles share the hero GlowPressable press treatment', () => {
+    const dashboard = readApp('(tabs)/index.tsx');
+    const ui = readSource('src/components/UI.tsx');
+
+    // Daily-summary card is a pressable surface with the hero's exact treatment.
+    expect(dashboard).toMatch(
+      /<GlowPressable[^>]*\n(?:[^>]*\n)*?\s*testID="daily-card-press"[\s\S]*?pressScale=\{0\.972\}[\s\S]*?onPress=\{\(\) => router\.push\("\/daybook"\)\}/
+    );
+    const dailyPress = dashboard.slice(
+      dashboard.indexOf('testID="daily-card-press"'),
+      dashboard.indexOf('<Card style={[styles.homeSummaryCard, styles.dailyCard')
+    );
+    expect(dailyPress).toContain('haptic={false}');
+    expect(dailyPress).toContain('clipSafe');
+    expect(dailyPress).toContain('pressScale={0.972}');
+
+    // Hero card uses the same press depth (the reference treatment).
+    const heroStart = dashboard.indexOf('function AnimatedHeroCard');
+    const hero = dashboard.slice(heroStart, dashboard.indexOf('export default function Dashboard'));
+    expect(hero).toContain('GlowPressable');
+    expect(hero).toContain('pressScale={0.972}');
+
+    // KPI tiles render through GlowPressable with the identical press depth.
+    const kpiStart = ui.indexOf('export function KpiTile');
+    const kpi = ui.slice(kpiStart, ui.indexOf('export function Row'));
+    expect(kpi).toContain('<GlowPressable');
+    expect(kpi).toContain('pressScale={0.972}');
+    expect(kpi).toContain('haptic');
+  });
+
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');
