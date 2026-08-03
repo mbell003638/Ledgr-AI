@@ -72,10 +72,20 @@ async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions)
     const end = options.to && options.to < period.end_date ? options.to : period.end_date;
     const { cogs, hasClosingCount } = await computePeriodicCogs(db, options.bookId, { start: period.start_date, end });
     if (!hasClosingCount || cogs <= 0) return undefined;
-    const cogsAccountId = `${options.bookId}:account:${V2_ACCOUNT_CODES.COGS}`;
-    const inventoryAccountId = `${options.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`;
+    // Resolve account ids by (book_id, code) rather than templating `${bookId}:account:${code}`.
+    // If a book's ids ever diverge from that convention, a templated id would miss the report's
+    // accountsById lookup and the COGS estimate would silently vanish from the P&L.
+    const cogsAccountId = await accountIdByCode(db, options.bookId, V2_ACCOUNT_CODES.COGS);
+    const inventoryAccountId = await accountIdByCode(db, options.bookId, V2_ACCOUNT_CODES.INVENTORY);
+    if (!cogsAccountId || !inventoryAccountId) return undefined;
     return { cogsAccountId, inventoryAccountId, amount: cogs };
   } catch {
     return undefined; // never let the COGS estimate break report rendering
   }
+}
+
+/** Resolve an account id from the authoritative accounts table by (book_id, code). */
+async function accountIdByCode(db: SqlRunner, bookId: string, code: string): Promise<string | undefined> {
+  const row = await db.first<{ id: string }>('SELECT id FROM v2_accounts WHERE book_id=? AND code=?', [bookId, code]);
+  return row?.id;
 }
