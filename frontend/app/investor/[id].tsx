@@ -23,8 +23,9 @@ export default function InvestorDetailScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; action?: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const requestedAction = Array.isArray(params.action) ? params.action[0] : params.action;
   const [data, setData] = useState<InvestorLedgerDetail | null>(null);
   const [currency, setCurrency] = useState('$');
   const [loading, setLoading] = useState(true);
@@ -54,6 +55,15 @@ export default function InvestorDetailScreen() {
   }, [id, router]);
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+
+  // Quick action from the Parties list ("+ Capital"): auto-open the SAME
+  // Deposit Capital sheet the on-screen button uses, then consume the param.
+  React.useEffect(() => {
+    if (requestedAction === 'deposit' || requestedAction === 'draw') {
+      setAction(requestedAction);
+      router.setParams({ action: undefined } as any);
+    }
+  }, [requestedAction, router]);
 
   const closeForm = () => { setAction(null); setAmount(''); setNotes(''); setFormError(''); };
   const save = async () => {
