@@ -1,7 +1,7 @@
 import type { SqlRunner } from '../db/schema';
 import { V2_ACCOUNT_CODES, type V2Member } from './types';
 import { round2 } from '../money';
-import { periodicCogs } from './cogs';
+import { computePeriodicCogs } from './cogs';
 
 const cents = round2;
 
@@ -67,12 +67,22 @@ export class V2CloseBooksRepository {
       if (nextPeriod.status !== 'open') throw new Error('Next period must be open');
       if (nextPeriod.start_date <= period.end_date) throw new Error('Next period must follow the period being closed');
 
-      const counts = await this.listInventoryCounts(input.bookId, input.periodId);
-      const openingCount = counts.find((count) => count.date === period.start_date);
-      const closingCount = [...counts].reverse().find((count) => count.date === input.date);
-      if (!openingCount || !closingCount) throw new Error('Inventory counts are required on the period start and close dates');
-      const openingInventory = openingCount.value;
-      const closingInventory = closingCount.value;
+      // Periodic COGS via the SINGLE shared selection path (cogs.ts) so the close, the live
+      // report, the dashboard and the investor ledger all agree — including for a mid-period
+      // count (latest in-period count is the closing; opening per the shared rule). This
+      // replaces the old requirement that counts be dated EXACTLY on the start and close dates,
+      // which made a mid-period count show COGS in the live report but throw at close.
+      const cogsResult = await computePeriodicCogs(this.db, input.bookId, { start: period.start_date, end: input.date });
+      const { openingInventory, closingInventory, cogs } = cogsResult;
+      // The close can only proceed with a known closing inventory. When the book has inventory
+      // activity in the period (a recorded count or inventory purchases) but no distinct closing
+      // count is derivable, periodic COGS is undefined — surface a clear, actionable error rather
+      // than silently closing with COGS 0. A book with no inventory activity at all closes fine.
+      const periodCounts = await this.listInventoryCounts(input.bookId, input.periodId);
+      const tracksInventory = periodCounts.length > 0 || cogsResult.purchases > 0;
+      if (tracksInventory && !cogsResult.hasClosingCount) {
+        throw new Error('An inventory count within the period is required to close (closing stock is unknown)');
+      }
       const members = await this.db.all<MemberRow>('SELECT id,book_id,name,current_capital,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY id', [input.bookId]);
       const sharePctTotal = members.reduce((sum, member) => sum + Number(member.profit_share_pct), 0);
       if (members.length && Math.abs(sharePctTotal - 100) > 0.005) throw new Error('Member profit shares must total 100%');
@@ -85,8 +95,6 @@ export class V2CloseBooksRepository {
       const purchases = cents(Math.max(0, movement('1200')));
       const expenses = cents(Math.max(0, movement('6000')));
       const drawings = cents(Math.max(0, movement('3100')));
-      // Single source of periodic COGS — same formula used by live reports.
-      const cogs = periodicCogs({ openingInventory, purchases, closingInventory });
       const grossProfit = cents(sales - cogs);
       const commission = grossProfit > 0 ? cents(grossProfit * input.commissionPct / 100) : 0;
       const netProfit = cents(grossProfit - commission - expenses);
