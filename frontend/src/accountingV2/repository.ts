@@ -1,6 +1,7 @@
 import type { V2Account, V2Book, V2JournalEntry, V2Party, V2Source } from './types';
 import { defaultAccounts } from './schema';
 import type { SqlRunner } from '../db/schema';
+import { round2 } from '../money';
 
 export type V2DateRange = { from?: string; to?: string };
 export type V2ReconciliationError = {
@@ -11,7 +12,7 @@ export type V2ReconciliationError = {
 };
 
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-const cents = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+const cents = round2;
 let savepointSequence = 0;
 
 export class V2SqlRepository {
@@ -178,6 +179,11 @@ export class V2SqlRepository {
     if (range.from) { clauses.push(`${column} >= ?`); params.push(range.from); }
     if (range.to) { clauses.push(`${column} <= ?`); params.push(range.to); }
     return { sql: clauses.length ? ` AND ${clauses.join(' AND ')}` : '', params };
+  }
+
+  /** Run work inside a savepoint so multi-step app operations (e.g. party upsert + posting) are atomic. */
+  async runInTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    return this.tx(fn);
   }
 
   private async tx<T>(fn: () => Promise<T>): Promise<T> {
