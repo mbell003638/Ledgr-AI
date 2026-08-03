@@ -33,7 +33,65 @@ export type LedgerRow = {
   postedAt?: string | null; // journal created_at (posted_at ISO timestamp)
   sourceReversed?: boolean; // the row's source has been reversed
   sourceDeleted?: boolean; // the row's source was deleted (reversed, no re-post)
+  /** Legacy-mirror linkage (optional — only legacy rows dual-written next to a
+   *  V2 journal carry these; see dedupeLegacyMirrors). */
+  type?: string | null; // legacy cash-entry kind, e.g. 'capital_injection'
+  receiptId?: string | null; // legacy receipt bridge rows: the receipt (V2 source) id
+  v2SourceId?: string | null; // explicit mirror linkage written by api dual-writes
 };
+
+/**
+ * Drop legacy (manual-collection) rows that MIRROR a V2-journaled movement.
+ *
+ * Why mirrors exist: when V2 is active, api dual-writes keep the legacy
+ * collections in sync (backup/export continuity). The legacy mirror row gets
+ * the V2 SOURCE id as linkage, but the journal-derived V2 row in this list is
+ * keyed by its JOURNAL id — so a plain id-keyed merge keeps both twins and the
+ * Cash Book shows (and totals) the same movement twice.
+ *
+ * Linkage dedupe (preferred): a legacy row is a mirror when any of its linkage
+ * keys — its own id (investor-capital mirrors are created WITH the V2 source
+ * id), its explicit `v2SourceId`, or its `receiptId` (legacy receipt bridge
+ * rows) — matches the `sourceId` of a V2 row in the same list.
+ *
+ * Conservative fallback (rows written before linkage existed): an
+ * investor-capital legacy row (`type` capital_injection/drawing) matching a V2
+ * capital movement on date + amount + direction is treated as the same
+ * movement. Matches are consumed one-for-one so a genuine second same-day,
+ * same-amount deposit is never swallowed.
+ *
+ * Other dual-written movements (cash sales, expenses, supplier payments…)
+ * don't need this: their legacy mirrors live in `sales`/`payments`/… — not in
+ * `cashEntries` — so they never reach the Cash Book merge in the first place.
+ * The only legacy writes that land in `cashEntries` are receipt bridge rows
+ * (linked via `receiptId`) and investor-capital mirrors (linked via id /
+ * `v2SourceId`), both covered above.
+ */
+export function dedupeLegacyMirrors(rows: LedgerRow[]): LedgerRow[] {
+  const v2SourceIds = new Set(
+    rows.filter((row) => row.origin === "v2" && row.sourceId).map((row) => String(row.sourceId)),
+  );
+  if (!v2SourceIds.size) return rows;
+  const capitalKey = (row: LedgerRow) => `${row.date}|${round2(Number(row.amount) || 0)}|${row.direction}`;
+  const fallbackPool = new Map<string, number>();
+  for (const row of rows) {
+    if (row.origin !== "v2") continue;
+    if (row.sourceType !== "capital_injection" && row.sourceType !== "drawing") continue;
+    const key = capitalKey(row);
+    fallbackPool.set(key, (fallbackPool.get(key) || 0) + 1);
+  }
+  return rows.filter((row) => {
+    if (row.origin === "v2") return true;
+    const links = [row.id, row.v2SourceId, row.receiptId].filter(Boolean).map(String);
+    if (links.some((link) => v2SourceIds.has(link))) return false;
+    if (row.type === "capital_injection" || row.type === "drawing") {
+      const key = capitalKey(row);
+      const available = fallbackPool.get(key) || 0;
+      if (available > 0) { fallbackPool.set(key, available - 1); return false; }
+    }
+    return true;
+  });
+}
 
 export type DisplayLedgerRow = LedgerRow & {
   edited?: boolean;
