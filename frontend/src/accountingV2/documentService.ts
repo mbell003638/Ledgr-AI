@@ -61,12 +61,18 @@ export class V2DocumentService {
     return this.reverseSource(receiptSourceId, 'receipt', 'Delete receipt', true);
   }
 
-  async reverseSource(sourceId: string, expectedType: string, memo: string, deleted = false) {
+  async reverseSource(sourceId: string, expectedType: string, memo: string, deleted = false, opts: { allowAllocations?: boolean } = {}) {
     return this.repoTx(async () => {
       const source = await this.sourceRow(sourceId, expectedType);
       if (expectedType === 'invoice') {
-        const allocated = await this.repo.db.first('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [sourceId]);
-        if (allocated) throw new Error('Cannot reverse an invoice with receipt allocations');
+        // [Finding E] The allocation guard blocks DELETE (you can't drop an invoice
+        // that has receipts against it). An EDIT that re-posts and re-points those
+        // allocations passes allowAllocations so a partially-paid invoice can be
+        // corrected instead of dead-ending.
+        if (!opts.allowAllocations) {
+          const allocated = await this.repo.db.first('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [sourceId]);
+          if (allocated) throw new Error('Cannot reverse an invoice with receipt allocations');
+        }
       } else if (expectedType === 'receipt') {
         await this.repo.db.run('DELETE FROM v2_invoice_allocations WHERE receipt_source_id=?', [sourceId]);
       }
@@ -82,6 +88,43 @@ export class V2DocumentService {
     return this.repoTx(async () => {
       await this.reverseSource(sourceId, expectedType, memo);
       return createReplacement();
+    });
+  }
+
+  /**
+   * [Finding E] Edit an invoice that already has receipt allocations. The new
+   * total must be >= the amount already allocated (received against it); otherwise
+   * the caller gets an actionable error. The old invoice journal is reversed, a
+   * replacement invoice is posted for the new total, and the existing allocation
+   * rows are re-pointed to the replacement so the payments stay applied (the
+   * invoice's open balance becomes newTotal − allocated).
+   */
+  async replaceInvoicePreservingAllocations<T extends { source: { id: string } }>(
+    sourceId: string,
+    memo: string,
+    newTotal: number,
+    createReplacement: () => Promise<T>,
+  ): Promise<T> {
+    return this.repoTx(async () => {
+      const allocRows = await this.repo.db.all<{ id: string; amount: number }>('SELECT id,amount FROM v2_invoice_allocations WHERE invoice_source_id=?', [sourceId]);
+      const allocated = cents(allocRows.reduce((sum, r) => sum + Number(r.amount || 0), 0));
+      const total = cents(newTotal);
+      if (allocated > 0.005 && total < allocated - 0.005) {
+        throw new Error(`$${allocated.toFixed(2)} already received against this invoice — delete/adjust the receipt first or set the total to $${allocated.toFixed(2)} or more.`);
+      }
+      await this.reverseSource(sourceId, 'invoice', memo, false, { allowAllocations: true });
+      const replacement = await createReplacement();
+      // Re-point the preserved allocations onto the replacement invoice.
+      if (allocRows.length) {
+        await this.repo.db.run('UPDATE v2_invoice_allocations SET invoice_source_id=? WHERE invoice_source_id=?', [replacement.source.id, sourceId]);
+        // Reflect the applied amount + paid status on the replacement metadata.
+        const meta = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [replacement.source.id]);
+        let metadata: any = {}; try { metadata = JSON.parse(meta?.metadata || '{}'); } catch { metadata = {}; }
+        metadata.advanceApplied = cents(Number(metadata.advanceApplied || 0) + allocated);
+        metadata.status = allocated >= total - 0.005 ? 'paid' : allocated > 0 ? 'partial' : 'unpaid';
+        await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(metadata), replacement.source.id]);
+      }
+      return replacement;
     });
   }
 
