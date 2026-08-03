@@ -1,8 +1,9 @@
 import type { V2Ledger } from './ledger';
 import type { V2Member } from './types';
+import { round2 } from '../money';
 
 export type CloseResult = { periodId: string; netProfit: number; closingCapital: number; snapshot: Record<string, number>; journalId: string };
-const cents = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+const cents = round2;
 
 export function retailNetProfit(sales: number, openingInventory: number, purchases: number, closingInventory: number, commissionPct: number, expenses: number) {
   const cogs = cents(openingInventory + purchases - closingInventory);
