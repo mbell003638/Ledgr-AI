@@ -56,6 +56,7 @@ async function partyWithRole(repo: V2SqlRepository, bookId: string, partyId: str
   if (!roles.includes(role)) throw new Error(`${role === 'customer' ? 'Customer' : 'Supplier'} party not found`);
 }
 async function customer(repo: V2SqlRepository, bookId: string, partyId: string) { return partyWithRole(repo, bookId, partyId, 'customer'); }
+async function supplier(repo: V2SqlRepository, bookId: string, partyId: string) { return partyWithRole(repo, bookId, partyId, 'supplier'); }
 
 export async function postCashSale(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; amount: number; method?: V2PaymentMethod; reference?: string; metadata?: Record<string, unknown> }) {
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
@@ -169,24 +170,51 @@ export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:str
   return { source, journal, supplierAdvance: advance };
 }
 export async function postExpense(repo:V2SqlRepository,input:{bookId:string;periodId:string;date:string;amount:number;method:V2PaymentMethod}){const amount=cents(input.amount);if(!Number.isFinite(amount)||amount<=0)throw new Error('Amount must be positive');const source:V2Source={id:uid('expense'),bookId:input.bookId,type:'expense',date:input.date,metadata:{total:amount,method:input.method}};const journal=await repo.postSourceJournal(source,{bookId:input.bookId,periodId:input.periodId,date:input.date,memo:'Expense',lines:[{accountId:`${input.bookId}:account:${V2_ACCOUNT_CODES.EXPENSES}`,debit:amount,credit:0},{accountId:`${input.bookId}:account:${paymentCode(input.method)}`,debit:0,credit:amount}]});return{source,journal};}
-async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId:string; date:string; amount:number }, kind: 'credit_note'|'debit_note') {
+/**
+ * [Finding A] Post a credit/debit note against a customer (AR) or supplier (AP).
+ *
+ * The invoice link is OPTIONAL: a note lowers/raises the party balance directly
+ * against AR/AP, so a general (unlinked) discount/return still posts and shows on
+ * the party statement. When an invoiceSourceId IS provided it is validated to
+ * belong to the same party (as before), and recorded on the source metadata.
+ *
+ * Customer notes (role 'customer', account AR):
+ *   - credit note  → DR Sales Returns, CR AR   (customer owes LESS — balance drops)
+ *   - debit note   → DR AR, CR Sales           (customer owes MORE)
+ * Supplier notes (role 'supplier', account AP):
+ *   - credit note  → DR AP, CR COGS            (we owe the supplier LESS)
+ *   - debit note   → DR COGS, CR AP            (we owe the supplier MORE)
+ */
+async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier' }, kind: 'credit_note'|'debit_note') {
   const amount = cents(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
-  await customer(repo, input.bookId, input.partyId);
-  const inv = await repo.db.first<{ metadata:string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type='invoice'", [input.invoiceSourceId, input.bookId]);
-  const meta = inv ? JSON.parse(inv.metadata) : {};
-  if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
-  const source: V2Source = { id: uid(kind), bookId: input.bookId, type: kind, date: input.date, metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId, total: amount } };
+  const role = input.role === 'supplier' ? 'supplier' : 'customer';
+  if (role === 'supplier') await supplier(repo, input.bookId, input.partyId);
+  else await customer(repo, input.bookId, input.partyId);
+  if (input.invoiceSourceId) {
+    const inv = await repo.db.first<{ metadata:string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type='invoice'", [input.invoiceSourceId, input.bookId]);
+    const meta = inv ? JSON.parse(inv.metadata) : {};
+    if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
+  }
+  const source: V2Source = { id: uid(kind), bookId: input.bookId, type: kind, date: input.date, metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount } };
   const credit = kind === 'credit_note';
+  const lines = role === 'supplier'
+    ? (credit ? [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: 0, credit: amount },
+      ] : [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: 0, credit: amount },
+      ])
+    : (credit ? [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES_RETURNS}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: 0, credit: amount },
+      ] : [
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
+      ]);
   const journal = await repo.postSourceJournal(source, {
-    bookId: input.bookId, periodId: input.periodId, date: input.date, memo: kind,
-    lines: credit ? [
-      { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES_RETURNS}`, debit: amount, credit: 0 },
-      { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: 0, credit: amount },
-    ] : [
-      { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
-      { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
-    ],
+    bookId: input.bookId, periodId: input.periodId, date: input.date, memo: kind, lines,
   });
   return { source, journal };
 }
