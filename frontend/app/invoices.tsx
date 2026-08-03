@@ -824,10 +824,18 @@ export default function InvoicesScreen() {
   };
 
   const markUnpaid = async (id: string) => {
-    // If we mark unpaid, we might just update the metadata
-    await api.updateInvoice(id, { status: "unpaid" });
-    await load();
-    setSelected(null);
+    // [Finding F] Marking unpaid is a status-only change. If a receipt is applied
+    // to the invoice the V2 ledger refuses (you must unapply the receipt first);
+    // surface that as a friendly message instead of an unhandled rejection.
+    try {
+      await api.updateInvoice(id, { status: "unpaid" });
+      await load();
+      setSelected(null);
+    } catch (e: any) {
+      const msg = e?.message || "Could not mark this invoice unpaid.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Can't mark unpaid", msg);
+    }
   };
 
   const deleteInv = async (id: string) => {
