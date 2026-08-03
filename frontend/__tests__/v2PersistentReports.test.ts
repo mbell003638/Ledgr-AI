@@ -39,6 +39,44 @@ describe('persistent V2 reports', () => {
     } finally { close(); }
   });
 
+  it('exposes distinct revenue/cogs/grossProfit/expenses/netProfit so the reports tab can map true fields (accrual)', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const repo = new V2SqlRepository(runner);
+      const book = defaultBook('default', 'Accrual Shop');
+      await repo.createBook(book, defaultAccounts(book.id));
+      await repo.createPeriod({ id: 'p', bookId: book.id, startDate: '2026-01-01', endDate: '2026-12-31', status: 'open' });
+      // Sale $500 on credit, COGS $300 (5000), operating expense $80 (6000).
+      await repo.postJournal({ bookId: book.id, periodId: 'p', date: '2026-02-01', memo: 'Credit sale', lines: [
+        { accountId: 'default:account:1100', debit: 500, credit: 0 },
+        { accountId: 'default:account:4000', debit: 0, credit: 500 },
+      ] });
+      await repo.postJournal({ bookId: book.id, periodId: 'p', date: '2026-02-02', memo: 'COGS', lines: [
+        { accountId: 'default:account:5000', debit: 300, credit: 0 },
+        { accountId: 'default:account:1200', debit: 0, credit: 300 },
+      ] });
+      await repo.postJournal({ bookId: book.id, periodId: 'p', date: '2026-02-03', memo: 'Rent', lines: [
+        { accountId: 'default:account:6000', debit: 80, credit: 0 },
+        { accountId: 'default:account:1000', debit: 0, credit: 80 },
+      ] });
+
+      const result = await persistentV2ReportsOrFallback(runner, { bookId: book.id, from: '2026-01-01', to: '2026-12-31' }, jest.fn());
+      if (result.source !== 'v2') throw new Error('Expected V2 report');
+      const pnl = result.report.profitAndLoss;
+      // Engine returns REAL fields: gross = revenue − cogs; accrual expenses INCLUDE cogs; net = revenue − expenses.
+      expect(pnl.revenue).toBe(500);
+      expect(pnl.cogs).toBe(300);
+      expect(pnl.grossProfit).toBe(200);
+      expect(pnl.expenses).toBe(380); // 300 cogs + 80 operating (accrual includes cogs)
+      expect(pnl.netProfit).toBe(120);
+      // The reports tab renders operating expenses as gross − net; must equal expenses − cogs
+      // under accrual and never double-count cogs.
+      expect(pnl.grossProfit - pnl.netProfit).toBe(80);
+      expect(pnl.grossProfit - pnl.netProfit).toBe(pnl.expenses - pnl.cogs);
+    } finally { close(); }
+  });
+
   it('uses the legacy fallback when SQLite is unavailable or the active V2 book does not exist', async () => {
     const legacy = { legacy: true };
     const noSqlFallback = jest.fn(async () => legacy);
