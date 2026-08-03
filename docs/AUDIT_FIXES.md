@@ -200,3 +200,11 @@ Validation after round 8: **54/54 suites, 393 tests passing; tsc clean.**
 | Wanted: deposit capital from Cash Book and Parties | — | Cash In form gains a Type chip (General / Investor capital → investor picker → posts via depositInvestorCapital); Parties investor rows gain a "+ Capital" pill that opens the deposit sheet | `cashbook.tsx`, `suppliers.tsx`, `investor/[id].tsx` |
 
 Validation after round 9: **55/55 suites, 409 tests passing; tsc clean.**
+
+## Round 10 — factory-reset → onboarding crash (2026-08-03, device screenshot)
+
+| User report | Root cause | Fix | Files |
+| --- | --- | --- | --- |
+| "UNIQUE constraint failed: v2_books.id" when completing onboarding after a factory reset | Factory reset preserved book-identity rows (v2_books/accounts/personas/members) while deleting the version meta keys — onboarding then saw no version, re-ran bootstrap, and the INSERT INTO v2_books collided with the orphaned row (appBootstrap.ts:74) | New `factoryResetV2Data`: wipes EVERY v2_* table children-before-parents in one savepoint (runtime guard cross-checks the table list so new tables can't be missed) + `initializeV2Book` is now idempotent (self-heals orphan rows from old builds — devices upgrading with leftover data recover automatically). Regression tests reproduced the exact error pre-fix | `resetBook.ts`, `appBootstrap.ts`, `api.ts`, `factoryResetV2.test.ts` (new, 4 tests), `factoryResetKeys.test.ts` |
+
+Validation after round 10: **56/56 suites, 414 tests passing; tsc clean.**
