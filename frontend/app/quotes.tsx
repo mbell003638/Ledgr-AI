@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
@@ -105,7 +105,7 @@ export default function QuotesScreen() {
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [validUntil, setValidUntil] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", qty: 1, rate: 0 }]);
   const [notes, setNotes] = useState("");
@@ -130,7 +130,7 @@ export default function QuotesScreen() {
   const total = +(subtotal + taxAmt).toFixed(2);
 
   const openNew = () => {
-    setEditId(null); setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setValidUntil(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setErr(""); setShowForm(true);
   };
   const openEdit = (q: Quote) => {
@@ -171,7 +171,7 @@ export default function QuotesScreen() {
       `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds them to Debtors.`,
       async () => {
         try {
-          await api.convertQuoteToInvoice(q.id, { date: new Date().toISOString().slice(0, 10) });
+          await api.convertQuoteToInvoice(q.id, { date: localTodayIso() });
           setSelected(null);
           await load();
           Alert.alert("Done", "Invoice created. Find it in Invoices.");
