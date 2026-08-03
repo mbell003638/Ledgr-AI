@@ -86,3 +86,23 @@ Validation: **45/45 Jest suites, 276 tests passing; `tsc --noEmit` clean.**
 | Git-history rewrite to purge the deleted blobs (~15 MB) | Rewrites all commit hashes; must be run by the repo owner with collaborators coordinated (`git filter-repo` / BFG). |
 | Typing the V1 CRUD layer (428 `any`s, mostly `local.ts`) and splitting the god-files (`local.ts`, `invoices.tsx`, `api.ts`) | Large refactors best done as dedicated PRs after this correctness branch lands. |
 | Full V1 → V2 migration cutover (removing the dual-write mirror; V2 for secondary books) | Product decision + migration tooling; mirror failures are now at least visible (`lastMirrorErrors`). |
+
+## ⚠ Manual step required — CI workflow files
+
+The GitHub integration token used to push this branch lacks the `workflows`
+permission, so the two updated workflow files could **not** be pushed to
+`.github/workflows/` (GitHub rejects workflow edits from apps without that
+scope). The fixed versions are staged at **`docs/ci/build-apk.yml`** and
+**`docs/ci/test.yml`** instead — the branch still contains the *old* workflows.
+
+To apply them (from a clone of this branch):
+
+```bash
+cp docs/ci/build-apk.yml .github/workflows/build-apk.yml
+cp docs/ci/test.yml      .github/workflows/test.yml
+git add .github/workflows && git commit -m "ci: apply audit-fixed workflows" && git push
+```
+
+Or simply copy each file's contents over the old one in the GitHub web editor.
+These carry the C1 keystore fix (persistent-keystore secrets + test-signed
+fallback) and the H2 test-gating fix (tests on all branches; build needs test).
