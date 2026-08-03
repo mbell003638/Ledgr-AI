@@ -13,6 +13,9 @@ import {
   readSettings,
   writeSettings,
   migrateFromAsyncStorage,
+  withImportTransaction,
+  writeCollInTxn,
+  writeSettingsInTxn,
 } from '../src/db/sqliteStore';
 import { makeNodeRunner } from './helpers/nodeRunner';
 
@@ -235,5 +238,50 @@ describe('concurrent writes (resetAll regression)', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('atomic import helpers (withImportTransaction / *InTxn) [C3]', () => {
+  it('commits all collection + settings writes as one unit', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      await withImportTransaction(runner, async () => {
+        await writeCollInTxn(runner, 'sales', [{ id: 's1', date: '2026-01-01', amount: 5 }, { id: 's2', date: '2026-01-02', amount: 7 }]);
+        await writeCollInTxn(runner, 'bills', [{ id: 'b1', date: '2026-01-03', amount: 3 }]);
+        await writeSettingsInTxn(runner, { currency: 'INR' });
+      });
+      expect(await readColl(runner, 'sales')).toHaveLength(2);
+      expect(await readColl(runner, 'bills')).toHaveLength(1);
+      expect(await readSettings(runner)).toEqual({ currency: 'INR' });
+    } finally { close(); }
+  });
+
+  it('rolls back EVERYTHING when any step throws (no half-import)', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      // Seed a prior state we can prove survives a failed import.
+      await writeColl(runner, 'sales', [{ id: 'orig', date: '2026-01-01', amount: 1 }]);
+      await expect(withImportTransaction(runner, async () => {
+        await writeCollInTxn(runner, 'sales', [{ id: 'new1', date: '2026-02-01', amount: 9 }]);
+        // Force a failure mid-transaction (write to a missing table).
+        await runner.run('INSERT INTO not_a_table(id) VALUES(1)');
+      })).rejects.toBeDefined();
+      // The original row is intact; the partial 'new1' write was rolled back.
+      const back = await readColl(runner, 'sales');
+      expect(back).toHaveLength(1);
+      expect((back[0] as any).id).toBe('orig');
+    } finally { close(); }
+  });
+
+  it('writeCollInTxn clears a collection (DELETE) even when given an empty array', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      await writeColl(runner, 'expenses', [{ id: 'e1', date: '2026-01-01', amount: 5 }]);
+      await withImportTransaction(runner, async () => { await writeCollInTxn(runner, 'expenses', []); });
+      expect(await readColl(runner, 'expenses')).toEqual([]);
+    } finally { close(); }
   });
 });
