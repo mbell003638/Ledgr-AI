@@ -14,6 +14,8 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { showAlert } from "@/src/utils/alerts";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
@@ -285,8 +287,16 @@ export default function Dashboard() {
     } else if (preset === "this_month") {
       f = `${nowStr.slice(0, 7)}-01`; t = nowStr;
       setFromDate(f); setToDate(t);
+    } else if (preset === "custom" && f.trim() && t.trim()) {
+      // Typed dates: normalize (Samsung minus signs, DD/MM, dots, exotic digits)
+      // then validate, reflecting the canonical form back into the inputs.
+      const rawF = f, rawT = t;
+      f = normalizeDateInput(f); t = normalizeDateInput(t);
+      if (!isValidDateString(f)) { showAlert("Invalid date", `Couldn't read "${rawF.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+      if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${rawT.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+      setFromDate(f); setToDate(t);
     }
-    
+
     if (f && t) {
       try {
         const res = await api.pnlRange(f, t);
@@ -359,6 +369,8 @@ export default function Dashboard() {
                   <TextInput
                     value={fromDate}
                     onChangeText={setFromDate}
+                    onBlur={() => { if (fromDate.trim()) setFromDate(normalizeDateInput(fromDate)); }}
+                    autoCapitalize="none"
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
                     style={styles.customDateInput}
@@ -367,6 +379,8 @@ export default function Dashboard() {
                   <TextInput
                     value={toDate}
                     onChangeText={setToDate}
+                    onBlur={() => { if (toDate.trim()) setToDate(normalizeDateInput(toDate)); }}
+                    autoCapitalize="none"
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
                     style={styles.customDateInput}
