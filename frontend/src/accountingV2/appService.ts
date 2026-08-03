@@ -2,7 +2,7 @@ import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
 import { V2CloseBooksRepository, type CloseBooksResult } from './closeBooksRepository';
 import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
-import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense } from './postings';
+import { postCashSale, postInvoice, postReceipt, postPurchase, postSupplierPayment, postExpense, postCreditNote, postDebitNote } from './postings';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
@@ -46,6 +46,31 @@ export class V2AppService {
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
     const period = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' AND start_date<=COALESCE(?,start_date) AND end_date>=COALESCE(?,end_date) ORDER BY start_date DESC LIMIT 1", [active.value, date || null, date || null]);
     return period ? { bookId: active.value, periodId: period.id } : null;
+  }
+
+  /**
+   * [Finding C] Resolve the date a CORRECTION (edit replacement) may post to.
+   * The reversal half of an edit already redirects a closed-period entry into the
+   * current open period (documentService.resolvePostingTarget). The replacement
+   * half re-runs createSale/createInvoice which resolve activeContext(input.date);
+   * with the ORIGINAL closed date that yields no open period and the edit dead-ends.
+   * This returns a date guaranteed to land in an OPEN period: the original date
+   * when it already falls in an open period, otherwise today clamped into the
+   * current open period (so closed totals stay frozen and the correction lands in
+   * the open period). Returns null only when there is genuinely no open period.
+   */
+  private async editReplacementDate(originalDate?: string): Promise<string | null> {
+    const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
+    const bookId = active.value;
+    if (originalDate) {
+      const inOpen = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' AND start_date<=? AND end_date>=? LIMIT 1", [bookId, originalDate, originalDate]);
+      if (inOpen) return originalDate;
+    }
+    const open = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date DESC LIMIT 1", [bookId]);
+    if (!open) return null;
+    const now = new Date().toISOString().slice(0, 10);
+    return now < open.start_date ? open.start_date : now > open.end_date ? open.end_date : now;
   }
 
   private async party(input: AnyRecord, role: V2PartyRole, bookId: string) {
@@ -138,7 +163,7 @@ export class V2AppService {
     if (!party) return null;
     let roles: string[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
     if (!roles.includes(role)) return null;
-    const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment'];
+    const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment', 'credit_note', 'debit_note'];
     const placeholders = sourceTypes.map(() => '?').join(','); const accountCode = role === 'customer' ? '1100' : '2000';
     const rows = await this.db.all<any>(`SELECT s.id,s.type,s.date,s.reference,s.metadata,
       COALESCE(SUM(CASE WHEN a.code=? THEN l.debit ELSE 0 END),0) AS debit,
@@ -158,7 +183,10 @@ export class V2AppService {
         totalInvoiced, totalPaid, balance: running, statement: { ledger: ledger.slice().reverse(), balance: running } };
     }
     const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
-    const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
+    // [Finding A] Supplier credit/debit notes appear in the statement timeline
+    // alongside payments (they, like a payment, adjust what we owe the supplier).
+    const notes = active.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
+    const payments = [...active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' })), ...notes];
     const billsTotal = cents(bills.reduce((sum, row) => sum + row.amount, 0)); const paymentsTotal = cents(payments.reduce((sum, row) => sum + row.amount, 0));
     const balance = cents(active.reduce((sum, row) => sum + Number(row.credit) - Number(row.debit), 0));
     return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), billsTotal, paymentsTotal, balance };
@@ -238,6 +266,28 @@ export class V2AppService {
     });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
+  /**
+   * [Finding A] Post a credit/debit note through the V2 ledger so it hits the
+   * journal + party balance (dashboard / party detail / statements), instead of
+   * writing a legacy-only record the V2 reads never see. Role-aware: customer
+   * notes move AR, supplier notes move AP. The party is upserted (find-or-create)
+   * exactly like invoices/bills so a note can be raised against a party that was
+   * only referenced by name/id.
+   */
+  private async createNoteV2(input: AnyRecord, kind: 'credit_note'|'debit_note') {
+    const role: 'customer'|'supplier' = input.role === 'supplier' ? 'supplier' : 'customer';
+    const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    return this.repo.runInTransaction(async () => {
+      // this.party() upserts the party + role and honours an explicit debtorId/
+      // supplierId/partyId (see stablePartyId), so the note attaches to the SAME
+      // party the invoice/bill created.
+      const partyId = await this.party(input, role, c.bookId);
+      const post = kind === 'credit_note' ? postCreditNote : postDebitNote;
+      return post(this.repo, { ...c, date: input.date, partyId, invoiceSourceId: input.invoiceId || input.invoiceSourceId || null, amount: amount(input.amount), role });
+    });
+  }
+  async createCreditNote(input: AnyRecord) { return this.createNoteV2(input, 'credit_note'); }
+  async createDebitNote(input: AnyRecord) { return this.createNoteV2(input, 'debit_note'); }
   /** Post opening cash/inventory against capital. Self-correcting: see applyOpeningBalances. */
   async postOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
     return this.applyOpeningBalances(input);
@@ -458,27 +508,69 @@ export class V2AppService {
     return this.documents.reverseSource(id, 'cash_sale', 'Delete cash sale', true);
   }
   async deleteBill(id: string) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); return this.documents.reverseSource(id, row.type, 'Delete bill', true); }
-  async updateExpense(id: string, input: AnyRecord) { return this.documents.replaceSource(id, 'expense', 'Edit expense', () => this.createExpense(input)); }
+  /**
+   * [Finding C] Rebuild the edit payload so the replacement posts into an OPEN
+   * period. When the original date is in a closed period the correction is dated
+   * into the current open period (matching the reversal-side redirect); a clear
+   * error is raised only when NO open period exists at all.
+   */
+  private async editInput(input: AnyRecord): Promise<AnyRecord> {
+    const date = await this.editReplacementDate(input.date);
+    if (!date) throw new Error('No active versioned V2 book with an open accounting period');
+    return date === input.date ? input : { ...input, date };
+  }
+  async updateExpense(id: string, input: AnyRecord) { const next = await this.editInput(input); return this.documents.replaceSource(id, 'expense', 'Edit expense', () => this.createExpense(next)); }
   async updatePayment(id: string, input: AnyRecord) {
     const type = await this.sourceType(id);
-    if (type === 'supplier_payment') return this.documents.replaceSource(id, type, 'Edit supplier payment', () => this.createPayment(input));
+    const next = await this.editInput(input);
+    if (type === 'supplier_payment') return this.documents.replaceSource(id, type, 'Edit supplier payment', () => this.createPayment(next));
     if (type !== 'drawing') throw new Error('Payment not found');
     const source = await this.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [id]);
     let metadata: AnyRecord = {};
     try { metadata = JSON.parse(source?.metadata || '{}'); } catch { metadata = {}; }
-    const replacement = { ...input, type: 'drawing', investorId: input.investorId || metadata.memberId, partnerName: input.partnerName || metadata.memberName };
+    const replacement = { ...next, type: 'drawing', investorId: next.investorId || metadata.memberId, partnerName: next.partnerName || metadata.memberName };
     return this.documents.replaceSource(id, type, 'Edit member drawing', () => this.createPayment(replacement));
   }
-  async updateInvoice(id: string, input: AnyRecord) { return this.documents.replaceSource(id, 'invoice', 'Edit invoice', () => this.createInvoice(input)); }
+  async updateInvoice(id: string, input: AnyRecord) {
+    // [Finding F] A STATUS-ONLY edit (e.g. the invoices screen "mark unpaid",
+    // which sends { status:'unpaid' } and no total) must NOT re-post the invoice
+    // — re-posting with an undefined amount previously threw "Amount must be
+    // positive" as an unhandled rejection. Handle it explicitly:
+    //   - no receipts applied  → no-op (the invoice is already open); return it
+    //   - receipts applied     → actionable error (unapply the receipt first)
+    const hasTotal = input.total != null || input.amount != null;
+    if (!hasTotal && input.status != null) {
+      const row = await this.db.first<any>("SELECT id,type,date,reference,metadata FROM v2_sources WHERE id=? AND type='invoice'", [id]);
+      if (!row) throw new Error('Invoice not found');
+      const alloc = await this.db.first<{ id: string }>('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [id]);
+      if (String(input.status) === 'unpaid' && alloc) {
+        throw new Error('This invoice has a receipt applied to it. Delete or adjust the receipt to mark it unpaid.');
+      }
+      let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { metadata = {}; }
+      return { source: { id: row.id, type: row.type, date: row.date, reference: row.reference, metadata } };
+    }
+    const next = await this.editInput(input);
+    // [Finding E] If receipts are already allocated to this invoice, edit through
+    // the allocation-preserving path (re-post + re-point allocations) so a
+    // partially-paid invoice can be corrected. Guarded: new total must be >= the
+    // amount already received.
+    const allocated = await this.db.first<{ id: string }>('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [id]);
+    if (allocated) {
+      const newTotal = amount(next.total ?? next.amount);
+      return this.documents.replaceInvoicePreservingAllocations(id, 'Edit invoice', newTotal, () => this.createInvoice(next));
+    }
+    return this.documents.replaceSource(id, 'invoice', 'Edit invoice', () => this.createInvoice(next));
+  }
   async updateSale(id: string, input: AnyRecord) {
     const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
     if (row?.type === 'invoice' || row?.type === 'credit_sale' || input.clientName || input.partyId) {
       return this.updateInvoice(id, input);
     }
     const sourceType = row?.type && ['cash_sale', 'credit_sale', 'invoice'].includes(row.type) ? row.type : 'cash_sale';
-    return this.documents.replaceSource(id, sourceType, 'Edit sale', () => this.createSale(input));
+    const next = await this.editInput(input);
+    return this.documents.replaceSource(id, sourceType, 'Edit sale', () => this.createSale(next));
   }
-  async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(input)); }
+  async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); const next = await this.editInput(input); return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(next)); }
   async updateReceipt(id: string, input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     return this.documents.editReceipt(id, { ...input, ...c, date: String(input.date), amount: amount(input.amount), method: method(input.method) });
