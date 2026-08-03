@@ -108,7 +108,7 @@ sideloading and QA only. Configure the four secrets before your first store uplo
 
 ## Package identifier
 
-`com.mbell.ledgr` — the Android `package` and iOS `bundleIdentifier` (in
+`com.ahem.ledgrai` — the Android `package` and iOS `bundleIdentifier` (in
 `frontend/app.json`). Set once; **cannot be changed** after the first Play Store
 upload.
 
