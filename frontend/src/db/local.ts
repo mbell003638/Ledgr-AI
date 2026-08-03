@@ -17,6 +17,10 @@ import {
   logoStorageKey,
   snapshotKeys,
   restoreKeys,
+  readBooksIndexRaw,
+  writeBooksIndexRaw,
+  readSecondaryBookPayload,
+  writeSecondaryBookPayload,
 } from './backend';
 import { COLLECTIONS as SQL_COLLECTIONS } from './schema';
 import {
@@ -1384,8 +1388,13 @@ export async function closePeriod(actualStock: number, notes = '') {
 const BACKUP_COLLECTIONS = SQL_COLLECTIONS; // the 15 data collections (settings is handled separately)
 // Backup format version. Bumped from 8 → 9 when the V2 ledger payload + the
 // relocated logo key were added to the backup. [C1/H4]
-export const BACKUP_VERSION = 9;
-const SUPPORTED_BACKUP_VERSION = 9;
+// Bumped 9 → 10 [Finding D] when the backup began capturing the books index +
+// EVERY book's namespaced legacy payload (collections/settings/logo), so a
+// restore makes ALL books selectable and intact — not just the active one. The
+// V2 ledger payload already covered every book (shared v2_* tables). Older
+// backups (< 10) still import with their prior single-book behavior + warnings.
+export const BACKUP_VERSION = 10;
+const SUPPORTED_BACKUP_VERSION = 10;
 
 export type ImportBackupResult = {
   ok: true;
@@ -1420,10 +1429,24 @@ export async function exportBackup() {
     try { v2 = await exportV2Data(runner); } catch { /* v2 export best-effort */ }
   }
 
+  // [Finding D] Multi-book capture. The top-level data/settings/logo above are
+  // the DEFAULT book (kept for backward compatibility). Additionally capture:
+  //   - `books`:    the raw books index (so every book is listable on restore)
+  //   - `bookData`: each SECONDARY book's namespaced legacy payload
+  // The default book is excluded from `bookData` (it is the top-level payload).
+  const booksIndex = await readBooksIndexRaw();
+  const bookData: Record<string, { collections: Record<string, any[]>; settings: any; logo: string }> = {};
+  for (const book of booksIndex) {
+    if (!book || !book.id || book.id === 'default') continue;
+    try { bookData[book.id] = await readSecondaryBookPayload(book.id); } catch { /* best-effort per book */ }
+  }
+
   return {
     ...data,
     settings,
     logo,
+    books: booksIndex,
+    bookData,
     ...(v2 ? { v2 } : {}),
     _meta: { app: 'ledgr', version: BACKUP_VERSION, exportedAt: nowIso() },
   };
@@ -1520,6 +1543,44 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
       }
     } catch (e) {
       await restoreKeys(snapshot); // best-effort rollback
+      throw e;
+    }
+  }
+
+  // [Finding D] Restore the books index + every SECONDARY book's namespaced
+  // legacy payload (collections/settings/logo). These live in AsyncStorage for
+  // ALL storage modes (only the default book uses the SQLite store), so this
+  // runs after the default-book restore above regardless of mode. We snapshot
+  // the exact keys first and roll them back on any failure. The shared v2_*
+  // ledger for secondary books was already restored with the V2 payload above.
+  const backupBooks: any[] = Array.isArray(data?.books) ? data.books : [];
+  const backupBookData: Record<string, any> = (data?.bookData && typeof data.bookData === 'object') ? data.bookData : {};
+  const secondaryIds = backupBooks.map((b) => b && b.id).filter((id) => id && id !== 'default');
+  if (backupBooks.length || secondaryIds.length) {
+    // Snapshot: the books index + every secondary book's collection/settings/logo
+    // keys (both the ones we are about to write AND any currently-present books,
+    // so a book removed by the restore is cleaned up on rollback too).
+    const currentBooks = await readBooksIndexRaw();
+    const idsToSnapshot = new Set<string>([...secondaryIds, ...currentBooks.map((b) => b.id).filter((id) => id && id !== 'default')]);
+    const bookKeys: string[] = ['ledgr:books'];
+    for (const id of idsToSnapshot) {
+      for (const c of SQL_COLLECTIONS) bookKeys.push(`ledgr:${id}:${c}`);
+      bookKeys.push(`ledgr:${id}:settings`, `ledgr:${id}:logo`);
+    }
+    const bookSnapshot = await snapshotKeys(bookKeys);
+    try {
+      // Persist the index EXACTLY as backed up (listBooks re-injects default).
+      await writeBooksIndexRaw(backupBooks);
+      for (const id of secondaryIds) {
+        const payload = backupBookData[id] || {};
+        await writeSecondaryBookPayload(id, {
+          collections: payload.collections,
+          settings: payload.settings,
+          logo: payload.logo,
+        });
+      }
+    } catch (e) {
+      await restoreKeys(bookSnapshot); // best-effort rollback of the multi-book slice
       throw e;
     }
   }
@@ -2080,15 +2141,26 @@ export async function setQuoteStatus(id: string, status: QuoteStatus) {
 /**
  * Convert an accepted quote into a real invoice. Idempotent-guarded: a quote that
  * already has convertedInvoiceId throws, so the same quote can't post twice.
+ *
+ * [Finding B] The invoice MUST be created through the authoritative write path so
+ * the converted invoice lands in the V2 ledger (dashboard/reports/party detail),
+ * not just the legacy collection. The api layer injects a `createInvoiceFn` that
+ * routes through the V2 write router (the same one the invoices screen uses); when
+ * omitted (no SQLite runner / legacy-only callers) we fall back to the legacy
+ * createInvoice so behavior is unchanged off the V2 path. The returned invoice is
+ * normalized to always expose `id` and `total` regardless of which path built it.
  */
-export async function convertQuoteToInvoice(id: string, opts?: { date?: string; dueDate?: string }) {
+export async function convertQuoteToInvoice(
+  id: string,
+  opts?: { date?: string; dueDate?: string },
+  createInvoiceFn?: (payload: any) => Promise<any>,
+) {
   const quotes = await readColl<any>('quotes');
   const q = quotes.find((x: any) => x.id === id);
   if (!q) throw new Error('Quote not found');
   if (q.convertedInvoiceId) throw new Error('This quote has already been converted to an invoice.');
 
-  // createInvoice does all the debtor find-or-create + ledger wiring.
-  const invoice = await createInvoice({
+  const payload = {
     clientName: q.clientName,
     clientPhone: q.clientPhone,
     date: opts?.date || new Date().toISOString().slice(0, 10),
@@ -2098,10 +2170,17 @@ export async function convertQuoteToInvoice(id: string, opts?: { date?: string; 
     taxLabel: q.taxLabel,
     total: q.total,
     notes: q.notes ? `${q.notes} (from ${q.quoteNumber})` : `From ${q.quoteNumber}`,
-  });
+  };
 
-  await updateQuote(id, { status: 'converted', convertedInvoiceId: invoice.id });
-  return invoice;
+  // createInvoiceFn (V2 write router) does the ledger + legacy mirror; the bare
+  // legacy createInvoice does the debtor find-or-create + ledger wiring.
+  const created = createInvoiceFn ? await createInvoiceFn(payload) : await createInvoice(payload);
+  // Normalize: the V2 router returns { source, journal }; legacy returns the invoice row.
+  const invoiceId = created?.id || created?.source?.id;
+  const total = created?.total ?? Number(created?.source?.metadata?.total ?? q.total);
+
+  await updateQuote(id, { status: 'converted', convertedInvoiceId: invoiceId });
+  return { ...created, id: invoiceId, total };
 }
 
 // ---------- Credit / Debit Notes ----------
@@ -2122,10 +2201,13 @@ async function createNote(coll: 'creditNotes' | 'debitNotes', prefix: string, n:
   taxRate?: number;
   reason?: NoteReason;
   notes?: string;
+  role?: 'customer' | 'supplier';
 }) {
   const amt = Number(n.amount);
   if (!Number.isFinite(amt) || amt <= 0) throw new Error('Note amount must be a valid positive number.');
-  if (!n.debtorId) throw new Error('A customer is required for the note.');
+  // [Finding A] The party field is required; name it correctly per role so the
+  // supplier screen no longer surfaces a "customer is required" message.
+  if (!n.debtorId) throw new Error(`A ${n.role === 'supplier' ? 'supplier' : 'customer'} is required for the note.`);
   return serialize(async () => {
     const items = await readColl<any>(coll);
     const maxSeq = items.reduce((m: number, it: any) => {
