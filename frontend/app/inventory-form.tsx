@@ -8,6 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 export default function InventoryForm() {
   const theme = useTheme();
@@ -61,16 +62,18 @@ export default function InventoryForm() {
   const saveOpeningStock = async () => {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(openingDateInput.trim())) { setError("Use an opening date in YYYY-MM-DD format"); return; }
+    const openingIso = normalizeDateInput(openingDateInput);
+    if (!isValidDateString(openingIso)) { setError(`Couldn't read "${openingDateInput.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setOpeningDateInput(openingIso); // reflect the canonical form in the field
     try {
       // Journal first; settings remain a legacy compatibility mirror for the V2 opening source.
       const settings = await api.getSettings();
       try {
-        await api.updateV2OpeningBalances({ date: openingDateInput.trim(), cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: openingIso, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({ openingInventory: val, currentPeriodStart: openingDateInput.trim() });
+      await api.updateSettings({ openingInventory: val, currentPeriodStart: openingIso });
       setOpeningStock(val);
       setEditingOpening(false);
       loadData();
@@ -80,16 +83,19 @@ export default function InventoryForm() {
   const save = async () => {
     const act = parseFloat(actual);
     if (isNaN(act) || act < 0) { setError("Enter a valid stock value"); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setDate(dateIso); // reflect the canonical form in the field
     setSaving(true); setError("");
     try {
       let savedV2 = false;
       try {
-        await api.recordV2InventoryCount({ date, value: act, notes });
+        await api.recordV2InventoryCount({ date: dateIso, value: act, notes });
         savedV2 = true;
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      if (!savedV2) await api.createInventory({ date, expectedStock: expected, actualStock: act, notes });
+      if (!savedV2) await api.createInventory({ date: dateIso, expectedStock: expected, actualStock: act, notes });
       setActual("");
       setNotes("");
       loadData();
@@ -154,7 +160,7 @@ export default function InventoryForm() {
                     <View style={{ gap: 6, alignItems: "flex-end" }}>
                       <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
                       <View style={{ flexDirection: "row", gap: 6 }}>
-                        <TextInput value={openingDateInput} onChangeText={setOpeningDateInput} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
+                        <TextInput value={openingDateInput} onChangeText={setOpeningDateInput} onBlur={() => { if (openingDateInput.trim()) setOpeningDateInput(normalizeDateInput(openingDateInput)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
                         <Pressable onPress={saveOpeningStock} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
                       </View>
                     </View>
@@ -176,6 +182,7 @@ export default function InventoryForm() {
                   testID="input-inv-date"
                   value={date}
                   onChangeText={setDate}
+                  onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }}
                   placeholder="YYYY-MM-DD"
                 />
                 <FormField
