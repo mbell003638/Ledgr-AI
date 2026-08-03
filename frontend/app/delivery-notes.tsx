@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
@@ -122,7 +122,9 @@ export default function DeliveryNotesScreen() {
 
   const save = async () => {
     setErr("");
-    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setErr(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     if (!clientName.trim()) { setErr("Enter a customer name."); return; }
     const clean = items.filter((it) => it.description.trim() || it.qty > 0);
     setSaving(true);
@@ -130,7 +132,7 @@ export default function DeliveryNotesScreen() {
       if (clientName.trim()) {
         await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       }
-      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
+      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
       if (editId) await api.updateDeliveryNote(editId, payload);
       else await api.createDeliveryNote(payload);
       setShowForm(false);
