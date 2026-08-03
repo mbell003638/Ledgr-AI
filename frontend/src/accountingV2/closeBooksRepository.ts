@@ -1,7 +1,9 @@
 import type { SqlRunner } from '../db/schema';
-import type { V2Member } from './types';
+import { V2_ACCOUNT_CODES, type V2Member } from './types';
+import { round2 } from '../money';
+import { periodicCogs } from './cogs';
 
-const cents = (value: number) => Math.round(value * 100) / 100;
+const cents = round2;
 
 export type InventoryCount = { id: string; bookId: string; periodId: string; date: string; value: number };
 export type MemberProfitShare = {
@@ -83,7 +85,8 @@ export class V2CloseBooksRepository {
       const purchases = cents(Math.max(0, movement('1200')));
       const expenses = cents(Math.max(0, movement('6000')));
       const drawings = cents(Math.max(0, movement('3100')));
-      const cogs = cents(openingInventory + purchases - closingInventory);
+      // Single source of periodic COGS — same formula used by live reports.
+      const cogs = periodicCogs({ openingInventory, purchases, closingInventory });
       const grossProfit = cents(sales - cogs);
       const commission = grossProfit > 0 ? cents(grossProfit * input.commissionPct / 100) : 0;
       const netProfit = cents(grossProfit - commission - expenses);
@@ -99,8 +102,13 @@ export class V2CloseBooksRepository {
         customerAdvances, inventory: closingInventory, liabilities, memberCapital, memberProfitShares,
       };
       const closedAt = new Date().toISOString();
-      const journalId = netProfit === 0 ? null : `${input.id}:journal`;
-      if (journalId) await this.insertCloseJournal(journalId, input, netProfit, closedAt);
+      // 1. Recognize periodic COGS in the ledger: Dr 5000 / Cr 1200 (skip if zero).
+      await this.postAdjustmentJournal(`${input.id}:cogs`, input, closedAt, 'Cost of goods sold (periodic)', cogs, V2_ACCOUNT_CODES.COGS, V2_ACCOUNT_CODES.INVENTORY);
+      // 2. Recognize partnership commission as an expense/payable so the GL P&L equals net profit.
+      await this.postAdjustmentJournal(`${input.id}:commission`, input, closedAt, 'Commission expense', commission, V2_ACCOUNT_CODES.COMMISSION_EXPENSE, V2_ACCOUNT_CODES.COMMISSION_PAYABLE);
+      // 3. Closing entries: zero every income/expense account into Retained Earnings (3300),
+      //    then (partnership) allocate Retained Earnings to member capital (3000).
+      const journalId = await this.postClosingEntries(input, closedAt, memberProfitShares);
       await this.db.run('INSERT INTO v2_close_books(id,book_id,period_id,closed_at,snapshot,journal_id) VALUES(?,?,?,?,?,?)', [input.id, input.bookId, input.periodId, closedAt, JSON.stringify(snapshot), journalId]);
       await this.db.run('UPDATE v2_periods SET status=?,close_snapshot=? WHERE id=? AND book_id=?', ['closed', JSON.stringify(snapshot), input.periodId, input.bookId]);
       for (const member of memberProfitShares) await this.db.run('UPDATE v2_members SET current_capital=? WHERE id=? AND book_id=?', [member.closingCapital, member.memberId, input.bookId]);
@@ -120,17 +128,79 @@ export class V2CloseBooksRepository {
       WHERE j.book_id=? AND ${condition} GROUP BY a.code,a.type`, [bookId, ...params]);
   }
 
-  private async insertCloseJournal(journalId: string, input: CloseBooksInput, netProfit: number, postedAt: string) {
-    const accounts = await this.db.all<{ id: string; code: string }>('SELECT id,code FROM v2_accounts WHERE book_id=? AND code IN (?,?)', [input.bookId, '3000', '3200']);
-    const capital = accounts.find((account) => account.code === '3000');
-    const currentProfit = accounts.find((account) => account.code === '3200');
-    if (!capital || !currentProfit) throw new Error('Capital accounts missing');
-    await this.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [journalId, input.bookId, input.periodId, null, input.date, 'Period close', postedAt, null]);
-    const amount = Math.abs(netProfit);
-    const lines = netProfit > 0
-      ? [{ accountId: currentProfit.id, debit: amount, credit: 0 }, { accountId: capital.id, debit: 0, credit: amount }]
-      : [{ accountId: capital.id, debit: amount, credit: 0 }, { accountId: currentProfit.id, debit: 0, credit: amount }];
-    for (const line of lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [journalId, line.accountId, null, line.debit, line.credit, 'Period close']);
+  private async accountId(bookId: string, code: string): Promise<string> {
+    const row = await this.db.first<{ id: string }>('SELECT id FROM v2_accounts WHERE book_id=? AND code=?', [bookId, code]);
+    if (!row) throw new Error(`Account ${code} missing`);
+    return row.id;
+  }
+
+  private async writeJournal(journalId: string, input: CloseBooksInput, postedAt: string, memo: string, lines: { accountId: string; debit: number; credit: number }[]) {
+    await this.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [journalId, input.bookId, input.periodId, null, input.date, memo, postedAt, null]);
+    for (const line of lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [journalId, line.accountId, null, cents(line.debit), cents(line.credit), memo]);
+  }
+
+  /** Post a single Dr debitCode / Cr creditCode adjustment for `amount`; no-op when zero. */
+  private async postAdjustmentJournal(journalId: string, input: CloseBooksInput, postedAt: string, memo: string, amount: number, debitCode: string, creditCode: string) {
+    const value = cents(amount);
+    if (value <= 0) return;
+    await this.writeJournal(journalId, input, postedAt, memo, [
+      { accountId: await this.accountId(input.bookId, debitCode), debit: value, credit: 0 },
+      { accountId: await this.accountId(input.bookId, creditCode), debit: 0, credit: value },
+    ]);
+  }
+
+  /**
+   * Zero every income/expense account's period balance into Retained Earnings (3300),
+   * then, for partnerships, allocate the retained earnings to each member's capital (3000).
+   * Returns the id of the 'Period close' journal, or null when there is nothing to close.
+   */
+  private async postClosingEntries(input: CloseBooksInput, postedAt: string, memberProfitShares: MemberProfitShare[]): Promise<string | null> {
+    // Period balances for income/expense accounts, re-read so freshly posted COGS/commission are included.
+    const rows = await this.db.all<{ id: string; type: string; debit: number; credit: number }>(
+      `SELECT a.id,a.type,COALESCE(SUM(l.debit),0) AS debit,COALESCE(SUM(l.credit),0) AS credit
+       FROM v2_accounts a JOIN v2_journal_lines l ON l.account_id=a.id JOIN v2_journal_entries j ON j.id=l.journal_id
+       WHERE j.book_id=? AND j.period_id=? AND a.type IN ('revenue','expense') GROUP BY a.id,a.type`,
+      [input.bookId, input.periodId],
+    );
+    const retainedEarnings = await this.accountId(input.bookId, V2_ACCOUNT_CODES.RETAINED_EARNINGS);
+    const lines: { accountId: string; debit: number; credit: number }[] = [];
+    let retainedDelta = 0; // credit-positive: net profit accumulated into 3300
+    for (const row of rows) {
+      const net = cents(Number(row.debit) - Number(row.credit)); // debit-positive account balance
+      if (net === 0) continue;
+      if (net > 0) {
+        // Debit-normal (expense) balance: credit the account to clear it, debit RE.
+        lines.push({ accountId: row.id, debit: 0, credit: net });
+        retainedDelta = cents(retainedDelta - net);
+      } else {
+        // Credit-normal (revenue) balance: debit the account to clear it, credit RE.
+        lines.push({ accountId: row.id, debit: -net, credit: 0 });
+        retainedDelta = cents(retainedDelta - net);
+      }
+    }
+    if (retainedDelta > 0) lines.push({ accountId: retainedEarnings, debit: 0, credit: retainedDelta });
+    else if (retainedDelta < 0) lines.push({ accountId: retainedEarnings, debit: -retainedDelta, credit: 0 });
+
+    // Partnership allocation: move retained earnings into member capital shares.
+    const totalProfitShare = cents(memberProfitShares.reduce((sum, member) => sum + member.profitShare, 0));
+    if (memberProfitShares.length && totalProfitShare !== 0) {
+      const capital = await this.accountId(input.bookId, V2_ACCOUNT_CODES.CAPITAL);
+      for (const member of memberProfitShares) {
+        if (member.profitShare === 0) continue;
+        if (member.profitShare > 0) {
+          lines.push({ accountId: retainedEarnings, debit: member.profitShare, credit: 0 });
+          lines.push({ accountId: capital, debit: 0, credit: member.profitShare });
+        } else {
+          lines.push({ accountId: retainedEarnings, debit: 0, credit: -member.profitShare });
+          lines.push({ accountId: capital, debit: -member.profitShare, credit: 0 });
+        }
+      }
+    }
+
+    if (!lines.length) return null;
+    const journalId = `${input.id}:journal`;
+    await this.writeJournal(journalId, input, postedAt, 'Period close', lines);
+    return journalId;
   }
 
   private allocateProfit(
