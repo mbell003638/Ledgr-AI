@@ -106,6 +106,54 @@ describe('normalizeDateInput', () => {
     expect(normalizeDateInput('２０２６-０８-０３')).toBe('2026-08-03');
   });
 
+  // [Samsung keypad] Real-device bug: Samsung numeric keypads emit U+2212 MINUS
+  // SIGN (and friends) for the "-" key, producing a visually perfect
+  // "2026-08-03" that string-compares as junk. All dash lookalikes must fold
+  // to ASCII '-' before parsing.
+  describe('dash-lookalike folding', () => {
+    it('folds U+2212 minus sign (Samsung numeric keypad)', () => {
+      expect(normalizeDateInput('2026−08−03')).toBe('2026-08-03');
+    });
+
+    it('folds en dash (U+2013) and em dash (U+2014)', () => {
+      expect(normalizeDateInput('2026–08–03')).toBe('2026-08-03');
+      expect(normalizeDateInput('2026—08—03')).toBe('2026-08-03');
+    });
+
+    it('folds hyphen, non-breaking hyphen, figure dash, horizontal bar, small and fullwidth hyphen-minus', () => {
+      for (const dash of ['‐', '‑', '‒', '―', '﹣', '－']) {
+        expect(normalizeDateInput(`2026${dash}08${dash}03`)).toBe('2026-08-03');
+      }
+    });
+
+    it('accepts dot separators (some keypads favor ".")', () => {
+      expect(normalizeDateInput('2026.08.03')).toBe('2026-08-03');
+    });
+
+    it('handles mixed separators with dash lookalikes and single digits', () => {
+      expect(normalizeDateInput('2026−8.3')).toBe('2026-08-03');
+    });
+
+    it('strips invisible soft hyphens (U+00AD) contaminating the string', () => {
+      expect(normalizeDateInput('2026­-08-0­3')).toBe('2026-08-03');
+      // Soft hyphen where the separator should be is NOT a separator — it is
+      // stripped, leaving junk the validator must reject.
+      expect(isValidDateString(normalizeDateInput('2026­08­03'))).toBe(false);
+    });
+
+    it('dash-variant input round-trips through isValidDateString', () => {
+      for (const raw of ['2026−08−03', '2026–08–03', '2026.08.03', '03−08−2026']) {
+        expect(isValidDateString(normalizeDateInput(raw))).toBe(true);
+      }
+    });
+
+    it('junk with dash lookalikes still fails', () => {
+      for (const junk of ['−−−', '2026−13−40', 'ab–cd–ef', '..', '­']) {
+        expect(isValidDateString(normalizeDateInput(junk))).toBe(false);
+      }
+    });
+  });
+
   it('leaves genuine junk unchanged (still rejected by isValidDateString)', () => {
     for (const junk of ['not a date', '2026', 'xx-yy-zz', '2026-13-40', '2026-02-31', '']) {
       const out = normalizeDateInput(junk);
