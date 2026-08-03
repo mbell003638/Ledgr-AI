@@ -190,3 +190,13 @@ Validation after round 7: **53/53 suites, 380 tests passing; tsc clean.**
 | Share/scan ANY document (photo, PDF, pasted text) → AI proposes entries → review → batch import | New `analyzeDocumentAI` (strict schema, untrusted-data delimiting, no-invention rule) classifies receipts/statements/closing reports/transaction lists and extracts transactions + book-setup state (opening cash summed from all cash rows, stock value, deposits→extra assets, creditors→liabilities, partner capital). New Scan & Import screen: camera/gallery/PDF/paste sources, review list with per-row checkboxes + inline edits, bounds/date validation (flagged rows can't import), explicit Import-N confirmation, sequential writes via existing api functions only, every entry tagged [Scan], per-row results + summary. Partner capital imports via the investor-deposit path only when Partnership Mode + matching investor exist, else shown as manual steps. Entry points: Ask-screen scan button + dashboard quick-action row. Killer use case: migrate from another app by scanning its closing report. | `ai.ts`, `api.ts`, `scanImport.ts` (new), `scan-import.tsx` (new), `_layout.tsx`, `ask.tsx`, `QuickActionMenu.tsx`, `__tests__/scanImport.test.ts` (new, 13 tests) |
 
 Validation after round 8: **54/54 suites, 393 tests passing; tsc clean.**
+
+## Round 9 — investor capital UX (2026-08-03, device screenshots)
+
+| User report | Root cause | Fix | Files |
+| --- | --- | --- | --- |
+| Parties tile doesn't update after capital deposit (detail shows $2,250, tile stuck at $1,000) | Tile read the static period-opening snapshot instead of the computed balance | Tile now shows the same computed Current Capital (opening + injections + share − drawings) as the detail screen; refreshes via dataVersion | `api.ts`, `suppliers.tsx` |
+| Cash Book shows each deposit twice and doubles In totals | Legacy mirror row + V2 journal row have different ids, so the merge kept both | Linkage-based mirror dedupe (v2SourceId/receiptId) + conservative date/amount fallback for pre-fix rows; totals computed after dedupe; deposit rows now read "Capital deposit — Name — note" | `api.ts`, `ledgerDisplay.ts`, `local.ts`, `appService.ts` (read enrichment) |
+| Wanted: deposit capital from Cash Book and Parties | — | Cash In form gains a Type chip (General / Investor capital → investor picker → posts via depositInvestorCapital); Parties investor rows gain a "+ Capital" pill that opens the deposit sheet | `cashbook.tsx`, `suppliers.tsx`, `investor/[id].tsx` |
+
+Validation after round 9: **55/55 suites, 409 tests passing; tsc clean.**
