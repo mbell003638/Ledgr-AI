@@ -321,12 +321,28 @@ export default function AdvancedSettingsScreen() {
     }
   };
 
+  // ~150KB cap on the encoded logo. A base64 string is ~4/3 of the raw bytes,
+  // so we compare the base64 length against this budget. Keeping the logo small
+  // guards Android's ~2MB SQLite CursorWindow (which a huge logo could overflow,
+  // breaking settings writes) even though the logo now lives outside the blob. [H4]
+  const LOGO_MAX_BYTES = 150 * 1024;
   const pickLogo = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setStatus({ ok: false, msg: "Gallery permission denied" }); return; }
     const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1] });
     if (res.canceled || !res.assets[0].base64) return;
-    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${res.assets[0].base64}`);
+    const base64 = res.assets[0].base64;
+    // Approx decoded size = base64 chars * 3/4.
+    const approxBytes = Math.floor((base64.length * 3) / 4);
+    if (approxBytes > LOGO_MAX_BYTES) {
+      Alert.alert(
+        "Logo too large",
+        `This image is about ${Math.round(approxBytes / 1024)}KB. Please pick a smaller logo (under ${Math.round(LOGO_MAX_BYTES / 1024)}KB) — a tightly cropped square works best.`,
+        [{ text: "Pick another", onPress: () => { void pickLogo(); } }, { text: "Cancel", style: "cancel" }],
+      );
+      return;
+    }
+    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${base64}`);
   };
 
   const testKey = async () => {
@@ -354,7 +370,14 @@ export default function AdvancedSettingsScreen() {
   const doExport = async () => {
     setBusy("export"); setStatus(null);
     try {
-      const data = await api.exportBackup();
+      const full: any = await api.exportBackup();
+      // [Vault C2] If the legacy mirror diverged from the authoritative V2 ledger,
+      // show the discrepancies once before sharing. Export still proceeds after.
+      const { warnings, ...data } = full; // warnings are for the UI, not the file
+      const warns: string[] = Array.isArray(warnings) ? warnings : [];
+      if (warns.length) {
+        Alert.alert("Heads up before exporting", warns.join("\n\n"));
+      }
       const stamp = new Date().toISOString().slice(0, 10);
       await shareJsonFile(`ledgr-backup-${stamp}.json`, data);
       setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
@@ -366,13 +389,25 @@ export default function AdvancedSettingsScreen() {
   const doImport = async () => {
     setBusy("import"); setStatus(null);
     try {
-      const data = await pickJsonFile();
-      if (!data) { setBusy(null); return; }
-      if (!data._meta || data._meta.app !== "ledgr") {
+      const picked = await pickJsonFile();
+      if (!picked.ok) {
+        // Cancel is a silent no-op; an unreadable/corrupted file is surfaced. [M1]
+        if (picked.reason === "invalid") {
+          setStatus({ ok: false, msg: "Backup file is unreadable or corrupted." });
+        }
+        setBusy(null); return;
+      }
+      const data = picked.data;
+      if (!data || !data._meta || data._meta.app !== "ledgr") {
         setStatus({ ok: false, msg: "Not a Ledgr backup file." });
         setBusy(null); return;
       }
-      await api.importBackup({ ...data, mode: "replace" });
+      const result: any = await api.importBackup({ ...data, mode: "replace" });
+      // Surface any restore warnings (e.g. a pre-V2 backup rebuilding the ledger). [C1]
+      const warn: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
+      if (warn.length) {
+        Alert.alert("Restore complete — please review", warn.join("\n\n"));
+      }
       setStatus({ ok: true, msg: "Data restored! Restart or pull-to-refresh." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Import failed" });
