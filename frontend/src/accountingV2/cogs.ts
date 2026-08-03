@@ -73,8 +73,8 @@ export async function computePeriodicCogs(
 
   // Opening inventory: prefer a physical count dated exactly on the period start;
   // otherwise fall back to the Inventory GL balance of everything before the start.
-  const startCount = await db.first<{ value: number }>(
-    'SELECT value FROM v2_inventory_counts WHERE book_id = ? AND date = ? ORDER BY id DESC LIMIT 1',
+  const startCount = await db.first<{ id: string; value: number }>(
+    'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date = ? ORDER BY id DESC LIMIT 1',
     [bookId, start],
   );
   const openingInventory = startCount
@@ -84,11 +84,21 @@ export async function computePeriodicCogs(
   // Purchases: net Inventory debit movement inside the period.
   const purchases = Math.max(0, await inventoryMovement(db, bookId, 'j.date >= ? AND j.date <= ?', [start, end]));
 
-  // Closing inventory: latest physical count within/at the period end.
-  const closingCount = await db.first<{ value: number }>(
-    'SELECT value FROM v2_inventory_counts WHERE book_id = ? AND date >= ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1',
-    [bookId, start, end],
-  );
+  // Closing inventory: latest physical count within/at the period end that is DISTINCT from
+  // the count consumed as the opening count. Without this guard a lone count dated exactly on
+  // the period start would be selected as both opening AND closing (date >= start), making COGS
+  // collapse to full purchases with hasClosingCount:true — a bogus estimate. When the opening
+  // count is start-dated we therefore require a strictly LATER count (date > start) to serve as
+  // closing; otherwise (opening derived from the GL) any in-period count is a valid closing.
+  const closingCount = startCount
+    ? await db.first<{ id: string; value: number }>(
+        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date > ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1',
+        [bookId, start, end],
+      )
+    : await db.first<{ id: string; value: number }>(
+        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date >= ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1',
+        [bookId, start, end],
+      );
   const hasClosingCount = Boolean(closingCount);
   const closingInventory = closingCount ? round2(Number(closingCount.value)) : 0;
 
