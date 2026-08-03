@@ -78,7 +78,7 @@ const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: an
 
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
-import { useTheme, useThemeMode } from "@/src/context/ThemeContext";
+import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
@@ -87,12 +87,13 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
+  const { setAnimationsEnabled } = useAnimations();
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
@@ -239,13 +240,20 @@ export default function AdvancedSettingsScreen() {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
+    // Normalize whatever the user typed (whitespace, exotic digits, single-digit
+    // month/day, DD/MM/YYYY) into strict YYYY-MM-DD before validating so a
+    // correct-but-differently-formatted date is no longer wrongly rejected.
+    let normalizedPeriodStart = "";
     if (periodStart.trim()) {
-      if (!isValidDateString(periodStart.trim())) {
-        setStatus({ ok: false, msg: "Invalid date format. Please use YYYY-MM-DD." });
+      normalizedPeriodStart = normalizeDateInput(periodStart);
+      if (!isValidDateString(normalizedPeriodStart)) {
+        setStatus({ ok: false, msg: `Couldn't read "${periodStart.trim()}" as a date. Please use YYYY-MM-DD (e.g. 2026-01-01).` });
         return;
       }
+      // Reflect the canonical form back into the field so the user sees what was saved.
+      if (normalizedPeriodStart !== periodStart) setPeriodStart(normalizedPeriodStart);
       const today = new Date().toISOString().slice(0, 10);
-      if (periodStart.trim() > today) {
+      if (normalizedPeriodStart > today) {
         setStatus({ ok: false, msg: "Period start date cannot be in the future, as it filters out current transactions." });
         return;
       }
@@ -286,7 +294,7 @@ export default function AdvancedSettingsScreen() {
         openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
         openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
         openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
-        currentPeriodStart: periodStart.trim() || "1970-01-01",
+        currentPeriodStart: normalizedPeriodStart || "1970-01-01",
         // Members → both the structured investors[] AND legacy partnerNames[]
         // (kept in sync so drawings attribution + older code keep working).
         investors: members
@@ -309,7 +317,7 @@ export default function AdvancedSettingsScreen() {
         logo,
       });
       try {
-        await api.postV2OpeningBalances({ date: periodStart.trim() || undefined, cash: openingCash.trim() ? parseFloat(openingCash) : 0, inventory: openingInventory.trim() ? parseFloat(openingInventory) : 0, memo: "Opening balances" });
+        await api.postV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: openingCash.trim() ? parseFloat(openingCash) : 0, inventory: openingInventory.trim() ? parseFloat(openingInventory) : 0, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
@@ -437,6 +445,12 @@ export default function AdvancedSettingsScreen() {
     setResetting(true); setStatus(null);
     try {
       await api.factoryReset();
+      // factoryReset wipes the persisted theme/animation prefs, but the live
+      // ThemeContext only hydrates on mount — reset it in memory too so the app
+      // returns to its pristine system-default look immediately (not the user's
+      // old theme lingering until the next cold start).
+      setMode('system');
+      setAnimationsEnabled(false);
       router.replace('/onboarding' as any);
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Factory reset failed" });
@@ -689,7 +703,7 @@ export default function AdvancedSettingsScreen() {
                     <Pressable onPress={() => setConfirmFactoryReset(true)} style={[styles.resetInitBtn, { borderColor: theme.color.error + "99" }]}><Ionicons name="warning-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Factory Reset Device…</Text></Pressable>
                   ) : (
                     <View style={{ marginTop: theme.spacing.md }}>
-                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This removes business configuration and the saved AI key, then returns to onboarding.</Text>
+                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This wipes everything — all books & records, business configuration, the saved AI key, and your preferences (theme, animations, dashboard layout) — then returns to onboarding.</Text>
                       <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
                         <Pressable onPress={() => setConfirmFactoryReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
                         <Pressable onPress={doFactoryReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, factory reset</Text>}</Pressable>
