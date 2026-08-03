@@ -19,6 +19,7 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { round2 } from "@/src/money";
 import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
 type Seg = typeof SEGMENTS[number];
@@ -160,6 +161,20 @@ export default function ReportsScreen() {
   }, [from, to]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Custom-range Apply: normalize the typed dates (Samsung minus signs, DD/MM,
+  // dots, exotic digits) then validate, reflecting the canonical form back into
+  // the inputs. `load` depends on [from, to], so when the canonical value
+  // differs from current state the setFrom/setTo alone re-triggers the focus
+  // effect with the new range; only reload directly when nothing changed.
+  const applyCustomRange = () => {
+    const f = normalizeDateInput(from);
+    if (!isValidDateString(f)) { showAlert("Invalid date", `Couldn't read "${from.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    const t = normalizeDateInput(to);
+    if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${to.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (f === from && t === to) { load(); return; }
+    setFrom(f); setTo(t);
+  };
 
   const screenW = Dimensions.get("window").width;
 
@@ -366,13 +381,13 @@ export default function ReportsScreen() {
         <View style={styles.customRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.customLabel}>From</Text>
-            <TextInput value={from} onChangeText={setFrom} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+            <TextInput value={from} onChangeText={setFrom} onBlur={() => { if (from.trim()) setFrom(normalizeDateInput(from)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.customLabel}>To</Text>
-            <TextInput value={to} onChangeText={setTo} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+            <TextInput value={to} onChangeText={setTo} onBlur={() => { if (to.trim()) setTo(normalizeDateInput(to)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
-          <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={() => load()} style={styles.applyBtn}>
+          <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={() => applyCustomRange()} style={styles.applyBtn}>
             <Text style={styles.applyText}>Apply</Text>
           </GlowPressable>
         </View>
