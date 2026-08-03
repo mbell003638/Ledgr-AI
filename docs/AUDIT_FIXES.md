@@ -208,3 +208,18 @@ Validation after round 9: **55/55 suites, 409 tests passing; tsc clean.**
 | "UNIQUE constraint failed: v2_books.id" when completing onboarding after a factory reset | Factory reset preserved book-identity rows (v2_books/accounts/personas/members) while deleting the version meta keys — onboarding then saw no version, re-ran bootstrap, and the INSERT INTO v2_books collided with the orphaned row (appBootstrap.ts:74) | New `factoryResetV2Data`: wipes EVERY v2_* table children-before-parents in one savepoint (runtime guard cross-checks the table list so new tables can't be missed) + `initializeV2Book` is now idempotent (self-heals orphan rows from old builds — devices upgrading with leftover data recover automatically). Regression tests reproduced the exact error pre-fix | `resetBook.ts`, `appBootstrap.ts`, `api.ts`, `factoryResetV2.test.ts` (new, 4 tests), `factoryResetKeys.test.ts` |
 
 Validation after round 10: **56/56 suites, 414 tests passing; tsc clean.**
+
+## Round 11 — lifecycle audit team findings (2026-08-04)
+
+An Opus auditor drove the real api surface through complete simulated user journeys (onboarding → trading → close → reset → multi-book → backup) with cross-view consistency assertions. Engine core passed everywhere (partnership close, resets, isolation, double-entry balancing). Six seam bugs found and fixed:
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Backup silently lost ALL secondary books (export was active-book-scoped, books index never exported) | CRITICAL | Backup format 10: exports books index + every book's namespaced collections/settings/logo + all books' V2 ledgers; atomic restore; older backups behave as before |
+| Credit/debit notes 100% broken (screen field mismatch threw on every attempt; legacy-only writes invisible to V2 balances) | High | api maps screen fields, notes now post through the V2 journal (role-aware AR/AP postings), party statements and TB correct |
+| Quote→invoice conversion bypassed the V2 ledger (invisible to revenue/dashboard/party detail) | High | Conversion routes through the same V2 invoice path as the invoices screen, preserving quote linkage |
+| Editing a closed-period doc dead-ended while deleting worked | Medium | Edits now redirect the correction into the open period exactly like reversals; closed totals frozen |
+| Partially-paid invoices were uncorrectable ("Cannot reverse an invoice with receipt allocations") | Medium | Edits with new total ≥ received re-post preserving allocations; below received → actionable message naming the amount |
+| markUnpaid threw an unhandled "Amount must be positive" | Low | Status-only edits are safe no-ops; receipted invoices get a clear message; UI catches errors |
+
+Validation after round 11: **58/58 suites, 425 tests passing; tsc clean.** Auditor's journey suite passes (4 pre-fix bug-repro assertions inverted by design).
