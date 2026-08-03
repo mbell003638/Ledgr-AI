@@ -1,11 +1,30 @@
 import { computeCogs, grossProfit as calcGross, commission as calcCommission, netProfit as calcNet, computeCash } from '../accounting';
+import { pctOf, subMoney, addMoney, round2 } from '../money';
 import {
   readColl as backendReadColl,
   writeColl as backendWriteColl,
   readSettings as backendReadSettings,
   writeSettings as backendWriteSettings,
   clearColl as backendClearColl,
+  readLogo as backendReadLogo,
+  writeLogo as backendWriteLogo,
+  clearLogo as backendClearLogo,
+  storageMode as backendStorageMode,
+  activeSqlRunner as backendActiveSqlRunner,
+  activeBookIsDefault,
+  collStorageKey,
+  settingsStorageKey,
+  logoStorageKey,
+  snapshotKeys,
+  restoreKeys,
 } from './backend';
+import { COLLECTIONS as SQL_COLLECTIONS } from './schema';
+import {
+  withImportTransaction,
+  writeCollInTxn,
+  writeSettingsInTxn,
+} from './sqliteStore';
+import { exportV2Data, importV2Data, hasV2Payload, type V2ImportResult } from './v2Backup';
 
 /**
  * Ledgr local database (single-user, on-device).
@@ -94,8 +113,38 @@ function toUsd(amount: number) {
 }
 
 // ---------- Settings ----------
+// Detects a base64/inline image data-URI (what the picker historically wrote
+// straight into settings.logo, risking a CursorWindow overflow). [H4]
+function isDataUri(v: any): v is string {
+  return typeof v === 'string' && v.startsWith('data:');
+}
+
+/**
+ * Resolve the business logo, migrating a legacy inline logo out of the settings
+ * blob on first read. Returns the logo data-URI (or '' when none).
+ *
+ * Lazy migration: if the settings document still carries an inline `logo`
+ * data-URI, copy it to the dedicated logo storage key and strip it from the
+ * settings doc (keeping only a small `hasLogo` marker). This runs at most once
+ * per book — after migration `settings.logo` is gone.
+ */
+async function resolveLogo(s: any): Promise<string> {
+  if (isDataUri(s?.logo)) {
+    // Legacy inline logo → relocate to the dedicated key, strip from settings.
+    try {
+      await backendWriteLogo(s.logo);
+      const { logo: _drop, ...rest } = s;
+      await writeSettings({ ...rest, hasLogo: true });
+    } catch { /* if migration write fails, still surface the inline value */ }
+    return s.logo;
+  }
+  // Otherwise the authoritative logo lives in the dedicated key.
+  try { return await backendReadLogo(); } catch { return ''; }
+}
+
 export async function getSettings() {
   const s = await readSettings();
+  const logo = await resolveLogo(s);
   return {
     googleApiKey: s.googleApiKey ?? '',
     managerCommissionPct: s.managerCommissionPct ?? 0.0,
@@ -123,7 +172,11 @@ export async function getSettings() {
     bankAccount: s.bankAccount ?? '',
     upiId: s.upiId ?? '',
     paymentDetails: s.paymentDetails ?? '',
-    logo: s.logo ?? '',
+    // Logo is stored in a dedicated key (not the settings blob) but is still
+    // surfaced here as `logo` so every consumer (invoices/PDF/receipts) is
+    // unchanged. `hasLogo` is the lightweight marker kept in the settings doc.
+    logo,
+    hasLogo: !!logo,
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
     selectedPersonas: Array.isArray(s.selectedPersonas) ? s.selectedPersonas : ['custom'],
@@ -140,7 +193,20 @@ export async function getSettings() {
 }
 export async function updateSettings(partial: Record<string, any>) {
   const s = await readSettings();
-  const next = { ...s, ...partial };
+  const next: Record<string, any> = { ...s, ...partial };
+  // Route the logo to its dedicated key; never persist the data-URI in the
+  // settings blob (would risk the CursorWindow overflow this fix prevents). [H4]
+  if ('logo' in partial) {
+    const logoVal = partial.logo;
+    await backendWriteLogo(isDataUri(logoVal) ? logoVal : '');
+    delete next.logo;
+    next.hasLogo = isDataUri(logoVal);
+  } else if (isDataUri(next.logo)) {
+    // A stale inline logo lingering in the doc from before migration: relocate it.
+    await backendWriteLogo(next.logo);
+    delete next.logo;
+    next.hasLogo = true;
+  }
   await writeSettings(next);
   return next;
 }
@@ -461,9 +527,15 @@ export async function dashboard() {
   const cashOutTotal = cashEntriesAll.filter((e: any) => e.direction === 'out').reduce((sum: number, e: any) => sum + toUsd(e.amount), 0);
   const manualCash = +(cashInTotal - cashOutTotal).toFixed(2);
 
-  const grossProfit = +(totalSales - totalPurchases).toFixed(2);
-  const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
-  const netProfit = +(grossProfit - commission).toFixed(2);
+  // Route through the shared accounting.ts helpers (drift-safe integer-cent math)
+  // so dashboard(), pnlRange() and monthlySummary() report byte-identical figures.
+  // Historically these used raw `+(x−y).toFixed(2)` float math that could diverge
+  // by a cent from pnlRange (which already uses these helpers). [Penny C1]
+  const grossProfit = calcGross(totalSales, totalPurchases);
+  const commission = calcCommission(grossProfit, pct);
+  // Dashboard net profit is gross − commission (expenses/drawings excluded here,
+  // unlike pnlRange). Pass 0 for those so the formula is unchanged but drift-safe.
+  const netProfit = calcNet(grossProfit, commission, 0, 0);
 
   // Accrued commission is a liability until paid; commission payments settle it.
   const liabilities = +(totalPurchases - supplierPayments + commission - commissionPayments).toFixed(2);
@@ -600,7 +672,6 @@ export async function capitalStatement() {
   // members who left theirs blank). If NONE set a %, we fall back to an equal
   // split across all members — i.e. behaviour is unchanged when no % entered.
   const shareCount = investorsRaw.length || partnerNames.length || 1;
-  const equalShare = +(netProfit / shareCount).toFixed(2);
 
   const explicitPctTotal = investorsRaw.reduce(
     (sum: number, inv: any) => sum + (Number(inv?.profitSharePct) > 0 ? Number(inv.profitSharePct) : 0),
@@ -612,19 +683,28 @@ export async function capitalStatement() {
     ? Math.max(0, (100 - explicitPctTotal)) / membersWithoutPct
     : 0;
 
-  const shareFor = (inv: any): number => {
-    if (!anyExplicitPct) return equalShare; // unchanged default
-    const pct = Number(inv?.profitSharePct) > 0
-      ? Number(inv.profitSharePct)
-      : remainderPctEach;
-    return +(netProfit * (pct / 100)).toFixed(2);
+  // Per-member share via drift-safe money math (pctOf / integer-cent division).
+  // The LAST member absorbs the rounding remainder so the shares ALWAYS sum
+  // EXACTLY to netProfit (e.g. a 3-way equal split of $100 → 33.33/33.33/33.34)
+  // rather than leaving/creating a stray cent. [Penny H2/M3]
+  const rawShareFor = (inv: any): number => {
+    if (!anyExplicitPct) return round2(netProfit / shareCount); // equal split, drift-safe round
+    const pct = Number(inv?.profitSharePct) > 0 ? Number(inv.profitSharePct) : remainderPctEach;
+    return pctOf(netProfit, pct);
   };
+  // Compute every member's share, then reconcile the final member to the exact
+  // remainder so Σ profitShare === netProfit to the cent.
+  const profitShares: number[] = investorsRaw.map(rawShareFor);
+  if (profitShares.length > 0) {
+    const sumOthers = addMoney(...profitShares.slice(0, -1)); // exact sum of all but the last
+    profitShares[profitShares.length - 1] = subMoney(netProfit, sumOthers);
+  }
 
-  const investors = investorsRaw.map((inv: any) => {
+  const investors = investorsRaw.map((inv: any, idx: number) => {
     const name = (inv?.name || '').trim();
     const contributed = +toUsd(inv?.amount).toFixed(2);
     const drawings = +(perInvestorDrawings[name.toLowerCase()] || 0).toFixed(2);
-    const profitShare = shareFor(inv);
+    const profitShare = profitShares[idx];
     return {
       id: inv?.id || name,
       name,
@@ -633,7 +713,7 @@ export async function capitalStatement() {
       profitSharePct: Number(inv?.profitSharePct) > 0 ? Number(inv.profitSharePct) : null,
       profitShare,
       // Each investor's standing balance = their capital + their profit share − their drawings.
-      balance: +(contributed + profitShare - drawings).toFixed(2),
+      balance: subMoney(contributed + profitShare, drawings),
     };
   });
 
@@ -789,11 +869,13 @@ export async function monthlySummary(month: string) {
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
   const drawings = payments.filter((p: any) => p.type === 'drawing')
     .reduce((sum: number, p: any) => sum + toUsd(p.amount), 0);
-  const grossProfit = +(revenue - purchases).toFixed(2);
   const pct = Number(s.managerCommissionPct || 0);
-  const commission = grossProfit > 0 ? +(grossProfit * pct / 100).toFixed(2) : 0;
-  const netProfit = +(grossProfit - commission - drawings).toFixed(2);
-  const cashFlow = +(revenue - supplierPayments - drawings - commission).toFixed(2);
+  // Use the shared drift-safe accounting helpers so this monthly view never
+  // diverges by a cent from dashboard()/pnlRange(). [Penny C1]
+  const grossProfit = calcGross(revenue, purchases);
+  const commission = calcCommission(grossProfit, pct);
+  const netProfit = calcNet(grossProfit, commission, 0, drawings);
+  const cashFlow = subMoney(revenue, supplierPayments, drawings, commission);
 
   const supTotals: Record<string, number> = {};
   for (const b of bills) supTotals[b.supplierId] = (supTotals[b.supplierId] || 0) + toUsd(b.amount);
@@ -1294,50 +1376,170 @@ export async function closePeriod(actualStock: number, notes = '') {
 }
 
 // ---------- Backup / Restore / Reset ----------
+// The 16 legacy collections captured by a backup (15 array collections above +
+// the settings document, handled separately). Order is deterministic so wipe
+// and restore always touch the same set. [H1]
+const BACKUP_COLLECTIONS = SQL_COLLECTIONS; // the 15 data collections (settings is handled separately)
+// Backup format version. Bumped from 8 → 9 when the V2 ledger payload + the
+// relocated logo key were added to the backup. [C1/H4]
+export const BACKUP_VERSION = 9;
+const SUPPORTED_BACKUP_VERSION = 9;
+
+export type ImportBackupResult = {
+  ok: true;
+  mode: 'replace';
+  v2Restored: boolean;
+  v2Missing: boolean;
+  warnings: string[];
+};
+
 export async function exportBackup() {
-  const [suppliers, bills, sales, payments, inventoryChecks, periods, settings, expenses, debtors, invoices, quotes, receipts, creditNotes, debitNotes, deliveryNotes, cashEntries] = await Promise.all([
-    readColl('suppliers'), readColl('bills'), readColl('sales'), readColl('payments'), readColl('inventoryChecks'), readColl('periods'), readSettings(), readColl('expenses'), readColl('debtors'), readColl('invoices'), readColl('quotes'), readColl('receipts'), readColl('creditNotes'), readColl('debitNotes'), readColl('deliveryNotes'), readColl('cashEntries'),
-  ]);
+  const colls = await Promise.all(BACKUP_COLLECTIONS.map((c) => readColl(c)));
+  const data: Record<string, any> = {};
+  BACKUP_COLLECTIONS.forEach((c, i) => { data[c] = colls[i]; });
+
+  // Settings blob no longer carries the logo (see resolveLogo/[H4]); include the
+  // logo separately so a restore rehydrates it into the dedicated key. Resolve
+  // from the dedicated key, falling back to any not-yet-migrated inline logo,
+  // and strip the inline copy from the exported settings so it never ships twice.
+  const rawSettings = await readSettings();
+  const dedicatedLogo = await backendReadLogo();
+  const logo = dedicatedLogo || (isDataUri(rawSettings?.logo) ? rawSettings.logo : '');
+  const settings = { ...rawSettings };
+  if (isDataUri(settings.logo)) delete settings.logo;
+  if (logo) settings.hasLogo = true;
+
+  // V2 authoritative ledger (only when a SQLite runner is active). This is the
+  // headline fix: without it a backup silently drops the entire double-entry
+  // ledger on a SQLite install. [C1]
+  let v2: any = undefined;
+  const runner = backendActiveSqlRunner();
+  if (runner) {
+    try { v2 = await exportV2Data(runner); } catch { /* v2 export best-effort */ }
+  }
+
   return {
-    suppliers, bills, sales, payments, inventoryChecks, periods, settings,
-    expenses, debtors, invoices, quotes, receipts, creditNotes, debitNotes, deliveryNotes, cashEntries,
-    _meta: { app: 'ledgr', version: 8, exportedAt: nowIso() },
+    ...data,
+    settings,
+    logo,
+    ...(v2 ? { v2 } : {}),
+    _meta: { app: 'ledgr', version: BACKUP_VERSION, exportedAt: nowIso() },
   };
 }
-export async function importBackup(data: any) {
+
+/**
+ * Restore a backup. ATOMIC + CLEARING:
+ *   - Clears ALL 16 collections (and V2 tables when a v2 payload is present)
+ *     BEFORE applying the backup, so a collection absent from an older backup
+ *     can't leak stale rows into the restored state. [H1]
+ *   - In SQLite mode the whole restore (all collections + settings + V2) runs
+ *     inside ONE transaction and rolls back entirely on any error. [C3]
+ *   - In AsyncStorage mode the affected keys are snapshotted first and restored
+ *     on failure (best-effort rollback). [C3]
+ * Returns `v2Missing: true` when the backup predates the V2 ledger so the UI can
+ * warn that double-entry data will be rebuilt from legacy records. [C1]
+ */
+export async function importBackup(data: any): Promise<ImportBackupResult> {
   // Version guard: refuse backups whose schema version is newer than we understand,
   // so a backup from a future app version can't silently corrupt current data.
-  const SUPPORTED_VERSION = 8;
   const meta = data && typeof data === 'object' ? data._meta : undefined;
   if (meta) {
     if (meta.app && meta.app !== 'ledgr') {
       throw new Error('This file is not a Ledgr backup.');
     }
     const v = Number(meta.version);
-    if (Number.isFinite(v) && v > SUPPORTED_VERSION) {
+    if (Number.isFinite(v) && v > SUPPORTED_BACKUP_VERSION) {
       throw new Error(`This backup was made by a newer version of Ledgr (format v${v}). Please update the app before restoring.`);
     }
   }
-  const setColl = async (name: string, val: any) => { if (Array.isArray(val)) await writeColl(name as Collection, val); };
-  await setColl('suppliers', data.suppliers);
-  await setColl('bills', data.bills);
-  await setColl('sales', data.sales);
-  await setColl('payments', data.payments);
-  await setColl('inventoryChecks', data.inventoryChecks);
-  await setColl('periods', data.periods);
-  await setColl('expenses', data.expenses);
-  await setColl('debtors', data.debtors);
-  await setColl('invoices', data.invoices);
-  await setColl('quotes', data.quotes);
-  await setColl('receipts', data.receipts);
-  await setColl('creditNotes', data.creditNotes);
-  await setColl('debitNotes', data.debitNotes);
-  await setColl('deliveryNotes', data.deliveryNotes);
-  await setColl('cashEntries', data.cashEntries);
-  if (data.settings && typeof data.settings === 'object') {
-    await writeSettings({ ...(await readSettings()), ...data.settings });
+
+  const runner = backendActiveSqlRunner();
+  const sqliteMode = backendStorageMode() === 'sqlite' && !!runner && activeBookIsDefault();
+  const v2Present = hasV2Payload(data?.v2);
+  const warnings: string[] = [];
+  let v2Result: V2ImportResult | null = null;
+
+  // What the restore writes into a collection: the backup's array, or [] when
+  // that collection is absent (so it is CLEARED, never left stale). [H1]
+  const collValue = (c: Collection): any[] => (Array.isArray(data?.[c]) ? data[c] : []);
+  const mergedSettings = (base: any) =>
+    (data?.settings && typeof data.settings === 'object') ? { ...base, ...data.settings } : base;
+  // Never let a stale inline logo ride along inside the settings blob.
+  const stripInlineLogo = (s: any) => { if (s && isDataUri(s.logo)) delete s.logo; return s; };
+  const logoValue: string | null =
+    typeof data?.logo === 'string' ? data.logo
+      : (data?.settings && isDataUri(data.settings.logo)) ? data.settings.logo
+        : null;
+
+  if (sqliteMode && runner) {
+    // ----- SQLite: one atomic transaction for EVERYTHING -----
+    await withImportTransaction(runner, async () => {
+      for (const c of BACKUP_COLLECTIONS) {
+        await writeCollInTxn(runner, c, collValue(c)); // DELETE + INSERT clears absent colls too
+      }
+      const baseSettings = await (async () => {
+        const row = await runner.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
+        try { return row ? JSON.parse(row.value) : {}; } catch { return {}; }
+      })();
+      const nextSettings = stripInlineLogo(mergedSettings(baseSettings));
+      if (logoValue != null) nextSettings.hasLogo = !!logoValue;
+      await writeSettingsInTxn(runner, nextSettings);
+      // Logo row (separate from the settings doc's CursorWindow).
+      if (logoValue != null) {
+        if (logoValue) await runner.run("INSERT INTO settings(key,value) VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [logoValue]);
+        else await runner.run("DELETE FROM settings WHERE key='logo'");
+      }
+      if (v2Present) {
+        v2Result = await importV2Data(runner, data.v2);
+        warnings.push(...v2Result.warnings);
+      }
+    });
+  } else {
+    // ----- AsyncStorage: snapshot → apply → rollback-on-failure -----
+    const keysToSnapshot = [
+      ...BACKUP_COLLECTIONS.map((c) => collStorageKey(c)),
+      settingsStorageKey(),
+      logoStorageKey(),
+    ];
+    const snapshot = await snapshotKeys(keysToSnapshot);
+    try {
+      for (const c of BACKUP_COLLECTIONS) {
+        await writeColl(c, collValue(c)); // clears absent collections too [H1]
+      }
+      const nextSettings = stripInlineLogo(mergedSettings(await readSettings()));
+      if (logoValue != null) nextSettings.hasLogo = !!logoValue;
+      await writeSettings(nextSettings);
+      if (logoValue != null) await backendWriteLogo(logoValue);
+      // If a runner exists but we're on a secondary book, the V2 tables are still
+      // SQLite-backed and shared. Restore them in their own SQLite transaction.
+      if (v2Present && runner) {
+        v2Result = await withImportTransaction(runner, async () => importV2Data(runner, data.v2));
+        warnings.push(...v2Result.warnings);
+      }
+    } catch (e) {
+      await restoreKeys(snapshot); // best-effort rollback
+      throw e;
+    }
   }
-  return { ok: true, mode: 'replace' };
+
+  // Older backups (format < 9) carry NO v2 payload. Per spec we restore the
+  // legacy collections only and leave the existing V2 ledger untouched (we do
+  // NOT wipe it — that would destroy authoritative data with nothing to replace
+  // it), surfacing a warning so the UI can tell the user the double-entry ledger
+  // will be rebuilt from legacy records where possible (e.g. opening balances on
+  // next dashboard load, and the V1 fallback path). [C1]
+  const v2Missing = !v2Present;
+  if (v2Missing && runner) {
+    warnings.push('This backup predates the V2 ledger — double-entry data will be rebuilt from legacy records where possible.');
+  }
+
+  return {
+    ok: true,
+    mode: 'replace',
+    v2Restored: !!v2Result?.restored,
+    v2Missing,
+    warnings,
+  };
 }
 export async function resetAll() {
   const s = await readSettings();
@@ -1379,6 +1581,8 @@ export async function resetAll() {
 export async function factoryReset() {
   await resetAll();
   await writeSettings({});
+  // The logo lives outside the settings blob now, so clear it explicitly. [H4]
+  await backendClearLogo();
   return { ok: true };
 }
 
@@ -1391,6 +1595,11 @@ export async function createInvoice(inv: any) {
   const item = await serialize(async () => {
     const items = await readColl<any>('invoices');
     // Numbering: derive next sequence from the max existing INV-#### so deletes/imports never cause a collision.
+    // NOTE [M3-doc]: sequences are derived from the current collection's max, NOT a
+    // persisted counter. After a backup import the next number therefore restarts
+    // from (restored max + 1). This is intended: a restore rebuilds the invoice set,
+    // so numbering must track the restored records — never a stale device-local counter
+    // that could collide with, or skip past, the numbers present in the restored data.
     const maxSeq = items.reduce((m: number, it: any) => {
       const match = /INV-(\d+)/.exec(it.invoiceNumber || '');
       return match ? Math.max(m, parseInt(match[1], 10)) : m;
