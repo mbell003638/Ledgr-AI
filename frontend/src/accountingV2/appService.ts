@@ -8,12 +8,13 @@ import { V2DocumentService } from './documentService';
 import { V2InvestorLedgerService } from './investorLedgerService';
 import { buildPersistentV2Reports } from './persistentReports';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
+import { round2 } from '../money';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'cash';
 const amount = (value: any) => Number(value);
-const cents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+const cents = round2;
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 let partyRepairSequence = 0;
 const partyDisplayName = (value: any) => {
@@ -147,7 +148,6 @@ export class V2AppService {
       WHERE s.book_id=? AND json_extract(s.metadata,'$.partyId')=? AND s.type IN (${placeholders})
       GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, ...sourceTypes]);
     const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
-    const cents = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
     if (role === 'customer') {
       let running = 0;
       const ledger = active.map((row) => { const debit = cents(row.debit); const credit = cents(row.credit); running = cents(running + debit - credit); return { id: row.id, kind: row.type, date: row.date, ref: row.reference, notes: row.metadata.notes || '', debit, credit, balance: running }; });
@@ -183,9 +183,9 @@ export class V2AppService {
   }
 
   async createSale(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postCashSale(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), reference: input.reference, metadata: { notes: input.notes } }); }
-  async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference }); }
-  async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'customer', c.bookId); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations }); }
-  async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const partyId = await this.party(input, 'supplier', c.bookId); const cash = input.paymentType === 'cash'; return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }
+  async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference }); }); }
+  async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations }); }); }
+  async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const cash = input.paymentType === 'cash'; return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'supplier', c.bookId); return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }); }
   async createPayment(input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     if (input.type === 'drawing') {
@@ -195,8 +195,10 @@ export class V2AppService {
       }
       return this.documents.drawing({ ...c, date: input.date, amount: amount(input.amount), method: method(input.method) });
     }
-    const partyId = await this.party(input, 'supplier', c.bookId);
-    return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
+    return this.repo.runInTransaction(async () => {
+      const partyId = await this.party(input, 'supplier', c.bookId);
+      return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
+    });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
   /** Post opening cash/inventory against capital exactly once for an open period. */
@@ -273,8 +275,10 @@ export class V2AppService {
     const name = String(input.name || '').trim();
     if (!name || !Number.isFinite(value) || value <= 0) throw new Error('Asset name and a positive amount are required');
     await this.repo.ensureDefaultAccounts(context.bookId);
+    // [M4] Capital-funded manual assets credit Owner Contributions (3400), NOT Member
+    // Capital (3000), so they never pollute partnership capital reconciliation.
     const creditCode = input.funding === 'bank' ? V2_ACCOUNT_CODES.BANK
-      : input.funding === 'capital' ? V2_ACCOUNT_CODES.CAPITAL
+      : input.funding === 'capital' ? V2_ACCOUNT_CODES.OWNER_CONTRIBUTIONS
       : input.funding === 'liability' ? V2_ACCOUNT_CODES.OTHER_LIABILITIES
       : V2_ACCOUNT_CODES.CASH;
     const source: any = {
@@ -457,13 +461,30 @@ export class V2AppService {
   }
 }
 
+/**
+ * [Vault C2 / Gauge H3] The V2-first write path deliberately treats the legacy mirror
+ * write as best-effort, but the failure must not be silent. Each mirror failure is logged
+ * and captured here (capped) so a failed legacy mirror is diagnosable instead of vanishing.
+ * V2-first ordering is unchanged: V2 remains authoritative; only observability improves.
+ */
+export type MirrorError = { operation: string; message: string; at: string };
+const MIRROR_ERROR_CAP = 50;
+export const lastMirrorErrors: MirrorError[] = [];
+export function recordMirrorError(operation: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  // eslint-disable-next-line no-console
+  console.warn(`[V2] legacy mirror write failed for ${operation}: ${message}`);
+  lastMirrorErrors.push({ operation, message, at: new Date().toISOString() });
+  if (lastMirrorErrors.length > MIRROR_ERROR_CAP) lastMirrorErrors.splice(0, lastMirrorErrors.length - MIRROR_ERROR_CAP);
+}
+
 export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
   type WriteName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
   const route = (name: WriteName) => async (payload: AnyRecord) => {
     if (await v2.activeContext(payload.date)) {
       const v2Res = await v2[name](payload);
       const injectedPayload = { ...payload, id: v2Res.source?.id };
-      try { await legacy[name](injectedPayload); } catch { /* ignore legacy errors if v2 succeeds */ }
+      try { await legacy[name](injectedPayload); } catch (error) { recordMirrorError(name, error); }
       return v2Res;
     }
     return legacy[name](payload);
@@ -475,7 +496,7 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
   const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => {
     if (await v2.ownsSource(id, type)) {
       const v2Res = await v2[name](id, payload);
-      try { await legacy[name](id, payload); } catch { /* ignore legacy error */ }
+      try { await legacy[name](id, payload); } catch (error) { recordMirrorError(name, error); }
       return v2Res;
     }
     return legacy[name](id, payload);
@@ -483,7 +504,7 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
   const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => {
     if (await v2.ownsSource(id, type)) {
       const v2Res = await v2[name](id);
-      try { await legacy[name](id); } catch { /* ignore legacy error */ }
+      try { await legacy[name](id); } catch (error) { recordMirrorError(name, error); }
       return v2Res;
     }
     return legacy[name](id);
@@ -492,36 +513,36 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
     updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
     updateSale: async (id: string, payload: AnyRecord) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      if (isV2) { const res = await v2.updateSale(id, payload); try { await legacy.updateSale(id, payload); } catch {} return res; }
+      if (isV2) { const res = await v2.updateSale(id, payload); try { await legacy.updateSale(id, payload); } catch (error) { recordMirrorError('updateSale', error); } return res; }
       return legacy.updateSale(id, payload);
     },
     deleteSale: async (id: string) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      if (isV2) { const res = await v2.deleteSale(id); try { await legacy.deleteSale(id); } catch {} return res; }
+      if (isV2) { const res = await v2.deleteSale(id); try { await legacy.deleteSale(id); } catch (error) { recordMirrorError('deleteSale', error); } return res; }
       return legacy.deleteSale(id);
     },
     updateBill: async (id: string, payload: AnyRecord) => {
-      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.updateBill(id, payload); try { await legacy.updateBill(id, payload); } catch {} return res; }
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.updateBill(id, payload); try { await legacy.updateBill(id, payload); } catch (error) { recordMirrorError('updateBill', error); } return res; }
       return legacy.updateBill(id, payload);
     },
     deleteBill: async (id: string) => {
-      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.deleteBill(id); try { await legacy.deleteBill(id); } catch {} return res; }
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.deleteBill(id); try { await legacy.deleteBill(id); } catch (error) { recordMirrorError('deleteBill', error); } return res; }
       return legacy.deleteBill(id);
     },
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.updatePayment(id, payload); try { await legacy.updatePayment(id, payload); } catch {} return res; }
+      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.updatePayment(id, payload); try { await legacy.updatePayment(id, payload); } catch (error) { recordMirrorError('updatePayment', error); } return res; }
       return legacy.updatePayment(id, payload);
     },
     deletePayment: async (id: string) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.deletePayment(id); try { await legacy.deletePayment(id); } catch {} return res; }
+      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.deletePayment(id); try { await legacy.deletePayment(id); } catch (error) { recordMirrorError('deletePayment', error); } return res; }
       return legacy.deletePayment(id);
     },
     markInvoicePaid: async (id: string, payload: AnyRecord = {}) => {
-      if (await v2.ownsSource(id, 'invoice')) { const res = await v2.markInvoicePaid(id, payload); try { await legacy.markInvoicePaid(id); } catch {} return res; }
+      if (await v2.ownsSource(id, 'invoice')) { const res = await v2.markInvoicePaid(id, payload); try { await legacy.markInvoicePaid(id); } catch (error) { recordMirrorError('markInvoicePaid', error); } return res; }
       return legacy.markInvoicePaid(id);
     },
   };
