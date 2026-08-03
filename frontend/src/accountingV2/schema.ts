@@ -37,8 +37,8 @@ export function isBalanced(lines: V2JournalLine[], tolerance = 0.005): boolean {
 export function defaultAccounts(bookId: string): V2Account[] {
   const defs: [string, string, V2AccountType][] = [
     ['1000', 'Cash in Hand', 'asset'], ['1010', 'Bank', 'asset'], ['1020', 'Card Clearing', 'asset'], ['1030', 'Mobile Payments', 'asset'],
-    ['1100', 'Accounts Receivable', 'asset'], ['1200', 'Inventory', 'asset'], ['1500', 'Other Assets & Deposits', 'asset'], ['2000', 'Accounts Payable', 'liability'],
-    ['2100', 'Customer Advances', 'liability'], ['2200', 'Commission Payable', 'liability'], ['2500', 'Other Liabilities', 'liability'], ['3000', 'Member Capital', 'equity'], ['3100', 'Member Drawings', 'equity'], ['3200', 'Current Profit', 'equity'],
+    ['1100', 'Accounts Receivable', 'asset'], ['1200', 'Inventory', 'asset'], ['1210', 'Supplier Advances', 'asset'], ['1500', 'Other Assets & Deposits', 'asset'], ['2000', 'Accounts Payable', 'liability'],
+    ['2100', 'Customer Advances', 'liability'], ['2200', 'Commission Payable', 'liability'], ['2500', 'Other Liabilities', 'liability'], ['3000', 'Member Capital', 'equity'], ['3100', 'Member Drawings', 'equity'], ['3200', 'Current Profit', 'equity'], ['3300', 'Retained Earnings', 'equity'], ['3400', 'Owner Contributions', 'equity'],
     ['4000', 'Sales Revenue', 'revenue'], ['4010', 'Sales Returns', 'revenue'], ['5000', 'Cost of Goods Sold', 'expense'], ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'],
   ];
   return defs.map(([code, name, type]) => ({ id: `${bookId}:account:${code}`, bookId, code, name, type, active: true }));
