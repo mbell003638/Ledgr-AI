@@ -7,6 +7,7 @@ import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
 
 export default function InventoryForm() {
   const theme = useTheme();
@@ -161,7 +162,7 @@ export default function InventoryForm() {
                 </View>
               </Card>
 
-              <Card>
+              <FormCard>
                 <Text style={styles.label}>Live System Stock (USD value)</Text>
                 <Text style={styles.expected} testID="inv-expected">{fmt(expected)}</Text>
                 {info?.lastAudit ? (
@@ -169,17 +170,22 @@ export default function InventoryForm() {
                 ) : (
                   <Text style={styles.hint}>Opening Stock: {fmt(info?.openingInventory)} • Purchases: +{fmt(info?.purchasesSince)} • Sales COGS: -{fmt(info?.salesSince)}</Text>
                 )}
-                <Text style={[styles.label, { marginTop: 16 }]}>Audit Date (YYYY-MM-DD)</Text>
-                <TextInput testID="input-inv-date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-                <Text style={[styles.label, { marginTop: 14 }]}>Physical Stock Count (Shelf Count, USD)</Text>
-                <TextInput
+                <FormField
+                  label="Audit Date (YYYY-MM-DD)"
+                  labelStyle={{ marginTop: 16 }}
+                  testID="input-inv-date"
+                  value={date}
+                  onChangeText={setDate}
+                  placeholder="YYYY-MM-DD"
+                />
+                <FormField
+                  label="Physical Stock Count (Shelf Count, USD)"
+                  labelStyle={{ marginTop: 14 }}
                   testID="input-actual-stock"
                   value={actual}
                   onChangeText={setActual}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
-                  placeholderTextColor={theme.color.muted}
-                  style={styles.input}
                 />
 
                 {actual !== "" && (
@@ -194,13 +200,22 @@ export default function InventoryForm() {
                   </View>
                 )}
 
-                <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
-                <TextInput testID="input-inv-notes" value={notes} onChangeText={setNotes} placeholder="Optional" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
-              </Card>
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Pressable testID="btn-save-inv" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Audit</Text>}
-              </Pressable>
+                <FormField
+                  label="Notes"
+                  multiline
+                  testID="input-inv-notes"
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Optional"
+                />
+              </FormCard>
+              <FormActions
+                primaryLabel="Save Audit"
+                primaryTestID="btn-save-inv"
+                onPrimary={save}
+                primaryBusy={saving}
+                error={error}
+              />
 
               {history.length > 0 && (
                 <Card style={{ marginTop: theme.spacing.lg }}>
@@ -277,9 +292,6 @@ function makeStyles(theme: any) { return StyleSheet.create({
   varLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
   varValue: { fontSize: 22, fontWeight: "700", marginTop: 4 },
   varHint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
-  error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
-  saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
-  saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
   closeInitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary },
   closeInitText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 14 },
   closeCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
