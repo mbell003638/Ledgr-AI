@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { confirmAction } from "@/src/utils/alerts";
@@ -12,8 +12,9 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { collapseLedgerRows, describeSourceNavigation, formatEditedStamp, type DisplayLedgerRow, type LedgerRow } from "@/src/utils/ledgerDisplay";
 
-type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string; origin?: "manual" | "v2"; editable?: boolean };
+type CashEntry = LedgerRow;
 import { GlowPressable } from "@/src/components/GlowPressable";
 
 const todayStr = () => {
@@ -23,6 +24,7 @@ const todayStr = () => {
 
 export default function CashBookScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [currSym, setCurrSym] = useState("$");
@@ -64,12 +66,16 @@ export default function CashBookScreen() {
     return () => task.cancel();
   }, [load]));
 
+  // Collapse reverse+repost bookkeeping noise into what the user actually did.
+  // The books keep every journal; the screen shows one row per live entry.
+  const collapsed = useMemo(() => collapseLedgerRows(entries), [entries]);
   const totals = useMemo(() => {
-    const ins = entries.filter((e) => e.direction === "in").reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    const outs = entries.filter((e) => e.direction === "out").reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const { ins, outs } = collapsed.totals;
+    // The Opening Cash tile mirrors the opening-balance journal net, so the
+    // header adds it once — internal adjustment pairs no longer inflate In/Out.
     const net = openingCash + ins - outs;
     return { ins, outs, net, opening: openingCash };
-  }, [entries, openingCash]);
+  }, [collapsed, openingCash]);
 
   const saveOpeningCash = async () => {
     const val = parseFloat(openingInput);
@@ -90,7 +96,7 @@ export default function CashBookScreen() {
       setOpeningCash(val);
       setEditingOpening(false);
       load();
-    } catch (e: any) { Alert.alert("Error", e.message || "Failed to save"); }
+    } catch (e: any) { Alert.alert("Couldn't save opening balance", e.message || "Check the amount and date, then try again."); }
   };
 
   const resetForm = () => {
@@ -98,9 +104,27 @@ export default function CashBookScreen() {
   };
 
   const openAdd = () => { resetForm(); setFormOpen(true); };
-  const openEdit = (e: CashEntry) => {
+  const openEdit = (e: DisplayLedgerRow) => {
     if (e.editable === false || e.origin === "v2") {
-      Alert.alert("Posted transaction", "This cash movement comes from another accounting transaction. Edit it from its original screen.");
+      // Opening-balance rows edit right here via the Opening Cash tile.
+      if (String(e.sourceType || "").startsWith("opening_balance")) {
+        setEditingOpening(true);
+        return;
+      }
+      // Everything else routes to the screen that owns the source document.
+      const nav = describeSourceNavigation(e.sourceType, e.sourceId);
+      if (nav) {
+        Alert.alert(
+          "Posted transaction",
+          `This entry comes from a ${nav.label.toLowerCase()}. Open it to edit?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open", onPress: () => router.push(nav.params ? ({ pathname: nav.pathname, params: nav.params } as any) : (nav.pathname as any)) },
+          ]
+        );
+      } else {
+        setEditingOpening(true);
+      }
       return;
     }
     setEditId(e.id); setDirection(e.direction); setAmount(String(e.amount)); setDate(e.date); setNotes(e.notes || ""); setFormOpen(true);
@@ -207,8 +231,8 @@ export default function CashBookScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
         <FlatList
-          data={entries}
-          keyExtractor={(i) => i.id}
+          data={collapsed.rows}
+          keyExtractor={(i, index) => `${i.id}:${index}`}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           ListEmptyComponent={
@@ -226,6 +250,8 @@ export default function CashBookScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
                 {item.notes ? <Text style={styles.cardSub}>{item.notes}</Text> : null}
+                {item.edited ? <Text style={styles.editedTag}>edited{item.editedAt ? ` ${formatEditedStamp(item.editedAt)}` : ""}</Text> : null}
+                {item.adjustmentCount ? <Text style={styles.adjustmentHint}>includes {item.adjustmentCount} adjustment{item.adjustmentCount === 1 ? "" : "s"}</Text> : null}
               </View>
               <Text style={[styles.amount, { color: item.direction === "in" ? theme.color.success : theme.color.warning }]}>
                 {item.direction === "in" ? "+" : "−"} {fmt(item.amount, currSym)}
@@ -269,5 +295,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   dirBadge: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
   cardTitle: { fontSize: 15, fontWeight: "600", color: theme.color.onSurface },
   cardSub: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+  editedTag: { fontSize: 11, color: theme.color.muted, marginTop: 3, fontStyle: "italic" },
+  adjustmentHint: { fontSize: 10, color: theme.color.muted, marginTop: 2 },
   amount: { fontSize: 16, fontWeight: "700" },
 }); }
