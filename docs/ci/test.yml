@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Burst-push safety: the branch receives one commit per file when pushed via the
+# GitHub API, so runs for superseded commits are cancelled instead of failing red
+# on half-applied changesets. Only the newest commit completes.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Type-check & unit tests
