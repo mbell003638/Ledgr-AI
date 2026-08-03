@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -79,7 +79,9 @@ export default function SaleForm() {
       setError("Enter the customer / party name for a credit sale");
       return;
     }
-    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     setSaving(true); setError("");
     try {
       if (customerName.trim()) {
@@ -102,22 +104,22 @@ export default function SaleForm() {
           await api.updateInvoice(editId, {
             clientName: customerName.trim(),
             clientPhone: customerPhone.trim(),
-            date,
+            date: dateIso,
             lines: formattedLines,
             total: amt,
             taxRate: 0,
             notes: finalNotes || undefined,
           });
         } else {
-          await api.updateSale(editId, { date, amount: amt, currency, notes: finalNotes });
+          await api.updateSale(editId, { date: dateIso, amount: amt, currency, notes: finalNotes });
         }
       } else if (saleType === "cash") {
-        await api.createSale({ date, amount: amt, currency, notes: finalNotes });
+        await api.createSale({ date: dateIso, amount: amt, currency, notes: finalNotes });
       } else {
         await api.createInvoice({
           clientName: customerName.trim(),
           clientPhone: customerPhone.trim(),
-          date,
+          date: dateIso,
           lines: formattedLines,
           total: amt,
           taxRate: 0,
