@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,7 +27,7 @@ export default function Expenses() {
   const [selected, setSelected] = useState<Expense | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
@@ -44,7 +44,7 @@ export default function Expenses() {
   useEffect(() => { load(); }, []);
 
   const openNew = () => {
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(localTodayIso());
     setCategory(""); setAmount(""); setNotes(""); setError("");
     setEditing("new");
   };
