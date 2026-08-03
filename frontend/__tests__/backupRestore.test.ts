@@ -2,7 +2,7 @@
  * Backup export/import behavior in AsyncStorage mode (no SQLite runner). [C3/H1/H4]
  *
  * Covers:
- *   - export shape: 16 collections + settings + separate logo key + format v9
+ *   - export shape: 16 collections + settings + separate logo key + format v10 [Finding D adds books index + per-book payload]
  *   - CLEARING import: a collection absent from an older backup is wiped, never
  *     left with stale rows [H1]
  *   - logo round-trips through the dedicated key (never inside the settings blob) [H4]
@@ -33,7 +33,7 @@ import { readLogo } from '../src/db/backend';
 beforeEach(() => { for (const key of Object.keys(mem)) delete mem[key]; });
 
 describe('exportBackup', () => {
-  it('captures all collections + settings + a separate logo key at format v9', async () => {
+  it('captures all collections + settings + a separate logo key at the current backup format', async () => {
     await updateSettings({ businessName: 'Shop', logo: 'data:image/png;base64,ZZZ' });
     await createSale({ date: '2026-07-01', amount: 100 });
     await createBill({ date: '2026-07-02', amount: 40, supplierName: 'ACME' });
@@ -51,6 +51,12 @@ describe('exportBackup', () => {
     expect(typeof backup.settings.logo === 'string' && backup.settings.logo.startsWith('data:')).toBe(false);
     // No V2 payload without a runner.
     expect(backup.v2).toBeUndefined();
+    // [Finding D] Format 10 also carries the books index + a per-book payload map.
+    // With no secondary book both are empty here, but the keys are always present
+    // (listBooks re-injects the default at read time, so an empty raw index is fine).
+    expect(backup._meta.version).toBe(10);
+    expect(Array.isArray(backup.books)).toBe(true);
+    expect(backup.bookData && typeof backup.bookData === 'object' && Object.keys(backup.bookData).length).toBe(0);
   });
 });
 
