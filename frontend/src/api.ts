@@ -33,6 +33,25 @@ const AI_BASE_URL_KEY = 'ai_base_url';
 const LEGACY_GEMINI_KEY   = 'gemini_api_key';
 const LEGACY_GEMINI_MODEL = 'gemini_model';
 
+// User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
+// per-book settings blob. A factory reset must wipe these too so the device is
+// returned to a truly pristine state (the user explicitly wants preferences
+// gone, not preserved). Mirrors the keys written by:
+//   - ThemeContext.tsx: 'theme_mode', 'animations_enabled'
+//   - app/(tabs)/index.tsx: 'ledgr_tile_order', 'ledgr_tile_usage'
+const THEME_MODE_KEY        = 'theme_mode';
+const ANIMATIONS_ENABLED_KEY = 'animations_enabled';
+const TILE_ORDER_KEY        = 'ledgr_tile_order';
+const TILE_USAGE_KEY        = 'ledgr_tile_usage';
+// Exported so the reset UI (advanced-settings) can assert/reset in lockstep and
+// tests can enumerate the exact device-level keys a factory reset must clear.
+export const FACTORY_RESET_PREF_KEYS = [
+  THEME_MODE_KEY,
+  ANIMATIONS_ENABLED_KEY,
+  TILE_ORDER_KEY,
+  TILE_USAGE_KEY,
+] as const;
+
 export async function getAIConfig(): Promise<AIConfig> {
   const [provider, secureKey, storedKey, model, baseUrl, legacyKey, legacyModel, settings] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
@@ -892,7 +911,12 @@ export const api = {
     }
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
-      AsyncStorage.multiRemove([AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY, LEGACY_GEMINI_KEY, LEGACY_GEMINI_MODEL]),
+      AsyncStorage.multiRemove([
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY, LEGACY_GEMINI_KEY, LEGACY_GEMINI_MODEL,
+        // Device-level user prefs + UI customizations (theme, animations, tile
+        // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
+        ...FACTORY_RESET_PREF_KEYS,
+      ]),
     ]);
     return { ok: true };
   },
