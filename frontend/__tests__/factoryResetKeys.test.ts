@@ -62,6 +62,17 @@ describe('factoryReset — device-level key wipe (api.ts wiring)', () => {
     expect(body).toContain('AI_MODEL_KEY');
     expect(body).toContain('secureRemove(AI_API_KEY_KEY)');
   });
+
+  it('factoryReset wires the scorched-earth V2 wipe (zero rows in every v2_* table)', () => {
+    // The behavioral half (real SQL) lives in factoryResetV2.test.ts; this
+    // asserts api.factoryReset actually calls it on the active runner, so an
+    // orphaned v2_books row can never resurface and crash onboarding with
+    // "UNIQUE constraint failed: v2_books.id".
+    const fn = API_SRC.match(/factoryReset:\s*async[\s\S]*?\n {2}},/);
+    expect(fn).toBeTruthy();
+    expect(fn![0]).toContain('factoryResetV2Data(runner)');
+    expect(API_SRC).toContain("import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook'");
+  });
 });
 
 describe('factoryReset — pristine defaults (db behavior)', () => {
