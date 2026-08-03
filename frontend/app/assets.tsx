@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, RefreshControl, Alert, InteractionManager } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, RefreshControl, Alert, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,7 +9,7 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import { fmt } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
-import { GlowPressable } from "@/src/components/GlowPressable";
+import { FormField, FormActions } from "@/src/components/FormCard";
 
 type EntryMode = "asset" | "liability";
 type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
@@ -116,25 +116,19 @@ export default function AssetsScreen() {
             <View style={styles.formIcon}><Ionicons name={isAsset ? "business-outline" : "document-text-outline"} size={19} color={theme.color.brandPrimary} /></View>
             <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "Credit liability; debit the selected recognition account."}</Text></View>
           </View>
-          <Text style={styles.label}>Transaction date</Text>
-          <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-          <Text style={styles.label}>{isAsset ? "Asset name" : "Liability name"}</Text>
-          <TextInput value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} placeholderTextColor={theme.color.muted} style={styles.input} />
-          <Text style={styles.label}>Category (optional)</Text>
-          <TextInput value={category} onChangeText={setCategory} placeholder={isAsset ? "Deposit, equipment, receivable" : "Loan, accrued rent, tax payable"} placeholderTextColor={theme.color.muted} style={styles.input} />
-          <Text style={styles.label}>Amount</Text>
-          <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
-          <Text style={styles.label}>{isAsset ? "Funded from" : "Liability arose from"}</Text>
+          <FormField label="Transaction date" first value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+          <FormField label={isAsset ? "Asset name" : "Liability name"} value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} />
+          <FormField label="Category (optional)" value={category} onChangeText={setCategory} placeholder={isAsset ? "Deposit, equipment, receivable" : "Loan, accrued rent, tax payable"} />
+          <FormField label="Amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
+          <Text style={styles.labelSpaced}>{isAsset ? "Funded from" : "Liability arose from"}</Text>
           <View style={styles.chips}>
             {(isAsset ? assetFunding : liabilityRecognition).map((option) => {
               const active = isAsset ? funding === option.id : recognition === option.id;
               return <Pressable key={option.id} onPress={() => isAsset ? setFunding(option.id as typeof funding) : setRecognition(option.id as typeof recognition)} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{option.label}</Text></Pressable>;
             })}
           </View>
-          <Text style={styles.label}>Notes (optional)</Text>
-          <TextInput value={notes} onChangeText={setNotes} placeholder="Reference or explanation" placeholderTextColor={theme.color.muted} style={[styles.input, styles.notes]} multiline />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <GlowPressable onPress={save} disabled={saving} haptic topHighlight={false} style={styles.saveBtn}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Post to Accounts</Text>}</GlowPressable>
+          <FormField label="Notes (optional)" multiline value={notes} onChangeText={setNotes} placeholder="Reference or explanation" />
+          <FormActions primaryLabel="Post to Accounts" onPrimary={save} primaryBusy={saving} error={error} />
         </Card>
 
         <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
@@ -166,10 +160,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   modeText: { color: theme.color.muted, fontWeight: "700", fontSize: 13 }, modeTextActive: { color: theme.color.onBrandPrimary || "#fff" },
   formTitleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: theme.spacing.md }, formIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
   cardTitle: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface }, hint: { color: theme.color.muted, fontSize: 11, marginTop: 2 },
-  label: { fontSize: 12, fontWeight: "700", color: theme.color.onSurface, marginTop: theme.spacing.sm },
-  input: { marginTop: 5, borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface, backgroundColor: theme.color.surface }, notes: { minHeight: 65, textAlignVertical: "top" },
+  label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+  labelSpaced: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface, marginTop: 12 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 6 }, chip: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 10 }, chipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary }, chipText: { color: theme.color.onSurface, fontSize: 12, fontWeight: "600" }, chipTextActive: { color: theme.color.onBrandPrimary || "#fff" },
-  error: { color: theme.color.error, fontSize: 12, marginTop: 10 }, saveBtn: { marginTop: theme.spacing.lg, backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, padding: theme.spacing.md, alignItems: "center" }, saveText: { color: theme.color.onBrandPrimary || "#fff", fontSize: 14, fontWeight: "800" },
   listCard: { marginTop: theme.spacing.md }, listTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: theme.spacing.sm }, listIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
   empty: { color: theme.color.muted, fontSize: 12, paddingVertical: theme.spacing.sm }, entry: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.border }, entryName: { color: theme.color.onSurface, fontSize: 13, fontWeight: "700" }, entryMeta: { color: theme.color.muted, fontSize: 11, marginTop: 3 }, entryRight: { alignItems: "flex-end", gap: 7 }, entryAmount: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
   totalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: theme.spacing.md, marginTop: 2 }, totalLabel: { color: theme.color.onSurface, fontSize: 13, fontWeight: "800" }, total: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
