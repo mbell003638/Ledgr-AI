@@ -49,6 +49,13 @@ function collKey(c: CollectionName): string {
 function settingsKey(): string {
   return activeBook === DEFAULT_BOOK ? SETTINGS_KEY : `ledgr:${activeBook}:settings`;
 }
+// Logo lives OUTSIDE the settings blob (a large base64 data-URI in the settings
+// JSON can overflow Android's ~2MB SQLite CursorWindow and break EVERY settings
+// read/write). It is namespaced per-book exactly like settings. [H4]
+const LOGO_KEY = 'ledgr:logo';
+function logoKey(): string {
+  return activeBook === DEFAULT_BOOK ? LOGO_KEY : `ledgr:${activeBook}:logo`;
+}
 
 export type BookMeta = { id: string; name: string; businessType?: string };
 
@@ -171,6 +178,89 @@ export async function writeSettings(s: any): Promise<void> {
     return;
   }
   await asyncWriteSettings(s);
+}
+
+// ---------- Logo (stored apart from the settings blob) ----------
+// In SQLite mode the logo is its OWN row in the `settings` table (key 'logo'),
+// so its size never bloats the main settings document's CursorWindow. In
+// AsyncStorage mode it is a dedicated (per-book) key. Returns '' when absent.
+export async function readLogo(): Promise<string> {
+  if (mode === 'sqlite' && runner && activeBook === DEFAULT_BOOK) {
+    try {
+      const row = await runner.first<{ value: string }>("SELECT value FROM settings WHERE key='logo'");
+      return row?.value ? String(row.value) : '';
+    } catch { /* fall through to async */ }
+  }
+  const raw = await AsyncStorage.getItem(logoKey());
+  return raw ? String(raw) : '';
+}
+export async function writeLogo(dataUri: string): Promise<void> {
+  const value = dataUri || '';
+  if (mode === 'sqlite' && runner && activeBook === DEFAULT_BOOK) {
+    if (!value) {
+      await runner.run("DELETE FROM settings WHERE key='logo'");
+    } else {
+      await runner.run(
+        "INSERT INTO settings(key,value) VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [value],
+      );
+    }
+    return;
+  }
+  if (!value) await AsyncStorage.removeItem(logoKey());
+  else await AsyncStorage.setItem(logoKey(), value);
+}
+export async function clearLogo(): Promise<void> {
+  await writeLogo('');
+}
+
+/** True when the default/main book is active (the only book that uses the SQLite store). */
+export function activeBookIsDefault(): boolean { return activeBook === DEFAULT_BOOK; }
+
+/**
+ * Full books/active-book teardown for a factory reset. [C4/M2]
+ *   - removes the AsyncStorage books index + active-book pointer
+ *   - resets the in-memory `activeBook` back to the default (otherwise a stale
+ *     secondary id would keep namespacing every subsequent read/write)
+ *   - clears the SQLite meta keys `v2_active_book_id` and every `v2_book_version:*`
+ * Theme keys and AI credentials are NOT touched here (handled elsewhere).
+ */
+export async function resetBooksAndActiveBook(): Promise<void> {
+  await AsyncStorage.removeItem(BOOKS_INDEX_KEY);
+  await AsyncStorage.removeItem(ACTIVE_BOOK_KEY);
+  activeBook = DEFAULT_BOOK;
+  if (runner) {
+    try {
+      await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
+      await runner.run("DELETE FROM meta WHERE key LIKE 'v2_book_version:%'");
+    } catch { /* meta cleanup best-effort */ }
+  }
+}
+
+// ---------- Namespaced AsyncStorage key resolvers + snapshot/rollback ----------
+// Used by the AsyncStorage-mode atomic import (snapshot the exact keys a restore
+// will overwrite, then multiSet them back on failure). [C3]
+export function collStorageKey(c: CollectionName): string { return collKey(c); }
+export function settingsStorageKey(): string { return settingsKey(); }
+export function logoStorageKey(): string { return logoKey(); }
+
+/** Snapshot the current raw values of the given AsyncStorage keys. */
+export async function snapshotKeys(keys: string[]): Promise<Array<[string, string | null]>> {
+  const pairs = await AsyncStorage.multiGet(keys);
+  // multiGet returns readonly [key, value|null][]; normalize to a mutable copy.
+  return pairs.map(([k, v]) => [k, v ?? null] as [string, string | null]);
+}
+
+/** Restore a snapshot: re-set keys that had a value, remove keys that were absent. */
+export async function restoreKeys(snapshot: Array<[string, string | null]>): Promise<void> {
+  const toSet: [string, string][] = [];
+  const toRemove: string[] = [];
+  for (const [k, v] of snapshot) {
+    if (v == null) toRemove.push(k);
+    else toSet.push([k, v]);
+  }
+  if (toSet.length) await AsyncStorage.multiSet(toSet);
+  if (toRemove.length) await AsyncStorage.multiRemove(toRemove);
 }
 
 /** Clear a single collection (used by resetAll). */
