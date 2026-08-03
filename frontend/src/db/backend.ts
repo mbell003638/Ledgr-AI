@@ -263,6 +263,67 @@ export async function restoreKeys(snapshot: Array<[string, string | null]>): Pro
   if (toRemove.length) await AsyncStorage.multiRemove(toRemove);
 }
 
+// ---------- Multi-book backup helpers [Finding D] ----------
+// A backup must capture EVERY book, not just the active one. Secondary books
+// store their legacy collections/settings/logo in namespaced AsyncStorage keys
+// (`ledgr:<book>:*`); the default book stores them in the SQLite store (or the
+// un-prefixed AsyncStorage keys in async mode). The V2 double-entry ledger for
+// ALL books already lives in the shared v2_* tables (captured by v2Backup). The
+// gap these helpers close is the per-book legacy payload + the books index, so a
+// restore makes every book selectable and intact.
+
+const rawBookCollKey = (bookId: string, c: CollectionName) => (bookId === DEFAULT_BOOK ? KEYS[c] : `ledgr:${bookId}:${c}`);
+const rawBookSettingsKey = (bookId: string) => (bookId === DEFAULT_BOOK ? SETTINGS_KEY : `ledgr:${bookId}:settings`);
+const rawBookLogoKey = (bookId: string) => (bookId === DEFAULT_BOOK ? LOGO_KEY : `ledgr:${bookId}:logo`);
+
+/** Raw books-index JSON (or []) exactly as persisted, WITHOUT injecting the default. */
+export async function readBooksIndexRaw(): Promise<BookMeta[]> {
+  const raw = await AsyncStorage.getItem(BOOKS_INDEX_KEY);
+  if (!raw) return [];
+  try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+
+/** Overwrite the books index (used by restore). */
+export async function writeBooksIndexRaw(books: BookMeta[]): Promise<void> {
+  await AsyncStorage.setItem(BOOKS_INDEX_KEY, JSON.stringify(Array.isArray(books) ? books : []));
+}
+
+/**
+ * Read one SECONDARY book's legacy payload straight from its namespaced
+ * AsyncStorage keys (never the SQLite store — that is the default book only).
+ * Returns { collections, settings, logo }. Absent keys read as [] / {} / ''.
+ */
+export async function readSecondaryBookPayload(bookId: string): Promise<{ collections: Record<string, any[]>; settings: any; logo: string }> {
+  const collections: Record<string, any[]> = {};
+  for (const c of COLLECTIONS) {
+    const raw = await AsyncStorage.getItem(rawBookCollKey(bookId, c));
+    let arr: any[] = [];
+    if (raw) { try { const p = JSON.parse(raw); arr = Array.isArray(p) ? p : []; } catch { arr = []; } }
+    collections[c] = arr;
+  }
+  const settingsRaw = await AsyncStorage.getItem(rawBookSettingsKey(bookId));
+  let settings: any = {};
+  if (settingsRaw) { try { settings = JSON.parse(settingsRaw) || {}; } catch { settings = {}; } }
+  const logo = (await AsyncStorage.getItem(rawBookLogoKey(bookId))) || '';
+  return { collections, settings, logo };
+}
+
+/**
+ * Write one SECONDARY book's legacy payload back into its namespaced keys,
+ * CLEARING every collection first (so a collection absent from the payload can't
+ * leak stale rows). Never touches the SQLite store.
+ */
+export async function writeSecondaryBookPayload(bookId: string, payload: { collections?: Record<string, any[]>; settings?: any; logo?: string }): Promise<void> {
+  const collections = payload.collections || {};
+  for (const c of COLLECTIONS) {
+    await AsyncStorage.setItem(rawBookCollKey(bookId, c), JSON.stringify(Array.isArray(collections[c]) ? collections[c] : []));
+  }
+  await AsyncStorage.setItem(rawBookSettingsKey(bookId), JSON.stringify(payload.settings && typeof payload.settings === 'object' ? payload.settings : {}));
+  const logo = typeof payload.logo === 'string' ? payload.logo : '';
+  if (logo) await AsyncStorage.setItem(rawBookLogoKey(bookId), logo);
+  else await AsyncStorage.removeItem(rawBookLogoKey(bookId));
+}
+
 /** Clear a single collection (used by resetAll). */
 export async function clearColl(c: CollectionName): Promise<void> {
   if (mode === 'sqlite' && runner && activeBook === DEFAULT_BOOK) {
