@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert, Share,
@@ -727,7 +727,7 @@ export default function InvoicesScreen() {
   // Form state
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [dueDate, setDueDate] = useState("");
   const [lines, setLines] = useState<InvoiceLine[]>([{ description: "", qty: 1, rate: 0 }]);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -753,7 +753,7 @@ export default function InvoicesScreen() {
 
   const openNew = () => {
     setEditId(null);
-    setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setFormError("");
     // Pre-fill tax from global settings; user can override per-invoice.
     const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
