@@ -175,6 +175,42 @@ export class V2AppService {
     return result;
   }
 
+  /**
+   * READ-ONLY: journal-derived cash/bank movements enriched with reversal
+   * linkage (reversal_of, posted_at, source metadata flags) so presentation
+   * layers can collapse reverse+repost noise. No posting logic here.
+   */
+  async listCashMovements() {
+    const context = await this.activeContext(); if (!context) return [];
+    const rows = await this.db.all<any>(`
+      SELECT e.id, e.date, e.memo AS notes, e.posted_at, e.reversal_of, e.source_id,
+             l.debit, l.credit, s.type AS source_type, s.metadata AS source_metadata
+      FROM v2_journal_entries e
+      JOIN v2_journal_lines l ON e.id = l.journal_id
+      LEFT JOIN v2_sources s ON e.source_id = s.id
+      WHERE e.book_id = ? AND l.account_id IN (?,?)
+      ORDER BY e.date DESC, e.id DESC
+    `, [context.bookId, `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, `${context.bookId}:account:${V2_ACCOUNT_CODES.BANK}`]);
+    return rows.map((row) => {
+      let meta: AnyRecord = {}; try { meta = JSON.parse(row.source_metadata || '{}'); } catch { /* malformed metadata is treated as empty */ }
+      const isOut = Number(row.credit) > 0;
+      return {
+        id: row.id,
+        amount: isOut ? Number(row.credit) : Number(row.debit),
+        direction: isOut ? 'out' : 'in',
+        date: row.date,
+        notes: row.notes,
+        created_at: row.posted_at,
+        postedAt: row.posted_at,
+        sourceId: row.source_id || null,
+        sourceType: row.source_type || null,
+        reversalOf: row.reversal_of || null,
+        sourceReversed: !!meta.reversed,
+        sourceDeleted: !!meta.deleted,
+      };
+    });
+  }
+
   async listBills() {
     const context = await this.activeContext(); if (!context) return [];
     await this.repairPartyIdentities(context.bookId);
@@ -201,58 +237,83 @@ export class V2AppService {
     });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
-  /** Post opening cash/inventory against capital exactly once for an open period. */
+  /** Post opening cash/inventory against capital. Self-correcting: see applyOpeningBalances. */
   async postOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
-    const context = await this.activeContext(input.date);
-    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
-    const date = input.date || (await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=?', [context.periodId]))?.start_date;
-    if (!date) throw new Error('Opening balance date is required');
-    const cash = cents(input.cash); const inventory = cents(input.inventory);
-    if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
-    const sourceId = `${context.bookId}:opening:${context.periodId}`;
-    const existing = await this.db.first<any>('SELECT id,metadata FROM v2_sources WHERE id=? AND book_id=? AND type=\'opening_balance\'', [sourceId, context.bookId]);
-    if (existing) {
-      let prior: AnyRecord = {}; try { prior = JSON.parse(existing.metadata || '{}'); } catch { /* treat as invalid */ }
-      if (Number(prior.cash) === cash && Number(prior.inventory) === inventory && prior.date === date) return { sourceId, alreadyPosted: true };
-      throw new Error('Opening balances are already posted for this period; reverse them before changing the amounts');
-    }
-    const total = cents(cash + inventory);
-    if (total === 0) return { sourceId, alreadyPosted: false, journal: null };
-    const source: any = { id: sourceId, bookId: context.bookId, type: 'opening_balance', date, metadata: { cash, inventory, date } };
-    const lines: any[] = [];
-    if (cash) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
-    if (inventory) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
-    lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: total });
-    const journal = await this.repo.postSourceJournal(source, { bookId: context.bookId, periodId: context.periodId, date, memo: input.memo || 'Opening balances', lines });
-    return { sourceId, alreadyPosted: false, journal };
+    return this.applyOpeningBalances(input);
   }
 
-  /** Replace the one opening-balance journal for an open period, preserving the reversal audit trail. */
+  /** Replace the opening-balance journal for the book, preserving the reversal audit trail. */
   async updateOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
-    const context = await this.activeContext(input.date);
-    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
-    const date = input.date || (await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=?', [context.periodId]))?.start_date;
-    if (!date) throw new Error('Opening balance date is required');
+    return this.applyOpeningBalances(input);
+  }
+
+  /**
+   * The single self-correcting opening-balance engine. It must succeed in every
+   * legitimate state without ever asking the user to reverse anything:
+   *  - nothing live posted yet            → initial post
+   *  - identical amounts + date           → graceful no-op ({ alreadyPosted: true })
+   *  - changed amounts and/or date        → reverse the live opening set and repost
+   *    at the requested date, atomically (non-destructive correction; the audit
+   *    trail keeps both the reversal and the new posting)
+   *  - date before the earliest open period → the period start follows the opening
+   *    date (the UI labels this field "Period Start Date"), unless an earlier
+   *    period already covers that date
+   *  - date inside a CLOSED period        → rejected with a message naming the
+   *    closed period and the earliest usable date (closed totals stay frozen,
+   *    consistent with the document-service correction redirect [H2]/[H3])
+   */
+  private async applyOpeningBalances(input: { date?: string; cash: number; inventory: number; memo?: string }) {
     const cash = cents(input.cash); const inventory = cents(input.inventory);
     if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
-    const sources = await this.db.all<{ id: string; metadata: string }>("SELECT s.id,s.metadata FROM v2_sources s INNER JOIN v2_journal_entries j ON j.source_id=s.id WHERE s.book_id=? AND s.type='opening_balance' AND j.period_id=? ORDER BY j.posted_at DESC", [context.bookId, context.periodId]);
-    let active: { id: string; metadata: AnyRecord } | undefined;
-    for (const row of sources) {
-      let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { continue; }
-      if (!metadata.reversed && !metadata.deleted) { active = { id: row.id, metadata }; break; }
-    }
-    if (!active) return this.postOpeningBalances({ date, cash, inventory, memo: input.memo });
-    if (Number(active.metadata.cash) === cash && Number(active.metadata.inventory) === inventory && active.metadata.date === date) return { sourceId: active.id, alreadyPosted: true };
-    await this.documents.reverseSource(active.id, 'opening_balance', 'Update opening balances', true);
-    const total = cents(cash + inventory);
-    if (total === 0) return { sourceId: active.id, alreadyPosted: false, journal: null };
-    const source: any = { id: `${context.bookId}:opening:${context.periodId}:${Date.now().toString(36)}`, bookId: context.bookId, type: 'opening_balance', date, metadata: { cash, inventory, date } };
-    const lines: any[] = [];
-    if (cash) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
-    if (inventory) lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
-    lines.push({ accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: total });
-    const journal = await this.repo.postSourceJournal(source, { bookId: context.bookId, periodId: context.periodId, date, memo: input.memo || 'Opening balances', lines });
-    return { sourceId: source.id, alreadyPosted: false, journal };
+    const activeBook = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!activeBook?.value || await accountingBookVersion(this.db, activeBook.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book with an open accounting period');
+    const bookId = activeBook.value;
+    return this.repo.runInTransaction(async () => {
+      const openPeriods = await this.db.all<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date", [bookId]);
+      if (!openPeriods.length) throw new Error('No open accounting period is available. Create or reopen a period before setting opening balances.');
+      const date = input.date || openPeriods[0].start_date;
+      let target = [...openPeriods].reverse().find((period) => period.start_date <= date && period.end_date >= date);
+      if (!target) {
+        const closed = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status!='open' AND start_date<=? AND end_date>=? ORDER BY start_date DESC LIMIT 1", [bookId, date, date]);
+        if (closed) throw new Error(`Opening balances can't be dated ${date}: that date falls in the closed period ${closed.start_date} to ${closed.end_date}. Choose a date on or after ${openPeriods[0].start_date}.`);
+        const earliest = openPeriods[0];
+        if (date < earliest.start_date) {
+          const blocking = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND id!=? AND end_date>=? AND start_date<? ORDER BY start_date DESC LIMIT 1', [bookId, earliest.id, date, earliest.start_date]);
+          if (blocking) throw new Error(`Opening balances can't be dated ${date}: the period ${blocking.start_date} to ${blocking.end_date} already covers it. Choose a date on or after ${earliest.start_date}.`);
+          await this.db.run('UPDATE v2_periods SET start_date=? WHERE id=?', [date, earliest.id]);
+          target = { ...earliest, start_date: date };
+        } else {
+          const latest = openPeriods[openPeriods.length - 1];
+          throw new Error(`Opening balances can't be dated ${date}: the open period ends ${latest.end_date}. Choose a date on or before ${latest.end_date}.`);
+        }
+      }
+      // Live (non-reversed, non-deleted) opening sources, book-wide — never
+      // period-scoped, so a date change still finds the previously posted set.
+      const rows = await this.db.all<{ id: string; metadata: string }>("SELECT s.id,s.metadata FROM v2_sources s LEFT JOIN v2_journal_entries j ON j.source_id=s.id AND j.reversal_of IS NULL WHERE s.book_id=? AND s.type='opening_balance' ORDER BY j.posted_at DESC, s.id DESC", [bookId]);
+      const live: { id: string; metadata: AnyRecord }[] = [];
+      for (const row of rows) {
+        let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { continue; }
+        if (!metadata.reversed && !metadata.deleted) live.push({ id: row.id, metadata });
+      }
+      if (live.length === 1 && Number(live[0].metadata.cash) === cash && Number(live[0].metadata.inventory) === inventory && live[0].metadata.date === date) {
+        return { sourceId: live[0].id, alreadyPosted: true };
+      }
+      // Non-destructive correction: reverse every live opening set (normally one),
+      // then repost at the requested date — all inside this one transaction.
+      for (const entry of live) await this.documents.reverseSource(entry.id, 'opening_balance', 'Update opening balances', true);
+      const total = cents(cash + inventory);
+      const canonicalId = `${bookId}:opening:${target.id}`;
+      if (total === 0) return { sourceId: live[0]?.id ?? canonicalId, alreadyPosted: false, journal: null };
+      const occupied = await this.db.first('SELECT id FROM v2_sources WHERE id=?', [canonicalId]);
+      const sourceId = occupied ? `${canonicalId}:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : canonicalId;
+      const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, date } };
+      const lines: any[] = [];
+      if (cash) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
+      if (inventory) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
+      lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: total });
+      const journal = await this.repo.postSourceJournal(source, { bookId, periodId: target.id, date, memo: input.memo || 'Opening balances', lines });
+      return { sourceId, alreadyPosted: false, journal };
+    });
   }
   /** Record a dated physical inventory count in the authoritative V2 repository. */
   async recordInventoryCount(input: { date: string; value: number; notes?: string }) {
