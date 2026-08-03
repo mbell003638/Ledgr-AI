@@ -106,6 +106,14 @@ function AnimatedGlowPressable({
   const pressed = useSharedValue(0);
   const bounce = useSharedValue(0);
 
+  // The shared theme spring is intentionally springy (ζ≈0.73, underdamped) so it
+  // overshoots its target. On a large surface like the dashboard hero tile that
+  // overshoot reads as a visible bounce on press/release, while the small KPI
+  // tiles hide it — the inconsistency the user reported. Clamp the overshoot so
+  // press motion settles crisply to its resting scale everywhere: consistent,
+  // subtle, no bounce. (The animationsEnabled=false bypass above is untouched.)
+  const settleSpring = { ...theme.motion.spring, overshootClamping: true };
+
   const animateHover = (value: number) => {
     hover.value = reduceMotion
       ? value
@@ -113,7 +121,7 @@ function AnimatedGlowPressable({
     if (value === 1 && clipSafe && !reduceMotion) {
       bounce.value = withSequence(
         withTiming(1, { duration: 80 }),
-        withSpring(0, theme.motion.spring),
+        withSpring(0, settleSpring),
       );
     }
 
@@ -122,7 +130,7 @@ function AnimatedGlowPressable({
   const animatePress = (value: number) => {
     pressed.value = reduceMotion
       ? value
-      : withSpring(value, theme.motion.spring);
+      : withSpring(value, settleSpring);
   };
 
   const animatedStyle = useAnimatedStyle(() => {
