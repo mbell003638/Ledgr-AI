@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { confirmAction } from "@/src/utils/alerts";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -50,11 +51,17 @@ export default function CashBookScreen() {
       setOpeningInput(String(op));
       setOpeningDate(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr());
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const totals = useMemo(() => {
     const ins = entries.filter((e) => e.direction === "in").reduce((s, e) => s + (Number(e.amount) || 0), 0);
