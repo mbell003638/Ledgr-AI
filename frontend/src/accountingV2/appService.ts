@@ -204,6 +204,7 @@ export class V2AppService {
         postedAt: row.posted_at,
         sourceId: row.source_id || null,
         sourceType: row.source_type || null,
+        sourceNotes: meta.notes ? String(meta.notes) : '',
         reversalOf: row.reversal_of || null,
         sourceReversed: !!meta.reversed,
         sourceDeleted: !!meta.deleted,
