@@ -66,20 +66,12 @@ const TILES = [
   { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
 ] as const;
 
-// Persona-based customization: hide tiles that don't apply to a business type.
-// Service businesses (consultant/freelancer/salon/handyman/service) don't hold stock,
-// so Inventory is irrelevant. Pure service personas also lean on Invoices+Debtors over
-// supplier Purchases/Creditors, so those are de-emphasised for the lightest personas.
-const HIDDEN_TILES: Record<string, string[]> = {
-  service: ["inventory", "delivery"],
-  salon: ["inventory", "delivery"],
-  handyman: ["inventory"],
-  it_consultant: ["inventory", "bills", "delivery"],
-  freelancer: ["inventory", "bills", "delivery"],
-  // shop / vendor: show everything (default)
-};
-
-
+// Persona-driven tile visibility is derived centrally in
+// src/utils/featureFlags.ts (getEnabledFeatures). The dashboard grid filters
+// TILES through that helper below (see `visibleTiles`), so onboarding persona
+// selection — and any manual override from customize-features — flows straight
+// into which tiles appear here. Manual override (settings.enabledFeatures)
+// takes precedence over the persona baseline.
 
 function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
   // Keep the hero on the same safe transform-only touch treatment as every
