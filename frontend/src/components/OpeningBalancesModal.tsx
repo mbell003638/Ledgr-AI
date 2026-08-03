@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, Modal, Platform, ScrollVi
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { GlowPressable } from "@/src/components/GlowPressable";
 
 interface Props {
@@ -65,9 +65,17 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   };
 
   const save = async () => {
-    if (mode === "all" && periodStart.trim() && !isValidDateString(periodStart.trim())) {
-      setError("Invalid date format for Period Start. Please use YYYY-MM-DD.");
-      return;
+    // Normalize the manually-typed period start (whitespace, exotic digits,
+    // single-digit month/day, DD/MM/YYYY) before validating so a correct date
+    // in a different shape is no longer wrongly rejected.
+    let normalizedPeriodStart = "";
+    if (mode === "all" && periodStart.trim()) {
+      normalizedPeriodStart = normalizeDateInput(periodStart);
+      if (!isValidDateString(normalizedPeriodStart)) {
+        setError(`Couldn't read "${periodStart.trim()}" as a date. Please use YYYY-MM-DD (e.g. 2026-01-01).`);
+        return;
+      }
+      if (normalizedPeriodStart !== periodStart) setPeriodStart(normalizedPeriodStart);
     }
     const cashVal = parseFloat(openingCash) || 0;
     const invVal = parseFloat(openingInventory) || 0;
@@ -90,13 +98,13 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       await api.updateSettings({
         openingCash: cashVal,
         openingInventory: invVal,
-        currentPeriodStart: periodStart.trim() || "",
+        currentPeriodStart: normalizedPeriodStart || "",
         investors: cleanedMembers,
         partnerNames: cleanedMembers.map((m) => m.name),
       });
       // V2 accounting keeps opening balances in the dated double-entry ledger.
       try {
-        await api.postV2OpeningBalances({ date: periodStart.trim() || undefined, cash: cashVal, inventory: invVal, memo: "Opening balances" });
+        await api.postV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
@@ -173,10 +181,12 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     value={periodStart}
                     onChangeText={setPeriodStart}
                     autoCapitalize="none"
+                    keyboardType="numbers-and-punctuation"
                     placeholder="e.g. 2026-01-01 (Blank = All history)"
                     placeholderTextColor={theme.color.muted}
                     style={styles.input}
                   />
+                  <Text style={styles.helper}>Format: YYYY-MM-DD. 01/06/2026 and 2026-6-1 are also accepted.</Text>
                 </>
               ) : null}
 
@@ -259,6 +269,7 @@ function makeStyles(theme: any) {
     closeBtn: { padding: 4 },
     label: { fontSize: 12, fontWeight: "700", color: theme.color.onSurface },
     subLabel: { fontSize: 11, fontWeight: "600", color: theme.color.muted },
+    helper: { fontSize: 11, color: theme.color.muted, marginTop: 4 },
     sectionHeader: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary, marginBottom: 10 },
     input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface },
     memberCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: 10, borderWidth: 1, borderColor: theme.color.border, marginBottom: 8 },
