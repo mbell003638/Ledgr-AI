@@ -61,6 +61,23 @@ describe('V2 UI contracts', () => {
     expect(reports).toContain('/custom-report');
   });
 
+  it('maps the true v2 profitAndLoss fields into the P&L (no lossy expenses→cogs / netProfit→grossProfit)', () => {
+    const reports = readApp('(tabs)/reports.tsx');
+    const start = reports.indexOf('if (core.source === "v2")');
+    const end = reports.indexOf('setTb(', start);
+    const v2Block = reports.slice(start, end);
+
+    // COGS and gross profit must come from the engine's real fields, not be aliased
+    // to the total-expense or net-profit figures.
+    expect(v2Block).toContain('cogs: report.profitAndLoss.cogs');
+    expect(v2Block).toContain('grossProfit: report.profitAndLoss.grossProfit');
+    expect(v2Block).toContain('netProfit: report.profitAndLoss.netProfit');
+    expect(v2Block).not.toContain('cogs: report.profitAndLoss.expenses');
+    expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
+    // Operating expenses are derived as gross − net (basis-agnostic, never double-counts cogs).
+    expect(v2Block).toContain('operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit)');
+  });
+
   it('Settings saves authoritative V2 book, persona, and member configuration', () => {
     const source = readApp('(tabs)/settings.tsx');
     const saveStart = source.indexOf('const save = async () =>');
@@ -97,5 +114,42 @@ describe('V2 UI contracts', () => {
     for (const action of ['Edit', 'Reversal/Delete', 'Share', 'Print', 'More']) {
       expect(source).toContain(`label: "${action}"`);
     }
+  });
+
+  it('exposes a shared FormCard entry-form grammar', () => {
+    const source = readSource('src/components/FormCard.tsx');
+    expect(source).toContain('export function FormCard');
+    expect(source).toContain('export function FormField');
+    expect(source).toContain('export function FormActions');
+  });
+
+  it.each(['investor/[id].tsx', 'inventory-form.tsx', 'assets.tsx'])(
+    '%s adopts the shared FormField/FormActions entry grammar',
+    (screen) => {
+      const source = readApp(screen);
+      expect(source).toMatch(/from ['"]@\/src\/components\/FormCard['"]/);
+      expect(source).toContain('FormField');
+      expect(source).toContain('FormActions');
+    }
+  );
+
+  it('onboarding wires the persona selection into the settings fields featureFlags reads', () => {
+    const source = readApp('onboarding.tsx');
+    // The persona choice must land in fields getEnabledFeatures actually reads.
+    expect(source).toMatch(/selectedPersonas:\s*v2Personas/);
+    expect(source).toMatch(/activePersona:\s*v2Personas\[0\]/);
+  });
+
+  it('the dashboard filters its tile grid through getEnabledFeatures', () => {
+    const source = readApp('(tabs)/index.tsx');
+    expect(source).toContain('getEnabledFeatures');
+    expect(source).toMatch(/getEnabledFeatures\(settings\)/);
+    expect(source).toMatch(/TILES\.filter/);
+  });
+
+  it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
+    const source = readApp('customize-features.tsx');
+    expect(source).toContain('getPersonaBaselineFeatures');
+    expect(source).toMatch(/updateSettings\(\{\s*enabledFeatures/);
   });
 });
