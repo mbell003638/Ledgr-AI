@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { bumpDataVersion } from "@/src/utils/dataVersion";
 import { Card } from "@/src/components/UI";
 
 export default function PartyForm() {
@@ -50,6 +51,7 @@ export default function PartyForm() {
       } else {
         await api.createParty(payload);
       }
+      bumpDataVersion();
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -61,7 +63,8 @@ export default function PartyForm() {
     try { 
       if (partyType === "supplier") await api.deleteSupplier(editId);
       else await api.deleteDebtor(editId);
-      router.back(); router.back(); 
+      bumpDataVersion();
+      router.back(); router.back();
     }
     catch (e: any) { setError(e.message); }
     finally { setDeleting(false); }
