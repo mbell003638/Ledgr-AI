@@ -106,3 +106,32 @@ git add .github/workflows && git commit -m "ci: apply audit-fixed workflows" && 
 Or simply copy each file's contents over the old one in the GitHub web editor.
 These carry the C1 keystore fix (persistent-keystore secrets + test-signed
 fallback) and the H2 test-gating fix (tests on all branches; build needs test).
+
+## Rebrand (2026-08-03, round 2)
+
+| Change | Detail | Files |
+| --- | --- | --- |
+| App identifier rebranded — no `mbell` anywhere in the app | Android `package` + iOS `bundleIdentifier` are now **`com.ahem.ledgrai`** (supersedes the `com.mbell.ledgr` value referenced in earlier rows; nothing was ever shipped to Play, so the identifier is still freely changeable). Docs updated to match. | `frontend/app.json`, `README.md`, `frontend/BLUEPRINT.md` |
+
+## Round 2 — verification audit, UI performance & cash-basis fixes (2026-08-03)
+
+**Verification result:** an independent re-audit verified every round-1 fix as genuine (COGS unification, retained-earnings close, closed-period guard, advances, atomic backup/restore, AI validators, chart integrity — all VERIFIED with no critical regressions). It surfaced 4 new issues in the fix wave, all fixed below. Validation after round 2: **46/46 suites, 285 tests passing; tsc clean.**
+
+| Finding | Severity | Fix | Files |
+| --- | --- | --- | --- |
+| Cash-basis P&L mixed bases — `grossProfit` subtracted periodic (accrual) COGS while `netProfit` used cash expenses, so net could exceed gross and partnership commission was computed off an incoherent base | High | Cash basis is now a single-basis stack: `cogs` = cash-paid inventory purchases (moved out of `expenses`), `grossProfit = revenue − cogs`, `netProfit = grossProfit − expenses`. Accrual unchanged. Invariants (`net = gross − expenses`, `gross ≤ revenue`) locked in tests. | `reports.ts`, `__tests__/v2Basis.test.ts` |
+| A lone inventory count dated on the period start was reused as BOTH opening and closing count → bogus full-purchases COGS injected into live P&L | Medium | Closing-count selection now requires a count strictly later than a start-dated opening count; no distinct later count → COGS 0, `hasClosingCount:false`. | `cogs.ts`, `__tests__/v2Cogs.test.ts` (new) |
+| Close required counts dated exactly on period boundaries while live reports accepted any in-period count → surfaces could disagree or close was blocked | Medium | Close now derives COGS via the same shared `computePeriodicCogs` rules (latest in-period count). Clear error only when inventory activity exists but no closing count is derivable. Mid-period-count close now matches the live report exactly. | `closeBooksRepository.ts`, `__tests__/v2CloseBooksRepository.test.ts` |
+| COGS-estimate account ids built by string template — silently dropped if ids ever diverge | Low | Account ids resolved by `(book_id, code)` query. | `persistentReports.ts` |
+
+### UI smoothness & speed (implemented)
+
+| Change | Effect | Files |
+| --- | --- | --- |
+| Data-version invalidation + in-memory screen cache (`dataVersion.ts`, `useScreenData` hook); version bumps wired into every api write path | Back-navigation to lists and dashboard is **instant** (no spinner / full SQLite re-read) unless data actually changed; pull-to-refresh still forces reload | `src/utils/dataVersion.ts` (new), `src/hooks/useScreenData.ts` (new), `src/api.ts` (one-line bumps), 10+ screens |
+| Loads deferred behind navigation animations (`InteractionManager.runAfterInteractions`) | No JS-thread jank during screen-enter animations | dashboard, invoices, daybook, cashbook, quotes, delivery-notes, assets |
+| Hot FlatLists tuned (`initialNumToRender 12`, `windowSize 7`, `removeClippedSubviews`) with memoized row components + `useCallback` renderItem | Smoother scrolling on long transaction lists, less re-render churn | bills, sales, payments, receipts, suppliers |
+| Startup: camera/media permission probes deferred off first frames | Faster first paint | `app/_layout.tsx` |
+| Animations verified safe: `animationsEnabled` toggle genuinely bypasses reanimated work; splash uses native driver | — | verified, no change needed |
+
+**Deferred UI recommendations (need device profiling):** convert `invoices.tsx` embedded list from ScrollView+map to FlatList; lazy-require print/share modules; `getItemLayout` on variable-height rows; migrate `expenses.tsx` mount-only load to the version scheme.
