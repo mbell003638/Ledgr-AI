@@ -259,7 +259,8 @@ export function assembleMonthlyReport(
 
 function num(v: unknown): number { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function round2(v: number): number { return Math.round(v * 100) / 100; }
-function symbolFor(code?: string): string {
+/** Currency symbol for a settings currency code (shared with the custom report). */
+export function symbolFor(code?: string): string {
   const map: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', INR: '₹', JPY: '¥', PKR: 'Rs', AED: 'AED', SAR: 'SAR' };
   if (!code) return '$';
   return map[code] || '$';
@@ -267,7 +268,8 @@ function symbolFor(code?: string): string {
 
 // ---------- HTML helpers ----------
 
-const escapeHtml = (value: unknown) => String(value ?? '')
+/** Shared HTML escaper (also used by the custom-report document builder). */
+export const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;')
