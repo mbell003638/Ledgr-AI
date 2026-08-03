@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mbell.ledgr",
+      "bundleIdentifier": "com.ahem.ledgrai",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
         "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
@@ -23,7 +23,7 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.mbell.ledgr",
+      "package": "com.ahem.ledgrai",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
