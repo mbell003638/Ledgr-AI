@@ -149,3 +149,11 @@ fallback) and the H2 test-gating fix (tests on all branches; build needs test).
 | (found during design work) Reports tab showed wrong v2 P&L fields | v2 branch mapped `cogs: expenses` and `grossProfit: netProfit` — collapsing the engine's real fields | True-field mapping + basis-agnostic Operating Expenses row (`grossProfit − netProfit`); P&L card now renders Revenue → COGS → Gross Profit → Operating Expenses → Net Profit | `(tabs)/reports.tsx`, tests |
 
 Validation after round 3: **49/49 suites, 327 tests passing; tsc clean.** Report-format redesign mockup produced separately — pending user approval before implementation.
+
+## Round 4 — user-approved monthly report design (2026-08-03)
+
+| Change | Detail | Files |
+| --- | --- | --- |
+| Monthly report redesigned to the user's reference layout | New pure HTML builder reproduces the approved design exactly for share/print (A4, hero net-profit card, itemized assets/liabilities + drawings, Partner Stakes Reconciliation, monospace tabular numbers); accents adapt to the invoice theme in Settings (navy_gold/amoled_blue/emerald/minimal — page stays print-light); the in-app monthly summary screen is a mini native preview of the same layout honoring the app light/dark/AMOLED theme; Print button added alongside PDF and text share. Partner sections auto-hide for solo books. | `src/utils/reportDocument.ts` (new), `app/monthly-summary.tsx`, `__tests__/reportDocument.test.ts` (new) |
+
+Validation after round 4: **50/50 suites, 342 tests passing; tsc clean.**
