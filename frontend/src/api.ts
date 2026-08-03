@@ -636,7 +636,9 @@ export const api = {
       if (ctx) {
         // V2 rows are journal-derived movements. They stay visible, but must be
         // changed from their original source document rather than as cash rows.
-        const v2Entries = (await service.documents.listCashEntries(ctx.bookId)).map((entry: any) => ({ ...entry, origin: 'v2', editable: false }));
+        // The enriched read includes reversal linkage (reversal_of/posted_at/
+        // source flags) so screens can collapse reverse+repost noise for display.
+        const v2Entries = (await service.listCashMovements()).map((entry: any) => ({ ...entry, origin: 'v2', editable: false }));
         const legacyEntries = (await db.listCashEntries()).map((entry: any) => ({ ...entry, origin: 'manual', editable: true }));
         const all = [...new Map([...legacyEntries, ...v2Entries].map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
           (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
