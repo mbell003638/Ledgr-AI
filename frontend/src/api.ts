@@ -927,6 +927,7 @@ export const api = {
   // AI
   parseCommand: async (text: string) => { const settings = await db.getSettings(); return ai.parseCommand(await getAIConfig(), text, settings.currency || 'USD'); },
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },
+  analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string }) => ai.analyzeDocumentAI(await getAIConfig(), input),
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
