@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -63,7 +63,9 @@ export default function PaymentForm() {
 
   const save = async () => {
     const amt = parseFloat(amount);
-    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     let finalSupplierId = supplierId;
     if (type === "supplier_payment") {
@@ -77,7 +79,7 @@ export default function PaymentForm() {
     setSaving(true); setError("");
     try {
       const payload = {
-        date, amount: amt, currency, type,
+        date: dateIso, amount: amt, currency, type,
         supplierId: type === "supplier_payment" ? finalSupplierId : "",
         partnerName: type === "drawing" && isPartnerMode ? partnerName.trim() : "",
         method, notes,
