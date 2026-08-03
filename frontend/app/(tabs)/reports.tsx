@@ -16,6 +16,7 @@ import { ScreenHeader, Card } from "@/src/components/UI";
 import { printHtml } from "@/src/utils/print";
 import { showAlert } from "@/src/utils/alerts";
 import { GlowPressable } from "@/src/components/GlowPressable";
+import { round2 } from "@/src/money";
 import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 
@@ -116,7 +117,7 @@ export default function ReportsScreen() {
         setDash({
           totalSales: report.profitAndLoss.revenue,
           totalPurchases: report.profitAndLoss.expenses,
-          grossProfit: report.profitAndLoss.netProfit,
+          grossProfit: report.profitAndLoss.grossProfit,
           netProfit: report.profitAndLoss.netProfit,
           cash: report.balanceSheet.assets,
           inventoryValue: 0,
@@ -126,8 +127,13 @@ export default function ReportsScreen() {
         });
         setPnl({
           revenue: report.profitAndLoss.revenue,
-          cogs: report.profitAndLoss.expenses,
-          grossProfit: report.profitAndLoss.netProfit,
+          cogs: report.profitAndLoss.cogs,
+          grossProfit: report.profitAndLoss.grossProfit,
+          // Operating expenses = gross − net (= accrual `expenses` − cogs, or the
+          // cash-basis `expenses` which already excludes cogs). Basis-agnostic and
+          // never double-counts cogs, matching the engine invariant
+          // netProfit = grossProfit − operatingExpenses in both bases.
+          operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit),
           managerCommissionPct: 0,
           commission: 0,
           drawings: 0,
@@ -201,7 +207,13 @@ export default function ReportsScreen() {
         ] : []),
       ].join("\n");
     } else if (seg === "P&L" && pnl) {
-      body = [line("Revenue", pnl.revenue), line("COGS", pnl.cogs), line("Gross Profit", pnl.grossProfit), line("Net Profit", pnl.netProfit)].join("\n");
+      body = [
+        line("Revenue", pnl.revenue),
+        line("COGS", pnl.cogs),
+        line("Gross Profit", pnl.grossProfit),
+        ...(reportSource === "v2" ? [line("Operating Expenses", pnl.operatingExpenses || 0)] : []),
+        line("Net Profit", pnl.netProfit),
+      ].join("\n");
     } else if (seg === "Balance" && bs) {
       body = [line("Total Assets", bs.assets.total), line("Total Liabilities", bs.liabilities.total), line("Equity", bs.equity)].join("\n");
     } else if (seg === "Capital" && cap) {
@@ -439,8 +451,11 @@ export default function ReportsScreen() {
               <Card testID="report-pnl">
                 <Text style={styles.rTitle}>Profit &amp; Loss</Text>
                 <RowKV label="Revenue" value={fmt(pnl.revenue)} theme={theme} styles={styles} />
-                <RowKV label={reportSource === "v2" ? "Expenses" : "Cost of Goods Sold"} value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
+                <RowKV label="Cost of Goods Sold" value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
                 <RowKV label="Gross Profit" value={fmt(pnl.grossProfit)} strong theme={theme} styles={styles} />
+                {reportSource === "v2" && (
+                  <RowKV label="Operating Expenses" value={`- ${fmt(pnl.operatingExpenses || 0)}`} theme={theme} styles={styles} />
+                )}
                 {pnl.managerCommissionPct > 0 && (
                   <RowKV label={`Manager Commission (${pnl.managerCommissionPct}%)`} value={`- ${fmt(pnl.commission)}`} theme={theme} styles={styles} />
                 )}
