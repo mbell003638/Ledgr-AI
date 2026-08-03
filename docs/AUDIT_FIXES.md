@@ -157,3 +157,11 @@ Validation after round 3: **49/49 suites, 327 tests passing; tsc clean.** Report
 | Monthly report redesigned to the user's reference layout | New pure HTML builder reproduces the approved design exactly for share/print (A4, hero net-profit card, itemized assets/liabilities + drawings, Partner Stakes Reconciliation, monospace tabular numbers); accents adapt to the invoice theme in Settings (navy_gold/amoled_blue/emerald/minimal — page stays print-light); the in-app monthly summary screen is a mini native preview of the same layout honoring the app light/dark/AMOLED theme; Print button added alongside PDF and text share. Partner sections auto-hide for solo books. | `src/utils/reportDocument.ts` (new), `app/monthly-summary.tsx`, `__tests__/reportDocument.test.ts` (new) |
 
 Validation after round 4: **50/50 suites, 342 tests passing; tsc clean.**
+
+## Round 5 — exhaustive date-input sweep (2026-08-03, from device screenshot)
+
+| User report | Root cause | Fix | Files |
+| --- | --- | --- | --- |
+| Cash Book "Opening Cash Balance" rejects a visibly correct 2026-08-03 date | TWO independent bugs: (1) cashbook/inventory-form/assets carried inline regexes written as `\\d{4}-\\d{2}-\\d{2}` — doubled backslashes mean they matched literal backslash-d, i.e. **rejected every date ever typed** on those screens; (2) Samsung numeric keypads emit Unicode dash lookalikes (minus sign U+2212 etc.) that strict validators reject even when correct | `normalizeDateInput` now folds all 9 Unicode dash variants + soft hyphens + dot separators; EVERY typed-date site app-wide routed through normalize→validate→canonical (cashbook opening + manual entry, inventory opening-stock + audit date, assets, custom-report range, dashboard custom period, reports range); `onBlur` self-correction on all date fields; new tripwire contract test fails CI if any inline date regex is ever reintroduced in app/ | `dateValidation.ts`, `cashbook.tsx`, `inventory-form.tsx`, `assets.tsx`, `custom-report.tsx`, `(tabs)/index.tsx`, `(tabs)/reports.tsx`, `__tests__/dateUtils.test.ts`, `__tests__/dateInputContracts.test.ts` (new) |
+
+Validation after round 5: **51/51 suites, 352 tests passing; tsc clean.** Note: fixes require a fresh APK build — the previously installed APK (commit ac38023) predates rounds 3-5 entirely.
