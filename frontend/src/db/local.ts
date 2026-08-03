@@ -434,13 +434,15 @@ export async function listCashEntries() {
   return (await readColl<any>('cashEntries')).sort((a: any, b: any) =>
     (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0));
 }
-export async function createCashEntry(e: { id?: string; amount: number; direction: CashDirection; date: string; notes?: string; type?: string; investorId?: string; partnerName?: string }) {
+export async function createCashEntry(e: { id?: string; amount: number; direction: CashDirection; date: string; notes?: string; type?: string; investorId?: string; partnerName?: string; v2SourceId?: string }) {
   return serialize(async () => {
     const amt = Number(e.amount);
     if (!Number.isFinite(amt) || amt < 0) throw new Error('Amount must be a valid non-negative number.');
     if (e.direction !== 'in' && e.direction !== 'out') throw new Error('Direction must be in or out.');
     const items = await readColl<any>('cashEntries');
-    const item = { id: e.id || uuid(), amount: amt, direction: e.direction, date: e.date, notes: e.notes || '', type: e.type || '', investorId: e.investorId || '', partnerName: e.partnerName || '', created_at: nowIso() };
+    // v2SourceId (additive, optional): set when this entry MIRRORS a V2-journaled
+    // movement, linking back to the V2 source so merged listings can dedupe.
+    const item = { id: e.id || uuid(), amount: amt, direction: e.direction, date: e.date, notes: e.notes || '', type: e.type || '', investorId: e.investorId || '', partnerName: e.partnerName || '', ...(e.v2SourceId ? { v2SourceId: e.v2SourceId } : {}), created_at: nowIso() };
     items.push(item);
     await writeColl('cashEntries', items);
     return item;
