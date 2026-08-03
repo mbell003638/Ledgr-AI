@@ -103,13 +103,13 @@ export const CURRENCY_WORDS: Record<string, { main: string; sub: string; subUnit
  */
 export function amountToWords(amount: number, currencyCode: string = 'USD'): string {
   const absAmount = Math.abs(amount);
-  let whole = Math.floor(absAmount);
-  let fractional = Math.round((absAmount - whole) * 100);
-
-  if (fractional >= 100) {
-    whole += Math.floor(fractional / 100);
-    fractional = fractional % 100;
-  }
+  // Extract cents as a single integer BEFORE splitting whole/fractional.
+  // Subtracting the whole part first (absAmount - whole) loses binary-float
+  // precision (e.g. 1.005 - 1 = 0.00499...), which silently drops the cent.
+  // Rounding the total cents up front avoids that boundary loss.
+  const totalCents = Math.round(absAmount * 100 + Number.EPSILON * absAmount * 100);
+  const whole = Math.floor(totalCents / 100);
+  const fractional = totalCents % 100;
 
   const currency = CURRENCY_WORDS[currencyCode.toUpperCase()] || {
     main: 'Units',
