@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
@@ -116,7 +116,9 @@ export default function ReceiptFormScreen() {
 
   const save = async () => {
     setErr("");
-    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setErr(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter a valid amount."); return; }
     if (!clientName.trim()) { setErr("Customer / Party name is required."); return; }
@@ -128,7 +130,7 @@ export default function ReceiptFormScreen() {
         const party = await api.findOrCreateParty(clientName.trim(), "customer");
         if (party) finalDebtorId = party.id;
       }
-      const payload: any = { mode, date, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId };
+      const payload: any = { mode, date: dateIso, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId };
       if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
       
       if (editId) {
