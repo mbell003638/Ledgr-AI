@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { storage } from '@/src/utils/storage';
+import { bumpDataVersion } from '@/src/utils/dataVersion';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig, ProviderId } from '@/src/db/ai';
@@ -210,7 +211,11 @@ async function buildAiSnapshot(from: string, to: string) {
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
-  if (!runner) return (db[name] as (value: any) => Promise<any>)(payload);
+  if (!runner) {
+    const r = await (db[name] as (value: any) => Promise<any>)(payload);
+    bumpDataVersion();
+    return r;
+  }
   const writes = createAppWriteRouter(new V2AppService(runner), db);
 
   const injected = { ...payload };
@@ -232,14 +237,22 @@ async function createTransaction(name: AppCreateName, payload: any) {
     }
   }
 
-  return writes[name](injected);
+  const result = await writes[name](injected);
+  bumpDataVersion();
+  return result;
 }
 
 async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill', ...args: any[]) {
   const runner = activeSqlRunner();
     const dbFn = (db as any)[name];
-    if (!runner) return dbFn(...args);
-    return (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
+    if (!runner) {
+      const r = await dbFn(...args);
+      bumpDataVersion();
+      return r;
+    }
+    const r = await (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
+    bumpDataVersion();
+    return r;
 }
 
 /**
@@ -306,7 +319,9 @@ export const api = {
   setV2Persona: async (bookId: string, type: PersonaId) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2BookConfigRepository(runner).setActivePersona(bookId, type);
+    const r = await new V2BookConfigRepository(runner).setActivePersona(bookId, type);
+    bumpDataVersion();
+    return r;
   },
   getV2BookConfig: async () => {
     const runner = activeSqlRunner();
@@ -316,32 +331,44 @@ export const api = {
   updateV2BookConfig: async (config: V2BookConfigUpdate) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).updateActiveBookConfig(config);
+    const r = await new V2AppService(runner).updateActiveBookConfig(config);
+    bumpDataVersion();
+    return r;
   },
   postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).postOpeningBalances(input);
+    const r = await new V2AppService(runner).postOpeningBalances(input);
+    bumpDataVersion();
+    return r;
   },
   updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).updateOpeningBalances(input);
+    const r = await new V2AppService(runner).updateOpeningBalances(input);
+    bumpDataVersion();
+    return r;
   },
   recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).recordInventoryCount(input);
+    const r = await new V2AppService(runner).recordInventoryCount(input);
+    bumpDataVersion();
+    return r;
   },
   createManualAsset: async (input: { date: string; name: string; category?: string; amount: number; funding: 'cash' | 'bank' | 'capital' | 'liability'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual asset transactions require SQLite storage');
-    return new V2AppService(runner).recordManualAsset(input);
+    const r = await new V2AppService(runner).recordManualAsset(input);
+    bumpDataVersion();
+    return r;
   },
   createManualLiability: async (input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual liability transactions require SQLite storage');
-    return new V2AppService(runner).recordManualLiability(input);
+    const r = await new V2AppService(runner).recordManualLiability(input);
+    bumpDataVersion();
+    return r;
   },
   listManualBalanceTransactions: async () => {
     const runner = activeSqlRunner();
@@ -351,19 +378,21 @@ export const api = {
   deleteManualBalanceTransaction: async (sourceId: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual balance transactions require SQLite storage');
-    return new V2AppService(runner).deleteManualBalanceTransaction(sourceId);
+    const r = await new V2AppService(runner).deleteManualBalanceTransaction(sourceId);
+    bumpDataVersion();
+    return r;
   },
   getSettings: () => db.getSettings(),
-  updateSettings: (s: any) => db.updateSettings(s),
+  updateSettings: async (s: any) => { const r = await db.updateSettings(s); bumpDataVersion(); return r; },
   testKey: async () => ai.testKey(await getAIConfig()),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
   listBooks: (): Promise<BookMeta[]> => beListBooks(),
   activeBookId: (): string => beActiveBookId(),
-  setActiveBook: (id: string) => beSetActiveBook(id),
-  createBook: (name: string, businessType?: string) => beCreateBook(name, businessType),
-  renameBook: (id: string, name: string) => beRenameBook(id, name),
-  deleteBook: (id: string) => beDeleteBook(id),
+  setActiveBook: async (id: string) => { const r = await beSetActiveBook(id); bumpDataVersion(); return r; },
+  createBook: async (name: string, businessType?: string) => { const r = await beCreateBook(name, businessType); bumpDataVersion(); return r; },
+  renameBook: async (id: string, name: string) => { const r = await beRenameBook(id, name); bumpDataVersion(); return r; },
+  deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
 
   createParty: async (p: any) => {
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -598,9 +627,9 @@ export const api = {
     }
     return db.listCashEntries();
   },
-  createCashEntry: (e: any) => db.createCashEntry(e),
-  updateCashEntry: (id: string, e: any) => db.updateCashEntry(id, e),
-  deleteCashEntry: (id: string) => db.deleteCashEntry(id),
+  createCashEntry: async (e: any) => { const r = await db.createCashEntry(e); bumpDataVersion(); return r; },
+  updateCashEntry: async (id: string, e: any) => { const r = await db.updateCashEntry(id, e); bumpDataVersion(); return r; },
+  deleteCashEntry: async (id: string) => { const r = await db.deleteCashEntry(id); bumpDataVersion(); return r; },
 
   getInvestorLedger: async (id: string): Promise<InvestorLedgerDetail> => {
     const settings = await db.getSettings();
@@ -635,10 +664,13 @@ export const api = {
       if (context) {
         const result = await new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id });
         try { await db.createCashEntry({ id: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' }); } catch {}
+        bumpDataVersion();
         return result;
       }
     }
-    return db.recordInvestorCapital(id, input);
+    const r = await db.recordInvestorCapital(id, input);
+    bumpDataVersion();
+    return r;
   },
   drawInvestorFunds: async (id: string, input: { amount: number; date: string; notes?: string }) => {
     const settings = await db.getSettings();
@@ -649,10 +681,13 @@ export const api = {
       if (context) {
         const result = await new V2InvestorLedgerService(runner).draw({ ...input, bookId: context.bookId, memberId: id });
         try { await db.createPayment({ id: result.source.id, ...input, type: 'drawing', partnerName: String(result.source.metadata?.memberName || id), investorId: id, method: 'cash' }); } catch {}
+        bumpDataVersion();
         return result;
       }
     }
-    return db.recordInvestorDrawing(id, input);
+    const r = await db.recordInvestorDrawing(id, input);
+    bumpDataVersion();
+    return r;
   },
 
   // Dashboard & reports
@@ -810,6 +845,7 @@ export const api = {
       const next = await runner.first<{ start_date: string }>("SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [(result as any).result.bookId]);
       await db.updateSettings({ currentPeriodStart: next?.start_date || settings.currentPeriodStart, openingInventory: actualStock });
     }
+    bumpDataVersion();
     return result;
   },
   // Clears books and ledgers only; device preferences and AI credentials remain.
@@ -827,6 +863,7 @@ export const api = {
         await beSetActiveBook(book.id);
         await db.resetAll();
       }
+      bumpDataVersion();
       return { ok: true };
     } finally {
       await beSetActiveBook(originalBookId);
@@ -919,29 +956,29 @@ export const api = {
   // Advances / Deposits (advance receipts applied to invoices later)
   getAdvanceCredit: (debtorId: string) => db.getAdvanceCredit(debtorId),
   listAdvances: (debtorId: string) => db.listAdvances(debtorId),
-  applyAdvanceToInvoice: (debtorId: string, invoiceId: string, amount?: number) => db.applyAdvanceToInvoice(debtorId, invoiceId, amount),
+  applyAdvanceToInvoice: async (debtorId: string, invoiceId: string, amount?: number) => { const r = await db.applyAdvanceToInvoice(debtorId, invoiceId, amount); bumpDataVersion(); return r; },
 
   // Quotes / Estimates (non-posting until converted)
   listQuotes: () => db.listQuotes(),
-  createQuote: (q: any) => db.createQuote(q),
-  updateQuote: (id: string, q: any) => db.updateQuote(id, q),
-  deleteQuote: (id: string) => db.deleteQuote(id),
-  setQuoteStatus: (id: string, status: any) => db.setQuoteStatus(id, status),
-  convertQuoteToInvoice: (id: string, opts?: any) => db.convertQuoteToInvoice(id, opts),
+  createQuote: async (q: any) => { const r = await db.createQuote(q); bumpDataVersion(); return r; },
+  updateQuote: async (id: string, q: any) => { const r = await db.updateQuote(id, q); bumpDataVersion(); return r; },
+  deleteQuote: async (id: string) => { const r = await db.deleteQuote(id); bumpDataVersion(); return r; },
+  setQuoteStatus: async (id: string, status: any) => { const r = await db.setQuoteStatus(id, status); bumpDataVersion(); return r; },
+  convertQuoteToInvoice: async (id: string, opts?: any) => { const r = await db.convertQuoteToInvoice(id, opts); bumpDataVersion(); return r; },
 
   // Credit / Debit Notes (post-sale adjustments: discounts, returns, extra charges)
   listCreditNotes: (debtorId?: string) => db.listCreditNotes(debtorId),
   listDebitNotes: (debtorId?: string) => db.listDebitNotes(debtorId),
-  createCreditNote: (n: any) => db.createCreditNote(n),
-  createDebitNote: (n: any) => db.createDebitNote(n),
-  deleteCreditNote: (id: string) => db.deleteCreditNote(id),
-  deleteDebitNote: (id: string) => db.deleteDebitNote(id),
+  createCreditNote: async (n: any) => { const r = await db.createCreditNote(n); bumpDataVersion(); return r; },
+  createDebitNote: async (n: any) => { const r = await db.createDebitNote(n); bumpDataVersion(); return r; },
+  deleteCreditNote: async (id: string) => { const r = await db.deleteCreditNote(id); bumpDataVersion(); return r; },
+  deleteDebitNote: async (id: string) => { const r = await db.deleteDebitNote(id); bumpDataVersion(); return r; },
 
   // Delivery Notes / Challans (goods movement, no ledger posting)
   listDeliveryNotes: () => db.listDeliveryNotes(),
-  createDeliveryNote: (n: any) => db.createDeliveryNote(n),
-  updateDeliveryNote: (id: string, n: any) => db.updateDeliveryNote(id, n),
-  deleteDeliveryNote: (id: string) => db.deleteDeliveryNote(id),
+  createDeliveryNote: async (n: any) => { const r = await db.createDeliveryNote(n); bumpDataVersion(); return r; },
+  updateDeliveryNote: async (id: string, n: any) => { const r = await db.updateDeliveryNote(id, n); bumpDataVersion(); return r; },
+  deleteDeliveryNote: async (id: string) => { const r = await db.deleteDeliveryNote(id); bumpDataVersion(); return r; },
 
   // Enhanced reports
   taxReport: (from: string, to: string) => db.taxReport(from, to),
