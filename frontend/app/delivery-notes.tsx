@@ -2,11 +2,12 @@ import React, { useCallback, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { confirmAction } from "@/src/utils/alerts";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -92,10 +93,16 @@ export default function DeliveryNotesScreen() {
       const [list, s] = await Promise.all([api.listDeliveryNotes(), api.getSettings()]);
       setNotes(list as DeliveryNote[]);
       setBiz(s);
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const openNew = () => {
     setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
