@@ -76,7 +76,9 @@ export function KpiTile({ label, value, hint, icon, valueColor, testID, onPress 
         clipSafe={false}
         hoverLift={-5}
         hoverScale={1.02}
-        pressScale={0.955}
+        // Match the dashboard hero card's press depth (see AnimatedHeroCard)
+        // so every dashboard surface compresses identically on touch.
+        pressScale={0.972}
         restingBorderColor={theme.color.glassBorder}
         hoverBorderColor={theme.color.brandPrimary}
         testID={testID}
