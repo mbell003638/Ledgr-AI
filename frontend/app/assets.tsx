@@ -10,6 +10,7 @@ import { fmt } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { FormField, FormActions } from "@/src/components/FormCard";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 type EntryMode = "asset" | "liability";
 type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
@@ -66,14 +67,16 @@ export default function AssetsScreen() {
 
   const save = async () => {
     const value = Number(amount);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setError("Use a valid date in YYYY-MM-DD format."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setDate(dateIso); // reflect the canonical form in the field
     if (!name.trim() || !Number.isFinite(value) || value <= 0) { setError("Enter a name and a positive amount."); return; }
     setSaving(true); setError("");
     try {
       if (mode === "asset") {
-        await api.createManualAsset({ date, name: name.trim(), category: category.trim() || "Other asset", amount: value, funding, notes: notes.trim() });
+        await api.createManualAsset({ date: dateIso, name: name.trim(), category: category.trim() || "Other asset", amount: value, funding, notes: notes.trim() });
       } else {
-        await api.createManualLiability({ date, name: name.trim(), category: category.trim() || "Other liability", amount: value, recognition, notes: notes.trim() });
+        await api.createManualLiability({ date: dateIso, name: name.trim(), category: category.trim() || "Other liability", amount: value, recognition, notes: notes.trim() });
       }
       resetForm();
       await load();
@@ -116,7 +119,7 @@ export default function AssetsScreen() {
             <View style={styles.formIcon}><Ionicons name={isAsset ? "business-outline" : "document-text-outline"} size={19} color={theme.color.brandPrimary} /></View>
             <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "Credit liability; debit the selected recognition account."}</Text></View>
           </View>
-          <FormField label="Transaction date" first value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+          <FormField label="Transaction date" first value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} placeholder="YYYY-MM-DD" />
           <FormField label={isAsset ? "Asset name" : "Liability name"} value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} />
           <FormField label="Category (optional)" value={category} onChangeText={setCategory} placeholder={isAsset ? "Deposit, equipment, receivable" : "Loan, accrued rent, tax payable"} />
           <FormField label="Amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
