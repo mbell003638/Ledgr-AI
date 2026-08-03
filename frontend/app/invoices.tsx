@@ -3,10 +3,12 @@ import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert, Share,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
@@ -738,6 +740,10 @@ export default function InvoicesScreen() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // Version at which the list last loaded, so a focus-return with no
+  // intervening mutation can skip the full re-read (instant back-navigation).
+  const loadedVersion = React.useRef<number>(-1);
+
   const load = useCallback(async () => {
     try {
       const [invs, od, s] = await Promise.all([api.listInvoices(), api.overdueInvoices(), api.getSettings()]);
@@ -745,11 +751,16 @@ export default function InvoicesScreen() {
       setOverdue(od as Invoice[]);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBiz(s);
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return; // nothing changed
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const openNew = () => {
     setEditId(null);
