@@ -8,8 +8,11 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/context/ThemeContext';
 import { api } from '@/src/api';
 import { v2ReportsOrFallback } from '@/src/accountingV2/runtime';
-import { buildCustomReport, customReportText, CUSTOM_REPORT_FIELDS, type CustomReportField, type CustomReportGroup, type CustomReportSectionId } from '@/src/accountingV2/customReports';
+import { buildCustomReport, summarizeCustomReport, CUSTOM_REPORT_FIELDS, type CustomReportField, type CustomReportGroup, type CustomReportOutput, type CustomReportRow, type CustomReportSection, type CustomReportSectionId } from '@/src/accountingV2/customReports';
+import { buildCustomReportHtml, buildPnlRows, customReportShareText, drCrLabel, registerRowLabel, registerRowValue, trialBalanceTotals, type CustomReportPnl } from '@/src/utils/customReportDocument';
+import { money, symbolFor } from '@/src/utils/reportDocument';
 import { buildStatementDocument } from '@/src/utils/statementDocument';
+import { printHtml } from '@/src/utils/print';
 import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
 
 const SECTIONS = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Sales', 'Purchases', 'Receipts', 'Expenses', 'Inventory & COGS', 'Debtors', 'Creditors'] as const;
@@ -17,6 +20,11 @@ const SECTION_IDS: Record<string, CustomReportSectionId> = { 'Trial Balance': 't
 const FIELD_LABELS: Record<CustomReportField, string> = { date: 'Date', memo: 'Notes', reference: 'Reference', accountCode: 'Account code', accountName: 'Account', partyId: 'Party', debit: 'Debit', credit: 'Credit', amount: 'Amount', revenue: 'Revenue', expenses: 'Expenses', netProfit: 'Net profit', assets: 'Assets', liabilities: 'Liabilities', equity: 'Equity' };
 type LegacyReports = { pnl: any; balanceSheet: any; trialBalance: any; sales: any; receipts: any; debtors: any[]; creditors: any[] };
 const amount = (value: unknown) => Number(value || 0).toFixed(2);
+
+type StructuredDoc = { output: CustomReportOutput; pnl: CustomReportPnl; summary: string };
+type ReportMeta = { businessName: string; invoiceTheme: string; currencySymbol: string };
+type GenResult = { text: string; doc: StructuredDoc | null; meta: ReportMeta } | null;
+const DEFAULT_META: ReportMeta = { businessName: 'Ledgr', invoiceTheme: 'navy_gold', currencySymbol: '$' };
 
 export default function CustomReportScreen() {
   const theme = useTheme();
@@ -29,7 +37,10 @@ export default function CustomReportScreen() {
   const [groupBy, setGroupBy] = useState<CustomReportGroup>('none');
   const [landscape, setLandscape] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [preview, setPreview] = useState('');
+  const [doc, setDoc] = useState<StructuredDoc | null>(null);
+  const [meta, setMeta] = useState<ReportMeta>(DEFAULT_META);
   const [dateError, setDateError] = useState('');
   const toggle = (section: string) => setSelected((current) => current.includes(section) ? current.filter((value) => value !== section) : [...current, section]);
 
@@ -41,65 +52,214 @@ export default function CustomReportScreen() {
     return { pnl, balanceSheet, trialBalance, sales, receipts, debtors, creditors };
   };
 
-  const generate = async (): Promise<string> => {
+  const generate = async (): Promise<GenResult> => {
     // Manual range inputs: normalize (Samsung minus signs, DD/MM, dots, exotic
     // digits) then validate, reflecting the canonical form back into the fields.
     const fromIso = normalizeDateInput(from);
-    if (!isValidDateString(fromIso)) { setDateError(`Couldn't read "${from.trim()}" as a date. Please use YYYY-MM-DD.`); return ''; }
+    if (!isValidDateString(fromIso)) { setDateError(`Couldn't read "${from.trim()}" as a date. Please use YYYY-MM-DD.`); return null; }
     const toIso = normalizeDateInput(to);
-    if (!isValidDateString(toIso)) { setDateError(`Couldn't read "${to.trim()}" as a date. Please use YYYY-MM-DD.`); return ''; }
+    if (!isValidDateString(toIso)) { setDateError(`Couldn't read "${to.trim()}" as a date. Please use YYYY-MM-DD.`); return null; }
     setDateError('');
     setFrom(fromIso); setTo(toIso);
     setBusy(true);
     try {
-      const result = await v2ReportsOrFallback({ from: fromIso, to: toIso }, () => loadLegacy(fromIso, toIso));
-      const lines = ['Ledgr Custom Report', `Period: ${fromIso} to ${toIso}`, `Source: ${result.source === 'v2' ? 'V2 journal' : 'Legacy reports'}`, ''];
+      const [result, settings] = await Promise.all([
+        v2ReportsOrFallback({ from: fromIso, to: toIso }, () => loadLegacy(fromIso, toIso)),
+        api.getSettings().catch(() => ({} as any)),
+      ]);
+      const nextMeta: ReportMeta = {
+        businessName: String((settings as any).businessName || (settings as any).name || 'Ledgr'),
+        invoiceTheme: String((settings as any).invoiceTheme || 'navy_gold'),
+        currencySymbol: symbolFor((settings as any).currency),
+      };
+      setMeta(nextMeta);
       if (result.source === 'v2') {
         const output = buildCustomReport(result.report, { sections: selected.map((section) => SECTION_IDS[section]), fields, groupBy, sortBy: 'date', sortDirection: 'asc' });
-        const text = customReportText(output);
+        // Full engine P&L so the hero can show COGS / Gross Profit / Operating Expenses.
+        const pnl: CustomReportPnl = { ...result.report.profitAndLoss };
+        const summary = summarizeCustomReport(output);
+        const nextDoc: StructuredDoc = { output, pnl, summary };
+        const text = customReportShareText(output, { pnl, summary, currencySymbol: nextMeta.currencySymbol });
+        setDoc(nextDoc);
         setPreview(text);
-        return text;
-      } else {
-        const { pnl, balanceSheet, trialBalance, sales, receipts, debtors, creditors } = result.report;
-        if (selected.includes('Trial Balance')) lines.push(`TRIAL BALANCE\nDebits\n${trialBalance.debits.map((x: any) => `${x.account}: ${amount(x.amount)}`).join('\n') || 'None'}\nCredits\n${trialBalance.credits.map((x: any) => `${x.account}: ${amount(x.amount)}`).join('\n') || 'None'}`);
-        if (selected.includes('Profit & Loss')) lines.push(`PROFIT & LOSS\nRevenue: ${amount(pnl.revenue ?? pnl.sales)}\nPurchases: ${amount(pnl.purchases)}\nExpenses: ${amount(pnl.expenses)}\nNet profit: ${amount(pnl.netProfit)}`);
-        if (selected.includes('Balance Sheet')) lines.push(`BALANCE SHEET\nAssets: ${amount(balanceSheet.assets?.total)}\nLiabilities: ${amount(balanceSheet.liabilities?.total)}\nEquity: ${amount(balanceSheet.equity)}`);
-        if (selected.includes('Sales')) lines.push(`SALES\nTotal: ${amount(sales.total)}\nCash: ${amount(sales.cashTotal)}\nCredit invoices: ${amount(sales.invoiceTotal)}`);
-        if (selected.includes('Receipts')) lines.push(`RECEIPTS\nTotal received: ${amount(receipts.total)}`);
-        if (selected.includes('Purchases')) lines.push(`PURCHASES\n${amount(pnl.purchases)}`);
-        if (selected.includes('Expenses')) lines.push(`EXPENSES\n${amount(pnl.expenses)}`);
-        if (selected.includes('Inventory & COGS')) lines.push(`INVENTORY & COGS\nOpening: ${amount(pnl.openingStock)}\nClosing: ${amount(pnl.closingStock)}\nCOGS: ${amount(pnl.cogs)}`);
-        if (selected.includes('Debtors')) lines.push(`DEBTORS\n${debtors.map((x: any) => `${x.name}: ${amount(x.balance)}`).join('\n') || 'None'}`);
-        if (selected.includes('Creditors')) lines.push(`CREDITORS\n${creditors.map((x: any) => `${x.name}: ${amount(x.balance)}`).join('\n') || 'None'}`);
+        return { text, doc: nextDoc, meta: nextMeta };
       }
+      const lines = ['Ledgr Custom Report', `Period: ${fromIso} to ${toIso}`, 'Source: Legacy reports', ''];
+      const { pnl, balanceSheet, trialBalance, sales, receipts, debtors, creditors } = result.report;
+      if (selected.includes('Trial Balance')) lines.push(`TRIAL BALANCE\nDebits\n${trialBalance.debits.map((x: any) => `${x.account}: ${amount(x.amount)}`).join('\n') || 'None'}\nCredits\n${trialBalance.credits.map((x: any) => `${x.account}: ${amount(x.amount)}`).join('\n') || 'None'}`);
+      if (selected.includes('Profit & Loss')) lines.push(`PROFIT & LOSS\nRevenue: ${amount(pnl.revenue ?? pnl.sales)}\nPurchases: ${amount(pnl.purchases)}\nExpenses: ${amount(pnl.expenses)}\nNet profit: ${amount(pnl.netProfit)}`);
+      if (selected.includes('Balance Sheet')) lines.push(`BALANCE SHEET\nAssets: ${amount(balanceSheet.assets?.total)}\nLiabilities: ${amount(balanceSheet.liabilities?.total)}\nEquity: ${amount(balanceSheet.equity)}`);
+      if (selected.includes('Sales')) lines.push(`SALES\nTotal: ${amount(sales.total)}\nCash: ${amount(sales.cashTotal)}\nCredit invoices: ${amount(sales.invoiceTotal)}`);
+      if (selected.includes('Receipts')) lines.push(`RECEIPTS\nTotal received: ${amount(receipts.total)}`);
+      if (selected.includes('Purchases')) lines.push(`PURCHASES\n${amount(pnl.purchases)}`);
+      if (selected.includes('Expenses')) lines.push(`EXPENSES\n${amount(pnl.expenses)}`);
+      if (selected.includes('Inventory & COGS')) lines.push(`INVENTORY & COGS\nOpening: ${amount(pnl.openingStock)}\nClosing: ${amount(pnl.closingStock)}\nCOGS: ${amount(pnl.cogs)}`);
+      if (selected.includes('Debtors')) lines.push(`DEBTORS\n${debtors.map((x: any) => `${x.name}: ${amount(x.balance)}`).join('\n') || 'None'}`);
+      if (selected.includes('Creditors')) lines.push(`CREDITORS\n${creditors.map((x: any) => `${x.name}: ${amount(x.balance)}`).join('\n') || 'None'}`);
       const text = lines.join('\n\n');
+      setDoc(null);
       setPreview(text);
-      return text;
+      return { text, doc: null, meta: nextMeta };
     } finally { setBusy(false); }
   };
 
-  const buildStyledHtml = (text: string, businessName = "Ledgr") => buildStatementDocument({
-    businessName,
-    title: "Custom Financial Statement",
-    from,
-    to,
-    text,
-    accent: theme.color.brandPrimary,
-    landscape,
-  });
+  const ensureGenerated = async (): Promise<GenResult> => (preview ? { text: preview, doc, meta } : await generate());
+
+  const htmlFor = (result: NonNullable<GenResult>): string => result.doc
+    ? buildCustomReportHtml({
+        output: result.doc.output,
+        pnl: result.doc.pnl,
+        summary: result.doc.summary,
+        businessName: result.meta.businessName,
+        currencySymbol: result.meta.currencySymbol,
+        from, to,
+        generatedAt: new Date().toLocaleString(),
+        landscape,
+      }, result.meta.invoiceTheme)
+    : buildStatementDocument({ businessName: result.meta.businessName, title: 'Custom Financial Statement', from, to, text: result.text, accent: theme.color.brandPrimary, landscape });
 
   const pdf = async () => {
-    const text = preview || await generate();
-    if (!text) return; // invalid range input — error already shown inline
-    const settings: any = await api.getSettings().catch(() => ({}));
-    const { uri } = await Print.printToFileAsync({ html: buildStyledHtml(text, String(settings.businessName || settings.name || 'Ledgr')) });
+    const result = await ensureGenerated();
+    if (!result) return; // invalid range input — error already shown inline
+    const { uri } = await Print.printToFileAsync({ html: htmlFor(result) });
     if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share Custom Report' });
   };
 
-  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} onBlur={() => { if (from.trim()) setFrom(normalizeDateInput(from)); }} autoCapitalize="none" style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} onBlur={() => { if (to.trim()) setTo(normalizeDateInput(to)); }} autoCapitalize="none" style={styles.input} placeholder="To YYYY-MM-DD"/>{dateError ? <Text style={{ color: theme.color.error, fontSize: 12 }}>{dateError}</Text> : null}</View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <><CustomReportPreview text={preview} styles={styles} theme={theme}/><View style={styles.actions}><Pressable onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF / Print</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
+  const printReport = async () => {
+    const result = await ensureGenerated();
+    if (!result) return;
+    setPrinting(true);
+    try { await printHtml(htmlFor(result), 'Ledgr Custom Report'); }
+    finally { setPrinting(false); }
+  };
+
+  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} onBlur={() => { if (from.trim()) setFrom(normalizeDateInput(from)); }} autoCapitalize="none" style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} onBlur={() => { if (to.trim()) setTo(normalizeDateInput(to)); }} autoCapitalize="none" style={styles.input} placeholder="To YYYY-MM-DD"/>{dateError ? <Text style={{ color: theme.color.error, fontSize: 12 }}>{dateError}</Text> : null}</View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <>{doc ? <StructuredPreview doc={doc} sym={meta.currencySymbol} styles={styles} theme={theme}/> : <LegacyStatementPreview text={preview} styles={styles} theme={theme}/>}<View style={styles.actions}><Pressable testID="btn-custom-share-text" onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable testID="btn-custom-print" onPress={printReport} disabled={printing} style={styles.secondary}>{printing ? <ActivityIndicator color={theme.color.brandPrimary}/> : <><Ionicons name="print-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Print</Text></>}</Pressable><Pressable testID="btn-custom-share-pdf" onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
 }
 
-function CustomReportPreview({ text, styles, theme }: { text: string; styles: any; theme: any }) {
+/**
+ * Structured MINI preview in the app's approved report grammar (mirrors the
+ * monthly-summary mini-preview): uppercase section labels, hairline-separated
+ * label-left / monospace-value-right rows, a multi-row P&L hero card, a real
+ * trial-balance listing with a bold totals row, grouped balance-sheet rows and
+ * a prose summary card. Uses app theme tokens so it respects dark mode; the
+ * PDF stays print-light with invoice-theme accents.
+ */
+function StructuredPreview({ doc, sym, styles, theme }: { doc: StructuredDoc; sym: string; styles: any; theme: any }) {
+  const renderProfit = (section: CustomReportSection) => (
+    <View key={section.id} style={styles.previewSection}>
+      <Text style={styles.previewSectionLabel}>{section.title.toUpperCase()}</Text>
+      <View style={styles.previewHero} testID="custom-report-hero">
+        {buildPnlRows(doc.pnl).map((row, index, all) => (
+          <View key={row.label} style={[styles.previewHeroRow, index === all.length - 1 && styles.previewHeroRowLast]}>
+            <Text style={[styles.previewHeroLabel, row.net && styles.previewHeroNetLabel]}>{row.label}</Text>
+            <Text style={row.net ? styles.previewHeroNetValue : [styles.previewNum, row.strong && styles.previewTotalNum, row.amount < 0 && styles.previewNumNeg]}>{money(row.amount, sym)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderTrialBalance = (section: CustomReportSection) => {
+    const totals = trialBalanceTotals(section.rows);
+    return (
+      <View key={section.id} style={styles.previewSection} testID="custom-report-trial-balance">
+        <Text style={styles.previewSectionLabel}>{section.title.toUpperCase()}</Text>
+        {section.rows.length ? <>
+          {section.rows.map((row, index) => {
+            const zero = !Number(row.debit || 0) && !Number(row.credit || 0);
+            return (
+              <View key={`${row.accountCode ?? row.accountName ?? index}`} style={styles.previewLineRow}>
+                <Text style={[styles.previewLineLabel, zero && styles.previewMuted]} numberOfLines={1}>{String(row.accountName || 'Account')}{row.accountCode !== undefined ? ` (${row.accountCode})` : ''}</Text>
+                <Text style={[styles.previewNum, zero && styles.previewMuted]}>{drCrLabel(row, sym)}</Text>
+              </View>
+            );
+          })}
+          <View style={[styles.previewLineRow, styles.previewTotalRow]}>
+            <Text style={[styles.previewLineLabel, styles.previewTotalLabel]}>Totals</Text>
+            <Text style={[styles.previewNum, styles.previewTotalNum]}>{`Dr ${money(totals.debit, sym)} · Cr ${money(totals.credit, sym)}`}</Text>
+          </View>
+        </> : <Text style={styles.previewEmpty}>No entries</Text>}
+      </View>
+    );
+  };
+
+  const renderBalanceSheet = (section: CustomReportSection) => {
+    const row = section.rows[0] || {};
+    const groups = [
+      { label: 'Assets', value: Number(row.assets || 0) },
+      { label: 'Liabilities', value: Number(row.liabilities || 0) },
+      { label: 'Equity', value: Number(row.equity || 0) },
+    ];
+    return (
+      <View key={section.id} style={styles.previewSection} testID="custom-report-balance-sheet">
+        <Text style={styles.previewSectionLabel}>{section.title.toUpperCase()}</Text>
+        {groups.map((group) => (
+          <View key={group.label} style={styles.previewLineRow}>
+            <Text style={styles.previewLineLabel}>{group.label}</Text>
+            <Text style={[styles.previewNum, group.value < 0 && styles.previewNumNeg]}>{money(group.value, sym)}</Text>
+          </View>
+        ))}
+        <View style={[styles.previewLineRow, styles.previewTotalRow]}>
+          <Text style={[styles.previewLineLabel, styles.previewTotalLabel]}>Liabilities + Equity</Text>
+          <Text style={[styles.previewNum, styles.previewTotalNum]}>{money(Number(row.liabilities || 0) + Number(row.equity || 0), sym)}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRegister = (section: CustomReportSection) => {
+    const rowView = (row: CustomReportRow, index: number) => (
+      <View key={index} style={styles.previewLineRow}>
+        {row.date !== undefined ? <Text style={styles.previewDate}>{String(row.date)}</Text> : null}
+        <Text style={styles.previewLineLabel} numberOfLines={1}>{registerRowLabel(row)}</Text>
+        <Text style={styles.previewNum}>{registerRowValue(row, sym)}</Text>
+      </View>
+    );
+    return (
+      <View key={section.id} style={styles.previewSection}>
+        <Text style={styles.previewSectionLabel}>{section.title.toUpperCase()}</Text>
+        {section.rows.length ? <>
+          {section.groups ? section.groups.map((group) => (
+            <View key={group.key}>
+              <Text style={styles.previewGroupLabel}>{group.key}</Text>
+              {group.rows.map(rowView)}
+              <View style={styles.previewLineRow}>
+                <Text style={[styles.previewLineLabel, styles.previewMuted]}>Group total</Text>
+                <Text style={[styles.previewNum, styles.previewMuted]}>{money(group.total, sym)}</Text>
+              </View>
+            </View>
+          )) : section.rows.map(rowView)}
+          {section.total !== undefined ? (
+            <View style={[styles.previewLineRow, styles.previewTotalRow]}>
+              <Text style={[styles.previewLineLabel, styles.previewTotalLabel]}>Total {section.title}</Text>
+              <Text style={[styles.previewNum, styles.previewTotalNum]}>{money(Number(section.total || 0), sym)}</Text>
+            </View>
+          ) : null}
+        </> : <Text style={styles.previewEmpty}>No entries</Text>}
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.preview} testID="custom-report-preview">
+      {doc.output.sections.map((section) => {
+        if (section.id === 'profit') return renderProfit(section);
+        if (section.id === 'trialBalance') return renderTrialBalance(section);
+        if (section.id === 'balanceSheet') return renderBalanceSheet(section);
+        return renderRegister(section);
+      })}
+      {doc.summary ? (
+        <View style={styles.summaryCard} testID="custom-report-summary">
+          <Text style={styles.summaryHeading}>Summary</Text>
+          <Text style={styles.summaryText}>{doc.summary}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Legacy-source fallback preview: simple "Label: value" statement rows. */
+function LegacyStatementPreview({ text, styles, theme }: { text: string; styles: any; theme: any }) {
   const sections: { title: string; rows: string[] }[] = [];
   let current: { title: string; rows: string[] } | undefined;
   for (const raw of text.split(/\r?\n/)) {
@@ -110,17 +270,61 @@ function CustomReportPreview({ text, styles, theme }: { text: string; styles: an
     else { if (!current) { current = { title: 'REPORT', rows: [] }; sections.push(current); } current.rows.push(line); }
   }
   const renderRow = (line: string, index: number) => {
-    const fields = Object.fromEntries(line.split('|').map((part) => { const i = part.indexOf(':'); return i > -1 ? [part.slice(0, i).trim(), part.slice(i + 1).trim()] : ['detail', part.trim()]; }));
-    if (fields.accountName) {
-      const value = [fields.debit && `Dr ${fields.debit}`, fields.credit && `Cr ${fields.credit}`].filter(Boolean).join(' · ');
-      return <View key={`${line}-${index}`} style={styles.previewRow}><Text style={styles.previewKey}>{fields.accountName}{fields.accountCode ? ` (${fields.accountCode})` : ''}</Text><Text style={styles.previewValue}>{value || '—'}</Text></View>;
-    }
-    const first = line.indexOf(':');
-    if (first > -1 && !line.includes('|')) return <View key={`${line}-${index}`} style={styles.previewRow}><Text style={styles.previewKey}>{line.slice(0, first).trim()}</Text><Text style={styles.previewValue}>{line.slice(first + 1).trim()}</Text></View>;
-    return <Text key={`${line}-${index}`} style={styles.previewDetail}>{line.replace(/\|/g, ' · ')}</Text>;
+    const colon = line.indexOf(':');
+    if (colon > -1) return <View key={`${line}-${index}`} style={styles.previewLineRow}><Text style={styles.previewLineLabel}>{line.slice(0, colon).trim()}</Text><Text style={styles.previewNum}>{line.slice(colon + 1).trim()}</Text></View>;
+    return <Text key={`${line}-${index}`} style={styles.previewDetail}>{line}</Text>;
   };
-  return <View style={styles.preview}>
-    {sections.map((section) => <View key={section.title} style={styles.previewSection}><Text style={[styles.previewHeader, { color: theme.color.brandPrimary }]}>{section.title}</Text>{section.rows.map(renderRow)}</View>)}
+  return <View style={styles.preview} testID="custom-report-preview">
+    {sections.map((section) => <View key={section.title} style={styles.previewSection}><Text style={styles.previewSectionLabel}>{section.title}</Text>{section.rows.map(renderRow)}</View>)}
   </View>;
 }
-function makeStyles(t: any) { return StyleSheet.create({ container: { flex: 1, backgroundColor: t.color.surface }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: t.spacing.lg, borderBottomWidth: 1, borderColor: t.color.border }, title: { fontSize: 18, fontWeight: '800', color: t.color.onSurface }, content: { padding: t.spacing.lg, paddingBottom: 80 }, hint: { color: t.color.muted, lineHeight: 21 }, dates: { gap: 10, marginTop: 18 }, input: { backgroundColor: t.color.surfaceSecondary, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.md, padding: 13, color: t.color.onSurface }, section: { fontSize: 15, fontWeight: '700', color: t.color.onSurface, marginTop: 22, marginBottom: 10 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderWidth: 1, borderColor: t.color.border, borderRadius: 999, backgroundColor: t.color.surfaceSecondary }, chipOn: { backgroundColor: t.color.brandPrimary, borderColor: t.color.brandPrimary }, chipText: { fontSize: 13, fontWeight: '600', color: t.color.onSurface }, primary: { marginTop: 24, backgroundColor: t.color.brandPrimary, borderRadius: t.radius.md, padding: 15, alignItems: 'center' }, primaryText: { color: '#fff', fontWeight: '800' }, preview: { marginTop: 20, padding: 14, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.lg, backgroundColor: t.color.surfaceSecondary }, previewText: { color: t.color.onSurface, lineHeight: 20 }, previewSection: { marginBottom: 15 }, previewHeader: { fontSize: 12, fontWeight: '800', letterSpacing: .6, marginBottom: 6 }, previewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.color.border }, previewKey: { flex: 1, color: t.color.onSurface, fontSize: 12, fontWeight: '600' }, previewValue: { color: t.color.muted, fontSize: 11, textAlign: 'right', maxWidth: '48%' }, previewDetail: { color: t.color.muted, fontSize: 11, lineHeight: 16, paddingVertical: 4 }, actions: { flexDirection: 'row', gap: 10, marginTop: 12 }, secondary: { flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center', padding: 13, borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border }, secondaryText: { fontWeight: '700', color: t.color.brandPrimary } }); }
+
+function makeStyles(t: any) {
+  const mono = 'monospace';
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: t.color.surface },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: t.spacing.lg, borderBottomWidth: 1, borderColor: t.color.border },
+    title: { fontSize: 18, fontWeight: '800', color: t.color.onSurface },
+    content: { padding: t.spacing.lg, paddingBottom: 80 },
+    hint: { color: t.color.muted, lineHeight: 21 },
+    dates: { gap: 10, marginTop: 18 },
+    input: { backgroundColor: t.color.surfaceSecondary, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.md, padding: 13, color: t.color.onSurface },
+    section: { fontSize: 15, fontWeight: '700', color: t.color.onSurface, marginTop: 22, marginBottom: 10 },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderWidth: 1, borderColor: t.color.border, borderRadius: 999, backgroundColor: t.color.surfaceSecondary },
+    chipOn: { backgroundColor: t.color.brandPrimary, borderColor: t.color.brandPrimary },
+    chipText: { fontSize: 13, fontWeight: '600', color: t.color.onSurface },
+    primary: { marginTop: 24, backgroundColor: t.color.brandPrimary, borderRadius: t.radius.md, padding: 15, alignItems: 'center' },
+    primaryText: { color: '#fff', fontWeight: '800' },
+
+    // Preview container + report grammar (matches monthly-summary's mini preview).
+    preview: { marginTop: 20, padding: 14, borderWidth: 1, borderColor: t.color.border, borderRadius: t.radius.lg, backgroundColor: t.color.surfaceSecondary },
+    previewSection: { marginBottom: 18 },
+    previewSectionLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', color: t.color.muted, marginBottom: 6 },
+    previewHero: { backgroundColor: t.color.successBg, borderRadius: t.radius.lg, borderWidth: 1, borderColor: t.color.divider, paddingHorizontal: t.spacing.md },
+    previewHeroRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: t.color.divider, gap: 12 },
+    previewHeroRowLast: { borderBottomWidth: 0 },
+    previewHeroLabel: { fontSize: 13, fontWeight: '700', color: t.color.onSurface, flexShrink: 1 },
+    previewHeroNetLabel: { fontSize: 14 },
+    previewHeroNetValue: { fontFamily: mono, fontSize: 20, fontWeight: '800', color: t.color.onSurface, textAlign: 'right' },
+    previewLineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.color.divider, gap: 10 },
+    previewLineLabel: { flex: 1, fontSize: 13, color: t.color.onSurface },
+    previewNum: { fontFamily: mono, fontSize: 12, fontWeight: '600', color: t.color.onSurface, textAlign: 'right' },
+    previewNumNeg: { color: t.color.error },
+    previewMuted: { color: t.color.muted, fontWeight: '400' },
+    previewDate: { fontFamily: mono, fontSize: 11, color: t.color.muted },
+    previewGroupLabel: { fontSize: 11, fontWeight: '700', color: t.color.brandPrimary, marginTop: 8 },
+    previewTotalRow: { borderBottomWidth: 0, borderTopWidth: 2, borderTopColor: t.color.onSurface, marginTop: 2 },
+    previewTotalLabel: { fontWeight: '800' },
+    previewTotalNum: { fontWeight: '800' },
+    previewEmpty: { color: t.color.muted, fontSize: 12, paddingVertical: 6 },
+    previewDetail: { color: t.color.muted, fontSize: 11, lineHeight: 16, paddingVertical: 4 },
+    summaryCard: { backgroundColor: t.color.surface, borderWidth: 1, borderColor: t.color.divider, borderRadius: t.radius.lg, padding: t.spacing.md, marginTop: 4 },
+    summaryHeading: { fontSize: 13, fontWeight: '800', color: t.color.brandPrimary, marginBottom: 4 },
+    summaryText: { fontSize: 12, color: t.color.onSurface, lineHeight: 18 },
+
+    actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+    secondary: { flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center', padding: 13, borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border },
+    secondaryText: { fontWeight: '700', color: t.color.brandPrimary },
+  });
+}
