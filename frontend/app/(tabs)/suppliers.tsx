@@ -222,7 +222,24 @@ export default function PartiesScreen() {
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
-                {item.role === 'partner' ? <><Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text><Text style={styles.sub}>View capital ledger</Text></> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
+                {item.role === 'partner' ? <>
+                  <Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text>
+                  <Text style={styles.sub}>View capital ledger</Text>
+                  {isPartnerMode ? (
+                    <Pressable
+                      testID={`btn-quick-capital-${item.id}`}
+                      accessibilityLabel={`Deposit capital for ${item.name}`}
+                      // Same flow as the investor detail screen's Deposit Capital
+                      // button: route there with action=deposit so the sheet
+                      // auto-opens and posts via api.depositInvestorCapital.
+                      onPress={() => router.push({ pathname: '/investor/[id]', params: { id: item.id, action: 'deposit' } } as any)}
+                      style={styles.capitalBtn}
+                    >
+                      <Ionicons name="add" size={12} color={theme.color.brandPrimary} />
+                      <Text style={styles.capitalBtnText}>Capital</Text>
+                    </Pressable>
+                  ) : null}
+                </> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
               </View>
             </GlowPressable>
           )}
@@ -264,5 +281,7 @@ function makeStyles(t: any) {
     name: { fontSize: 15, fontWeight: '700', color: t.color.onSurface },
     sub: { fontSize: 12, color: t.color.muted, marginTop: 2, textTransform: 'capitalize' },
     balance: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+    capitalBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: t.color.brandPrimary, backgroundColor: t.color.brandPrimary + '14' },
+    capitalBtnText: { fontSize: 11, fontWeight: '700', color: t.color.brandPrimary },
   });
 }
