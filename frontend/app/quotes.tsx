@@ -2,11 +2,12 @@ import React, { useCallback, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { confirmAction } from "@/src/utils/alerts";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -120,10 +121,16 @@ export default function QuotesScreen() {
       setBiz(s);
       setTaxRateDefault(Number(s.taxRate) || 0);
       setTaxLabelDefault(s.taxLabel && s.taxLabel !== "None" ? s.taxLabel : "");
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0), [lines]);
   const taxAmt = +(subtotal * taxRateDefault / 100).toFixed(2);
