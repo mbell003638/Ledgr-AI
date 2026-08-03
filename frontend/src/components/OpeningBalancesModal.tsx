@@ -126,7 +126,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       onClose();
       if (onSuccess) onSuccess();
     } catch (e: any) {
-      setError(e.message || "Failed to save balances.");
+      setError(e.message || "Couldn't save opening balances. Check the amounts and period start date, then try again.");
     } finally {
       setSaving(false);
     }
