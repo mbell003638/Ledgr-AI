@@ -11,7 +11,7 @@ import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountin
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
-import { resetAllV2AccountingData } from '@/src/accountingV2/resetBook';
+import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import {
   listBooks as beListBooks,
@@ -952,6 +952,16 @@ export const api = {
       // book to default, and clear the V2 meta keys (v2_active_book_id +
       // every v2_book_version:*). Preserves theme keys + AI-config clearing. [C4/M2]
       await beResetBooksAndActiveBook();
+    }
+    // Scorched earth for the authoritative V2 SQLite store: a FACTORY reset must
+    // leave ZERO rows in EVERY v2_* table. clearAccountingData deliberately
+    // preserves book identity rows (v2_books/v2_accounts/v2_personas/v2_members)
+    // for the in-app "reset data" action — leaving them here made the next
+    // onboarding bootstrap crash with "UNIQUE constraint failed: v2_books.id"
+    // when it re-inserted the same deterministic active-book id. [reset]
+    {
+      const runner = activeSqlRunner();
+      if (runner) await factoryResetV2Data(runner);
     }
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
