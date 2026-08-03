@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -7,7 +7,9 @@ import * as ImagePicker from "expo-image-picker";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { getCurrencySymbol } from "@/src/db/local";
 import { Card } from "@/src/components/UI";
+import { validateReconcileEntry } from "@/src/accountingV2/aiActions";
 
 export default function Reconcile() {
   const theme = useTheme();
@@ -19,8 +21,10 @@ export default function Reconcile() {
   const [supplier, setSupplier] = useState<any>(null);
   const [photo, setPhoto] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+  const [currencySymbol, setCurrencySymbol] = useState("$");
 
   useEffect(() => {
     if (party === "customer" && customerId) {
@@ -29,6 +33,10 @@ export default function Reconcile() {
       api.getSupplier(supplierId).then(setSupplier).catch(() => {});
     }
   }, [supplierId, customerId, party]);
+
+  useEffect(() => {
+    api.getSettings().then((s: any) => setCurrencySymbol(getCurrencySymbol(s.currency || "USD"))).catch(() => {});
+  }, []);
 
   const runReconcile = async (base64: string, mime: string) => {
     setBusy(true); setError(""); setResult(null);
@@ -74,47 +82,137 @@ export default function Reconcile() {
     }
   };
 
-  const importMissing = async (e: any) => {
-    if (!partyId) return;
-    try {
-      if (party === "customer") {
-        // Customer statement: a "bill" line = an invoice they owe; a "payment"
-        // line = money they paid (record as an against-invoice/advance receipt).
-        if (e.type === "payment") {
-          await api.createReceipt({
-            mode: "advance", amount: e.amount, date: e.date, method: "cash",
-            debtorId: partyId, clientName: supplier?.name || "",
-            notes: e.description || "From reconciliation",
-          });
-        } else {
-          await api.createInvoice({
-            clientName: supplier?.name || "Customer",
-            lines: [{ description: e.description || "From reconciliation", qty: 1, rate: e.amount }],
-            taxRate: 0, total: e.amount, date: e.date, notes: e.reference || "",
-          });
-        }
-        const r = await api.reconcileStatement(photo, partyId, "image/jpeg", "customer");
-        setResult(r);
-        return;
-      }
-      const st = await api.getSettings();
-      void st;
-      if (e.type === "bill" || !e.type) {
-        await api.createBill({
-          supplierId: partyId, date: e.date, amount: e.amount, currency: "USD",
-          paymentType: "credit", invoiceNo: e.reference || "", notes: e.description || "From reconciliation",
+  // Human label for an extracted entry (customer vs supplier semantics differ).
+  const entryLabel = (e: any): string => {
+    if (party === "customer") return e.type === "payment" ? "Receipt (customer payment)" : "Invoice (owed by customer)";
+    return e.type === "payment" ? "Supplier payment" : "Bill (purchase)";
+  };
+
+  // Prefix source-tag onto whatever note the entry already carries (fix M-5).
+  const reconNote = (base: string) => `[Reconcile] ${base || "From reconciliation"}`;
+
+  // Pure writer for one extracted entry — performs the ledger write ONLY. Callers
+  // must have already validated bounds and obtained explicit confirmation.
+  const writeEntry = async (e: any) => {
+    if (!partyId) throw new Error("Missing party");
+    if (party === "customer") {
+      // Customer statement: a "bill" line = an invoice they owe; a "payment"
+      // line = money they paid (record as an advance receipt).
+      if (e.type === "payment") {
+        await api.createReceipt({
+          mode: "advance", amount: e.amount, date: e.date, method: "cash",
+          debtorId: partyId, clientName: supplier?.name || "",
+          notes: reconNote(e.description),
         });
       } else {
-        await api.createPayment({
-          date: e.date, amount: e.amount, currency: "USD",
-          type: "supplier_payment", supplierId: partyId, method: "cash",
-          reference: e.reference || "", notes: e.description || "From reconciliation",
+        await api.createInvoice({
+          clientName: supplier?.name || "Customer",
+          lines: [{ description: e.description || "From reconciliation", qty: 1, rate: e.amount }],
+          taxRate: 0, total: e.amount, date: e.date, notes: reconNote(e.reference),
         });
       }
-      // Refresh
-      const r = await api.reconcileStatement(photo, partyId, "image/jpeg", "supplier");
-      setResult(r);
-    } catch (err: any) { setError(err.message); }
+      return;
+    }
+    if (e.type === "bill" || !e.type) {
+      await api.createBill({
+        supplierId: partyId, date: e.date, amount: e.amount, currency: "USD",
+        paymentType: "credit", invoiceNo: e.reference || "", notes: reconNote(e.description),
+      });
+    } else {
+      await api.createPayment({
+        date: e.date, amount: e.amount, currency: "USD",
+        type: "supplier_payment", supplierId: partyId, method: "cash",
+        reference: e.reference || "", notes: reconNote(e.description),
+      });
+    }
+  };
+
+  const refresh = async () => {
+    if (!partyId) return;
+    const r = await api.reconcileStatement(photo, partyId, "image/jpeg", party);
+    setResult(r);
+  };
+
+  // Single "+ Add": preview type / party / date / formatted amount, Cancel first,
+  // Confirm styled default. Invalid rows never reach here (button is disabled).
+  const confirmAndImportOne = (e: any) => {
+    if (!partyId) return;
+    const reason = validateReconcileEntry(e);
+    if (reason) { setError(reason); return; }
+    const partyName = supplier?.name || (party === "customer" ? "Customer" : "Supplier");
+    const preview =
+      `Type: ${entryLabel(e)}\n` +
+      `Party: ${partyName}\n` +
+      `Date: ${e.date}\n` +
+      `Amount: ${fmt(e.amount, currencySymbol)}`;
+    Alert.alert(
+      "Import this entry?",
+      preview,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          isPreferred: true,
+          onPress: async () => {
+            setError(""); setImporting(true);
+            try {
+              await writeEntry(e);
+              await refresh();
+            } catch (err: any) {
+              setError(err?.message || "Failed to import entry");
+            } finally { setImporting(false); }
+          },
+        },
+      ],
+    );
+  };
+
+  // "Import all": summary confirm listing count + total of the VALID entries, then
+  // sequential writes with per-item error collection. Invalid rows are skipped.
+  const confirmAndImportAll = () => {
+    if (!partyId) return;
+    const all: any[] = result?.missingInLedgr || [];
+    const valid = all.filter((e) => validateReconcileEntry(e) === null);
+    const skipped = all.length - valid.length;
+    if (valid.length === 0) {
+      Alert.alert("Nothing to import", skipped > 0 ? `All ${skipped} entr${skipped === 1 ? "y is" : "ies are"} flagged as invalid and cannot be imported.` : "There are no entries to import.");
+      return;
+    }
+    const total = valid.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const lines = valid
+      .map((e) => `• ${e.date} — ${fmt(e.amount, currencySymbol)} (${entryLabel(e)})`)
+      .join("\n");
+    const preview =
+      `${valid.length} entr${valid.length === 1 ? "y" : "ies"}, total ${fmt(total, currencySymbol)}` +
+      (skipped > 0 ? `\n(${skipped} invalid entr${skipped === 1 ? "y" : "ies"} will be skipped)` : "") +
+      `\n\n${lines}`;
+    Alert.alert(
+      "Import all entries?",
+      preview,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: `Import ${valid.length}`,
+          isPreferred: true,
+          onPress: async () => {
+            setError(""); setImporting(true);
+            const failures: string[] = [];
+            for (const e of valid) {
+              try {
+                await writeEntry(e);
+              } catch (err: any) {
+                failures.push(`${e.date} ${fmt(e.amount, currencySymbol)}: ${err?.message || "failed"}`);
+              }
+            }
+            try { await refresh(); } catch { /* refresh best-effort */ }
+            setImporting(false);
+            if (failures.length) {
+              setError(`Imported ${valid.length - failures.length} of ${valid.length}. Failed: ${failures.join("; ")}`);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const stmtTotal = result?.extracted?.totalOnStatement;
@@ -190,20 +288,38 @@ export default function Reconcile() {
                 </View>
               ))}
 
-            <Text style={styles.section}>On statement — missing from Ledgr ({result.missingInLedgr.length})</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.section, { marginBottom: 0 }]}>On statement — missing from Ledgr ({result.missingInLedgr.length})</Text>
+              {result.missingInLedgr.some((e: any) => validateReconcileEntry(e) === null) ? (
+                <Pressable testID="import-all" onPress={confirmAndImportAll} disabled={importing} style={[styles.importAllBtn, importing && { opacity: 0.5 }]}>
+                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                  <Text style={styles.importAllText}>Import all</Text>
+                </Pressable>
+              ) : null}
+            </View>
             {result.missingInLedgr.length === 0 ? <Text style={styles.empty}>Nothing missing.</Text> :
-              result.missingInLedgr.map((e: any, i: number) => (
-                <View key={i} style={[styles.row, { borderLeftColor: theme.color.warning }]}>
-                  <Ionicons name="alert-circle" size={18} color={theme.color.warning} />
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={styles.rowTitle}>{shortDate(e.date)} • {fmt(e.amount)}</Text>
-                    <Text style={styles.rowSub}>{e.description || e.reference || "—"} • {e.type}</Text>
+              result.missingInLedgr.map((e: any, i: number) => {
+                const invalidReason = validateReconcileEntry(e);
+                return (
+                  <View key={i} style={[styles.row, { borderLeftColor: invalidReason ? theme.color.error : theme.color.warning }]}>
+                    <Ionicons name={invalidReason ? "close-circle" : "alert-circle"} size={18} color={invalidReason ? theme.color.error : theme.color.warning} />
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={styles.rowTitle}>{shortDate(e.date)} • {fmt(e.amount, currencySymbol)}</Text>
+                      <Text style={styles.rowSub}>{e.description || e.reference || "—"} • {e.type}</Text>
+                      {invalidReason ? <Text style={styles.flaggedText} testID={`import-flag-${i}`}>⚠ {invalidReason}</Text> : null}
+                    </View>
+                    {invalidReason ? (
+                      <View testID={`import-disabled-${i}`} style={[styles.importBtn, styles.importBtnDisabled]}>
+                        <Text style={[styles.importBtnText, { color: theme.color.muted }]}>Invalid</Text>
+                      </View>
+                    ) : (
+                      <Pressable testID={`import-${i}`} onPress={() => confirmAndImportOne(e)} disabled={importing} style={[styles.importBtn, importing && { opacity: 0.5 }]}>
+                        <Text style={styles.importBtnText}>+ Add</Text>
+                      </Pressable>
+                    )}
                   </View>
-                  <Pressable testID={`import-${i}`} onPress={() => importMissing(e)} style={styles.importBtn}>
-                    <Text style={styles.importBtnText}>+ Add</Text>
-                  </Pressable>
-                </View>
-              ))}
+                );
+              })}
 
             <Text style={styles.section}>In Ledgr — not on statement ({result.notOnStatement.length})</Text>
             {result.notOnStatement.length === 0 ? <Text style={styles.empty}>All records appear on statement.</Text> :
@@ -245,7 +361,12 @@ function makeStyles(theme: any) {
     rowTitle: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     rowSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
     importBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.sm, backgroundColor: theme.color.brandTertiary },
+    importBtnDisabled: { backgroundColor: theme.color.surfaceTertiary },
     importBtnText: { color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 },
+    sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: theme.spacing.lg, marginBottom: theme.spacing.md, gap: 8 },
+    importAllBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.sm, backgroundColor: theme.color.brandPrimary },
+    importAllText: { color: "#fff", fontWeight: "700", fontSize: 12 },
+    flaggedText: { color: theme.color.error, fontSize: 11, marginTop: 2, fontWeight: "600" },
     totalRow: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.sm },
     totalCol: { flex: 1, padding: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md, alignItems: "center" },
     totalLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
