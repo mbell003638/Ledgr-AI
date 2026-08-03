@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
@@ -80,7 +80,7 @@ export default function DeliveryNotesScreen() {
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [vehicleNo, setVehicleNo] = useState("");
   const [items, setItems] = useState<Item[]>([{ description: "", qty: 1 }]);
   const [noteText, setNoteText] = useState("");
@@ -98,7 +98,7 @@ export default function DeliveryNotesScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const openNew = () => {
-    setEditId(null); setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setVehicleNo(""); setItems([{ description: "", qty: 1 }]); setNoteText(""); setErr(""); setShowForm(true);
   };
   const openEdit = (n: DeliveryNote) => {
