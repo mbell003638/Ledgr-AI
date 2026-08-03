@@ -19,6 +19,7 @@ import {
   createBook as beCreateBook,
   renameBook as beRenameBook,
   deleteBook as beDeleteBook,
+  resetBooksAndActiveBook as beResetBooksAndActiveBook,
   type BookMeta,
 } from '@/src/db/backend';
 
@@ -52,9 +53,9 @@ export async function getAIConfig(): Promise<AIConfig> {
       db.updateSettings({ googleApiKey: '' }),
     ]);
   }
-  const resolvedModel = model ?? legacyModel ?? 'gemini-2.0-flash-001';
+  const resolvedModel = model ?? legacyModel ?? ai.DEFAULT_GEMINI_MODEL;
   return {
-    provider: (provider as ProviderId) ?? 'gemini',
+    provider: ai.normalizeProviderId(provider),
     apiKey: resolvedKey,
     model: resolvedModel,
     baseUrl: baseUrl ?? undefined,
@@ -64,13 +65,24 @@ export async function getAIConfig(): Promise<AIConfig> {
 export async function setAIConfig(cfg: Partial<AIConfig>) {
   const ops: Promise<unknown>[] = [];
   if (cfg.provider !== undefined) ops.push(AsyncStorage.setItem(AI_PROVIDER_KEY, cfg.provider));
+  // The secure keychain write is the ONE op whose failure must not be silent:
+  // the storage wrapper returns false (never throws) on failure, and the
+  // original code discarded that result — a lost API key would vanish with no
+  // signal. Check it explicitly and throw so the caller can alert the user. [M4]
+  let secureKeyWrite: Promise<boolean> | null = null;
   if (cfg.apiKey !== undefined) {
-    ops.push(cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY));
+    secureKeyWrite = cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY);
     ops.push(AsyncStorage.removeItem(AI_API_KEY_KEY));
   }
   if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, cfg.baseUrl));
-  await Promise.all(ops);
+  const [secureOk] = await Promise.all([
+    secureKeyWrite ?? Promise.resolve(true),
+    ...ops,
+  ]);
+  if (secureKeyWrite && secureOk === false) {
+    throw new Error('Could not securely save your API key on this device. Please try again.');
+  }
 }
 // Legacy shims so existing screens (voice.tsx, bill-form.tsx) keep compiling
 export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
@@ -228,6 +240,44 @@ async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvo
     const dbFn = (db as any)[name];
     if (!runner) return dbFn(...args);
     return (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
+}
+
+/**
+ * [Vault C2] Build human-readable warnings comparing the legacy collections to
+ * their authoritative V2 source counterparts. Returns [] when there is no V2
+ * context (nothing to diverge from) or the counts match. Best-effort: any error
+ * yields no warning rather than blocking the export.
+ */
+async function exportDivergenceWarnings(): Promise<string[]> {
+  const runner = activeSqlRunner();
+  if (!runner) return [];
+  const warnings: string[] = [];
+  try {
+    const service = new V2AppService(runner);
+    const ctx = await service.activeContext();
+    if (!ctx) return [];
+    const bookId = ctx.bookId;
+    const v2Count = async (type: string): Promise<number> => {
+      const row = await runner.first<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=? AND type=?', [bookId, type]);
+      return Number(row?.n || 0);
+    };
+    // (legacyCount, v2 source type, human label)
+    const checks: Array<[Promise<any[]>, string, string]> = [
+      [db.listInvoices(), 'invoice', 'invoices'],
+      [db.listBills(), 'bill', 'bills'],
+      [db.listReceipts(), 'receipt', 'receipts'],
+      [db.listPayments(), 'payment', 'payments'],
+    ];
+    for (const [legacyPromise, v2Type, label] of checks) {
+      const [legacyRows, v2n] = await Promise.all([legacyPromise, v2Count(v2Type)]);
+      const legacyN = Array.isArray(legacyRows) ? legacyRows.length : 0;
+      if (legacyN !== v2n) {
+        warnings.push(`${label}: legacy backup has ${legacyN} record(s) but the V2 ledger has ${v2n}. The V2 ledger is authoritative and will be restored intact.`);
+      }
+    }
+  } catch { /* divergence check is advisory only */ }
+  return warnings;
 }
 
 export const api = {
@@ -724,6 +774,12 @@ export const api = {
     }
     // Include model name so it carries over to other devices
     data.geminiModel = await getGeminiModel();
+    // [Vault C2] Export-time divergence warning: when a V2 ledger is active,
+    // compare legacy collection counts to their V2 source counterparts. A
+    // mismatch means the legacy mirror drifted from the authoritative ledger;
+    // surface it so the user knows before sharing (export still proceeds).
+    const warnings: string[] = await exportDivergenceWarnings();
+    data.warnings = warnings;
     return data;
   },
   importBackup: async (payload: any) => {
@@ -731,11 +787,12 @@ export const api = {
     if (payload.settings) {
       delete payload.settings.googleApiKey;
     }
-    const result = await db.importBackup(payload);
+    const result: any = await db.importBackup(payload);
     // Restore model name if present in backup
     if (payload.geminiModel && typeof payload.geminiModel === 'string') {
       await setGeminiModel(payload.geminiModel);
     }
+    // Surface the atomic-import outcome (v2 restore status + warnings) to callers.
     return result;
   },
   listPeriods: () => db.listPeriods(),
@@ -783,14 +840,18 @@ export const api = {
   resetAll: async () => api.clearAccountingData(),
   factoryReset: async () => {
     await api.clearAccountingData();
-    const originalBookId = beActiveBookId();
+    // Wipe each book's business configuration (and its logo key). We iterate all
+    // books first, THEN tear down the books index — so no book is missed.
     try {
       for (const book of await beListBooks()) {
         await beSetActiveBook(book.id);
         await db.factoryReset();
       }
     } finally {
-      await beSetActiveBook(originalBookId);
+      // Remove the books index + active-book pointer, reset the in-memory active
+      // book to default, and clear the V2 meta keys (v2_active_book_id +
+      // every v2_book_version:*). Preserves theme keys + AI-config clearing. [C4/M2]
+      await beResetBooksAndActiveBook();
     }
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
