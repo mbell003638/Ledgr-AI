@@ -39,6 +39,12 @@ export default function CashBookScreen() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  // Cash In "Type": general manual entry vs investor capital deposit (partnership mode).
+  const [partnerMode, setPartnerMode] = useState(false);
+  const [inKind, setInKind] = useState<"general" | "capital">("general");
+  const [investors, setInvestors] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [investorId, setInvestorId] = useState<string | null>(null);
+  const [loadingInvestors, setLoadingInvestors] = useState(false);
 
   const [openingCash, setOpeningCash] = useState(0);
   const [openingDate, setOpeningDate] = useState("");
@@ -54,6 +60,8 @@ export default function CashBookScreen() {
       setOpeningInput(String(op));
       setOpeningDate(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr());
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
+      setPartnerMode(settings.accountingStyle === "retail_partnership");
+      setInvestors(null); // refetched on demand so new investors show up
       loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
@@ -101,6 +109,17 @@ export default function CashBookScreen() {
 
   const resetForm = () => {
     setEditId(null); setDirection("in"); setAmount(""); setDate(todayStr()); setNotes(""); setFormOpen(false);
+    setInKind("general"); setInvestorId(null);
+  };
+
+  const selectCapitalKind = async () => {
+    setInKind("capital");
+    if (investors === null && !loadingInvestors) {
+      setLoadingInvestors(true);
+      try { setInvestors((await api.listInvestors()).map((x: any) => ({ id: x.id, name: x.name }))); }
+      catch { setInvestors([]); }
+      finally { setLoadingInvestors(false); }
+    }
   };
 
   const openAdd = () => { resetForm(); setFormOpen(true); };
@@ -136,10 +155,21 @@ export default function CashBookScreen() {
     const dateIso = normalizeDateInput(date);
     if (!isValidDateString(dateIso)) { Alert.alert("Invalid", `Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
     setDate(dateIso); // reflect the canonical form in the field
+    if (!editId && direction === "in" && inKind === "capital" && partnerMode && !investorId) {
+      Alert.alert("Pick an investor", "Select which investor this capital deposit belongs to.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = { amount: amt, direction, date: dateIso, notes: notes.trim() };
       if (editId) await api.updateCashEntry(editId, payload);
+      else if (direction === "in" && inKind === "capital" && partnerMode && investorId) {
+        // Investor capital goes through the SAME posting path as the investor
+        // detail screen's Deposit Capital button (Dr Cash / Cr Member Capital,
+        // memo "Capital deposit — <name>") — never a plain cash entry, so the
+        // member's stake updates correctly.
+        await api.depositInvestorCapital(investorId, payload);
+      }
       else await api.createCashEntry(payload);
       resetForm();
       load();
@@ -209,11 +239,38 @@ export default function CashBookScreen() {
                 <Ionicons name="arrow-down-circle-outline" size={16} color={direction === "in" ? "#fff" : theme.color.success} />
                 <Text style={[styles.segText, direction === "in" && { color: "#fff" }]}>Cash In</Text>
               </Pressable>
-              <Pressable onPress={() => setDirection("out")} style={[styles.segBtn, direction === "out" && styles.segBtnOutActive]}>
+              <Pressable onPress={() => { setDirection("out"); setInKind("general"); setInvestorId(null); }} style={[styles.segBtn, direction === "out" && styles.segBtnOutActive]}>
                 <Ionicons name="arrow-up-circle-outline" size={16} color={direction === "out" ? "#fff" : theme.color.warning} />
                 <Text style={[styles.segText, direction === "out" && { color: "#fff" }]}>Cash Out</Text>
               </Pressable>
             </View>
+            {/* Cash In "Type" — General stays a plain cash entry; Investor capital
+                routes through api.depositInvestorCapital so the stake updates. */}
+            {!editId && direction === "in" && partnerMode ? (
+              <View style={{ gap: 6 }}>
+                <View style={styles.chipRow}>
+                  <Text style={styles.chipLabel}>Type</Text>
+                  <Pressable testID="chip-cashin-general" onPress={() => { setInKind("general"); setInvestorId(null); }} style={[styles.chip, inKind === "general" && styles.chipOn]}>
+                    <Text style={[styles.chipText, inKind === "general" && styles.chipTextOn]}>General</Text>
+                  </Pressable>
+                  <Pressable testID="chip-cashin-capital" onPress={selectCapitalKind} style={[styles.chip, inKind === "capital" && styles.chipOn]}>
+                    <Text style={[styles.chipText, inKind === "capital" && styles.chipTextOn]}>Investor capital</Text>
+                  </Pressable>
+                </View>
+                {inKind === "capital" ? (
+                  loadingInvestors ? <ActivityIndicator size="small" color={theme.color.brandPrimary} />
+                  : investors && investors.length ? (
+                    <View style={styles.chipRow}>
+                      {investors.map((inv) => (
+                        <Pressable key={inv.id} testID={`chip-investor-${inv.id}`} onPress={() => setInvestorId(inv.id)} style={[styles.chip, investorId === inv.id && styles.chipOn]}>
+                          <Text style={[styles.chipText, investorId === inv.id && styles.chipTextOn]}>{inv.name}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : <Text style={styles.chipHint}>No investors yet — add one in Parties first.</Text>
+                ) : null}
+              </View>
+            ) : null}
             <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="Amount" placeholderTextColor={theme.color.muted} style={styles.input} />
             <TextInput value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
             <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (e.g. Owner deposit, petty cash)" placeholderTextColor={theme.color.muted} style={styles.input} />
@@ -283,6 +340,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   segBtnInActive: { backgroundColor: theme.color.success, borderColor: theme.color.success },
   segBtnOutActive: { backgroundColor: theme.color.warning, borderColor: theme.color.warning },
   segText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+  chipRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  chipLabel: { fontSize: 12, fontWeight: "600", color: theme.color.muted, marginRight: 2 },
+  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+  chipOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  chipText: { fontSize: 12, fontWeight: "600", color: theme.color.onSurface },
+  chipTextOn: { color: "#fff" },
+  chipHint: { fontSize: 12, color: theme.color.muted },
   input: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   formBtns: { flexDirection: "row", gap: 8, marginTop: 4 },
   formBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.radius.md, alignItems: "center" },
