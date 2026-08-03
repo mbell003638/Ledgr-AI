@@ -10,6 +10,7 @@ import { api } from '@/src/api';
 import { v2ReportsOrFallback } from '@/src/accountingV2/runtime';
 import { buildCustomReport, customReportText, CUSTOM_REPORT_FIELDS, type CustomReportField, type CustomReportGroup, type CustomReportSectionId } from '@/src/accountingV2/customReports';
 import { buildStatementDocument } from '@/src/utils/statementDocument';
+import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
 
 const SECTIONS = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Sales', 'Purchases', 'Receipts', 'Expenses', 'Inventory & COGS', 'Debtors', 'Creditors'] as const;
 const SECTION_IDS: Record<string, CustomReportSectionId> = { 'Trial Balance': 'trialBalance', 'Profit & Loss': 'profit', 'Balance Sheet': 'balanceSheet', Sales: 'sales', Purchases: 'purchases', Receipts: 'receipts', Expenses: 'expenses', 'Inventory & COGS': 'inventory', Debtors: 'debtors', Creditors: 'creditors' };
@@ -29,21 +30,30 @@ export default function CustomReportScreen() {
   const [landscape, setLandscape] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState('');
+  const [dateError, setDateError] = useState('');
   const toggle = (section: string) => setSelected((current) => current.includes(section) ? current.filter((value) => value !== section) : [...current, section]);
 
-  const loadLegacy = async (): Promise<LegacyReports> => {
+  const loadLegacy = async (fromIso: string, toIso: string): Promise<LegacyReports> => {
     const [pnl, balanceSheet, trialBalance, sales, receipts, debtors, creditors] = await Promise.all([
-      api.pnlRange(from, to), api.balanceSheet(), api.trialBalance(), api.salesRegister(from, to),
-      api.receiptsRegister(from, to), api.debtorsReport(from, to), api.creditorsReport(from, to),
+      api.pnlRange(fromIso, toIso), api.balanceSheet(), api.trialBalance(), api.salesRegister(fromIso, toIso),
+      api.receiptsRegister(fromIso, toIso), api.debtorsReport(fromIso, toIso), api.creditorsReport(fromIso, toIso),
     ]);
     return { pnl, balanceSheet, trialBalance, sales, receipts, debtors, creditors };
   };
 
   const generate = async (): Promise<string> => {
+    // Manual range inputs: normalize (Samsung minus signs, DD/MM, dots, exotic
+    // digits) then validate, reflecting the canonical form back into the fields.
+    const fromIso = normalizeDateInput(from);
+    if (!isValidDateString(fromIso)) { setDateError(`Couldn't read "${from.trim()}" as a date. Please use YYYY-MM-DD.`); return ''; }
+    const toIso = normalizeDateInput(to);
+    if (!isValidDateString(toIso)) { setDateError(`Couldn't read "${to.trim()}" as a date. Please use YYYY-MM-DD.`); return ''; }
+    setDateError('');
+    setFrom(fromIso); setTo(toIso);
     setBusy(true);
     try {
-      const result = await v2ReportsOrFallback({ from, to }, loadLegacy);
-      const lines = ['Ledgr Custom Report', `Period: ${from} to ${to}`, `Source: ${result.source === 'v2' ? 'V2 journal' : 'Legacy reports'}`, ''];
+      const result = await v2ReportsOrFallback({ from: fromIso, to: toIso }, () => loadLegacy(fromIso, toIso));
+      const lines = ['Ledgr Custom Report', `Period: ${fromIso} to ${toIso}`, `Source: ${result.source === 'v2' ? 'V2 journal' : 'Legacy reports'}`, ''];
       if (result.source === 'v2') {
         const output = buildCustomReport(result.report, { sections: selected.map((section) => SECTION_IDS[section]), fields, groupBy, sortBy: 'date', sortDirection: 'asc' });
         const text = customReportText(output);
@@ -80,12 +90,13 @@ export default function CustomReportScreen() {
 
   const pdf = async () => {
     const text = preview || await generate();
+    if (!text) return; // invalid range input — error already shown inline
     const settings: any = await api.getSettings().catch(() => ({}));
     const { uri } = await Print.printToFileAsync({ html: buildStyledHtml(text, String(settings.businessName || settings.name || 'Ledgr')) });
     if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Share Custom Report' });
   };
 
-  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} style={styles.input} placeholder="To YYYY-MM-DD"/></View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <><CustomReportPreview text={preview} styles={styles} theme={theme}/><View style={styles.actions}><Pressable onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF / Print</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.container}><View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface}/></Pressable><Text style={styles.title}>Custom Report</Text><View style={{ width: 26 }}/></View><ScrollView contentContainerStyle={styles.content}><Text style={styles.hint}>Financial statements use the persistent V2 journal when available, with automatic legacy fallback. Generate, print, or share through other apps.</Text><View style={styles.dates}><TextInput value={from} onChangeText={setFrom} onBlur={() => { if (from.trim()) setFrom(normalizeDateInput(from)); }} autoCapitalize="none" style={styles.input} placeholder="From YYYY-MM-DD"/><TextInput value={to} onChangeText={setTo} onBlur={() => { if (to.trim()) setTo(normalizeDateInput(to)); }} autoCapitalize="none" style={styles.input} placeholder="To YYYY-MM-DD"/>{dateError ? <Text style={{ color: theme.color.error, fontSize: 12 }}>{dateError}</Text> : null}</View><Text style={styles.section}>Include sections</Text><View style={styles.chips}>{SECTIONS.map((section) => <Pressable key={section} onPress={() => toggle(section)} style={[styles.chip, selected.includes(section) && styles.chipOn]}><Ionicons name={selected.includes(section) ? 'checkmark-circle' : 'ellipse-outline'} size={17} color={selected.includes(section) ? '#fff' : theme.color.muted}/><Text style={[styles.chipText, selected.includes(section) && { color: '#fff' }]}>{section}</Text></Pressable>)}</View><Text style={styles.section}>Fields</Text><View style={styles.chips}>{CUSTOM_REPORT_FIELDS.map((field) => <Pressable key={field} onPress={() => setFields((current) => current.includes(field) ? current.filter((value) => value !== field) : [...current, field])} style={[styles.chip, fields.includes(field) && styles.chipOn]}><Text style={[styles.chipText, fields.includes(field) && { color: '#fff' }]}>{FIELD_LABELS[field]}</Text></Pressable>)}</View><Text style={styles.section}>Group by</Text><View style={styles.chips}>{(['none', 'day', 'month', 'account', 'party'] as CustomReportGroup[]).map((group) => <Pressable key={group} onPress={() => setGroupBy(group)} style={[styles.chip, groupBy === group && styles.chipOn]}><Text style={[styles.chipText, groupBy === group && { color: '#fff' }]}>{group === 'none' ? 'No grouping' : group}</Text></Pressable>)}</View><Text style={styles.section}>PDF orientation</Text><View style={styles.chips}>{[false, true].map((wide) => <Pressable key={String(wide)} onPress={() => setLandscape(wide)} style={[styles.chip, landscape === wide && styles.chipOn]}><Text style={[styles.chipText, landscape === wide && { color: '#fff' }]}>{wide ? 'Landscape' : 'Portrait'}</Text></Pressable>)}</View><Pressable onPress={generate} style={styles.primary}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={styles.primaryText}>Generate Preview</Text>}</Pressable>{preview ? <><CustomReportPreview text={preview} styles={styles} theme={theme}/><View style={styles.actions}><Pressable onPress={() => Share.share({ message: preview, title: 'Ledgr Custom Report' })} style={styles.secondary}><Ionicons name="share-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>Share text</Text></Pressable><Pressable onPress={pdf} style={styles.secondary}><Ionicons name="document-outline" size={18} color={theme.color.brandPrimary}/><Text style={styles.secondaryText}>PDF / Print</Text></Pressable></View></> : null}</ScrollView></SafeAreaView>;
 }
 
 function CustomReportPreview({ text, styles, theme }: { text: string; styles: any; theme: any }) {
