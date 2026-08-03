@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -294,12 +294,24 @@ export default function SettingsScreen() {
     }
   };
 
+  // ~150KB cap on the encoded logo — see advanced-settings.tsx / [H4].
+  const LOGO_MAX_BYTES = 150 * 1024;
   const pickLogo = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setStatus({ ok: false, msg: "Gallery permission denied" }); return; }
     const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1] });
     if (res.canceled || !res.assets[0].base64) return;
-    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${res.assets[0].base64}`);
+    const base64 = res.assets[0].base64;
+    const approxBytes = Math.floor((base64.length * 3) / 4);
+    if (approxBytes > LOGO_MAX_BYTES) {
+      Alert.alert(
+        "Logo too large",
+        `This image is about ${Math.round(approxBytes / 1024)}KB. Please pick a smaller logo (under ${Math.round(LOGO_MAX_BYTES / 1024)}KB) — a tightly cropped square works best.`,
+        [{ text: "Pick another", onPress: () => { void pickLogo(); } }, { text: "Cancel", style: "cancel" }],
+      );
+      return;
+    }
+    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${base64}`);
   };
 
   const testKey = async () => {
@@ -327,7 +339,12 @@ export default function SettingsScreen() {
   const doExport = async () => {
     setBusy("export"); setStatus(null);
     try {
-      const data = await api.exportBackup();
+      const full: any = await api.exportBackup();
+      const { warnings, ...data } = full; // warnings are for the UI, not the file
+      const warns: string[] = Array.isArray(warnings) ? warnings : [];
+      if (warns.length) {
+        Alert.alert("Heads up before exporting", warns.join("\n\n"));
+      }
       const stamp = new Date().toISOString().slice(0, 10);
       await shareJsonFile(`ledgr-backup-${stamp}.json`, data);
       setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
@@ -339,13 +356,23 @@ export default function SettingsScreen() {
   const doImport = async () => {
     setBusy("import"); setStatus(null);
     try {
-      const data = await pickJsonFile();
-      if (!data) { setBusy(null); return; }
-      if (!data._meta || data._meta.app !== "ledgr") {
+      const picked = await pickJsonFile();
+      if (!picked.ok) {
+        if (picked.reason === "invalid") {
+          setStatus({ ok: false, msg: "Backup file is unreadable or corrupted." });
+        }
+        setBusy(null); return;
+      }
+      const data = picked.data;
+      if (!data || !data._meta || data._meta.app !== "ledgr") {
         setStatus({ ok: false, msg: "Not a Ledgr backup file." });
         setBusy(null); return;
       }
-      await api.importBackup({ ...data, mode: "replace" });
+      const result: any = await api.importBackup({ ...data, mode: "replace" });
+      const warn: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
+      if (warn.length) {
+        Alert.alert("Restore complete — please review", warn.join("\n\n"));
+      }
       setStatus({ ok: true, msg: "Data restored! Restart or pull-to-refresh." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Import failed" });
