@@ -1,4 +1,4 @@
-import { localTodayIso, isValidDateString } from '../src/utils/dateValidation';
+import { localTodayIso, isValidDateString, normalizeDateInput } from '../src/utils/dateValidation';
 
 describe('localTodayIso', () => {
   it('returns a string in YYYY-MM-DD format', () => {
@@ -74,5 +74,53 @@ describe('localTodayIso', () => {
       // inequality direction (local >= utcSlice), never a hard mismatch.
       expect(local >= utcSlice).toBe(true);
     });
+  });
+});
+
+describe('normalizeDateInput', () => {
+  it('passes through an already-canonical YYYY-MM-DD', () => {
+    expect(normalizeDateInput('2026-08-03')).toBe('2026-08-03');
+  });
+
+  it('trims leading/trailing whitespace (incl. NBSP)', () => {
+    expect(normalizeDateInput(' 2026-08-03 ')).toBe('2026-08-03');
+    // U+00A0 non-breaking space + U+202F narrow NBSP (Android autofill / paste).
+    expect(normalizeDateInput(' 2026-08-03 ')).toBe('2026-08-03');
+  });
+
+  it('zero-pads single-digit month/day (year-first)', () => {
+    expect(normalizeDateInput('2026-8-3')).toBe('2026-08-03');
+    expect(normalizeDateInput('2026/8/3')).toBe('2026-08-03');
+  });
+
+  it('accepts day-first DD/MM/YYYY and D-M-YYYY (year last)', () => {
+    expect(normalizeDateInput('03/08/2026')).toBe('2026-08-03');
+    expect(normalizeDateInput('3-8-2026')).toBe('2026-08-03');
+    expect(normalizeDateInput('3.8.2026')).toBe('2026-08-03');
+  });
+
+  it('folds non-ASCII (Arabic-Indic / fullwidth) digits to ASCII', () => {
+    // Arabic-Indic ٢٠٢٦-٠٨-٠٣
+    expect(normalizeDateInput('٢٠٢٦-٠٨-٠٣')).toBe('2026-08-03');
+    // Fullwidth ２０２６-０８-０３
+    expect(normalizeDateInput('２０２６-０８-０３')).toBe('2026-08-03');
+  });
+
+  it('leaves genuine junk unchanged (still rejected by isValidDateString)', () => {
+    for (const junk of ['not a date', '2026', 'xx-yy-zz', '2026-13-40', '2026-02-31', '']) {
+      const out = normalizeDateInput(junk);
+      expect(isValidDateString(out)).toBe(false);
+    }
+  });
+
+  it('normalized output round-trips through isValidDateString', () => {
+    for (const raw of ['2026-08-03', ' 2026-8-3 ', '03/08/2026', '3-8-2026']) {
+      expect(isValidDateString(normalizeDateInput(raw))).toBe(true);
+    }
+  });
+
+  it('handles null/undefined defensively', () => {
+    expect(normalizeDateInput(null)).toBe('');
+    expect(normalizeDateInput(undefined)).toBe('');
   });
 });
