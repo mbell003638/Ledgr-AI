@@ -279,6 +279,13 @@ export default function AskBooks() {
             >
               <Ionicons name="image-outline" size={24} color={theme.color.muted} />
             </Pressable>
+            <Pressable
+              testID="btn-scan-import"
+              style={styles.attachBtn}
+              onPress={() => router.push("/scan-import")}
+            >
+              <Ionicons name="scan-outline" size={24} color={theme.color.muted} />
+            </Pressable>
             {Platform.OS === 'web' && (
               <style>{`
                 textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
