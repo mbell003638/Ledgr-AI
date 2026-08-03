@@ -118,6 +118,7 @@ function ThemedStack() {
         <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
         <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
         <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
+        <Stack.Screen name="scan-import" options={{ presentation: "card" }} />
         <Stack.Screen name="invoices" options={{ presentation: "card" }} />
         <Stack.Screen name="quotes" options={{ presentation: "card" }} />
         <Stack.Screen name="delivery-notes" options={{ presentation: "card" }} />
