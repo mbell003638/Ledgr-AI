@@ -11,6 +11,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string; origin?: "manual" | "v2"; editable?: boolean };
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -73,17 +74,19 @@ export default function CashBookScreen() {
   const saveOpeningCash = async () => {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(openingDate.trim())) { Alert.alert("Invalid", "Use an opening date in YYYY-MM-DD format."); return; }
+    const openingIso = normalizeDateInput(openingDate);
+    if (!isValidDateString(openingIso)) { Alert.alert("Invalid", `Couldn't read "${openingDate.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setOpeningDate(openingIso); // reflect the canonical form in the field
     try {
       // Post to the authoritative V2 journal before mirroring the value into legacy settings.
       // This prevents the display setting from changing if the accounting period is locked.
       const settings = await api.getSettings();
       try {
-        await api.updateV2OpeningBalances({ date: openingDate.trim(), cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: openingIso, cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
       } catch (e: any) {
         if (!/requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({ openingCash: val, currentPeriodStart: openingDate.trim() });
+      await api.updateSettings({ openingCash: val, currentPeriodStart: openingIso });
       setOpeningCash(val);
       setEditingOpening(false);
       load();
@@ -106,10 +109,12 @@ export default function CashBookScreen() {
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert("Invalid", "Enter a valid amount greater than zero."); return; }
-    if (!date.trim()) { Alert.alert("Invalid", "Enter a date (YYYY-MM-DD)."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { Alert.alert("Invalid", `Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setDate(dateIso); // reflect the canonical form in the field
     setSaving(true);
     try {
-      const payload = { amount: amt, direction, date: date.trim(), notes: notes.trim() };
+      const payload = { amount: amt, direction, date: dateIso, notes: notes.trim() };
       if (editId) await api.updateCashEntry(editId, payload);
       else await api.createCashEntry(payload);
       resetForm();
@@ -165,7 +170,7 @@ export default function CashBookScreen() {
           <View style={{ gap: 6, alignItems: "flex-end" }}>
             <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
             <View style={{ flexDirection: "row", gap: 6 }}>
-              <TextInput value={openingDate} onChangeText={setOpeningDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
+              <TextInput value={openingDate} onChangeText={setOpeningDate} onBlur={() => { if (openingDate.trim()) setOpeningDate(normalizeDateInput(openingDate)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
               <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
             </View>
           </View>
@@ -186,7 +191,7 @@ export default function CashBookScreen() {
               </Pressable>
             </View>
             <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="Amount" placeholderTextColor={theme.color.muted} style={styles.input} />
-            <TextInput value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <TextInput value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
             <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (e.g. Owner deposit, petty cash)" placeholderTextColor={theme.color.muted} style={styles.input} />
             <View style={styles.formBtns}>
               <Pressable onPress={resetForm} style={[styles.formBtn, styles.cancelBtn]}><Text style={styles.cancelText}>Cancel</Text></Pressable>
