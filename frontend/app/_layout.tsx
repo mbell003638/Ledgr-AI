@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable } from "react-native";
+import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable, InteractionManager } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -233,8 +233,13 @@ export default function RootLayout() {
       });
 
     if (Platform.OS !== "web") {
-      ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
-      ImagePicker.requestCameraPermissionsAsync().catch(() => {});
+      // Defer permission prompts off the first frames: requesting camera/media
+      // access competes with startup work and can stall the initial render on
+      // low-end Android. They are non-blocking best-effort either way.
+      InteractionManager.runAfterInteractions(() => {
+        ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
+        ImagePicker.requestCameraPermissionsAsync().catch(() => {});
+      });
     }
 
     return () => {
