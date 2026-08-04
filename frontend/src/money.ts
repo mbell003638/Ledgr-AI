@@ -18,6 +18,27 @@
  *   pctOf(a, pct)       -> a * pct%, rounded to the nearest cent
  */
 
+/**
+ * Parse a user-entered money amount, accepting grouping commas, spaces and
+ * locale-style decimal commas commonly produced by mobile keyboards.
+ */
+export function parseMoneyInput(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  let text = String(value ?? '').trim().replace(/[\s\u00A0\u202F]/g, '');
+  if (!text) return NaN;
+  text = text.replace(/[^0-9,\.\-+]/g, '');
+  if (!/\d/.test(text)) return NaN;
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    text = comma > dot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (comma >= 0) {
+    const fractionalDigits = text.length - comma - 1;
+    text = fractionalDigits > 0 && fractionalDigits <= 2 ? text.replace(',', '.') : text.replace(/,/g, '');
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
 /** Coerce any value to a finite number, defaulting to 0. */
 export function num(v: any): number {
   const n = Number(v);

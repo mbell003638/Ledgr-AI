@@ -80,7 +80,7 @@ export async function resetV2AccountingData(db: SqlRunner, bookId: string, perio
     await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_sources WHERE book_id=?', [bookId]);
-    await db.run('UPDATE v2_members SET opening_contribution=0,current_capital=0 WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_members WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_parties WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_periods WHERE book_id=?', [bookId]);
     await db.run(

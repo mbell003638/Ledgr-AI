@@ -449,7 +449,7 @@ export const api = {
     bumpDataVersion();
     return r;
   },
-  createManualLiability: async (input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense'; notes?: string }) => {
+  createManualLiability: async (input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense' | 'creditor'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual liability transactions require SQLite storage');
     const r = await new V2AppService(runner).recordManualLiability(input);
@@ -834,8 +834,8 @@ export const api = {
       if (ctx) {
         const d = await getV2Dashboard(runner, ctx.bookId);
         return {
-          assets: { cash: d.cash, inventory: d.inventoryValue, total: d.assets },
-          liabilities: { suppliersPayable: d.liabilities, total: d.liabilities },
+          assets: { cash: d.cash, inventory: d.inventoryValue, accountsReceivable: d.accountsReceivable, other: d.otherAssets, total: d.assets },
+          liabilities: { suppliersPayable: d.accountsPayable, commissionPayable: d.commissionPayable, other: d.otherLiabilities, total: d.liabilities },
           equity: d.netWorth,
         };
       }

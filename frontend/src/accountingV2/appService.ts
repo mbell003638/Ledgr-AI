@@ -412,7 +412,7 @@ export class V2AppService {
   }
 
   /** Record a dated non-trading liability. Supplier dues belong in vendor bills, not here. */
-  async recordManualLiability(input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense'; notes?: string }) {
+  async recordManualLiability(input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense' | 'creditor'; notes?: string }) {
     const context = await this.activeContext(input.date);
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     const value = cents(input.amount);
@@ -422,6 +422,7 @@ export class V2AppService {
     const debitCode = input.recognition === 'bank' ? V2_ACCOUNT_CODES.BANK
       : input.recognition === 'asset' ? V2_ACCOUNT_CODES.OTHER_ASSETS
       : input.recognition === 'expense' ? V2_ACCOUNT_CODES.EXPENSES
+      : input.recognition === 'creditor' ? V2_ACCOUNT_CODES.INVENTORY
       : V2_ACCOUNT_CODES.CASH;
     const source: any = {
       id: `manual_liability_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -435,7 +436,7 @@ export class V2AppService {
       memo: `Liability: ${name}`,
       lines: [
         { accountId: `${context.bookId}:account:${debitCode}`, debit: value, credit: 0, memo: input.notes || name },
-        { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.OTHER_LIABILITIES}`, debit: 0, credit: value, memo: name },
+        { accountId: `${context.bookId}:account:${(input.recognition === 'creditor' ? V2_ACCOUNT_CODES.AP : V2_ACCOUNT_CODES.OTHER_LIABILITIES)}`, debit: 0, credit: value, memo: name },
       ],
     });
     return { source, journal };

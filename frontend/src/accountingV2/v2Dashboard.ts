@@ -98,7 +98,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
     netWorth,
     cash,
     inventoryValue,
-    accountsReceivable, otherAssets, otherLiabilities,
+    accountsReceivable, accountsPayable, commissionPayable, otherAssets, otherLiabilities,
     openingBalance: opening.assets,
     openingInventory: opening.inventory,
     openingCash: opening.cash,

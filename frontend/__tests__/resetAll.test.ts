@@ -24,7 +24,7 @@ beforeEach(() => { for (const key of Object.keys(mem)) delete mem[key]; });
 afterEach(async () => { await setActiveBook('default'); });
 
 describe('legacy ledger reset', () => {
-  it('clears entries but preserves business identity, onboarding, theme, and partnership configuration', async () => {
+  it('clears entries and investor accounting data while preserving business identity, onboarding, theme, and style configuration', async () => {
     await updateSettings({
       businessName: 'Test Business',
       hasOnboarded: true,
@@ -45,8 +45,8 @@ describe('legacy ledger reset', () => {
       themeMode: 'amoled_blue',
       accountingStyle: 'retail_partnership',
       selectedPersonas: ['retail'],
-      partnerNames: ['Amit'],
-      investors: [{ id: 'amit', name: 'Amit', amount: 0, openingCapital: 0, currentCapital: 0, profitSharePct: 100 }],
+      partnerNames: [],
+      investors: [],
     });
   });
 });

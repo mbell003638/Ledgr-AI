@@ -12,6 +12,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { parseMoneyInput } from "@/src/money";
 import { collapseLedgerRows, describeSourceNavigation, formatEditedStamp, type DisplayLedgerRow, type LedgerRow } from "@/src/utils/ledgerDisplay";
 
 type CashEntry = LedgerRow;
@@ -150,7 +151,7 @@ export default function CashBookScreen() {
   };
 
   const save = async () => {
-    const amt = parseFloat(amount);
+    const amt = parseMoneyInput(amount);
     if (!amt || amt <= 0) { Alert.alert("Invalid", "Enter a valid amount greater than zero."); return; }
     const dateIso = normalizeDateInput(date);
     if (!isValidDateString(dateIso)) { Alert.alert("Invalid", `Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }

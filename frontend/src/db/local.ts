@@ -1632,10 +1632,8 @@ export async function resetAll() {
     openingCapital: 0,
     extraAssets: [],
     extraLiabilities: [],
-    investors: Array.isArray(s.investors)
-      ? s.investors.map((investor: any) => ({ ...investor, amount: 0, openingCapital: 0, currentCapital: 0 }))
-      : [],
-    partnerNames: Array.isArray(s.partnerNames) ? s.partnerNames : [],
+    investors: [],
+    partnerNames: [],
   });
   return { ok: true };
 }

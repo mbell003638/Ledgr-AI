@@ -11,6 +11,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { parseMoneyInput } from "@/src/money";
 
 type EntryMode = "asset" | "liability";
 type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
@@ -22,7 +23,7 @@ const assetFunding = [
 ] as const;
 const liabilityRecognition = [
   { id: "cash", label: "Cash received" }, { id: "bank", label: "Bank received" },
-  { id: "asset", label: "Asset acquired" }, { id: "expense", label: "Expense accrued" },
+  { id: "asset", label: "Asset acquired" }, { id: "expense", label: "Expense accrued" }, { id: "creditor", label: "Creditor / supplier due" },
 ] as const;
 
 export default function AssetsScreen() {
@@ -30,6 +31,7 @@ export default function AssetsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState<EntryMode>("asset");
   const [entries, setEntries] = useState<BalanceEntry[]>([]);
+  const [creditorsTotal, setCreditorsTotal] = useState(0);
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,9 +47,10 @@ export default function AssetsScreen() {
   const load = useCallback(async () => {
     try {
       setError("");
-      const [settings, rows] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions()]);
+      const [settings, rows, dashboard] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions(), api.dashboard()]);
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
       setEntries(rows as BalanceEntry[]);
+      setCreditorsTotal(Number((dashboard as any)?.accountsPayable || 0));
       loadedVersion.current = getDataVersion();
     } catch (e: any) {
       setError(e?.message || "Could not load balance transactions.");
@@ -66,7 +69,7 @@ export default function AssetsScreen() {
   };
 
   const save = async () => {
-    const value = Number(amount);
+    const value = parseMoneyInput(amount);
     const dateIso = normalizeDateInput(date);
     if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
     setDate(dateIso); // reflect the canonical form in the field
@@ -135,6 +138,7 @@ export default function AssetsScreen() {
         </Card>
 
         <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
+        <BalanceSummary title="Creditors / Supplier Payable" amount={creditorsTotal} currSym={currSym} styles={styles} theme={theme} />
         <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={totalLiabilities} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
         <View style={{ height: 120 }} />
       </ScrollView>
@@ -142,6 +146,13 @@ export default function AssetsScreen() {
   );
 }
 
+function BalanceSummary({ title, amount, currSym, styles, theme }: { title: string; amount: number; currSym: string; styles: any; theme: any }) {
+  return <Card style={styles.listCard}>
+    <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name="people-outline" size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>
+    <Text style={styles.entryMeta}>Vendor bills and creditor entries still owed</Text>
+    <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{fmt(amount, currSym)}</Text></View>
+  </Card>;
+}
 function BalanceList({ title, icon, entries, total, currSym, styles, onDelete, theme }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onDelete: (entry: BalanceEntry) => void; theme: any }) {
   return <Card style={styles.listCard}>
     <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name={icon} size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>

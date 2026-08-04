@@ -8,6 +8,7 @@ import {
   subMoney,
   mulMoney,
   pctOf,
+  parseMoneyInput,
 } from '../src/money';
 
 describe('toCents() / fromCents()', () => {
@@ -83,6 +84,15 @@ describe('pctOf() — commission & tax', () => {
   it('handles 0% and junk', () => {
     expect(pctOf(500, 0)).toBe(0);
     expect(pctOf(500, 'x' as any)).toBe(0);
+  });
+});
+
+describe('parseMoneyInput()', () => {
+  it('accepts mobile-friendly grouping and decimal formats', () => {
+    expect(parseMoneyInput('36,215.42')).toBe(36215.42);
+    expect(parseMoneyInput('36 215,42')).toBe(36215.42);
+    expect(parseMoneyInput('  $750.00 ')).toBe(750);
+    expect(Number.isNaN(parseMoneyInput('not money'))).toBe(true);
   });
 });
 

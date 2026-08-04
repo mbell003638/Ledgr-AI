@@ -24,9 +24,7 @@ describe('V2 accounting reset', () => {
       });
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_accounts WHERE book_id=?', ['reset-book']))?.n)).toBeGreaterThan(0);
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_personas WHERE book_id=?', ['reset-book']))?.n)).toBe(2);
-      expect(await runner.first('SELECT opening_contribution,current_capital,profit_share_pct FROM v2_members WHERE book_id=?', ['reset-book'])).toEqual({
-        opening_contribution: 0, current_capital: 0, profit_share_pct: 50,
-      });
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_members WHERE book_id=?', ['reset-book']))?.n)).toBe(0);
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', ['reset-book']))?.n)).toBe(0);
       expect(await service.activeContext('2026-08-01')).toEqual({
         bookId: 'reset-book', periodId: 'reset-book:period:2026-07-31',

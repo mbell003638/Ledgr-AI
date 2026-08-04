@@ -256,4 +256,22 @@ describe('V2 application write integration', () => {
       await expect(service.inventoryOverview()).resolves.toMatchObject({ history: [] });
     } finally { close(); }
   });
-});
+
+  it('posts assets and creditors with correct cash and balance-sheet treatment', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.recordManualAsset({ date: '2026-07-10', name: 'Security deposit', amount: 750, funding: 'cash' });
+      await service.recordManualLiability({ date: '2026-07-11', name: 'Creditors', amount: 36215.42, recognition: 'creditor' });
+      expect(await runner.all("SELECT a.code,l.debit,l.credit FROM v2_journal_lines l JOIN v2_accounts a ON a.id=l.account_id WHERE l.journal_id IN (SELECT id FROM v2_journal_entries WHERE source_id LIKE 'manual_%') ORDER BY a.code")).toEqual([
+        { code: '1000', debit: 0, credit: 750 },
+        { code: '1200', debit: 36215.42, credit: 0 },
+        { code: '1500', debit: 750, credit: 0 },
+        { code: '2000', debit: 0, credit: 36215.42 },
+      ]);
+      const { getV2Dashboard } = await import('../src/accountingV2/v2Dashboard');
+      const dashboard = await getV2Dashboard(runner, 'active-v2');
+      expect(dashboard.accountsPayable).toBe(36215.42);
+      expect(dashboard.otherAssets).toBe(750);
+      expect(dashboard.netWorth).toBe(0);
+    } finally { close(); }
+  });});
