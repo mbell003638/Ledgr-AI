@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Ledgr",
+    "name": "Ledgr Codex",
     "slug": "ledgr-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -23,7 +23,7 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ahem.ledgrai",
+      "package": "com.ahem.ledgrai.codexsol",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
