@@ -138,10 +138,11 @@ export default function InvestorDetailScreen() {
       )}
 
       <Modal visible={action !== null} transparent animationType={Platform.OS === 'web' ? 'fade' : 'slide'} onRequestClose={closeForm}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
           <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            {action ? <>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+              <View style={styles.sheetHandle} />
+              {action ? <>
               <View style={styles.sheetTitleRow}>
                 <View style={styles.sheetIcon}><Ionicons name={actionMeta[action].icon} size={22} color={theme.color.brandPrimary} /></View>
                 <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
@@ -157,7 +158,8 @@ export default function InvestorDetailScreen() {
                 primaryBusy={saving}
                 error={formError}
               />
-            </> : null}
+              </> : null}
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -214,7 +216,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   txNote: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
   txAmount: { fontSize: 13, fontWeight: '800' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.56)' },
-  sheet: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.sheet, borderTopRightRadius: theme.radius.sheet, padding: 22, paddingBottom: Platform.OS === 'ios' ? 38 : 24, borderWidth: 1, borderColor: theme.color.border },
+  sheet: { maxHeight: '88%', backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.sheet, borderTopRightRadius: theme.radius.sheet, padding: 22, paddingBottom: Platform.OS === 'ios' ? 38 : 24, borderWidth: 1, borderColor: theme.color.border },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: theme.color.borderStrong, alignSelf: 'center', marginBottom: 18 },
   sheetTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 18 },
   sheetIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.color.brandPrimary + '18', alignItems: 'center', justifyContent: 'center' },

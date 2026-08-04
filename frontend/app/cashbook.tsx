@@ -233,7 +233,7 @@ export default function CashBookScreen() {
       </View>
 
       {formOpen && (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={styles.form}>
             <View style={styles.segRow}>
               <Pressable onPress={() => setDirection("in")} style={[styles.segBtn, direction === "in" && styles.segBtnInActive]}>

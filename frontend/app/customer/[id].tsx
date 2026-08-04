@@ -366,6 +366,7 @@ export default function CustomerDetailScreen() {
       {/* Note Modal */}
       {noteKind ? (
         <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 }}>
             <View style={{ backgroundColor: theme.color.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: theme.color.border }}>
               <Text style={{ fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: 12 }}>
@@ -397,6 +398,7 @@ export default function CustomerDetailScreen() {
               </View>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
       ) : null}
     </SafeAreaView>

@@ -185,6 +185,23 @@ describe('V2 UI contracts', () => {
     expect(assets).toContain('Cash received (loan)');
     expect(settings).toContain('borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border');
   });
+  it('input forms keep their fields reachable above the mobile keyboard', () => {
+    const investor = readApp('investor/[id].tsx');
+    const openingBalances = readSource('src/components/OpeningBalancesModal.tsx');
+    const cashbook = readApp('cashbook.tsx');
+    const customer = readApp('customer/[id].tsx');
+    const supplier = readApp('supplier/[id].tsx');
+
+    expect(investor).toContain("behavior={Platform.OS === 'ios' ? 'padding' : 'height'}");
+    expect(investor).toContain('keyboardShouldPersistTaps="handled"');
+    expect(investor).toContain("maxHeight: '88%'");
+    expect(openingBalances).toContain('KeyboardAvoidingView');
+    expect(openingBalances).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(openingBalances).toContain('keyboardShouldPersistTaps="handled"');
+    expect(cashbook).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(customer).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(supplier).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+  });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');

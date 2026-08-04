@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput, KeyboardAvoidingView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
@@ -392,6 +392,7 @@ export default function SupplierDetail() {
       {/* Note Modal */}
       {noteKind ? (
         <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <View style={styles.modalBg}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>{noteKind === "credit" ? "Credit" : "Debit"} Note for {data.name}</Text>
@@ -428,6 +429,7 @@ export default function SupplierDetail() {
               </View>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
       ) : null}
     </SafeAreaView>

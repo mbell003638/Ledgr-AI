@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, Modal, Platform, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, Modal, Platform, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -136,6 +136,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
 
   return (
     <Modal visible={visible} transparent animationType={Platform.OS === "web" ? "fade" : "slide"} onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <View style={styles.overlay}>
         <View style={styles.modalBox}>
           <View style={styles.header}>
@@ -153,7 +154,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
           {loading ? (
             <ActivityIndicator style={{ marginVertical: 30 }} color={theme.color.brandPrimary} />
           ) : (
-            <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
               {!isInvestorOnly ? (
                 <>
                   <Text style={styles.label}>Opening Cash Balance ($)</Text>
@@ -255,6 +256,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -262,7 +264,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
 function makeStyles(theme: any) {
   return StyleSheet.create({
     overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 16 },
-    modalBox: { width: "100%", maxWidth: 440, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, padding: 20, borderWidth: 1, borderColor: theme.color.border },
+    modalBox: { width: "100%", maxWidth: 440, maxHeight: "88%", backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg, padding: 20, borderWidth: 1, borderColor: theme.color.border },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 },
     title: { fontSize: 18, fontWeight: "700", color: theme.color.onSurface },
     subtitle: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
