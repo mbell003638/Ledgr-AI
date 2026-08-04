@@ -22,8 +22,8 @@ const assetFunding = [
   { id: "capital", label: "Owner Capital" }, { id: "liability", label: "Credit / Loan" },
 ] as const;
 const liabilityRecognition = [
-  { id: "cash", label: "Cash received" }, { id: "bank", label: "Bank received" },
-  { id: "asset", label: "Asset acquired" }, { id: "expense", label: "Expense accrued" }, { id: "creditor", label: "Creditor / supplier due" },
+  { id: "expense", label: "Due / accrued expense" }, { id: "creditor", label: "Creditor / supplier due" },
+  { id: "asset", label: "Asset acquired on credit" }, { id: "cash", label: "Cash received (loan)" }, { id: "bank", label: "Bank received (loan)" },
 ] as const;
 
 export default function AssetsScreen() {
@@ -42,7 +42,7 @@ export default function AssetsScreen() {
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [funding, setFunding] = useState<(typeof assetFunding)[number]["id"]>("cash");
-  const [recognition, setRecognition] = useState<(typeof liabilityRecognition)[number]["id"]>("cash");
+  const [recognition, setRecognition] = useState<(typeof liabilityRecognition)[number]["id"]>("expense");
 
   const load = useCallback(async () => {
     try {
@@ -120,7 +120,7 @@ export default function AssetsScreen() {
         <Card>
           <View style={styles.formTitleRow}>
             <View style={styles.formIcon}><Ionicons name={isAsset ? "business-outline" : "document-text-outline"} size={19} color={theme.color.brandPrimary} /></View>
-            <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "Credit liability; debit the selected recognition account."}</Text></View>
+            <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "A liability is normally due, not cash received; choose what created the obligation."}</Text></View>
           </View>
           <FormField label="Transaction date" first value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} placeholder="YYYY-MM-DD" />
           <FormField label={isAsset ? "Asset name" : "Liability name"} value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} />

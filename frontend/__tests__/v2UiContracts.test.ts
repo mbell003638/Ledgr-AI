@@ -177,6 +177,14 @@ describe('V2 UI contracts', () => {
     expect(kpi).toContain('haptic');
   });
 
+  it('liability defaults to due/accrued treatment and static mode removes the customization accent', () => {
+    const assets = readApp('assets.tsx');
+    const settings = readApp('(tabs)/settings.tsx');
+    expect(assets).toContain('useState<(typeof liabilityRecognition)[number]["id"]>("expense")');
+    expect(assets).toContain('Due / accrued expense');
+    expect(assets).toContain('Cash received (loan)');
+    expect(settings).toContain('borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border');
+  });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');
