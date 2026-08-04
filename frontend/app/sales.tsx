@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { useScreenData } from "@/src/hooks/useScreenData";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
@@ -14,31 +15,65 @@ import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 
+type SalesData = { sales: any[]; currSym: string };
+
+const SaleRow = React.memo(function SaleRow({
+  item, currSym, styles, onPress,
+}: {
+  item: any; currSym: string; styles: any; onPress: (item: any) => void;
+}) {
+  const isCredit = item.type === "invoice" || item.clientName || item.partyId || (item.notes && item.notes.toLowerCase().includes("credit sale"));
+  const partyLabel = item.clientName || item.partyId || "";
+  const defaultSub = isCredit
+    ? `Credit Sale${partyLabel ? ` (${partyLabel})` : ""}`
+    : "Cash Sale";
+  const displaySub = item.notes && item.notes.trim() ? item.notes.trim() : defaultSub;
+  return (
+    <GlowPressable
+      testID={`sale-${item.id}`}
+      onPress={() => onPress(item)}
+      haptic
+      topHighlight={false}
+      restingBorderColor={styles.card.borderColor}
+      style={styles.card}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
+        <Text style={styles.cardSub}>{displaySub}</Text>
+      </View>
+      <Text style={styles.amount}>{fmt(item.amount, currSym)}</Text>
+    </GlowPressable>
+  );
+});
+
 export default function SalesScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const [sales, setSales] = useState<any[]>([]);
-  const [currSym, setCurrSym] = useState("$");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [s, settings] = await Promise.all([api.listSalesAndInvoices(), api.getSettings()]);
-      setSales([...s].sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0)));
-      setCurrSym(getCurrencySymbol(settings.currency || "USD"));
-    } catch (e) {
-      console.warn(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const loader = useCallback(async (): Promise<SalesData> => {
+    const [s, settings] = await Promise.all([api.listSalesAndInvoices(), api.getSettings()]);
+    const sorted = [...s].sort((a: any, b: any) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+    return { sales: sorted, currSym: getCurrencySymbol(settings.currency || "USD") };
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { data, loading, refreshing, reload, refresh } = useScreenData<SalesData>(
+    `sales:${api.activeBookId()}`,
+    loader,
+  );
+  const sales = data?.sales ?? [];
+  const currSym = data?.currSym ?? "$";
+  const load = reload;
+
+  const onRowPress = useCallback((item: any) => setSelected(item), []);
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => (
+      <SaleRow item={item} currSym={currSym} styles={styles} onPress={onRowPress} />
+    ),
+    [currSym, styles, onRowPress],
+  );
 
   const total = sales.reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
 
@@ -140,7 +175,7 @@ export default function SalesScreen() {
           data={sales}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="trending-up-outline" size={40} color={theme.color.muted} />}
@@ -148,31 +183,10 @@ export default function SalesScreen() {
               hint="Tap the + button to log a daily sale."
             />
           }
-          renderItem={({ item }) => {
-            const isCredit = item.type === "invoice" || item.clientName || item.partyId || (item.notes && item.notes.toLowerCase().includes("credit sale"));
-            const partyLabel = item.clientName || item.partyId || "";
-            const defaultSub = isCredit
-              ? `Credit Sale${partyLabel ? ` (${partyLabel})` : ""}`
-              : "Cash Sale";
-            const displaySub = item.notes && item.notes.trim() ? item.notes.trim() : defaultSub;
-
-            return (
-              <GlowPressable
-                testID={`sale-${item.id}`}
-                onPress={() => setSelected(item)}
-                haptic
-                topHighlight={false}
-                restingBorderColor={theme.color.border}
-                style={styles.card}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
-                  <Text style={styles.cardSub}>{displaySub}</Text>
-                </View>
-                <Text style={styles.amount}>{fmt(item.amount, currSym)}</Text>
-              </GlowPressable>
-            );
-          }}
+          initialNumToRender={12}
+          windowSize={7}
+          removeClippedSubviews
+          renderItem={renderItem}
         />
       )}
     </SafeAreaView>

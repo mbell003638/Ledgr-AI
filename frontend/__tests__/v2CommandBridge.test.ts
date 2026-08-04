@@ -51,7 +51,7 @@ describe('validated V2 AI/voice command bridge', () => {
         intent: 'inventory_profit', from: '2026-01-01', to: '2026-12-31',
       }, false, { service });
       expect(report.executed).toBe(true);
-      expect(report.result).toEqual({ revenue: 50, expenses: 0, netProfit: 50 });
+      expect(report.result).toEqual({ revenue: 50, cogs: 0, grossProfit: 50, expenses: 0, netProfit: 50 });
       expect(party.result).toEqual([expect.objectContaining({ id: 'acme', name: 'Acme Ltd' })]);
       expect(inventory.result).toEqual(expect.objectContaining({ revenue: 50, expenses: 0, netProfit: 50 }));
     } finally { close(); }

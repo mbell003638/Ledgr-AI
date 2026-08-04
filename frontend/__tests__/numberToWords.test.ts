@@ -48,4 +48,35 @@ describe('amountToWords', () => {
   it('handles case-insensitive currency codes', () => {
     expect(amountToWords(100, 'usd')).toBe('One Hundred Dollars Only');
   });
+
+  // [Penny H1] Half-cent boundary regression: subtracting the whole part first
+  // loses float precision and silently dropped the cent (1.005 -> "One Dollars Only").
+  it('does not silently drop cents at half-cent boundaries', () => {
+    // 1.005: previously rounded 0.00499... to 0 cents. Should be 1 cent.
+    expect(amountToWords(1.005, 'USD')).toBe('One Dollars and One Cents Only');
+    // 2.675: classic float representation (2.675 -> 2.67499...). Should be 68 cents.
+    expect(amountToWords(2.675, 'USD')).toBe('Two Dollars and Sixty Eight Cents Only');
+  });
+
+  it('carries rounding into the whole part correctly', () => {
+    // 1.999 rounds to 200 cents -> 2 dollars, 0 cents.
+    expect(amountToWords(1.999, 'USD')).toBe('Two Dollars Only');
+  });
+
+  it('handles zero and single-cent amounts', () => {
+    expect(amountToWords(0, 'USD')).toBe('Zero Dollars Only');
+    expect(amountToWords(0.01, 'USD')).toBe('Zero Dollars and One Cents Only');
+  });
+
+  it('handles large amounts with cents without dropping precision', () => {
+    expect(amountToWords(999999.99, 'USD')).toBe(
+      'Nine Hundred Ninety Nine Thousand Nine Hundred Ninety Nine Dollars and Ninety Nine Cents Only'
+    );
+  });
+
+  it('handles negative amounts using absolute value and keeps cents', () => {
+    // amountToWords works on the absolute value; cents must not be dropped.
+    expect(amountToWords(-1.005, 'USD')).toBe('One Dollars and One Cents Only');
+    expect(amountToWords(-50.05, 'EUR')).toBe('Fifty Euros and Five Cents Only');
+  });
 });

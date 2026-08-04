@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** Jest config — only tests the pure accounting module (no React Native deps needed). */
 module.exports = {
   preset: 'ts-jest',
@@ -6,4 +8,9 @@ module.exports = {
   // Only the pure accounting module is unit-tested here; RN screens need a
   // separate jest-expo setup which isn't required for the accounting engine.
   roots: ['<rootDir>/__tests__'],
+  // Resolve the app's `@/` path alias (mirrors tsconfig paths) so tests can drive
+  // the real api.ts layer end-to-end, not just the pure engine.
+  moduleNameMapper: {
+    '^@/(.*)$': path.join(__dirname, '$1'),
+  },
 };

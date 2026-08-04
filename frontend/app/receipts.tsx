@@ -1,12 +1,13 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { useScreenData } from "@/src/hooks/useScreenData";
 import { getCurrencySymbol } from "@/src/db/local";
 import { confirmAction } from "@/src/utils/alerts";
 import { Empty, Card } from "@/src/components/UI";
@@ -40,29 +41,27 @@ export default function ReceiptsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [debtors, setDebtors] = useState<Debtor[]>([]);
-  const [currSym, setCurrSym] = useState("$");
-  const [taxRate, setTaxRate] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Receipt | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [rl, il, dl, s] = await Promise.all([api.listReceipts(), api.listInvoices(), api.listDebtors(), api.getSettings()]);
-      setReceipts(rl as Receipt[]);
-      setInvoices((il as Invoice[]).filter((i) => i.status !== "paid"));
-      setDebtors(dl as Debtor[]);
-      setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      setTaxRate(Number(s.taxRate) || 0);
-    } catch (e) { console.warn(e); }
-    finally { setLoading(false); setRefreshing(false); }
+  const loader = useCallback(async () => {
+    const [rl, il, dl, s] = await Promise.all([api.listReceipts(), api.listInvoices(), api.listDebtors(), api.getSettings()]);
+    return {
+      receipts: rl as Receipt[],
+      invoices: (il as Invoice[]).filter((i) => i.status !== "paid"),
+      debtors: dl as Debtor[],
+      currSym: getCurrencySymbol(s.currency || "USD"),
+      taxRate: Number(s.taxRate) || 0,
+    };
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { data, loading, refreshing, reload, refresh } = useScreenData(
+    `receipts:${api.activeBookId()}`,
+    loader,
+  );
+  const receipts = data?.receipts ?? [];
+  const currSym = data?.currSym ?? "$";
+  const load = reload;
 
   const totalReceived = useMemo(() => receipts.reduce((s, r) => s + (Number(r.amount) || 0), 0), [receipts]);
 
@@ -165,8 +164,11 @@ export default function ReceiptsScreen() {
         data={receipts}
         keyExtractor={(r) => r.id}
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 80 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.color.brandPrimary} />}
         ListEmptyComponent={<Empty icon={<Ionicons name="receipt-outline" size={40} color={theme.color.muted} />} title="No receipts yet" hint="Tap + to record money received." />}
+        initialNumToRender={12}
+        windowSize={7}
+        removeClippedSubviews
         renderItem={({ item }) => (
           <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.mode === "cash_sale" ? "#DCE8DC" : item.mode === "advance" ? "#F0E4D0" : "#D8E4F0" }]}>

@@ -1,12 +1,13 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { confirmAction } from "@/src/utils/alerts";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -105,7 +106,7 @@ export default function QuotesScreen() {
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [validUntil, setValidUntil] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", qty: 1, rate: 0 }]);
   const [notes, setNotes] = useState("");
@@ -120,17 +121,23 @@ export default function QuotesScreen() {
       setBiz(s);
       setTaxRateDefault(Number(s.taxRate) || 0);
       setTaxLabelDefault(s.taxLabel && s.taxLabel !== "None" ? s.taxLabel : "");
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0), [lines]);
   const taxAmt = +(subtotal * taxRateDefault / 100).toFixed(2);
   const total = +(subtotal + taxAmt).toFixed(2);
 
   const openNew = () => {
-    setEditId(null); setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setValidUntil(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setErr(""); setShowForm(true);
   };
   const openEdit = (q: Quote) => {
@@ -147,8 +154,12 @@ export default function QuotesScreen() {
 
   const save = async () => {
     setErr("");
-    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
-    if (validUntil.trim() && !isValidDateString(validUntil.trim())) { setErr("Invalid valid until date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setErr(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
+    const validUntilIso = validUntil.trim() ? normalizeDateInput(validUntil) : "";
+    if (validUntilIso && !isValidDateString(validUntilIso)) { setErr(`Couldn't read "${validUntil.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (validUntilIso !== validUntil) setValidUntil(validUntilIso);
     if (!clientName.trim()) { setErr("Enter a client name."); return; }
     const clean = lines.filter((l) => l.description.trim() || l.rate > 0);
     setSaving(true);
@@ -156,7 +167,7 @@ export default function QuotesScreen() {
       if (clientName.trim()) {
         await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       }
-      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, validUntil: validUntil.trim(), lines: clean, taxRate: taxRateDefault, taxLabel: taxLabelDefault, notes: notes.trim() };
+      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, validUntil: validUntilIso, lines: clean, taxRate: taxRateDefault, taxLabel: taxLabelDefault, notes: notes.trim() };
       if (editId) await api.updateQuote(editId, payload);
       else await api.createQuote(payload);
       setShowForm(false);
@@ -171,7 +182,7 @@ export default function QuotesScreen() {
       `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds them to Debtors.`,
       async () => {
         try {
-          await api.convertQuoteToInvoice(q.id, { date: new Date().toISOString().slice(0, 10) });
+          await api.convertQuoteToInvoice(q.id, { date: localTodayIso() });
           setSelected(null);
           await load();
           Alert.alert("Done", "Invoice created. Find it in Invoices.");

@@ -1,12 +1,13 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { confirmAction } from "@/src/utils/alerts";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { useFocusEffect } from "expo-router";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -80,7 +81,7 @@ export default function DeliveryNotesScreen() {
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [vehicleNo, setVehicleNo] = useState("");
   const [items, setItems] = useState<Item[]>([{ description: "", qty: 1 }]);
   const [noteText, setNoteText] = useState("");
@@ -92,13 +93,19 @@ export default function DeliveryNotesScreen() {
       const [list, s] = await Promise.all([api.listDeliveryNotes(), api.getSettings()]);
       setNotes(list as DeliveryNote[]);
       setBiz(s);
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const openNew = () => {
-    setEditId(null); setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setVehicleNo(""); setItems([{ description: "", qty: 1 }]); setNoteText(""); setErr(""); setShowForm(true);
   };
   const openEdit = (n: DeliveryNote) => {
@@ -115,7 +122,9 @@ export default function DeliveryNotesScreen() {
 
   const save = async () => {
     setErr("");
-    if (!isValidDateString(date)) { setErr("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setErr(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     if (!clientName.trim()) { setErr("Enter a customer name."); return; }
     const clean = items.filter((it) => it.description.trim() || it.qty > 0);
     setSaving(true);
@@ -123,7 +132,7 @@ export default function DeliveryNotesScreen() {
       if (clientName.trim()) {
         await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       }
-      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
+      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
       if (editId) await api.updateDeliveryNote(editId, payload);
       else await api.createDeliveryNote(payload);
       setShowForm(false);

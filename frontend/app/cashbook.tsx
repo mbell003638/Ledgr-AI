@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, KeyboardAvoidingView, Platform, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { confirmAction } from "@/src/utils/alerts";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -10,8 +11,10 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { collapseLedgerRows, describeSourceNavigation, formatEditedStamp, type DisplayLedgerRow, type LedgerRow } from "@/src/utils/ledgerDisplay";
 
-type CashEntry = { id: string; amount: number; direction: "in" | "out"; date: string; notes?: string; origin?: "manual" | "v2"; editable?: boolean };
+type CashEntry = LedgerRow;
 import { GlowPressable } from "@/src/components/GlowPressable";
 
 const todayStr = () => {
@@ -21,6 +24,7 @@ const todayStr = () => {
 
 export default function CashBookScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [currSym, setCurrSym] = useState("$");
@@ -35,6 +39,12 @@ export default function CashBookScreen() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  // Cash In "Type": general manual entry vs investor capital deposit (partnership mode).
+  const [partnerMode, setPartnerMode] = useState(false);
+  const [inKind, setInKind] = useState<"general" | "capital">("general");
+  const [investors, setInvestors] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [investorId, setInvestorId] = useState<string | null>(null);
+  const [loadingInvestors, setLoadingInvestors] = useState(false);
 
   const [openingCash, setOpeningCash] = useState(0);
   const [openingDate, setOpeningDate] = useState("");
@@ -50,47 +60,90 @@ export default function CashBookScreen() {
       setOpeningInput(String(op));
       setOpeningDate(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr());
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
+      setPartnerMode(settings.accountingStyle === "retail_partnership");
+      setInvestors(null); // refetched on demand so new investors show up
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
+  // Collapse reverse+repost bookkeeping noise into what the user actually did.
+  // The books keep every journal; the screen shows one row per live entry.
+  const collapsed = useMemo(() => collapseLedgerRows(entries), [entries]);
   const totals = useMemo(() => {
-    const ins = entries.filter((e) => e.direction === "in").reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    const outs = entries.filter((e) => e.direction === "out").reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const { ins, outs } = collapsed.totals;
+    // The Opening Cash tile mirrors the opening-balance journal net, so the
+    // header adds it once — internal adjustment pairs no longer inflate In/Out.
     const net = openingCash + ins - outs;
     return { ins, outs, net, opening: openingCash };
-  }, [entries, openingCash]);
+  }, [collapsed, openingCash]);
 
   const saveOpeningCash = async () => {
     const val = parseFloat(openingInput);
     if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(openingDate.trim())) { Alert.alert("Invalid", "Use an opening date in YYYY-MM-DD format."); return; }
+    const openingIso = normalizeDateInput(openingDate);
+    if (!isValidDateString(openingIso)) { Alert.alert("Invalid", `Couldn't read "${openingDate.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setOpeningDate(openingIso); // reflect the canonical form in the field
     try {
       // Post to the authoritative V2 journal before mirroring the value into legacy settings.
       // This prevents the display setting from changing if the accounting period is locked.
       const settings = await api.getSettings();
       try {
-        await api.updateV2OpeningBalances({ date: openingDate.trim(), cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: openingIso, cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
       } catch (e: any) {
         if (!/requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({ openingCash: val, currentPeriodStart: openingDate.trim() });
+      await api.updateSettings({ openingCash: val, currentPeriodStart: openingIso });
       setOpeningCash(val);
       setEditingOpening(false);
       load();
-    } catch (e: any) { Alert.alert("Error", e.message || "Failed to save"); }
+    } catch (e: any) { Alert.alert("Couldn't save opening balance", e.message || "Check the amount and date, then try again."); }
   };
 
   const resetForm = () => {
     setEditId(null); setDirection("in"); setAmount(""); setDate(todayStr()); setNotes(""); setFormOpen(false);
+    setInKind("general"); setInvestorId(null);
+  };
+
+  const selectCapitalKind = async () => {
+    setInKind("capital");
+    if (investors === null && !loadingInvestors) {
+      setLoadingInvestors(true);
+      try { setInvestors((await api.listInvestors()).map((x: any) => ({ id: x.id, name: x.name }))); }
+      catch { setInvestors([]); }
+      finally { setLoadingInvestors(false); }
+    }
   };
 
   const openAdd = () => { resetForm(); setFormOpen(true); };
-  const openEdit = (e: CashEntry) => {
+  const openEdit = (e: DisplayLedgerRow) => {
     if (e.editable === false || e.origin === "v2") {
-      Alert.alert("Posted transaction", "This cash movement comes from another accounting transaction. Edit it from its original screen.");
+      // Opening-balance rows edit right here via the Opening Cash tile.
+      if (String(e.sourceType || "").startsWith("opening_balance")) {
+        setEditingOpening(true);
+        return;
+      }
+      // Everything else routes to the screen that owns the source document.
+      const nav = describeSourceNavigation(e.sourceType, e.sourceId);
+      if (nav) {
+        Alert.alert(
+          "Posted transaction",
+          `This entry comes from a ${nav.label.toLowerCase()}. Open it to edit?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open", onPress: () => router.push(nav.params ? ({ pathname: nav.pathname, params: nav.params } as any) : (nav.pathname as any)) },
+          ]
+        );
+      } else {
+        setEditingOpening(true);
+      }
       return;
     }
     setEditId(e.id); setDirection(e.direction); setAmount(String(e.amount)); setDate(e.date); setNotes(e.notes || ""); setFormOpen(true);
@@ -99,11 +152,24 @@ export default function CashBookScreen() {
   const save = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert("Invalid", "Enter a valid amount greater than zero."); return; }
-    if (!date.trim()) { Alert.alert("Invalid", "Enter a date (YYYY-MM-DD)."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { Alert.alert("Invalid", `Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    setDate(dateIso); // reflect the canonical form in the field
+    if (!editId && direction === "in" && inKind === "capital" && partnerMode && !investorId) {
+      Alert.alert("Pick an investor", "Select which investor this capital deposit belongs to.");
+      return;
+    }
     setSaving(true);
     try {
-      const payload = { amount: amt, direction, date: date.trim(), notes: notes.trim() };
+      const payload = { amount: amt, direction, date: dateIso, notes: notes.trim() };
       if (editId) await api.updateCashEntry(editId, payload);
+      else if (direction === "in" && inKind === "capital" && partnerMode && investorId) {
+        // Investor capital goes through the SAME posting path as the investor
+        // detail screen's Deposit Capital button (Dr Cash / Cr Member Capital,
+        // memo "Capital deposit — <name>") — never a plain cash entry, so the
+        // member's stake updates correctly.
+        await api.depositInvestorCapital(investorId, payload);
+      }
       else await api.createCashEntry(payload);
       resetForm();
       load();
@@ -158,7 +224,7 @@ export default function CashBookScreen() {
           <View style={{ gap: 6, alignItems: "flex-end" }}>
             <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
             <View style={{ flexDirection: "row", gap: 6 }}>
-              <TextInput value={openingDate} onChangeText={setOpeningDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
+              <TextInput value={openingDate} onChangeText={setOpeningDate} onBlur={() => { if (openingDate.trim()) setOpeningDate(normalizeDateInput(openingDate)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
               <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
             </View>
           </View>
@@ -173,13 +239,40 @@ export default function CashBookScreen() {
                 <Ionicons name="arrow-down-circle-outline" size={16} color={direction === "in" ? "#fff" : theme.color.success} />
                 <Text style={[styles.segText, direction === "in" && { color: "#fff" }]}>Cash In</Text>
               </Pressable>
-              <Pressable onPress={() => setDirection("out")} style={[styles.segBtn, direction === "out" && styles.segBtnOutActive]}>
+              <Pressable onPress={() => { setDirection("out"); setInKind("general"); setInvestorId(null); }} style={[styles.segBtn, direction === "out" && styles.segBtnOutActive]}>
                 <Ionicons name="arrow-up-circle-outline" size={16} color={direction === "out" ? "#fff" : theme.color.warning} />
                 <Text style={[styles.segText, direction === "out" && { color: "#fff" }]}>Cash Out</Text>
               </Pressable>
             </View>
+            {/* Cash In "Type" — General stays a plain cash entry; Investor capital
+                routes through api.depositInvestorCapital so the stake updates. */}
+            {!editId && direction === "in" && partnerMode ? (
+              <View style={{ gap: 6 }}>
+                <View style={styles.chipRow}>
+                  <Text style={styles.chipLabel}>Type</Text>
+                  <Pressable testID="chip-cashin-general" onPress={() => { setInKind("general"); setInvestorId(null); }} style={[styles.chip, inKind === "general" && styles.chipOn]}>
+                    <Text style={[styles.chipText, inKind === "general" && styles.chipTextOn]}>General</Text>
+                  </Pressable>
+                  <Pressable testID="chip-cashin-capital" onPress={selectCapitalKind} style={[styles.chip, inKind === "capital" && styles.chipOn]}>
+                    <Text style={[styles.chipText, inKind === "capital" && styles.chipTextOn]}>Investor capital</Text>
+                  </Pressable>
+                </View>
+                {inKind === "capital" ? (
+                  loadingInvestors ? <ActivityIndicator size="small" color={theme.color.brandPrimary} />
+                  : investors && investors.length ? (
+                    <View style={styles.chipRow}>
+                      {investors.map((inv) => (
+                        <Pressable key={inv.id} testID={`chip-investor-${inv.id}`} onPress={() => setInvestorId(inv.id)} style={[styles.chip, investorId === inv.id && styles.chipOn]}>
+                          <Text style={[styles.chipText, investorId === inv.id && styles.chipTextOn]}>{inv.name}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : <Text style={styles.chipHint}>No investors yet — add one in Parties first.</Text>
+                ) : null}
+              </View>
+            ) : null}
             <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="Amount" placeholderTextColor={theme.color.muted} style={styles.input} />
-            <TextInput value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <TextInput value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
             <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (e.g. Owner deposit, petty cash)" placeholderTextColor={theme.color.muted} style={styles.input} />
             <View style={styles.formBtns}>
               <Pressable onPress={resetForm} style={[styles.formBtn, styles.cancelBtn]}><Text style={styles.cancelText}>Cancel</Text></Pressable>
@@ -195,8 +288,8 @@ export default function CashBookScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
         <FlatList
-          data={entries}
-          keyExtractor={(i) => i.id}
+          data={collapsed.rows}
+          keyExtractor={(i, index) => `${i.id}:${index}`}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           ListEmptyComponent={
@@ -214,6 +307,8 @@ export default function CashBookScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{shortDate(item.date)}</Text>
                 {item.notes ? <Text style={styles.cardSub}>{item.notes}</Text> : null}
+                {item.edited ? <Text style={styles.editedTag}>edited{item.editedAt ? ` ${formatEditedStamp(item.editedAt)}` : ""}</Text> : null}
+                {item.adjustmentCount ? <Text style={styles.adjustmentHint}>includes {item.adjustmentCount} adjustment{item.adjustmentCount === 1 ? "" : "s"}</Text> : null}
               </View>
               <Text style={[styles.amount, { color: item.direction === "in" ? theme.color.success : theme.color.warning }]}>
                 {item.direction === "in" ? "+" : "−"} {fmt(item.amount, currSym)}
@@ -245,6 +340,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   segBtnInActive: { backgroundColor: theme.color.success, borderColor: theme.color.success },
   segBtnOutActive: { backgroundColor: theme.color.warning, borderColor: theme.color.warning },
   segText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+  chipRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  chipLabel: { fontSize: 12, fontWeight: "600", color: theme.color.muted, marginRight: 2 },
+  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+  chipOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  chipText: { fontSize: 12, fontWeight: "600", color: theme.color.onSurface },
+  chipTextOn: { color: "#fff" },
+  chipHint: { fontSize: 12, color: theme.color.muted },
   input: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   formBtns: { flexDirection: "row", gap: 8, marginTop: 4 },
   formBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.radius.md, alignItems: "center" },
@@ -257,5 +359,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   dirBadge: { width: 32, height: 32, borderRadius: 16, justifyContent: "center", alignItems: "center" },
   cardTitle: { fontSize: 15, fontWeight: "600", color: theme.color.onSurface },
   cardSub: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+  editedTag: { fontSize: 11, color: theme.color.muted, marginTop: 3, fontStyle: "italic" },
+  adjustmentHint: { fontSize: 10, color: theme.color.muted, marginTop: 2 },
   amount: { fontSize: 16, fontWeight: "700" },
 }); }

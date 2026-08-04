@@ -159,45 +159,39 @@ export const ALL_FEATURES: FeatureMeta[] = [
 
 const DEFAULT_ALL_KEYS: FeatureKey[] = ALL_FEATURES.map((f) => f.key);
 
+// Baseline tile set for a pure service/professional persona: no stock, no
+// supplier bills lead — invoice + receipt driven.
+const SERVICE_BASE: FeatureKey[] = [
+  "invoices",
+  "quotes",
+  "receipts",
+  "expenses",
+  "cashbook",
+  "daybook",
+  "reports",
+  "monthly",
+  "ask",
+  "voice",
+];
+
+/**
+ * Default enabled tiles per persona.
+ *
+ * Keyed by the canonical `PersonaId` values written by onboarding/settings
+ * (src/accountingV2/config.ts): retail, wholesale, salon, handyman,
+ * professional_service, it_freelancer, vendor, custom.
+ *
+ * The legacy `BizType` keys (shop, service, it_consultant, freelancer) are
+ * kept as aliases so any settings written by the older onboarding flow that
+ * saved `businessType` still resolve to a sensible set.
+ */
 export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
-  shop: DEFAULT_ALL_KEYS,
+  // --- Canonical PersonaId keys ---
+  // Retail & wholesale hold stock and buy from suppliers → full set.
+  retail: DEFAULT_ALL_KEYS,
+  wholesale: DEFAULT_ALL_KEYS,
   vendor: DEFAULT_ALL_KEYS,
-  service: [
-    "invoices",
-    "quotes",
-    "receipts",
-    "expenses",
-    "cashbook",
-    "daybook",
-    "reports",
-    "monthly",
-    "ask",
-    "voice",
-  ],
-  it_consultant: [
-    "invoices",
-    "quotes",
-    "receipts",
-    "expenses",
-    "cashbook",
-    "daybook",
-    "reports",
-    "monthly",
-    "ask",
-    "voice",
-  ],
-  freelancer: [
-    "invoices",
-    "quotes",
-    "receipts",
-    "expenses",
-    "cashbook",
-    "daybook",
-    "reports",
-    "monthly",
-    "ask",
-    "voice",
-  ],
+  // Salon sells services + walk-in cash, no inventory/delivery.
   salon: [
     "sales",
     "receipts",
@@ -210,27 +204,65 @@ export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
     "ask",
     "voice",
   ],
+  // Handyman: jobs & materials — cash sales + invoices, buys some materials,
+  // but no shelf inventory.
   handyman: [
     "sales",
     "invoices",
     "expenses",
     "cashbook",
     "receipts",
+    "bills",
     "daybook",
     "reports",
     "monthly",
     "ask",
     "voice",
   ],
+  // Pure service personas — invoice-led, no stock.
+  professional_service: SERVICE_BASE,
+  it_freelancer: SERVICE_BASE,
   custom: DEFAULT_ALL_KEYS,
+
+  // --- Legacy BizType aliases (older onboarding wrote `businessType`) ---
+  shop: DEFAULT_ALL_KEYS,
+  service: SERVICE_BASE,
+  it_consultant: SERVICE_BASE,
+  freelancer: SERVICE_BASE,
 };
 
+/**
+ * Resolve the persona baseline tile set for a settings object, honouring the
+ * multi-persona case: when the user selected several personas in onboarding,
+ * the baseline is the UNION of each persona's default set (preserving the
+ * canonical ALL_FEATURES ordering so the grid stays stable).
+ *
+ * Precedence of sources:
+ *   1. settings.selectedPersonas  (multi-persona union)
+ *   2. settings.activePersona     (single persona)
+ *   3. settings.businessType      (legacy single persona)
+ *   4. "custom"                   (everything)
+ */
+export function getPersonaBaselineFeatures(settings: any): FeatureKey[] {
+  const personas: string[] = Array.isArray(settings?.selectedPersonas) && settings.selectedPersonas.length
+    ? settings.selectedPersonas
+    : [settings?.activePersona || settings?.businessType || "custom"];
+
+  const union = new Set<FeatureKey>();
+  for (const p of personas) {
+    const set = PERSONA_DEFAULT_FEATURES[p] || DEFAULT_ALL_KEYS;
+    for (const key of set) union.add(key);
+  }
+  // Preserve canonical ordering.
+  return DEFAULT_ALL_KEYS.filter((k) => union.has(k));
+}
+
 export function getEnabledFeatures(settings: any): FeatureKey[] {
+  // Manual override (Customize Features) always wins.
   if (settings && Array.isArray(settings.enabledFeatures) && settings.enabledFeatures.length > 0) {
     return settings.enabledFeatures as FeatureKey[];
   }
-  const persona = settings?.activePersona || settings?.businessType || "custom";
-  return PERSONA_DEFAULT_FEATURES[persona] || DEFAULT_ALL_KEYS;
+  return getPersonaBaselineFeatures(settings);
 }
 
 export function isFeatureEnabled(settings: any, key: FeatureKey): boolean {

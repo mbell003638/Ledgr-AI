@@ -1,12 +1,14 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert, Share,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
@@ -727,7 +729,7 @@ export default function InvoicesScreen() {
   // Form state
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [dueDate, setDueDate] = useState("");
   const [lines, setLines] = useState<InvoiceLine[]>([{ description: "", qty: 1, rate: 0 }]);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -738,6 +740,10 @@ export default function InvoicesScreen() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // Version at which the list last loaded, so a focus-return with no
+  // intervening mutation can skip the full re-read (instant back-navigation).
+  const loadedVersion = React.useRef<number>(-1);
+
   const load = useCallback(async () => {
     try {
       const [invs, od, s] = await Promise.all([api.listInvoices(), api.overdueInvoices(), api.getSettings()]);
@@ -745,15 +751,20 @@ export default function InvoicesScreen() {
       setOverdue(od as Invoice[]);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBiz(s);
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return; // nothing changed
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   const openNew = () => {
     setEditId(null);
-    setClientName(""); setClientPhone(""); setDate(new Date().toISOString().slice(0, 10));
+    setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setFormError("");
     // Pre-fill tax from global settings; user can override per-invoice.
     const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
@@ -774,8 +785,12 @@ export default function InvoicesScreen() {
   };
 
   const saveInvoice = async () => {
-    if (!isValidDateString(date)) { setFormError("Invalid date format. Please use YYYY-MM-DD."); return; }
-    if (dueDate.trim() && !isValidDateString(dueDate.trim())) { setFormError("Invalid due date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setFormError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
+    const dueDateIso = dueDate.trim() ? normalizeDateInput(dueDate) : "";
+    if (dueDateIso && !isValidDateString(dueDateIso)) { setFormError(`Couldn't read "${dueDate.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dueDateIso !== dueDate) setDueDate(dueDateIso);
     if (!clientName.trim()) { setFormError("Client name is required"); return; }
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
@@ -786,7 +801,7 @@ export default function InvoicesScreen() {
       const label = taxLabelInput.trim();
       const payload = {
         clientName: clientName.trim(), clientPhone: clientPhone.trim(),
-        date, dueDate: dueDate.trim() || undefined,
+        date: dateIso, dueDate: dueDateIso || undefined,
         lines: validLines,
         notes: notes.trim(),
         terms: terms.trim() || undefined,
@@ -809,10 +824,18 @@ export default function InvoicesScreen() {
   };
 
   const markUnpaid = async (id: string) => {
-    // If we mark unpaid, we might just update the metadata
-    await api.updateInvoice(id, { status: "unpaid" });
-    await load();
-    setSelected(null);
+    // [Finding F] Marking unpaid is a status-only change. If a receipt is applied
+    // to the invoice the V2 ledger refuses (you must unapply the receipt first);
+    // surface that as a friendly message instead of an unhandled rejection.
+    try {
+      await api.updateInvoice(id, { status: "unpaid" });
+      await load();
+      setSelected(null);
+    } catch (e: any) {
+      const msg = e?.message || "Could not mark this invoice unpaid.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Can't mark unpaid", msg);
+    }
   };
 
   const deleteInv = async (id: string) => {

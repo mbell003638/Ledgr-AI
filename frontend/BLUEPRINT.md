@@ -434,7 +434,7 @@ Full tile set: Purchases(bills), Sales, Payments, Creditors(suppliers), Invoices
 
 ## 9. Build & Deploy
 
-**App identity** (`app.json`): name **Ledgr**, slug `frontend`, version 1.0.0, portrait, scheme `frontend`, `userInterfaceStyle:'automatic'`, `newArchEnabled:true`. iOS `bundleIdentifier` and Android `package` are both **`com.mbell.ledgr`**. Android permissions: `CAMERA`, `RECORD_AUDIO`, `INTERNET`; adaptive icon background `#1C4030`; `edgeToEdgeEnabled`. Plugins: expo-router, expo-audio, expo-camera, expo-image-picker, expo-splash-screen. `experiments.typedRoutes: true`. Web bundler metro, output `single`.
+**App identity** (`app.json`): name **Ledgr**, slug `frontend`, version 1.0.0, portrait, scheme `frontend`, `userInterfaceStyle:'automatic'`, `newArchEnabled:true`. iOS `bundleIdentifier` and Android `package` are both **`com.ahem.ledgrai`**. Android permissions: `CAMERA`, `RECORD_AUDIO`, `INTERNET`; adaptive icon background `#1C4030`; `edgeToEdgeEnabled`. Plugins: expo-router, expo-audio, expo-camera, expo-image-picker, expo-splash-screen. `experiments.typedRoutes: true`. Web bundler metro, output `single`.
 
 **CI build** — `.github/workflows/build-apk.yml` ("Build Ledgr AI Android"), triggers on push to main/master and `workflow_dispatch`:
 
@@ -454,7 +454,7 @@ Local dev scripts (`package.json`): `start` (`expo start`), `android`, `ios`, `w
 
 1. **Scaffold.** `npx create-expo-app` with the expo-router template; set Expo SDK 54, RN 0.81.5, React 19.1.0, TypeScript strict, `@/*` path alias. Enable New Architecture and `typedRoutes`.
 2. **Install deps** exactly as §2 (async-storage, gifted-charts, svg, linear-gradient, camera, image-picker, audio, file-system, document-picker, print, sharing, secure-store, vector-icons, gesture-handler, reanimated, worklets, safe-area-context, screens).
-3. **Configure `app.json`** — name Ledgr, package/bundle `com.mbell.ledgr`, permissions CAMERA/RECORD_AUDIO/INTERNET, splash + adaptive icon `#1C4030`, plugins list.
+3. **Configure `app.json`** — name Ledgr, package/bundle `com.ahem.ledgrai`, permissions CAMERA/RECORD_AUDIO/INTERNET, splash + adaptive icon `#1C4030`, plugins list.
 4. **Theme** — build `src/theme.ts` (light/dark palettes, spacing/radius/font scales, `fmt`, `shortDate`) and `src/context/ThemeContext.tsx` (persist `theme_mode`; `useTheme`/`useThemeMode`).
 5. **Data layer** — implement `src/db/local.ts`: the `KEYS` map, `serialize()` write-chain, `readColl`/`writeColl`, `getSettings`/`updateSettings` with all defaults, `uuid`/`nowIso`, `CURRENCIES`/`TAX_LABELS`/`getCurrencySymbol`.
 6. **CRUD** — suppliers (with enriched balances), a `makeCrud()` factory for bills/sales/payments, inventory (`expectedInventory`, `createInventory`, `closePeriod`), expenses, debtors (`addDebtorPayment`), invoices (numbering + debtor sync in `createInvoice`/`markInvoicePaid`/`deleteInvoice`).

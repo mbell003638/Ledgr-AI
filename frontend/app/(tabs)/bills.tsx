@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { useScreenData } from "@/src/hooks/useScreenData";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
@@ -13,33 +14,71 @@ import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 import { GlowPressable } from "@/src/components/GlowPressable";
+
+type BillsData = { bills: any[]; suppliers: Record<string, string> };
+
+// Memoized row: only re-renders when its bill, supplier name, or the theme's
+// styles change. Keeps scrolling smooth on low-end Android by avoiding a full
+// list re-render when unrelated screen state (e.g. selection) updates.
+const BillRow = React.memo(function BillRow({
+  item, supName, styles, onPress,
+}: {
+  item: any; supName: string; styles: any; onPress: (item: any) => void;
+}) {
+  const isCash = item.paymentType === "cash";
+  const typeLabel = isCash
+    ? "Cash Purchase"
+    : `Credit Purchase${supName ? ` (${supName})` : ""}`;
+  const displaySub = item.notes && item.notes.trim()
+    ? `${typeLabel} — ${item.notes.trim()}`
+    : `${shortDate(item.date)} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
+  return (
+    <GlowPressable
+      testID={`bill-${item.id}`}
+      onPress={() => onPress(item)}
+      haptic
+      topHighlight={false}
+      restingBorderColor={styles.card.borderColor}
+      style={styles.card}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>{supName || "Vendor Purchase"}</Text>
+        <Text style={styles.cardSub}>{displaySub}</Text>
+      </View>
+      <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
+    </GlowPressable>
+  );
+});
+
 export default function BillsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const [bills, setBills] = useState<any[]>([]);
-  const [suppliers, setSuppliers] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [b, s] = await Promise.all([api.listBills(), api.listSuppliers()]);
-      setBills(b);
-      const map: Record<string, string> = {};
-      s.forEach((x: any) => (map[x.id] = x.name));
-      setSuppliers(map);
-    } catch (e) {
-      console.warn(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const loader = useCallback(async (): Promise<BillsData> => {
+    const [b, s] = await Promise.all([api.listBills(), api.listSuppliers()]);
+    const map: Record<string, string> = {};
+    s.forEach((x: any) => (map[x.id] = x.name));
+    return { bills: b, suppliers: map };
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { data, loading, refreshing, reload, refresh } = useScreenData<BillsData>(
+    `bills:${api.activeBookId()}`,
+    loader,
+  );
+  const bills = data?.bills ?? [];
+  const suppliers = data?.suppliers ?? {};
+  const load = reload;
+
+  const onRowPress = useCallback((item: any) => setSelected(item), []);
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => (
+      <BillRow item={item} supName={suppliers[item.supplierId] || ""} styles={styles} onPress={onRowPress} />
+    ),
+    [suppliers, styles, onRowPress],
+  );
 
   const documentFor = (bill: any) => ({ title: "Vendor Bill", subtitle: shortDate(bill.date), rows: [
     ["Supplier", suppliers[bill.supplierId] || "Unknown supplier"], ["Amount", fmt(bill.amount, bill.currency)],
@@ -129,7 +168,7 @@ export default function BillsScreen() {
           data={bills}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="receipt-outline" size={40} color={theme.color.muted} />}
@@ -137,33 +176,10 @@ export default function BillsScreen() {
               hint="Tap the + button to log a vendor purchase."
             />
           }
-          renderItem={({ item }) => {
-            const supName = suppliers[item.supplierId] || "";
-            const isCash = item.paymentType === "cash";
-            const typeLabel = isCash
-              ? "Cash Purchase"
-              : `Credit Purchase${supName ? ` (${supName})` : ""}`;
-            const displaySub = item.notes && item.notes.trim()
-              ? `${typeLabel} — ${item.notes.trim()}`
-              : `${shortDate(item.date)} • ${typeLabel}${item.invoiceNo ? ` • #${item.invoiceNo}` : ""}`;
-
-            return (
-              <GlowPressable
-                testID={`bill-${item.id}`}
-                onPress={() => setSelected(item)}
-                haptic
-                topHighlight={false}
-                restingBorderColor={theme.color.border}
-                style={styles.card}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>{supName || "Vendor Purchase"}</Text>
-                  <Text style={styles.cardSub}>{displaySub}</Text>
-                </View>
-                <Text style={styles.amount}>{fmt(item.amount, item.currency)}</Text>
-              </GlowPressable>
-            );
-          }}
+          initialNumToRender={12}
+          windowSize={7}
+          removeClippedSubviews
+          renderItem={renderItem}
         />
       )}
     </SafeAreaView>

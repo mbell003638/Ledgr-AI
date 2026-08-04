@@ -3,6 +3,7 @@ import { initSchema } from '../src/db/schema';
 import { V2SqlRepository } from '../src/accountingV2/repository';
 import { defaultAccounts, defaultBook } from '../src/accountingV2/schema';
 import { V2CloseBooksRepository } from '../src/accountingV2/closeBooksRepository';
+import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
 
 async function setup() {
   const node = makeNodeRunner();
@@ -76,6 +77,41 @@ describe('V2CloseBooksRepository — persistent inventory and close books', () =
       expect(await runner.all('SELECT id,current_capital FROM v2_members ORDER BY id')).toEqual([
         { id: 'm1', current_capital: 397 }, { id: 'm2', current_capital: 398 },
       ]);
+    } finally { close(); }
+  });
+
+  it('unifies COGS selection with live reports: a MID-period count closes and matches the report', async () => {
+    // FIX 3: the close used to require counts dated EXACTLY on the start and close dates; a
+    // mid-period count showed COGS in the live report but threw at close. Now both derive COGS
+    // through the shared computePeriodicCogs path (latest in-period count is the closing), so
+    // dashboard == reports == close even for a mid-period count.
+    const { runner, close, repo, book, post } = await setup();
+    try {
+      await repo.recordInventoryCount({ id: 'opening', bookId: book.id, periodId: 'p1', date: '2026-01-01', value: 200 });
+      // Closing count is taken on 2026-01-20 — NOT on the 2026-01-31 close date.
+      await repo.recordInventoryCount({ id: 'mid', bookId: book.id, periodId: 'p1', date: '2026-01-20', value: 250 });
+      await post('sale', '2026-01-10', [{ code: '1000', debit: 1000, credit: 0 }, { code: '4000', debit: 0, credit: 1000 }]);
+      await post('purchase', '2026-01-15', [{ code: '1200', debit: 400, credit: 0 }, { code: '2000', debit: 0, credit: 400 }]);
+      await post('expense', '2026-01-18', [{ code: '6000', debit: 50, credit: 0 }, { code: '1000', debit: 0, credit: 50 }]);
+
+      const live = await buildPersistentV2Reports(runner, { bookId: book.id });
+      expect(live.profitAndLoss.cogs).toBe(350); // 200 + 400 − 250
+      expect(live.profitAndLoss.netProfit).toBe(600); // 1000 − (350 COGS + 50 opex)
+
+      const result = await repo.closeBooks({ id: 'close-p1', bookId: book.id, periodId: 'p1', nextPeriodId: 'p2', date: '2026-01-31', commissionPct: 0 });
+      expect(result.snapshot).toEqual(expect.objectContaining({ openingInventory: 200, closingInventory: 250, cogs: 350, grossProfit: 650, expenses: 50, netProfit: 600 }));
+      // The unified number: snapshot net profit equals the live report's net profit.
+      expect(result.snapshot.netProfit).toBe(live.profitAndLoss.netProfit);
+    } finally { close(); }
+  });
+
+  it('rejects closing an inventory-tracking period with no closing count', async () => {
+    const { close, repo, book, post } = await setup();
+    try {
+      // Purchases (inventory activity) but no physical count → closing stock is unknown.
+      await post('purchase', '2026-01-15', [{ code: '1200', debit: 400, credit: 0 }, { code: '2000', debit: 0, credit: 400 }]);
+      await expect(repo.closeBooks({ id: 'c', bookId: book.id, periodId: 'p1', nextPeriodId: 'p2', date: '2026-01-31', commissionPct: 0 }))
+        .rejects.toThrow(/inventory count within the period is required/i);
     } finally { close(); }
   });
 

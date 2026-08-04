@@ -1,15 +1,16 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api';
 import { Card, Empty } from '@/src/components/UI';
 import { GlowPressable } from '@/src/components/GlowPressable';
+import { FormField, FormActions } from '@/src/components/FormCard';
 import { useTheme } from '@/src/context/ThemeContext';
 import { fmt, shortDate } from '@/src/theme';
 import { getCurrencySymbol } from '@/src/db/local';
-import { isValidDateString } from '@/src/utils/dateValidation';
+import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
 import type { InvestorLedgerDetail, InvestorLedgerTransaction } from '@/src/accountingV2/investorLedgerService';
 
 type Action = 'deposit' | 'draw';
@@ -22,8 +23,9 @@ export default function InvestorDetailScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; action?: string | string[] }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const requestedAction = Array.isArray(params.action) ? params.action[0] : params.action;
   const [data, setData] = useState<InvestorLedgerDetail | null>(null);
   const [currency, setCurrency] = useState('$');
   const [loading, setLoading] = useState(true);
@@ -54,15 +56,26 @@ export default function InvestorDetailScreen() {
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
+  // Quick action from the Parties list ("+ Capital"): auto-open the SAME
+  // Deposit Capital sheet the on-screen button uses, then consume the param.
+  React.useEffect(() => {
+    if (requestedAction === 'deposit' || requestedAction === 'draw') {
+      setAction(requestedAction);
+      router.setParams({ action: undefined } as any);
+    }
+  }, [requestedAction, router]);
+
   const closeForm = () => { setAction(null); setAmount(''); setNotes(''); setFormError(''); };
   const save = async () => {
     if (!id || !action) return;
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) { setFormError('Enter an amount greater than zero.'); return; }
-    if (!isValidDateString(date)) { setFormError('Enter a valid date in YYYY-MM-DD format.'); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setFormError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     setSaving(true); setFormError('');
     try {
-      const input = { amount: value, date, notes: notes.trim() };
+      const input = { amount: value, date: dateIso, notes: notes.trim() };
       if (action === 'deposit') await api.depositInvestorCapital(id, input);
       else await api.drawInvestorFunds(id, input);
       closeForm();
@@ -134,16 +147,16 @@ export default function InvestorDetailScreen() {
                 <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
                 <Pressable onPress={closeForm}><Ionicons name="close" size={24} color={theme.color.muted} /></Pressable>
               </View>
-              <Text style={styles.label}>Amount</Text>
-              <TextInput testID="investor-action-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
-              <Text style={styles.label}>Date</Text>
-              <TextInput value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-              <Text style={styles.label}>Notes</Text>
-              <TextInput value={notes} onChangeText={setNotes} placeholder="Optional transaction note" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 72 }]} multiline />
-              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
-              <GlowPressable testID="investor-action-save" prominent haptic onPress={save} disabled={saving} style={styles.saveButton}>
-                {saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={styles.saveText}>Post {actionMeta[action].title}</Text>}
-              </GlowPressable>
+              <FormField label="Amount" first testID="investor-action-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
+              <FormField label="Date" value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" />
+              <FormField label="Notes" multiline value={notes} onChangeText={setNotes} placeholder="Optional transaction note" />
+              <FormActions
+                primaryLabel={`Post ${actionMeta[action].title}`}
+                primaryTestID="investor-action-save"
+                onPrimary={save}
+                primaryBusy={saving}
+                error={formError}
+              />
             </> : null}
           </View>
         </KeyboardAvoidingView>
@@ -207,9 +220,4 @@ function makeStyles(theme: any) { return StyleSheet.create({
   sheetIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.color.brandPrimary + '18', alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 17, fontWeight: '800', color: theme.color.onSurface },
   sheetSub: { fontSize: 11, color: theme.color.muted, marginTop: 3 },
-  label: { fontSize: 12, fontWeight: '700', color: theme.color.onSurface, marginTop: 10 },
-  input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, color: theme.color.onSurface, borderRadius: theme.radius.input, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
-  formError: { color: theme.color.error, fontSize: 12, marginTop: 12 },
-  saveButton: { marginTop: 18, minHeight: 52, borderRadius: theme.radius.button, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
-  saveText: { color: theme.color.onBrandPrimary, fontWeight: '800', fontSize: 14 },
 }); }

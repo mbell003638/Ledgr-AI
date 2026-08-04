@@ -15,6 +15,9 @@ type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
 
+// Source tag prefixed onto notes/memo of records created via voice (fix M-5).
+const voiceNote = (note?: string) => `[Voice] ${note || ""}`.trim();
+
 export default function VoiceModal() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -107,10 +110,10 @@ export default function VoiceModal() {
         await api.createBill({
           supplierId: sid, date, amount: parsed.amount, currency,
           paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
-          notes: parsed.notes || parsed.summary,
+          notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "sale") {
-        await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary });
+        await api.createSale({ date, amount: parsed.amount, currency, notes: voiceNote(parsed.notes || parsed.summary) });
       } else if (parsed.intent === "receipt") {
         const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
         const method = parsed.method || "cash";
@@ -132,7 +135,7 @@ export default function VoiceModal() {
         await api.createReceipt({
           mode, date, amount: parsed.amount, method,
           debtorId, clientName: parsed.customerName || "",
-          allocations, notes: parsed.notes || parsed.summary,
+          allocations, notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "supplier_payment") {
         let sid = "";
@@ -145,19 +148,19 @@ export default function VoiceModal() {
         await api.createPayment({
           date, amount: parsed.amount, currency,
           type: "supplier_payment", supplierId: sid,
-          method: "cash", notes: parsed.notes || parsed.summary,
+          method: "cash", notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "drawing") {
         await api.createPayment({
           date, amount: parsed.amount, currency,
           type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Partner",
-          method: "cash", notes: parsed.notes || parsed.summary,
+          method: "cash", notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "inventory") {
         let postedV2 = false;
-          try { await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary }); postedV2 = true; }
+          try { await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: voiceNote(parsed.notes || parsed.summary) }); postedV2 = true; }
           catch (e: any) { if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e; }
-          if (!postedV2) { const info = await api.expectedInventory(); await api.createInventory({ date, expectedStock: info.expected, actualStock: parsed.amount, notes: parsed.notes || parsed.summary }); }
+          if (!postedV2) { const info = await api.expectedInventory(); await api.createInventory({ date, expectedStock: info.expected, actualStock: parsed.amount, notes: voiceNote(parsed.notes || parsed.summary) }); }
       } else {
         throw new Error("Could not determine intent. Please try again.");
       }
@@ -217,7 +220,9 @@ export default function VoiceModal() {
             </View>
           ) : null}
 
-          {phase === "confirm" && parsed && (
+          {phase === "confirm" && parsed && (() => {
+            const isDestructive = validatedAction?.ok === true && validatedAction.action.isDestructive === true;
+            return (
             <View style={styles.draft} testID="voice-draft">
               <Text style={styles.draftLabel}>Draft {parsed.intent?.replace("_", " ")}</Text>
               <Text style={styles.draftSummary}>{parsed.summary}</Text>
@@ -228,16 +233,23 @@ export default function VoiceModal() {
                 {parsed.partnerName && <DKV k="Partner" v={parsed.partnerName} theme={theme} />}
                 {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
               </View>
+              {isDestructive ? (
+                <View style={styles.destructiveWarn} testID="voice-destructive-warn">
+                  <Ionicons name="warning" size={16} color={theme.color.error} />
+                  <Text style={styles.destructiveWarnText}>This closes the period permanently — it cannot be undone.</Text>
+                </View>
+              ) : null}
               <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                 <Pressable testID="btn-voice-cancel" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                   <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Try Again</Text>
                 </Pressable>
-                <Pressable testID="btn-voice-confirm" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, flex: 1.4 }]}>
-                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>Confirm & Save</Text>}
+                <Pressable testID="btn-voice-confirm" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>{isDestructive ? "Close Books" : "Confirm & Save"}</Text>}
                 </Pressable>
               </View>
             </View>
-          )}
+            );
+          })()}
 
           {error ? (
             <View style={styles.errorBox}>
@@ -283,4 +295,6 @@ function makeStyles(theme: any) { return StyleSheet.create({
   actionText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   errorText: { color: theme.color.error, fontSize: 13, flex: 1 },
+  destructiveWarn: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.color.error },
+  destructiveWarnText: { color: theme.color.error, fontSize: 13, flex: 1, fontWeight: "600" },
 }); }

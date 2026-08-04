@@ -225,6 +225,13 @@ export default function QuickActionMenu() {
               onPress={() => navigate("/suppliers?action=create")}
             />
             <QuickActionRow
+              icon="📄"
+              iconBackground="rgba(45,212,191,0.15)"
+              title="Scan & Import"
+              subtitle="AI-import a document or old report"
+              onPress={() => navigate("/scan-import")}
+            />
+            <QuickActionRow
               icon="⚙️"
               iconBackground="rgba(234,179,8,0.15)"
               title="Opening Balances"

@@ -1,9 +1,12 @@
 import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
 import { V2_ACCOUNT_CODES } from './types';
+import { round2 } from '../money';
+import { buildPersistentV2Reports } from './persistentReports';
+import { partnershipProfitFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
 
-const cents = (value: number) => Math.round(Number(value) * 100) / 100;
+const cents = round2;
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 
 export type InvestorTransactionType = 'opening_capital' | 'capital_injection' | 'drawing' | 'profit_allocation';
@@ -59,7 +62,7 @@ export class V2InvestorLedgerService {
     });
     const totalInjected = cents(movements.filter((item) => item.type === 'capital_injection').reduce((sum, item) => sum + item.amount, 0));
     const totalDrawings = cents(movements.filter((item) => item.type === 'drawing').reduce((sum, item) => sum + item.amount, 0));
-    const profitShare = await this.currentProfitShare(bookId, period.id, member.profit_share_pct);
+    const profitShare = await this.currentProfitShare(bookId, period, member.profit_share_pct);
     const openingCapital = cents(Number(member.current_capital));
     const closedAllocations = await this.closedAllocations(bookId, member);
     const transactions: InvestorLedgerTransaction[] = [
@@ -149,25 +152,16 @@ export class V2InvestorLedgerService {
     return period;
   }
 
-  private async currentProfitShare(bookId: string, periodId: string, percentage: number) {
-    const rows = await this.db.all<{ code: string; type: string; debit: number; credit: number }>(
-      `SELECT a.code,a.type,COALESCE(SUM(l.debit),0) debit,COALESCE(SUM(l.credit),0) credit
-       FROM v2_accounts a JOIN v2_journal_lines l ON l.account_id=a.id
-       JOIN v2_journal_entries j ON j.id=l.journal_id
-       WHERE j.book_id=? AND j.period_id=? GROUP BY a.code,a.type`, [bookId, periodId],
-    );
-    const movement = (code: string) => {
-      const row = rows.find((item) => item.code === code);
-      return Number(row?.debit || 0) - Number(row?.credit || 0);
-    };
-    const sales = -movement(V2_ACCOUNT_CODES.SALES) + movement(V2_ACCOUNT_CODES.SALES_RETURNS);
-    const purchases = Math.max(0, movement(V2_ACCOUNT_CODES.INVENTORY));
-    const expenses = Math.max(0, movement(V2_ACCOUNT_CODES.EXPENSES));
-    const grossProfit = sales - purchases;
+  /**
+   * The member's in-period profit share, derived from the SAME journal-authoritative,
+   * COGS-adjusted net profit the dashboard and reports use — not the old COGS-blind
+   * `sales − purchases` shortcut. This keeps every profit surface in agreement.
+   */
+  private async currentProfitShare(bookId: string, period: PeriodRow, percentage: number) {
+    const reports = await buildPersistentV2Reports(this.db, { bookId, from: period.start_date, to: period.end_date });
     let commissionPct = 0;
     try { commissionPct = (await new V2BookConfigRepository(this.db).getBookConfig(bookId)).retailPartnership.commissionPct; } catch { /* config is optional in low-level books */ }
-    const commission = grossProfit > 0 ? grossProfit * commissionPct / 100 : 0;
-    const netProfit = grossProfit - commission - expenses;
+    const { netProfit } = partnershipProfitFromReports(reports.profitAndLoss, commissionPct);
     return cents(netProfit * Number(percentage) / 100);
   }
 

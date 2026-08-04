@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "Ledgr Opt",
-    "slug": "frontend",
+    "name": "Ledgr",
+    "slug": "ledgr-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "ledgr",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mbell.ledgr.opt",
+      "bundleIdentifier": "com.ahem.ledgrai",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan receipts to auto-fill vendor bills",
         "NSMicrophoneUsageDescription": "Dictate transactions hands-free",
@@ -23,7 +23,7 @@
         "backgroundColor": "#1C4030"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.mbell.ledgr.opt",
+      "package": "com.ahem.ledgrai",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

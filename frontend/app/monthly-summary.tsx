@@ -7,8 +7,16 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
-import { Card } from "@/src/components/UI";
 import { api } from "@/src/api";
+import { printHtml } from "@/src/utils/print";
+import {
+  assembleMonthlyReport,
+  buildMonthlyReportHtml,
+  resolveReportPalette,
+  money,
+  type MonthlyReportData,
+  type InvoiceThemeId,
+} from "@/src/utils/reportDocument";
 
 function ymOptions(count = 12): { key: string; label: string }[] {
   const opts = [];
@@ -29,22 +37,36 @@ export default function MonthlySummary() {
   const months = useMemo(() => ymOptions(12), []);
   const [month, setMonth] = useState(months[0].key);
   const [data, setData] = useState<any>(null);
+  const [report, setReport] = useState<MonthlyReportData | null>(null);
+  const [invoiceTheme, setInvoiceTheme] = useState<InvoiceThemeId>("navy_gold");
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (m: string) => {
+  const label = months.find((x) => x.key === month)?.label || month;
+
+  const load = useCallback(async (m: string, monthLabel: string) => {
     setLoading(true); setError("");
     try {
-      const j = await api.monthlySummary(m);
-      setData(j);
+      const [summary, dash, capital, settings] = await Promise.all([
+        api.monthlySummary(m),
+        api.dashboard().catch(() => ({})),
+        api.capitalStatement().catch(() => ({})),
+        api.getSettings().catch(() => ({})),
+      ]);
+      setData(summary);
+      const themeId = (((settings as any)?.invoiceTheme) || "navy_gold") as InvoiceThemeId;
+      setInvoiceTheme(themeId);
+      setReport(assembleMonthlyReport(summary, dash, capital, settings, {
+        periodTitle: monthLabel,
+        savedAt: new Date().toLocaleString(),
+      }));
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(month); }, [month, load]);
-
-  const label = months.find((x) => x.key === month)?.label || month;
+  useEffect(() => { load(month, label); }, [month, label, load]);
 
   const buildTextSummary = () => {
     if (!data) return "";
@@ -77,55 +99,10 @@ export default function MonthlySummary() {
   };
 
   const shareAsPDF = async () => {
-    if (!data) return;
+    if (!report) return;
     setSharing(true);
     try {
-      const rows = (data.topSuppliers || []).map((s: any, i: number) =>
-        `<tr><td>${i + 1}. ${s.name}</td><td style="text-align:right">${fmt(s.amount)}</td></tr>`).join("");
-      const html = `
-        <html><head><meta charset="utf-8"/>
-        <style>
-          body { font-family: -apple-system, sans-serif; padding: 32px; color: #1C221F; }
-          h1 { color: #1C4030; margin: 0; font-size: 26px; }
-          .sub { color: #8A938E; margin-bottom: 24px; }
-          .kpi-row { display: flex; gap: 12px; margin-bottom: 12px; }
-          .kpi { flex: 1; background: #F6F7F5; border-radius: 12px; padding: 12px; }
-          .kpi-label { color: #8A938E; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-          .kpi-value { font-size: 18px; font-weight: 700; margin-top: 4px; }
-          h2 { color: #1C4030; margin-top: 32px; font-size: 16px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          td { padding: 8px 0; border-bottom: 1px solid #E2E5DF; }
-          .footer { margin-top: 32px; color: #8A938E; font-size: 11px; text-align: center; }
-          .net { background: #1C4030; color: #fff; padding: 16px; border-radius: 12px; margin: 16px 0; }
-          .net .kpi-label { color: rgba(255,255,255,0.7); }
-          .net .kpi-value { color: #fff; font-size: 28px; }
-        </style></head><body>
-          <h1>Ledgr</h1>
-          <div class="sub">Monthly Summary — ${label}</div>
-
-          <div class="net">
-            <div class="kpi-label">Net Profit</div>
-            <div class="kpi-value">${fmt(data.netProfit)}</div>
-          </div>
-
-          <div class="kpi-row">
-            <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmt(data.revenue)}</div></div>
-            <div class="kpi"><div class="kpi-label">Purchases</div><div class="kpi-value">${fmt(data.purchases)}</div></div>
-          </div>
-          <div class="kpi-row">
-            <div class="kpi"><div class="kpi-label">Gross Profit</div><div class="kpi-value">${fmt(data.grossProfit)}</div></div>
-            <div class="kpi"><div class="kpi-label">Cash Flow</div><div class="kpi-value">${fmt(data.cashFlow)}</div></div>
-          </div>
-          <div class="kpi-row">
-            <div class="kpi"><div class="kpi-label">Drawings</div><div class="kpi-value">${fmt(data.drawings)}</div></div>
-            <div class="kpi"><div class="kpi-label">Transactions</div><div class="kpi-value">${data.salesCount + data.billsCount + data.paymentsCount}</div></div>
-          </div>
-
-          ${rows ? `<h2>Top Suppliers</h2><table>${rows}</table>` : ""}
-
-          <div class="footer">Generated by Ledgr on ${new Date().toLocaleString()}</div>
-        </body></html>`;
-
+      const html = buildMonthlyReportHtml(report, invoiceTheme);
       const { uri } = await Print.printToFileAsync({ html });
       const can = await Sharing.isAvailableAsync();
       if (can) {
@@ -134,6 +111,17 @@ export default function MonthlySummary() {
     } catch (e: any) {
       setError(e.message || "PDF export failed");
     } finally { setSharing(false); }
+  };
+
+  const printReport = async () => {
+    if (!report) return;
+    setPrinting(true);
+    try {
+      const html = buildMonthlyReportHtml(report, invoiceTheme);
+      await printHtml(html, `Ledgr — ${label}`);
+    } catch (e: any) {
+      setError(e.message || "Print failed");
+    } finally { setPrinting(false); }
   };
 
   return (
@@ -162,44 +150,20 @@ export default function MonthlySummary() {
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
-        ) : data ? (
+        ) : report ? (
           <>
-            <View style={styles.netCard} testID="monthly-net-card">
-              <Text style={styles.netLabel}>Net Profit — {label}</Text>
-              <Text style={[styles.netValue, { color: data.netProfit >= 0 ? "#fff" : "#FFC5BE" }]}>
-                {fmt(data.netProfit)}
-              </Text>
-              <Text style={styles.netSub}>
-                {data.salesCount} sales • {data.billsCount} bills • {data.paymentsCount} payments
-              </Text>
-            </View>
-
-            <View style={styles.grid}>
-              <StatCell label="Revenue" value={fmt(data.revenue)} theme={theme} styles={styles} />
-              <StatCell label="Purchases" value={fmt(data.purchases)} theme={theme} styles={styles} />
-              <StatCell label="Gross Profit" value={fmt(data.grossProfit)} theme={theme} styles={styles} />
-              <StatCell label="Cash Flow" value={fmt(data.cashFlow)} theme={theme} styles={styles} />
-              <StatCell label="Drawings" value={fmt(data.drawings)} theme={theme} styles={styles} />
-              <StatCell label="Supplier Pay" value={fmt(data.supplierPayments)} theme={theme} styles={styles} />
-            </View>
-
-            {data.topSuppliers?.length > 0 && (
-              <Card style={{ marginTop: theme.spacing.lg }} testID="top-suppliers-card">
-                <Text style={styles.sectionTitle}>Top Suppliers</Text>
-                {data.topSuppliers.map((s: any, i: number) => (
-                  <View key={s.supplierId + i} style={styles.tsRow}>
-                    <Text style={styles.tsRank}>{i + 1}</Text>
-                    <Text style={styles.tsName}>{s.name}</Text>
-                    <Text style={styles.tsAmount}>{fmt(s.amount)}</Text>
-                  </View>
-                ))}
-              </Card>
-            )}
+            <ReportPreview report={report} theme={theme} styles={styles} label={label} />
 
             <View style={styles.actionsRow}>
               <Pressable testID="btn-share-text" onPress={shareText} style={styles.actionSecondary}>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.color.brandPrimary} />
                 <Text style={styles.actionSecondaryText}>Share Text</Text>
+              </Pressable>
+              <Pressable testID="btn-print" onPress={printReport} disabled={printing} style={styles.actionSecondary}>
+                {printing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <>
+                  <Ionicons name="print-outline" size={18} color={theme.color.brandPrimary} />
+                  <Text style={styles.actionSecondaryText}>Print</Text>
+                </>}
               </Pressable>
               <Pressable testID="btn-share-pdf" onPress={shareAsPDF} disabled={sharing} style={styles.actionPrimary}>
                 {sharing ? <ActivityIndicator color="#fff" /> : <>
@@ -217,16 +181,114 @@ export default function MonthlySummary() {
   );
 }
 
-function StatCell({ label, value, theme, styles }: any) {
+/**
+ * MINI native preview of the same report layout. Uses the app theme (so it
+ * respects dark/AMOLED mode on-screen) while the PDF stays print-light with
+ * invoice-theme accents. Assets/Liabilities stack single-column on phone.
+ */
+function ReportPreview({ report, theme, styles, label }: { report: MonthlyReportData; theme: any; styles: any; label: string }) {
+  const sym = report.currencySymbol;
+  const hasPartners = report.partners.length > 0;
+  const neg = (n: number) => Number(n) < 0;
+
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
+    <View testID="report-preview">
+      <Text style={styles.periodTitle}>{report.periodTitle}</Text>
+      <Text style={styles.periodSub}>{report.periodStart} · Saved {report.savedAt}</Text>
+
+      {/* Hero card */}
+      <View style={styles.heroCard} testID="report-hero">
+        <View style={[styles.heroRow, styles.heroRowFirst]}>
+          <Text style={styles.heroNetLabel}>Net Profit</Text>
+          <Text style={styles.heroNetValue}>{money(report.netProfit, sym)}</Text>
+        </View>
+        {hasPartners && report.partnerCount > 0 ? (
+          <View style={styles.heroRow}>
+            <Text style={styles.heroLabel}>Each Partner's Share{report.splitLabel ? ` (${report.splitLabel})` : ""}</Text>
+            <Text style={styles.heroValue}>{money(report.partnerShareEach, sym)}</Text>
+          </View>
+        ) : null}
+        <View style={styles.heroRow}>
+          <Text style={styles.heroLabel}>Profit Before Commission</Text>
+          <Text style={styles.heroValue}>{money(report.profitBeforeCommission, sym)}</Text>
+        </View>
+        {report.commission !== 0 || report.commissionPct > 0 ? (
+          <View style={[styles.heroRow, styles.heroRowLast]}>
+            <Text style={styles.heroLabel}>Commission{report.commissionPct > 0 ? ` (${report.commissionPct}%)` : ""}</Text>
+            <Text style={styles.heroValue}>{money(report.commission, sym)}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* Assets */}
+      <Text style={styles.sectionLabel} testID="report-assets">ASSETS</Text>
+      {report.assets.map((a, i) => (
+        <View key={`a${i}`} style={styles.lineRow}>
+          <Text style={styles.lineLabel}>{a.label}</Text>
+          <Text style={[styles.num, neg(a.amount) && styles.numNeg]}>{money(a.amount, sym)}</Text>
+        </View>
+      ))}
+      <View style={[styles.lineRow, styles.totalRow]}>
+        <Text style={[styles.lineLabel, styles.totalLabel]}>Total Assets</Text>
+        <Text style={[styles.num, styles.totalNum]}>{money(report.totalAssets, sym)}</Text>
+      </View>
+
+      {/* Liabilities */}
+      <Text style={[styles.sectionLabel, { marginTop: theme.spacing.lg }]} testID="report-liabilities">LIABILITIES</Text>
+      {report.liabilities.length ? report.liabilities.map((l, i) => (
+        <View key={`l${i}`} style={styles.lineRow}>
+          <Text style={styles.lineLabel}>{l.label}</Text>
+          <Text style={[styles.num, neg(l.amount) && styles.numNeg]}>{money(l.amount, sym)}</Text>
+        </View>
+      )) : (
+        <View style={styles.lineRow}><Text style={[styles.lineLabel, { color: theme.color.muted }]}>None</Text></View>
+      )}
+
+      {/* Drawings this period */}
+      {report.drawings.length ? (
+        <>
+          <Text style={[styles.sectionLabel, { marginTop: theme.spacing.lg }]}>DRAWINGS THIS PERIOD</Text>
+          {report.drawings.map((d, i) => (
+            <View key={`d${i}`} style={styles.lineRow}>
+              <Text style={styles.lineLabel}>{d.label}</Text>
+              <Text style={[styles.num, neg(d.amount) && styles.numNeg]}>{money(d.amount, sym)}</Text>
+            </View>
+          ))}
+        </>
+      ) : null}
+
+      {/* Reconciliation */}
+      {hasPartners ? (
+        <View style={styles.reconCard} testID="report-reconciliation">
+          <Text style={styles.reconHeading}>Partner Stakes Reconciliation</Text>
+          {report.partners.map((pt, i) => (
+            <View key={`p${i}`} style={[styles.reconPartner, i > 0 && styles.reconSep]}>
+              <View style={styles.reconRow}>
+                <Text style={styles.lineLabel}>{pt.name} Opening</Text>
+                <Text style={styles.num}>{money(pt.opening, sym)}</Text>
+              </View>
+              <View style={styles.reconRow}>
+                <Text style={[styles.lineLabel, styles.indent]}>+ Profit Share</Text>
+                <Text style={[styles.num, { color: theme.color.success }]}>+{money(pt.profitShare, sym)}</Text>
+              </View>
+              <View style={styles.reconRow}>
+                <Text style={[styles.lineLabel, styles.indent]}>− Drawings</Text>
+                <Text style={[styles.num, { color: theme.color.error }]}>−{money(pt.drawings, sym)}</Text>
+              </View>
+              <View style={[styles.reconRow, styles.reconRowLast]}>
+                <Text style={[styles.lineLabel, styles.totalLabel]}>{pt.name} Ending Stake</Text>
+                <Text style={[styles.num, styles.totalNum, { color: theme.color.success }]}>{money(pt.ending, sym)}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function makeStyles(theme: any) {
+  const mono = "monospace";
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
     headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
@@ -236,24 +298,43 @@ function makeStyles(theme: any) {
     chipActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
     chipText: { color: theme.color.onSurface, fontSize: 13, fontWeight: "500" },
     chipTextActive: { color: theme.color.onBrandPrimary },
-    netCard: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.lg, padding: theme.spacing.xl, marginTop: theme.spacing.md },
-    netLabel: { color: "rgba(255,255,255,0.75)", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: "500" },
-    netValue: { color: "#fff", fontSize: 34, fontWeight: "700", marginTop: 6, letterSpacing: -1 },
-    netSub: { color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 8 },
-    grid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.md, marginTop: theme.spacing.lg },
-    stat: {
-      width: "47%", flexGrow: 1,
-      backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md,
-      padding: theme.spacing.md, borderWidth: 1, borderColor: theme.color.border,
+
+    periodTitle: { fontSize: 22, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.md },
+    periodSub: { color: theme.color.muted, fontSize: 12, marginTop: 4, marginBottom: theme.spacing.lg },
+
+    heroCard: {
+      backgroundColor: theme.color.successBg, borderRadius: theme.radius.lg,
+      borderWidth: 1, borderColor: theme.color.divider, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.xl,
     },
-    statLabel: { fontSize: 11, color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: "500" },
-    statValue: { fontSize: 18, fontWeight: "700", color: theme.color.onSurface, marginTop: 4 },
-    sectionTitle: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.md },
-    tsRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, gap: 12, borderBottomWidth: 1, borderBottomColor: theme.color.divider },
-    tsRank: { width: 20, color: theme.color.muted, fontWeight: "700", fontSize: 13 },
-    tsName: { flex: 1, color: theme.color.onSurface, fontSize: 14 },
-    tsAmount: { color: theme.color.brandPrimary, fontSize: 14, fontWeight: "700" },
-    actionsRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.lg },
+    heroRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: theme.color.divider, gap: 12 },
+    heroRowFirst: {},
+    heroRowLast: { borderBottomWidth: 0 },
+    heroNetLabel: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface },
+    heroNetValue: { fontFamily: mono, fontSize: 24, fontWeight: "800", color: theme.color.onSurface, textAlign: "right" },
+    heroLabel: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface, flexShrink: 1 },
+    heroValue: { fontFamily: mono, fontSize: 15, fontWeight: "600", color: theme.color.onSurface, textAlign: "right" },
+
+    sectionLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", color: theme.color.muted, marginBottom: 8 },
+    lineRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: theme.color.divider, gap: 12 },
+    lineLabel: { fontSize: 14, color: theme.color.onSurface, flexShrink: 1 },
+    indent: { paddingLeft: 14, color: theme.color.muted },
+    num: { fontFamily: mono, fontSize: 14, fontWeight: "600", color: theme.color.onSurface, textAlign: "right" },
+    numNeg: { color: theme.color.error },
+    totalRow: { borderBottomWidth: 0, borderTopWidth: 2, borderTopColor: theme.color.onSurface, marginTop: 2 },
+    totalLabel: { fontWeight: "800" },
+    totalNum: { fontWeight: "800" },
+
+    reconCard: {
+      backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.lg,
+      borderWidth: 1, borderColor: theme.color.divider, padding: theme.spacing.lg, marginTop: theme.spacing.xl,
+    },
+    reconHeading: { color: theme.color.brandPrimary, fontWeight: "800", fontSize: 17, marginBottom: 8 },
+    reconPartner: { paddingVertical: 6 },
+    reconSep: { borderTopWidth: 2, borderTopColor: theme.color.divider, marginTop: 6, paddingTop: 12 },
+    reconRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.color.divider, gap: 12 },
+    reconRowLast: { borderBottomWidth: 0 },
+
+    actionsRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.xl },
     actionSecondary: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
       padding: theme.spacing.md, borderRadius: theme.radius.md,

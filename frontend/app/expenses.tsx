@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,7 +27,7 @@ export default function Expenses() {
   const [selected, setSelected] = useState<Expense | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
@@ -44,7 +44,7 @@ export default function Expenses() {
   useEffect(() => { load(); }, []);
 
   const openNew = () => {
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(localTodayIso());
     setCategory(""); setAmount(""); setNotes(""); setError("");
     setEditing("new");
   };
@@ -56,12 +56,14 @@ export default function Expenses() {
 
   const save = async () => {
     const amt = parseFloat(amount);
-    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     if (!category.trim()) { setError("Enter a category"); return; }
     setSaving(true); setError("");
     try {
-      const payload = { date, category: category.trim(), amount: amt, notes };
+      const payload = { date: dateIso, category: category.trim(), amount: amt, notes };
       if (editing && editing !== "new") await api.updateExpense((editing as Expense).id, payload);
       else await api.createExpense(payload);
       await load();

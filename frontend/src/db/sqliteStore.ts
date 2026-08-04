@@ -9,7 +9,8 @@
  * this store leaves all ~800 lines of report/accounting logic untouched.
  */
 
-import { SqlRunner, CollectionName, initSchema } from './schema';
+import type { SqlRunner, CollectionName } from './schema';
+import { initSchema } from './schema';
 
 /**
  * Transaction mutex. SQLite (via expo-sqlite) uses a SINGLE connection, so two
@@ -65,6 +66,60 @@ export async function writeColl<T = any>(db: SqlRunner, coll: CollectionName, ar
       throw e;
     }
   });
+}
+
+/**
+ * Collection overwrite WITHOUT its own BEGIN/COMMIT — for use INSIDE an existing
+ * outer transaction (see withImportTransaction). writeColl() opens its own
+ * transaction and cannot be nested; this variant assumes the caller already
+ * holds one, so a multi-collection restore is a single atomic unit. Not
+ * serialized via runExclusive: the caller's transaction is the serialization
+ * boundary and nesting runExclusive inside it would deadlock the chain.
+ */
+export async function writeCollInTxn<T = any>(db: SqlRunner, coll: CollectionName, arr: T[]): Promise<void> {
+  await db.run(`DELETE FROM ${coll}`);
+  for (const item of arr) {
+    const rec: any = item;
+    const id = rec?.id != null ? String(rec.id) : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const date = rec?.date != null ? String(rec.date) : (rec?.created_at != null ? String(rec.created_at) : null);
+    await db.run(`INSERT INTO ${coll}(id, date, data) VALUES(?, ?, ?)`, [id, date, JSON.stringify(rec)]);
+  }
+}
+
+/**
+ * Run `fn` inside ONE outer BEGIN/COMMIT, rolling back on any error. Serialized
+ * via the same mutex writeColl uses so it never nests another top-level BEGIN.
+ *
+ * This is the atomicity primitive for backup import: the entire restore (all
+ * legacy collections + settings + every V2 table) either fully applies or fully
+ * rolls back, so a mid-restore failure can never leave a shop's books in a
+ * half-imported, self-inconsistent state. [C3/H1]
+ *
+ * IMPORTANT: `fn` must perform only raw SQL / writeCollInTxn / writeSettingsInTxn
+ * — it must NOT call writeColl or any helper that issues its own BEGIN/COMMIT,
+ * or SQLite will throw "cannot start a transaction within a transaction".
+ */
+export async function withImportTransaction<T>(db: SqlRunner, fn: () => Promise<T>): Promise<T> {
+  return runExclusive(async () => {
+    await db.exec('BEGIN');
+    try {
+      const result = await fn();
+      await db.exec('COMMIT');
+      return result;
+    } catch (e) {
+      try { await db.exec('ROLLBACK'); } catch { /* nothing to roll back */ }
+      throw e;
+    }
+  });
+}
+
+/** Settings upsert without its own transaction — for use inside withImportTransaction. */
+export async function writeSettingsInTxn(db: SqlRunner, s: any): Promise<void> {
+  await db.run(
+    `INSERT INTO settings(key, value) VALUES('main', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [JSON.stringify(s ?? {})],
+  );
 }
 
 /** Read the settings document (single JSON row under key 'main'). */

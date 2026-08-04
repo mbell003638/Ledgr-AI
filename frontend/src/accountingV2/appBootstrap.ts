@@ -71,6 +71,31 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
 
   await db.exec('BEGIN');
   try {
+    // Idempotency / self-healing (defense in depth): a v2_books row with this id
+    // can already exist as an ORPHAN — e.g. an old build's factory reset wiped
+    // the `v2_book_version:*` meta keys but left the book skeleton rows behind,
+    // so onboarding re-runs this bootstrap with the same deterministic id and
+    // the plain INSERT crashed with "UNIQUE constraint failed: v2_books.id".
+    // Bootstrap is only invoked when the book has no version meta (all callers
+    // gate on accountingBookVersion == null), so such a row is stale by
+    // definition: purge it children-first inside this transaction and recreate
+    // the book from scratch. Fresh ids make these deletes no-ops.
+    const existing = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [id]);
+    if (existing) {
+      await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [id]);
+      await db.run('DELETE FROM v2_invoice_allocations WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_close_books WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_inventory_counts WHERE book_id=?', [id]);
+      await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_sources WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_members WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_personas WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_parties WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_accounts WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_periods WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_books WHERE id=?', [id]);
+    }
     await db.run('INSERT INTO v2_books(id,name,style,basis,created_at) VALUES(?,?,?,?,?)',
       [book.id, book.name, book.style, book.basis, book.createdAt]);
     for (const account of defaultAccounts(id)) {
@@ -89,7 +114,9 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
       await db.run('INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
         [`${id}:member:${index + 1}`, id, member.name.trim(), member.openingContribution, member.openingContribution, member.profitSharePct]);
     }
-    await db.run('INSERT INTO meta(key,value) VALUES(?,?)', [versionKey(id), String(V2_BOOK_VERSION)]);
+    // Upsert: tolerate a leftover version key (same orphan scenario as above).
+    await db.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      [versionKey(id), String(V2_BOOK_VERSION)]);
     const active = await db.first('SELECT value FROM meta WHERE key = ?', ['v2_active_book_id']);
     if (!active) await db.run('INSERT INTO meta(key,value) VALUES(?,?)', ['v2_active_book_id', id]);
     await db.exec('COMMIT');

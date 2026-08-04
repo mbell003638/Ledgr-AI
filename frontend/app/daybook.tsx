@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
@@ -45,11 +46,17 @@ export default function DayBook() {
       ];
       all.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
       setEntries(all);
+      loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadedVersion = React.useRef<number>(-1);
+  useFocusEffect(useCallback(() => {
+    if (loadedVersion.current === getDataVersion()) return;
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load]));
 
   // Group by date
   const grouped = useMemo(() => {

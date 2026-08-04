@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { useScreenData } from "@/src/hooks/useScreenData";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -18,81 +19,76 @@ export default function PartiesScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const params = useLocalSearchParams<{ action?: string }>();
-  const [items, setItems] = useState<PartyRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all'|'customer'|'supplier'|'partner'>('all');
-  const [isPartnerMode, setIsPartnerMode] = useState(false);
   const [partyPromptVisible, setPartyPromptVisible] = useState(false);
   const [investorModalVisible, setInvestorModalVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const settings: any = await api.getSettings().catch(() => ({}));
-      const partnerActive = settings?.accountingStyle === "retail_partnership";
-      setIsPartnerMode(partnerActive);
+  const loader = useCallback(async (): Promise<{ items: PartyRow[]; isPartnerMode: boolean }> => {
+    const settings: any = await api.getSettings().catch(() => ({}));
+    const partnerActive = settings?.accountingStyle === "retail_partnership";
 
-      setFilter((current) => !partnerActive && current === 'partner' ? 'all' : current);
-      const [v2, investors] = await Promise.all([api.listParties().catch(() => []), api.listInvestors().catch(() => [])]);
-      if (v2.length) {
-        const mapped: PartyRow[] = v2.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          phone: p.phone,
-          role: (p.roles.includes('partner') ? 'partner' : (p.roles.includes('customer') && p.roles.includes('supplier') ? 'both' : p.roles.includes('customer') ? 'customer' : 'supplier')) as PartyRow['role'],
-          receivable: p.receivable,
-          payable: p.payable,
-        })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+    const [v2, investors] = await Promise.all([api.listParties().catch(() => []), api.listInvestors().catch(() => [])]);
+    if (v2.length) {
+      const mapped: PartyRow[] = v2.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        phone: p.phone,
+        role: (p.roles.includes('partner') ? 'partner' : (p.roles.includes('customer') && p.roles.includes('supplier') ? 'both' : p.roles.includes('customer') ? 'customer' : 'supplier')) as PartyRow['role'],
+        receivable: p.receivable,
+        payable: p.payable,
+      })).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-        // Preserve member-ledger balances even when a V2 party row already exists.
-        if (partnerActive) {
-          for (const investor of investors) {
-            const existing = mapped.find((x) => x.name.toLowerCase() === investor.name.toLowerCase());
-            if (existing) { existing.role = "partner"; existing.capitalBalance = Number(investor.currentCapital || 0); }
-            else if (investor.name) mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
-          }
-        }
-        setItems(mapped);
-        return;
-      }
-
-      const [suppliers, debtors] = await Promise.all([api.listSuppliers(), api.listDebtors()]);
-      const byName = new Map<string, PartyRow>();
-      for (const s of suppliers as any[]) {
-        const k = (s.name || '').trim().toLowerCase();
-        byName.set(k, { id: s.id, name: s.name, phone: s.phone, role: 'supplier', receivable: 0, payable: Number(s.balance) || 0 });
-      }
-      for (const d of debtors as any[]) {
-        const k = (d.name || '').trim().toLowerCase();
-        const found = byName.get(k);
-        if (found) {
-          found.role = 'both';
-          found.receivable = Number(d.balance) || 0;
-          found.phone = found.phone || d.phone;
-          found.id = `${found.id}|${d.id}`;
-        } else {
-          byName.set(k, { id: d.id, name: d.name, phone: d.phone, role: 'customer', receivable: Number(d.balance) || 0, payable: 0 });
-        }
-      }
+      // Preserve member-ledger balances even when a V2 party row already exists.
       if (partnerActive) {
         for (const investor of investors) {
-          if (investor.name && !byName.has(investor.name.toLowerCase())) {
-            byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
-          }
+          const existing = mapped.find((x) => x.name.toLowerCase() === investor.name.toLowerCase());
+          if (existing) { existing.role = "partner"; existing.capitalBalance = Number(investor.currentCapital || 0); }
+          else if (investor.name) mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
         }
       }
-      setItems([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)));
-    } catch (e) {
-      console.warn(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      return { items: mapped, isPartnerMode: partnerActive };
     }
+
+    const [suppliers, debtors] = await Promise.all([api.listSuppliers(), api.listDebtors()]);
+    const byName = new Map<string, PartyRow>();
+    for (const s of suppliers as any[]) {
+      const k = (s.name || '').trim().toLowerCase();
+      byName.set(k, { id: s.id, name: s.name, phone: s.phone, role: 'supplier', receivable: 0, payable: Number(s.balance) || 0 });
+    }
+    for (const d of debtors as any[]) {
+      const k = (d.name || '').trim().toLowerCase();
+      const found = byName.get(k);
+      if (found) {
+        found.role = 'both';
+        found.receivable = Number(d.balance) || 0;
+        found.phone = found.phone || d.phone;
+        found.id = `${found.id}|${d.id}`;
+      } else {
+        byName.set(k, { id: d.id, name: d.name, phone: d.phone, role: 'customer', receivable: Number(d.balance) || 0, payable: 0 });
+      }
+    }
+    if (partnerActive) {
+      for (const investor of investors) {
+        if (investor.name && !byName.has(investor.name.toLowerCase())) {
+          byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
+        }
+      }
+    }
+    return { items: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)), isPartnerMode: partnerActive };
   }, []);
 
-  useFocusEffect(useCallback(() => {
-    load();
-  }, [load]));
+  const { data, loading, refreshing, reload, refresh } = useScreenData(
+    `parties:${api.activeBookId()}`,
+    loader,
+  );
+  const items = data?.items ?? [];
+  const isPartnerMode = data?.isPartnerMode ?? false;
+  const load = reload;
+
+  // Keep the "partner" filter valid: if partner mode is off, fall back to All.
+  useEffect(() => {
+    if (!isPartnerMode) setFilter((current) => (current === 'partner' ? 'all' : current));
+  }, [isPartnerMode]);
 
   useEffect(() => {
     if (params.action === 'create') {
@@ -101,13 +97,13 @@ export default function PartiesScreen() {
     }
   }, [params.action, router]);
 
-  const visible = items.filter((x) => {
+  const visible = useMemo(() => items.filter((x) => {
     if (filter === 'all') return true;
     if (filter === 'customer') return x.role === 'customer' || x.role === 'both';
     if (filter === 'supplier') return x.role === 'supplier' || x.role === 'both';
     if (filter === 'partner') return x.role === 'partner';
     return true;
-  });
+  }), [items, filter]);
 
   const open = (p: PartyRow) => {
     if (p.role === 'partner') {
@@ -195,7 +191,10 @@ export default function PartiesScreen() {
           data={visible}
           keyExtractor={(x) => `${x.role}:${x.id}`}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+          initialNumToRender={12}
+          windowSize={7}
+          removeClippedSubviews
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="people-outline" size={40} color={theme.color.muted} />}
@@ -223,7 +222,24 @@ export default function PartiesScreen() {
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
-                {item.role === 'partner' ? <><Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text><Text style={styles.sub}>View capital ledger</Text></> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
+                {item.role === 'partner' ? <>
+                  <Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text>
+                  <Text style={styles.sub}>View capital ledger</Text>
+                  {isPartnerMode ? (
+                    <Pressable
+                      testID={`btn-quick-capital-${item.id}`}
+                      accessibilityLabel={`Deposit capital for ${item.name}`}
+                      // Same flow as the investor detail screen's Deposit Capital
+                      // button: route there with action=deposit so the sheet
+                      // auto-opens and posts via api.depositInvestorCapital.
+                      onPress={() => router.push({ pathname: '/investor/[id]', params: { id: item.id, action: 'deposit' } } as any)}
+                      style={styles.capitalBtn}
+                    >
+                      <Ionicons name="add" size={12} color={theme.color.brandPrimary} />
+                      <Text style={styles.capitalBtnText}>Capital</Text>
+                    </Pressable>
+                  ) : null}
+                </> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
               </View>
             </GlowPressable>
           )}
@@ -265,5 +281,7 @@ function makeStyles(t: any) {
     name: { fontSize: 15, fontWeight: '700', color: t.color.onSurface },
     sub: { fontSize: 12, color: t.color.muted, marginTop: 2, textTransform: 'capitalize' },
     balance: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+    capitalBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: t.color.brandPrimary, backgroundColor: t.color.brandPrimary + '14' },
+    capitalBtnText: { fontSize: 11, fontWeight: '700', color: t.color.brandPrimary },
   });
 }

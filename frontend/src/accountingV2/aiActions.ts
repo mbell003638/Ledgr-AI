@@ -10,7 +10,9 @@ export type V2InventoryProfitAction = ReadBase & { intent: 'inventory_profit'; f
 
 export type V2InvoiceLine = { description: string; quantity: number; unitPrice: number };
 export type V2Confirmation = { required: true; preview: string };
-type WriteBase = { source: V2ActionSource; access: 'write'; confirmation: V2Confirmation };
+// isDestructive flags actions that permanently mutate/close data and therefore
+// need a hardened (red) confirmation with an explicit destructive-action label.
+type WriteBase = { source: V2ActionSource; access: 'write'; confirmation: V2Confirmation; isDestructive?: boolean };
 export type V2CreateInvoiceAction = WriteBase & {
   intent: 'create_invoice'; partyId: string; date: string; lines: V2InvoiceLine[];
 };
@@ -31,17 +33,30 @@ const REPORTS: V2Report[] = ['profit_and_loss', 'balance_sheet', 'cash_flow', 't
 const ROLES: V2PartyRole[] = ['customer', 'supplier'];
 const METHODS: V2PaymentMethod[] = ['cash', 'bank', 'card', 'mobile', 'other'];
 
+// Upper bound for any AI-proposed monetary amount. AI/OCR can hallucinate absurd
+// figures (or an injected document can suggest one); anything at/above 1e9 is
+// rejected so a bad extraction can never post a wildly wrong ledger entry.
+export const MAX_AI_AMOUNT = 1_000_000_000;
+// Calendar-year bounds for any AI-proposed date. Guards against OCR/parse noise
+// producing dates like 0001 or 9999 that would corrupt period-based reports.
+export const MIN_AI_YEAR = 2000;
+export const MAX_AI_YEAR = 2099;
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown> : undefined;
 }
 function text(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0; }
-function positive(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value > 0; }
-function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
+// Positive and finite AND within MAX_AI_AMOUNT (rejects NaN/Infinity/absurd values).
+function positive(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= MAX_AI_AMOUNT; }
+// Non-negative and finite AND within MAX_AI_AMOUNT.
+function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_AI_AMOUNT; }
 function date(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) return false;
+  const year = Number(value.slice(0, 4));
+  return year >= MIN_AI_YEAR && year <= MAX_AI_YEAR;
 }
 function failure(...errors: string[]): V2AiValidationResult { return { ok: false, errors }; }
 
@@ -97,8 +112,8 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
     case 'create_payment': {
       const errors: string[] = [];
       if (!text(value.partyId)) errors.push('partyId is required');
-      if (!date(value.date)) errors.push('date must be a valid YYYY-MM-DD date');
-      if (!positive(value.amount)) errors.push('amount must be positive');
+      if (!date(value.date)) errors.push(`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`);
+      if (!positive(value.amount)) errors.push(`amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`);
       if (!METHODS.includes(value.method as V2PaymentMethod)) errors.push('method is invalid');
       if (value.direction !== 'received' && value.direction !== 'paid') errors.push('direction must be received or paid');
       if (value.invoiceId !== undefined && !text(value.invoiceId)) errors.push('invoiceId must be non-empty');
@@ -113,9 +128,10 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
     }
     case 'close_books': {
       if (!text(value.periodId)) return failure('periodId is required');
-      if (!date(value.date)) return failure('date must be a valid YYYY-MM-DD date');
+      if (!date(value.date)) return failure(`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`);
       return { ok: true, action: {
         source, intent: 'close_books', access: 'write', periodId: value.periodId.trim(), date: value.date,
+        isDestructive: true,
         confirmation: { required: true, preview: `Close books for period ${value.periodId.trim()} on ${value.date}` },
       } };
     }
@@ -124,7 +140,11 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
 }
 
 export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'record_inventory';
-export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation };
+// isDestructive mirrors the V2 write flag so confirm UIs can react uniformly.
+// All current assistant proposals are additive, so this stays false/undefined;
+// it exists so a destructive proposal (if ever added) is rendered with a
+// hardened confirmation rather than the default one.
+export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation; isDestructive?: boolean };
 export type AssistantProposalValidationResult = { ok: true; action: AssistantProposal } | { ok: false; errors: string[] };
 
 const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'record_inventory'];
@@ -140,10 +160,12 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
   const params = record(value.params) || {};
   const type = value.type as AssistantProposalType;
   const dateValue = params.date === undefined ? new Date().toISOString().slice(0, 10) : params.date;
-  if (!date(dateValue)) return { ok: false, errors: ['date must be a valid YYYY-MM-DD date'] };
+  if (!date(dateValue)) return { ok: false, errors: [`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
   const amount = assistantAmount(params.amount);
   const needAmount = type !== 'add_debtor';
-  if (needAmount && (!Number.isFinite(amount) || (type === 'record_inventory' ? amount < 0 : amount <= 0))) return { ok: false, errors: ['amount must be valid and positive'] };
+  // Reject NaN/Infinity, non-positive (or negative for inventory), AND anything above MAX_AI_AMOUNT.
+  const amountBad = !Number.isFinite(amount) || amount > MAX_AI_AMOUNT || (type === 'record_inventory' ? amount < 0 : amount <= 0);
+  if (needAmount && amountBad) return { ok: false, errors: [`amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`] };
   const requiredName = type === 'add_bill' ? 'supplierName'
     : ['add_debtor', 'add_debtor_payment'].includes(type) ? 'name'
     : ['create_invoice', 'create_quote'].includes(type) ? 'clientName'
@@ -161,6 +183,22 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
   const name = String(params[requiredName || 'customerName'] || '').trim();
   const summary = type.replace(/_/g, ' ') + (needAmount ? ` of ${amount.toFixed(2)}` : '') + (name ? ` for ${name}` : '');
   return { ok: true, action: { source, type, params: normalized, confirmation: { required: true, preview: `Confirm ${summary} on ${dateValue}` } } };
+}
+
+/**
+ * Bounds validation for a single AI-extracted supplier/customer statement line
+ * (reconcile). Applies the SAME amount + date bounds as the proposal validators
+ * so an invalid/hallucinated row can be flagged (and blocked from import) before
+ * it is ever offered as addable. Returns null when the row is safe to import.
+ */
+export function validateReconcileEntry(entry: { amount?: unknown; date?: unknown }): string | null {
+  if (!positive(entry?.amount)) {
+    return `Amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`;
+  }
+  if (!date(entry?.date)) {
+    return `Date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`;
+  }
+  return null;
 }
 
 export async function executeAssistantProposal<T>(validation: AssistantProposalValidationResult, confirmation: { confirmed: boolean }, executor: () => Promise<T> | T): Promise<T> {

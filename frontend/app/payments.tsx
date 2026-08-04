@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { useScreenData } from "@/src/hooks/useScreenData";
 import { getCurrencySymbol } from "@/src/db/local";
 import { confirmAction } from "@/src/utils/alerts";
 import { Empty } from "@/src/components/UI";
@@ -32,31 +33,30 @@ export default function PaymentsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
 
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [supplierMap, setSupplierMap] = useState<Record<string, string>>({});
-  const [currSym, setCurrSym] = useState("$");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Payment | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
-  const [isPartnerMode, setIsPartnerMode] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [pl, sl, s] = await Promise.all([api.listPayments(), api.listSuppliers(), api.getSettings()]);
-      setPayments(pl as Payment[]);
-      
-      const smap: Record<string, string> = {};
-      (sl as any[]).forEach(sup => { smap[sup.id] = sup.name; });
-      setSupplierMap(smap);
-
-      setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      setIsPartnerMode(s.accountingStyle === 'retail_partnership');
-    } catch (e) { console.warn(e); }
-    finally { setLoading(false); setRefreshing(false); }
+  const loader = useCallback(async () => {
+    const [pl, sl, s] = await Promise.all([api.listPayments(), api.listSuppliers(), api.getSettings()]);
+    const smap: Record<string, string> = {};
+    (sl as any[]).forEach(sup => { smap[sup.id] = sup.name; });
+    return {
+      payments: pl as Payment[],
+      supplierMap: smap,
+      currSym: getCurrencySymbol(s.currency || "USD"),
+      isPartnerMode: s.accountingStyle === 'retail_partnership',
+    };
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { data, loading, refreshing, reload, refresh } = useScreenData(
+    `payments:${api.activeBookId()}`,
+    loader,
+  );
+  const payments = data?.payments ?? [];
+  const supplierMap = data?.supplierMap ?? {};
+  const currSym = data?.currSym ?? "$";
+  const isPartnerMode = data?.isPartnerMode ?? false;
+  const load = reload;
 
   const totalPaid = useMemo(() => payments.reduce((s, p) => s + (Number(p.amount) || 0), 0), [payments]);
 
@@ -163,8 +163,11 @@ export default function PaymentsScreen() {
         data={payments}
         keyExtractor={(p) => p.id}
         contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 80 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.color.brandPrimary} />}
         ListEmptyComponent={<Empty icon={<Ionicons name="cash-outline" size={40} color={theme.color.muted} />} title="No payments yet" hint="Tap + to record money paid." />}
+        initialNumToRender={12}
+        windowSize={7}
+        removeClippedSubviews
         renderItem={({ item }) => (
           <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.type === "supplier_payment" ? "#F0D8D8" : "#E8E8E8" }]}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { isValidDateString } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,7 +23,7 @@ export default function BillForm() {
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [notes, setNotes] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localTodayIso());
   const [photo, setPhoto] = useState<string>("");
   const [ocrLoading, setOcrLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,7 +121,9 @@ export default function BillForm() {
 
   const save = async () => {
     setError("");
-    if (!isValidDateString(date)) { setError("Invalid date format. Please use YYYY-MM-DD."); return; }
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (dateIso !== date) setDate(dateIso);
     let finalSupplierId = supplierId;
     if (newSupplierName.trim()) {
       try {
@@ -143,7 +145,7 @@ export default function BillForm() {
       const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
 
       const payload = {
-        supplierId: finalSupplierId, date, amount: amt, currency,
+        supplierId: finalSupplierId, date: dateIso, amount: amt, currency,
         paymentType, invoiceNo, notes: finalNotes, photo,
       };
       if (editId) await api.updateBill(editId, payload);

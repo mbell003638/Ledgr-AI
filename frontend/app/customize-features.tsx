@@ -16,8 +16,8 @@ import { api } from "@/src/api";
 import { Card, ScreenHeader } from "@/src/components/UI";
 import {
   ALL_FEATURES,
-  PERSONA_DEFAULT_FEATURES,
   getEnabledFeatures,
+  getPersonaBaselineFeatures,
   FeatureKey,
   FeatureMeta,
 } from "@/src/utils/featureFlags";
@@ -61,8 +61,9 @@ export default function CustomizeFeaturesScreen() {
   };
 
   const resetToPersonaDefaults = () => {
-    const persona = settings?.activePersona || settings?.businessType || "custom";
-    const defaults = PERSONA_DEFAULT_FEATURES[persona] || ALL_FEATURES.map((f) => f.key);
+    // Union of the selected personas' default sets (falls back to activePersona
+    // / businessType / custom inside the helper).
+    const defaults = getPersonaBaselineFeatures(settings);
     setActiveFeatures(new Set(defaults));
   };
 

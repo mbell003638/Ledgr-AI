@@ -6,12 +6,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BarChart } from "react-native-gifted-charts";
 
+import { InteractionManager } from "react-native";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { showAlert } from "@/src/utils/alerts";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
@@ -64,20 +68,12 @@ const TILES = [
   { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
 ] as const;
 
-// Persona-based customization: hide tiles that don't apply to a business type.
-// Service businesses (consultant/freelancer/salon/handyman/service) don't hold stock,
-// so Inventory is irrelevant. Pure service personas also lean on Invoices+Debtors over
-// supplier Purchases/Creditors, so those are de-emphasised for the lightest personas.
-const HIDDEN_TILES: Record<string, string[]> = {
-  service: ["inventory", "delivery"],
-  salon: ["inventory", "delivery"],
-  handyman: ["inventory"],
-  it_consultant: ["inventory", "bills", "delivery"],
-  freelancer: ["inventory", "bills", "delivery"],
-  // shop / vendor: show everything (default)
-};
-
-
+// Persona-driven tile visibility is derived centrally in
+// src/utils/featureFlags.ts (getEnabledFeatures). The dashboard grid filters
+// TILES through that helper below (see `visibleTiles`), so onboarding persona
+// selection — and any manual override from customize-features — flows straight
+// into which tiles appear here. Manual override (settings.enabledFeatures)
+// takes precedence over the persona baseline.
 
 function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
   // Keep the hero on the same safe transform-only touch treatment as every
@@ -129,6 +125,10 @@ export default function Dashboard() {
     })();
   }, []);
 
+  // Remember the (data version, dailyDate) at which the dashboard last loaded,
+  // so a plain focus-return with nothing changed can skip the full re-read.
+  const loadedRef = React.useRef<{ version: number; date: string } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const [d, day, s] = await Promise.all([
@@ -139,6 +139,7 @@ export default function Dashboard() {
       setDash(d);
       setDaily(day);
       setSettings(s);
+      loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
       console.warn("dash", e);
     } finally {
@@ -223,7 +224,14 @@ export default function Dashboard() {
     await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(keys));
   };
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    const last = loadedRef.current;
+    const upToDate = last != null && last.version === getDataVersion() && last.date === dailyDate;
+    if (upToDate) return; // nothing changed since last load — instant return
+    // Defer the heavy dashboard aggregation past the tab/entering animation.
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
+    return () => task.cancel();
+  }, [load, dailyDate]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -279,8 +287,16 @@ export default function Dashboard() {
     } else if (preset === "this_month") {
       f = `${nowStr.slice(0, 7)}-01`; t = nowStr;
       setFromDate(f); setToDate(t);
+    } else if (preset === "custom" && f.trim() && t.trim()) {
+      // Typed dates: normalize (Samsung minus signs, DD/MM, dots, exotic digits)
+      // then validate, reflecting the canonical form back into the inputs.
+      const rawF = f, rawT = t;
+      f = normalizeDateInput(f); t = normalizeDateInput(t);
+      if (!isValidDateString(f)) { showAlert("Invalid date", `Couldn't read "${rawF.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+      if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${rawT.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+      setFromDate(f); setToDate(t);
     }
-    
+
     if (f && t) {
       try {
         const res = await api.pnlRange(f, t);
@@ -353,6 +369,8 @@ export default function Dashboard() {
                   <TextInput
                     value={fromDate}
                     onChangeText={setFromDate}
+                    onBlur={() => { if (fromDate.trim()) setFromDate(normalizeDateInput(fromDate)); }}
+                    autoCapitalize="none"
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
                     style={styles.customDateInput}
@@ -361,6 +379,8 @@ export default function Dashboard() {
                   <TextInput
                     value={toDate}
                     onChangeText={setToDate}
+                    onBlur={() => { if (toDate.trim()) setToDate(normalizeDateInput(toDate)); }}
+                    autoCapitalize="none"
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor={theme.color.muted}
                     style={styles.customDateInput}
@@ -436,8 +456,25 @@ export default function Dashboard() {
               </Card>
             ) : null}
 
-            {/* Daily quick summary — WhatsApp shareable */}
-            <Card style={[styles.homeSummaryCard, styles.dailyCard]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+            {/* Daily quick summary — WhatsApp shareable. Same press treatment as
+                the hero card (GlowPressable, pressScale 0.972, no haptic, clipSafe,
+                animationsEnabled bypass handled inside GlowPressable). Nested
+                controls (day-nav arrows, Today, WhatsApp share) are Pressables of
+                their own, so they claim their touches first — the card press only
+                fires on the body and opens the Day Book. */}
+            <GlowPressable
+              testID="daily-card-press"
+              accessibilityRole="button"
+              topHighlight={false}
+              haptic={false}
+              clipSafe
+              pressScale={0.972}
+              restingBorderColor="transparent"
+              hoverBorderColor={theme.color.brandPrimary}
+              onPress={() => router.push("/daybook")}
+              style={{ borderRadius: theme.radius.lg, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg }}
+            >
+            <Card style={[styles.homeSummaryCard, styles.dailyCard, { marginTop: 0, marginBottom: 0, marginVertical: 0 }]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={styles.dailyHead}>
                 <View>
                   <Text numberOfLines={1} style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
@@ -479,6 +516,7 @@ export default function Dashboard() {
                 <Text style={styles.shareBtnText}>Share to WhatsApp</Text>
               </GlowPressable>
             </Card>
+            </GlowPressable>
 
             {/* KPI row — tap to open the underlying entries */}
             <View style={styles.kpiRow}>

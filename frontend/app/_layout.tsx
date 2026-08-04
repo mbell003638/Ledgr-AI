@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable } from "react-native";
+import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable, InteractionManager } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -20,7 +20,14 @@ import { initStorage } from "@/src/db/backend";
     showsHorizontalScrollIndicator: false,
   };
 });
-LogBox.ignoreAllLogs(true);
+// Only touch LogBox in development. `ignoreAllLogs(true)` previously ran in
+// release too, hiding every warning from real users. In dev we suppress
+// nothing by default; add targeted strings below when a known-benign warning
+// is too noisy, e.g. LogBox.ignoreLogs(["Require cycle:", "Setting a timer"]).
+// Never ignore all logs, and never call LogBox outside this __DEV__ guard.
+if (__DEV__) {
+  LogBox.ignoreLogs([]);
+}
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // ---------- Error Boundary ----------
@@ -111,6 +118,7 @@ function ThemedStack() {
         <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
         <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
         <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
+        <Stack.Screen name="scan-import" options={{ presentation: "card" }} />
         <Stack.Screen name="invoices" options={{ presentation: "card" }} />
         <Stack.Screen name="quotes" options={{ presentation: "card" }} />
         <Stack.Screen name="delivery-notes" options={{ presentation: "card" }} />
@@ -226,8 +234,13 @@ export default function RootLayout() {
       });
 
     if (Platform.OS !== "web") {
-      ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
-      ImagePicker.requestCameraPermissionsAsync().catch(() => {});
+      // Defer permission prompts off the first frames: requesting camera/media
+      // access competes with startup work and can stall the initial render on
+      // low-end Android. They are non-blocking best-effort either way.
+      InteractionManager.runAfterInteractions(() => {
+        ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
+        ImagePicker.requestCameraPermissionsAsync().catch(() => {});
+      });
     }
 
     return () => {

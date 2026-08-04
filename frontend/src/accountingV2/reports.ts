@@ -1,7 +1,8 @@
 import type { V2MemoryStore } from './schema';
 import type { V2Account, V2AccountType, V2JournalEntry } from './types';
+import { round2 } from '../money';
 
-const cents = (value: number) => Math.round(value * 100) / 100;
+const cents = round2;
 const TOLERANCE = 0.005;
 
 export type V2ReportOptions = {
@@ -10,6 +11,14 @@ export type V2ReportOptions = {
   from?: string;
   /** Inclusive ISO date boundary. */
   to?: string;
+  /**
+   * Open-period periodic COGS to reflect in reports before it is posted to the GL
+   * (see cogs.ts). Injected as a synthetic, non-persisted Dr COGS / Cr Inventory so
+   * trial balance, P&L, and balance sheet all stay internally consistent and gross/
+   * net profit include cost of sales for the still-open period. Callers must NOT pass
+   * this for ranges whose COGS is already posted (closed periods) to avoid double count.
+   */
+  cogsAdjustment?: { cogsAccountId: string; inventoryAccountId: string; amount: number };
 };
 
 export type V2AccountTotal = Pick<V2Account, 'id' | 'bookId' | 'code' | 'name' | 'type'> & {
@@ -53,7 +62,12 @@ export type V2Reports = {
   };
   profitAndLoss: {
     revenue: number;
+    /** Total expenses INCLUDING cost of goods sold. */
     expenses: number;
+    /** Periodic cost of goods sold (5000 account balance, incl. any open-period estimate). */
+    cogs: number;
+    /** revenue − cogs. */
+    grossProfit: number;
     netProfit: number;
   };
   balanceSheet: {
@@ -84,6 +98,46 @@ function isInRange(entry: V2JournalEntry, options: V2ReportOptions): boolean {
 
 function normalBalance(type: V2AccountType, debit: number, credit: number): number {
   return type === 'asset' || type === 'expense' ? cents(debit - credit) : cents(credit - debit);
+}
+
+/**
+ * Cash-basis P&L (M3): recognizes revenue and expenses only when cash actually moves.
+ *   revenue  = cash sales + amounts received against invoices (receipt→invoice allocations)
+ *   cogs     = cash-paid inventory purchases in the period (the cost of stock bought for cash)
+ *   expenses = cash-paid operating expenses + payments made to suppliers (EXCLUDING the cash
+ *              purchases now surfaced as cogs, so nothing is double-counted)
+ * This yields a single-basis, coherent stack: grossProfit = revenue − cogs and
+ * netProfit = grossProfit − expenses, so netProfit can never exceed grossProfit and
+ * grossProfit can never exceed revenue. An unpaid invoice therefore contributes to accrual
+ * revenue but never to cash revenue until received.
+ * Note: the trial balance and balance sheet remain accrual/journal-derived; only the P&L
+ * revenue/cogs/expense recognition changes with basis.
+ */
+function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) {
+  const inRange = (date: string) => (!options.from || date >= options.from) && (!options.to || date <= options.to);
+  const live = store.sources.filter((s) => s.bookId === options.bookId && !(s.metadata as any)?.deleted && !(s.metadata as any)?.reversed);
+  const sourceById = new Map(store.sources.map((s) => [s.id, s]));
+  const metaTotal = (id: string) => cents(Number((sourceById.get(id)?.metadata as any)?.total || 0));
+
+  // Revenue: cash sales in range + receipts allocated to invoices, recognized on the receipt date.
+  const cashSales = live.filter((s) => s.type === 'cash_sale' && inRange(s.date)).reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
+  const received = store.allocations
+    .filter((a) => a.bookId === options.bookId)
+    .filter((a) => { const receipt = sourceById.get(a.receiptSourceId); const date = receipt?.date || a.allocatedAt; return receipt && !(receipt.metadata as any)?.deleted && !(receipt.metadata as any)?.reversed && inRange(date); })
+    .reduce((sum, a) => cents(sum + Number(a.amount)), 0);
+  const revenue = cents(cashSales + received);
+
+  // COGS (cash basis): the cost of inventory bought for cash in the period. Kept out of the
+  // expense total below so grossProfit and netProfit derive from disjoint buckets.
+  const cogs = live.filter((s) => s.type === 'cash_purchase' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+
+  // Expenses: cash-paid operating expenses + cash paid to suppliers, both on their own date.
+  // Cash purchases are intentionally NOT included here (they land in cogs above).
+  const cashExpenses = live.filter((s) => s.type === 'expense' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+  const supplierPayments = live.filter((s) => s.type === 'supplier_payment' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+  const expenses = cents(cashExpenses + supplierPayments);
+
+  return { revenue, cogs, expenses };
 }
 
 /**
@@ -156,6 +210,26 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     }
   }
 
+  // Inject the open-period periodic COGS estimate (Dr COGS / Cr Inventory) so profit
+  // reflects cost of sales before the close posts it. Non-persisted; keeps books balanced.
+  const cogsAdj = options.cogsAdjustment;
+  if (cogsAdj && Number.isFinite(cogsAdj.amount) && cogsAdj.amount > 0) {
+    const amount = cents(cogsAdj.amount);
+    const cogsTotal = totalsById.get(cogsAdj.cogsAccountId);
+    const inventoryTotal = totalsById.get(cogsAdj.inventoryAccountId);
+    if (cogsTotal && inventoryTotal && accountsById.has(cogsAdj.cogsAccountId) && accountsById.has(cogsAdj.inventoryAccountId)) {
+      cogsTotal.debit += amount;
+      inventoryTotal.credit += amount;
+      totalDebit += amount;
+      totalCredit += amount;
+      const cogsAccount = accountsById.get(cogsAdj.cogsAccountId)!;
+      const inventoryAccount = accountsById.get(cogsAdj.inventoryAccountId)!;
+      const date = options.to || '';
+      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: cogsAccount.id, accountCode: cogsAccount.code, accountName: cogsAccount.name, accountType: cogsAccount.type, debit: amount, credit: 0 });
+      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: inventoryAccount.id, accountCode: inventoryAccount.code, accountName: inventoryAccount.name, accountType: inventoryAccount.type, debit: 0, credit: amount });
+    }
+  }
+
   const accountTotals: V2AccountTotal[] = accounts.map((account) => {
     const raw = totalsById.get(account.id)!;
     const debit = cents(raw.debit);
@@ -187,13 +261,43 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const sumType = (type: V2AccountType) => cents(accountTotals
     .filter((account) => account.type === type)
     .reduce((sum, account) => sum + account.normalBalance, 0));
-  const revenue = sumType('revenue');
-  const expenses = sumType('expense');
-  const netProfit = cents(revenue - expenses);
+  const cogs = cents(accountTotals
+    .filter((account) => account.code === '5000')
+    .reduce((sum, account) => sum + account.normalBalance, 0));
+
+  // Accrual (default) P&L is derived straight from the journal-authoritative account
+  // balances. Cash basis (M3) recognizes revenue/expenses only when money moves.
+  const book = store.books.find((b) => b.id === options.bookId);
+  const cashBasis = book?.basis === 'cash';
+  const accrualRevenue = sumType('revenue');
+  const accrualExpenses = sumType('expense');
+  // The balance sheet ALWAYS uses accrual current earnings so the accounting identity
+  // (assets = liabilities + equity + earnings) holds regardless of the P&L basis.
+  const accrualNetProfit = cents(accrualRevenue - accrualExpenses);
+  let revenue = accrualRevenue;
+  let expenses = accrualExpenses;
+  // Accrual `cogs` is the periodic 5000 balance (incl. any open-period estimate) and is
+  // already contained in `expenses` (COGS is an expense-type account), so accrual net profit
+  // is revenue − expenses. Cash basis uses a coherent, single-basis stack where cogs =
+  // cash-paid purchases (disjoint from `expenses`) and net = gross − expenses.
+  let cogsForPnl = cogs;
+  let grossProfit: number;
+  let netProfit: number;
+  if (cashBasis) {
+    const cash = cashBasisProfitAndLoss(store, options);
+    revenue = cash.revenue;
+    cogsForPnl = cash.cogs;
+    expenses = cash.expenses;
+    grossProfit = cents(revenue - cogsForPnl);
+    netProfit = cents(grossProfit - expenses);
+  } else {
+    grossProfit = cents(revenue - cogsForPnl);
+    netProfit = cents(revenue - expenses);
+  }
   const assets = sumType('asset');
   const liabilities = sumType('liability');
   const equity = sumType('equity');
-  const liabilitiesAndEquity = cents(liabilities + equity + netProfit);
+  const liabilitiesAndEquity = cents(liabilities + equity + accrualNetProfit);
   const balanceSheetDifference = cents(assets - liabilitiesAndEquity);
   if (Math.abs(balanceSheetDifference) > TOLERANCE) {
     errors.push({
@@ -214,16 +318,34 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       totals: { debit: totalDebit, credit: totalCredit, difference: trialDifference },
       balanced: Math.abs(trialDifference) <= TOLERANCE,
     },
-    profitAndLoss: { revenue, expenses, netProfit },
+    profitAndLoss: { revenue, expenses, cogs: cogsForPnl, grossProfit, netProfit },
     balanceSheet: {
       assets,
       liabilities,
       equity,
-      currentEarnings: netProfit,
+      currentEarnings: accrualNetProfit,
       liabilitiesAndEquity,
       difference: balanceSheetDifference,
       balanced: Math.abs(balanceSheetDifference) <= TOLERANCE,
     },
     reconciliation: { ok: errors.length === 0, errors },
   };
+}
+
+export type V2PartnershipProfit = { revenue: number; cogs: number; grossProfit: number; commission: number; expenses: number; netProfit: number };
+
+/**
+ * The single derivation of partnership profit for the OPEN period, shared by the
+ * dashboard and the investor ledger so every profit surface agrees. Takes a
+ * journal-derived report (COGS already reflected) plus the commission rate and
+ * applies the manager commission consistently. Commission is an open-period accrual
+ * estimate (it is only posted to the GL at close), so it is subtracted here rather
+ * than read from the ledger.
+ */
+export function partnershipProfitFromReports(pnl: V2Reports['profitAndLoss'], commissionPct: number): V2PartnershipProfit {
+  const grossProfit = cents(pnl.grossProfit);
+  const pct = Number.isFinite(commissionPct) ? commissionPct : 0;
+  const commission = grossProfit > 0 ? cents(grossProfit * pct / 100) : 0;
+  const netProfit = cents(pnl.netProfit - commission);
+  return { revenue: cents(pnl.revenue), cogs: cents(pnl.cogs), grossProfit, commission, expenses: cents(pnl.expenses), netProfit };
 }
