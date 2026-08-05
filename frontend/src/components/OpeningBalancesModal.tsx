@@ -19,8 +19,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
 
   const [openingCash, setOpeningCash] = useState("");
   const [openingInventory, setOpeningInventory] = useState("");
-  const [shopDeposit, setShopDeposit] = useState("");
-  const [houseDeposit, setHouseDeposit] = useState("");
+  const [otherAssets, setOtherAssets] = useState<{ name: string; amount: string }[]>([]);
   const [accountsPayable, setAccountsPayable] = useState("");
   const [otherLiabilities, setOtherLiabilities] = useState("");
   const [retainedEarnings, setRetainedEarnings] = useState("");
@@ -42,9 +41,10 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         const openingData: any = opening || {};
         setOpeningCash(openingData.cash != null ? String(openingData.cash) : (s.openingCash ? String(s.openingCash) : "0"));
         setOpeningInventory(openingData.inventory != null ? String(openingData.inventory) : (s.openingInventory ? String(s.openingInventory) : "0"));
-        const deposits = Number(openingData.otherAssets || 0);
-        setShopDeposit(deposits ? String(deposits) : "0");
-        setHouseDeposit("0");
+        const savedAssets = Array.isArray(openingData.assetBreakdown) ? openingData.assetBreakdown : [];
+        setOtherAssets(savedAssets.length
+          ? savedAssets.map((asset: any) => ({ name: String(asset?.name || ""), amount: String(asset?.amount || "") }))
+          : (Number(openingData.otherAssets || 0) ? [{ name: "Other asset", amount: String(openingData.otherAssets) }] : []));
         setAccountsPayable(openingData.accountsPayable != null ? String(openingData.accountsPayable) : "0");
         setOtherLiabilities(openingData.otherLiabilities != null ? String(openingData.otherLiabilities) : "0");
         setRetainedEarnings(openingData.retainedEarnings != null ? String(openingData.retainedEarnings) : "0");
@@ -78,6 +78,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   const updateMember = (index: number, field: "name" | "amount" | "profitSharePct", val: string) => {
     setMembers((prev) => prev.map((m, i) => (i === index ? { ...m, [field]: val } : m)));
   };
+  const addOtherAsset = () => setOtherAssets((prev) => [...prev, { name: "", amount: "" }]);
+  const removeOtherAsset = (index: number) => setOtherAssets((prev) => prev.filter((_, i) => i !== index));
+  const updateOtherAsset = (index: number, field: "name" | "amount", value: string) => {
+    setOtherAssets((prev) => prev.map((asset, i) => i === index ? { ...asset, [field]: value } : asset));
+  };
 
   const save = async () => {
     // Normalize the manually-typed period start (whitespace, exotic digits,
@@ -94,9 +99,10 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
     }
     const cashVal = parseFloat(openingCash) || 0;
     const invVal = parseFloat(openingInventory) || 0;
-    const shopDepositVal = parseFloat(shopDeposit) || 0;
-    const houseDepositVal = parseFloat(houseDeposit) || 0;
-    const otherAssetsVal = shopDepositVal + houseDepositVal;
+    const assetBreakdown = otherAssets
+      .map((asset) => ({ name: asset.name.trim(), amount: parseFloat(asset.amount) || 0 }))
+      .filter((asset) => asset.name || asset.amount);
+    const otherAssetsVal = assetBreakdown.reduce((sum, asset) => sum + asset.amount, 0);
     const accountsPayableVal = parseFloat(accountsPayable) || 0;
     const otherLiabilitiesVal = parseFloat(otherLiabilities) || 0;
     const retainedEarningsVal = parseFloat(retainedEarnings) || 0;
@@ -104,7 +110,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
     const ownerCapitalVal = isPartnerMode ? cleanedPreviewMembers.reduce((sum, value) => sum + value, 0) : (parseFloat(ownerCapital) || 0);
     const openingAssets = cashVal + invVal + otherAssetsVal;
     const openingCredits = accountsPayableVal + otherLiabilitiesVal + ownerCapitalVal + retainedEarningsVal;
-    if (mode === "all" && [cashVal, invVal, shopDepositVal, houseDepositVal, accountsPayableVal, otherLiabilitiesVal, retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
+    if (mode === "all" && assetBreakdown.some((asset) => asset.amount > 0 && !asset.name)) {
+      setError("Give each other opening asset a name.");
+      return;
+    }
+        if (mode === "all" && [cashVal, invVal, ...assetBreakdown.map((asset) => asset.amount), accountsPayableVal, otherLiabilitiesVal, retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
       setError("Opening amounts cannot be negative.");
       return;
     }
@@ -134,7 +144,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       });
       // V2 accounting keeps opening balances in the dated double-entry ledger.
       try {
-        await api.updateV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
@@ -173,7 +183,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
             <View>
               <Text style={styles.title}>{isInvestorOnly ? "Investor Capital & Equity Setup" : "Opening Balances Setup"}</Text>
               <Text style={styles.subtitle}>
-                {isInvestorOnly ? "Add or edit investor names, capital contributions & profit share" : "Set your starting cash, stock & equity directly"}
+                {isInvestorOnly ? "Add or edit investor names, capital contributions & profit share" : "Enter only the balances your business already has"}
               </Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeBtn}>
@@ -187,7 +197,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
             <ScrollView style={{ maxHeight: 560 }} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
               {!isInvestorOnly ? (
                 <>
-                  <Text style={styles.label}>Opening Cash Balance ($)</Text>
+                  <Text style={styles.label}>Opening Cash Balance (Optional) ($)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingCash}
                     onChangeText={setOpeningCash}
@@ -197,7 +207,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     style={styles.input}
                   />
 
-                  <Text style={[styles.label, { marginTop: 14 }]}>Opening Stock Value ($)</Text>
+                  <Text style={[styles.label, { marginTop: 14 }]}>Opening Stock / Inventory (Optional) ($)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingInventory}
                     onChangeText={setOpeningInventory}
@@ -206,12 +216,25 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     placeholderTextColor={theme.color.muted}
                     style={styles.input}
                   />
+                  <Text style={styles.helper}>Leave stock at zero if your business does not hold inventory.</Text>
 
-                  <Text style={[styles.label, { marginTop: 14 }]}>Shop / Security Deposits ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={shopDeposit} onChangeText={setShopDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: 14 }]}>House Deposit ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={houseDeposit} onChangeText={setHouseDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <View style={{ marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border }}>
+                    <Text style={styles.sectionHeader}>Other Opening Assets (Optional)</Text>
+                    <Text style={styles.helper}>Add deposits, equipment, property or any other asset you already own. Leave empty if none.</Text>
+                    {otherAssets.map((asset, index) => (
+                      <View key={index} style={[styles.memberCard, { marginTop: 8 }]}>
+                        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.name} onChangeText={(value) => updateOtherAsset(index, "name", value)} placeholder="Asset name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
+                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.amount} onChangeText={(value) => updateOtherAsset(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
+                          <Pressable onPress={() => removeOtherAsset(index)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                        </View>
+                      </View>
+                    ))}
+                    <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addOtherAsset} style={styles.addMemberBtn}>
+                      <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                      <Text style={styles.addMemberText}>Add Other Asset</Text>
+                    </GlowPressable>
+                  </View>
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Creditors / Supplier Payable ($)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={accountsPayable} onChangeText={setAccountsPayable} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
@@ -222,6 +245,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Retained Earnings / Other Equity ($)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   <Text style={styles.helper}>Use this for profit or equity carried forward from before the app period. It is not current-period profit.</Text>
+
+                  {!isPartnerMode ? <>
+                    <Text style={[styles.label, { marginTop: 14 }]}>Opening Owner Capital / Equity ($)</Text>
+                    <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  </> : null}
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Period Start Date (YYYY-MM-DD)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
@@ -282,14 +310,13 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     </View>
                   </View>
                 ))}
-                {!isInvestorOnly && !isPartnerMode ? <><Text style={[styles.label, { marginTop: 14 }]}>Opening Owner Capital / Equity ($)</Text><TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} /></> : null}
                 <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addMember} style={styles.addMemberBtn}>
                   <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
                   <Text style={styles.addMemberText}>Add Investor</Text>
                 </GlowPressable>
               </View> : null}
 
-              {!isInvestorOnly ? <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + (parseFloat(shopDeposit) || 0) + (parseFloat(houseDeposit) || 0) - ((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + (parseFloat(shopDeposit) || 0) + (parseFloat(houseDeposit) || 0)).toFixed(2)}  |  Liabilities + equity: ${((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View> : null}
+              {!isInvestorOnly ? <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0) - ((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0)).toFixed(2)}  |  Liabilities + equity: ${((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View> : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </ScrollView>
