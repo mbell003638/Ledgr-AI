@@ -419,14 +419,19 @@ export const api = {
     bumpDataVersion();
     return r;
   },
-  postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
+  getV2OpeningBalances: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return null;
+    return new V2AppService(runner).getOpeningBalances();
+  },
+  postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; accountsPayable?: number; otherLiabilities?: number; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await new V2AppService(runner).postOpeningBalances(input);
     bumpDataVersion();
     return r;
   },
-  updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; memo?: string }) => {
+  updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; accountsPayable?: number; otherLiabilities?: number; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await new V2AppService(runner).updateOpeningBalances(input);
