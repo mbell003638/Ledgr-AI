@@ -54,7 +54,7 @@ export const FACTORY_RESET_PREF_KEYS = [
 ] as const;
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, baseUrl, legacyKey, legacyModel, settings] = await Promise.all([
+  const [provider, secureKey, storedKey, model, baseUrl, legacyKey, legacyModel] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     storage.secureGet(AI_API_KEY_KEY, ''),
     AsyncStorage.getItem(AI_API_KEY_KEY),
@@ -62,16 +62,14 @@ export async function getAIConfig(): Promise<AIConfig> {
     AsyncStorage.getItem(AI_BASE_URL_KEY),
     AsyncStorage.getItem(LEGACY_GEMINI_KEY),
     AsyncStorage.getItem(LEGACY_GEMINI_MODEL),
-    db.getSettings(),
   ]);
   // Migrate every historical plaintext key into the device keychain/keystore.
-  const resolvedKey = secureKey || storedKey || legacyKey || settings.googleApiKey || '';
+  const resolvedKey = secureKey || storedKey || legacyKey || '';
   if (resolvedKey && !secureKey) {
     await Promise.all([
       storage.secureSet(AI_API_KEY_KEY, resolvedKey),
       AsyncStorage.removeItem(AI_API_KEY_KEY),
       AsyncStorage.removeItem(LEGACY_GEMINI_KEY),
-      db.updateSettings({ googleApiKey: '' }),
     ]);
   }
   const resolvedModel = model ?? legacyModel ?? ai.DEFAULT_GEMINI_MODEL;
@@ -901,11 +899,6 @@ export const api = {
   // Backup + danger
   exportBackup: async () => {
     const data: any = await db.exportBackup();
-    // Strip API key from backup for security
-    if (data.settings) {
-      const { googleApiKey, ...safeSettings } = data.settings;
-      data.settings = safeSettings;
-    }
     // Include model name so it carries over to other devices
     data.geminiModel = await getGeminiModel();
     // [Vault C2] Export-time divergence warning: when a V2 ledger is active,
@@ -917,10 +910,6 @@ export const api = {
     return data;
   },
   importBackup: async (payload: any) => {
-    // Strip any API key that may have leaked into an older backup
-    if (payload.settings) {
-      delete payload.settings.googleApiKey;
-    }
     const result: any = await db.importBackup(payload);
     // Restore model name if present in backup
     if (payload.geminiModel && typeof payload.geminiModel === 'string') {
@@ -930,16 +919,16 @@ export const api = {
     return result;
   },
   listPeriods: () => db.listPeriods(),
-  closePeriod: async (actualStock: number, notes = '') => {
+  closePeriod: async (actualStock: number, notes = '', commissionPct = 0) => {
     const runner = activeSqlRunner();
-    if (!runner) return db.closePeriod(actualStock, notes);
+    if (!runner) return db.closePeriod(actualStock, notes, commissionPct);
     const service = new V2AppService(runner);
     const closeBooks = createCloseBooksRouter(service, db.closePeriod);
     const settings = await db.getSettings();
     // The V2 carried inventory count is authoritative. The setting is only
     // a compatibility mirror and may still refer to the prior period.
     const overview = await service.inventoryOverview();
-    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct: Number(settings.managerCommissionPct || 0), notes });
+    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct, notes });
     if ((result as any)?.source === 'v2') {
       const next = await runner.first<{ start_date: string }>("SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [(result as any).result.bookId]);
       await db.updateSettings({ currentPeriodStart: next?.start_date || settings.currentPeriodStart, openingInventory: actualStock });

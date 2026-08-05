@@ -150,7 +150,6 @@ export async function getSettings() {
   const s = await readSettings();
   const logo = await resolveLogo(s);
   return {
-    googleApiKey: s.googleApiKey ?? '',
     managerCommissionPct: s.managerCommissionPct ?? 0.0,
     currentPeriodStart: s.currentPeriodStart ?? '1970-01-01',
     openingInventory: s.openingInventory ?? 0.0,
@@ -1341,18 +1340,20 @@ export async function debtorsReport(from?: string, to?: string) {
 export async function listPeriods() {
   return (await readColl<any>('periods')).sort((a: any, b: any) => (a.closed_at && b.closed_at ? (a.closed_at > b.closed_at ? -1 : a.closed_at < b.closed_at ? 1 : 0) : 0));
 }
-export async function closePeriod(actualStock: number, notes = '') {
+export async function closePeriod(actualStock: number, notes = '', commissionPct = 0) {
   return serialize(async () => {
     const d = await dashboard();
+    const pct = Number.isFinite(Number(commissionPct)) ? Math.max(0, Math.min(100, Number(commissionPct))) : 0;
+    const closeCommission = calcCommission(d.grossProfit, pct);
     const now = new Date();
     const nowDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const period = {
       id: uuid(), startDate: d.periodStart, endDate: nowDate,
       openingInventory: d.openingInventory, openingCash: d.openingCash,
       totalSales: d.totalSales, totalPurchases: d.totalPurchases,
-      grossProfit: d.grossProfit, managerCommissionPct: d.managerCommissionPct,
-      commission: d.commission, drawings: d.drawings, supplierPayments: d.supplierPayments,
-      netProfit: d.netProfit, closingInventory: actualStock, closingCash: d.cash,
+      grossProfit: d.grossProfit, managerCommissionPct: pct,
+      commission: closeCommission, drawings: d.drawings, supplierPayments: d.supplierPayments,
+      netProfit: +(d.grossProfit - closeCommission).toFixed(2), closingInventory: actualStock, closingCash: d.cash,
       notes, closed_at: nowIso(),
     };
     const periods = await readColl<any>('periods');

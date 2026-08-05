@@ -99,13 +99,16 @@ export default function ReportsScreen() {
       setBizSettings(s);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
-      const [core, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
+      const [core, snapshotDash, snapshotBs, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
         v2ReportsOrFallback({ from, to }, async () => ({
           dash: await api.dashboard(),
           pnl: await api.pnlRange(from, to),
           balanceSheet: await api.balanceSheet(),
           trialBalance: await api.trialBalance(),
         })),
+        // P&L is period-based; Summary and Balance use cumulative current balances.
+        api.dashboard(),
+        api.balanceSheet(),
         api.listPeriods(),
         api.capitalStatement(), api.drawingsHistory(),
         api.monthlyProfitTrend(6), api.assetDistribution(),
@@ -115,16 +118,19 @@ export default function ReportsScreen() {
       setReportSource(core.source);
       if (core.source === "v2") {
         const report = core.report;
+        const current = snapshotDash;
+        const currentBs: any = snapshotBs;
         setDash({
           totalSales: report.profitAndLoss.revenue,
           totalPurchases: report.profitAndLoss.expenses,
           grossProfit: report.profitAndLoss.grossProfit,
           netProfit: report.profitAndLoss.netProfit,
-          cash: report.balanceSheet.assets,
-          inventoryValue: 0,
-          netWorth: report.balanceSheet.equity + report.balanceSheet.currentEarnings,
-          liabilities: report.balanceSheet.liabilities,
-          suppliers: 0,
+          cash: current.cash,
+          inventoryValue: current.inventoryValue,
+          accountsReceivable: current.accountsReceivable,
+          netWorth: current.netWorth,
+          liabilities: current.liabilities,
+          suppliers: current.suppliers,
         });
         setPnl({
           revenue: report.profitAndLoss.revenue,
@@ -141,9 +147,15 @@ export default function ReportsScreen() {
           netProfit: report.profitAndLoss.netProfit,
         });
         setBs({
-          assets: { cash: report.balanceSheet.assets, inventory: 0, extra: [], total: report.balanceSheet.assets },
-          liabilities: { suppliersPayable: report.balanceSheet.liabilities, extra: [], total: report.balanceSheet.liabilities },
-          equity: report.balanceSheet.equity + report.balanceSheet.currentEarnings,
+          assets: { cash: currentBs.assets.cash, inventory: currentBs.assets.inventory, extra: [
+            { label: "Debtors", amount: (currentBs.assets.accountsReceivable || 0) },
+            { label: "Other Assets", amount: (currentBs.assets.other || 0) },
+          ].filter((a) => a.amount), total: currentBs.assets.total },
+          liabilities: { suppliersPayable: currentBs.liabilities.suppliersPayable, extra: [
+            { label: "Commission Payable", amount: (currentBs.liabilities.commissionPayable || 0) },
+            { label: "Other Liabilities", amount: (currentBs.liabilities.other || 0) },
+          ].filter((l) => l.amount), total: currentBs.liabilities.total },
+          equity: currentBs.equity,
         });
         setTb({
           debits: report.trialBalance.accounts.filter((a) => a.debit > 0).map((a) => ({ account: a.name, amount: a.debit })),

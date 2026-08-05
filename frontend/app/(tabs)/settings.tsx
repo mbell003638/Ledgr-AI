@@ -88,11 +88,6 @@ export default function SettingsScreen() {
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [commissionPct, setCommissionPct] = useState("");
-  const [openingCapital, setOpeningCapital] = useState("");
-  const [openingCash, setOpeningCash] = useState("");
-  const [openingInventory, setOpeningInventory] = useState("");
-  const [periodStart, setPeriodStart] = useState("");
   // Members = the owners/investors who put in capital and share profit.
   // Each: { name, amount (investment), profitSharePct (optional) }.
   const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
@@ -103,10 +98,7 @@ export default function SettingsScreen() {
   const [newBookName, setNewBookName] = useState("");
   const [addingBook, setAddingBook] = useState(false);
   const [newBookPersona, setNewBookPersona] = useState<PersonaId>("custom");
-  const [showWorkflowEdit, setShowWorkflowEdit] = useState(false);
-  const [showAccountingEdit, setShowAccountingEdit] = useState(false);
   const [currency, setCurrency] = useState("USD");
-  const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
   const [taxRate, setTaxRate] = useState("");
@@ -153,16 +145,11 @@ export default function SettingsScreen() {
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
-      setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
       setAccountingStyle(s.accountingStyle === "retail_partnership" ? "retail_partnership" : "standard");
       const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
       setSelectedPersonas(configuredPersonas);
       setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
-      setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
-      setOpeningCash(s.openingCash ? String(s.openingCash) : "");
-      setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
-      setPeriodStart(s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : "");
       // Members: prefer the structured investors[]; fall back to legacy partnerNames[].
       const inv = Array.isArray(s.investors) ? s.investors : [];
       if (inv.length) {
@@ -181,7 +168,6 @@ export default function SettingsScreen() {
           setAccountingBasis(v2.basis);
           setSelectedPersonas(v2.selectedPersonas);
           setActivePersona(v2.activePersona);
-          setCommissionPct(v2.retailPartnership.commissionPct ? String(v2.retailPartnership.commissionPct) : "");
           setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
         }
       } catch { /* legacy settings remain the fallback until V2 is available */ }
@@ -245,7 +231,7 @@ export default function SettingsScreen() {
           activePersona,
           retailPartnership: {
             enabled: accountingStyle === "retail_partnership",
-            commissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+            commissionPct: 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
           },
@@ -254,16 +240,10 @@ export default function SettingsScreen() {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
       await api.updateSettings({
-        googleApiKey: "", // API key is stored in the device secure keystore.
-        managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
         accountingBasis,
         selectedPersonas,
         activePersona,
         accountingStyle,
-        openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
-        openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
-        openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
-        currentPeriodStart: periodStart.trim() || "1970-01-01",
         // Members → both the structured investors[] AND legacy partnerNames[]
         // (kept in sync so drawings attribution + older code keep working).
         investors: members

@@ -76,18 +76,14 @@ const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: an
   </GlowPressable>
 );
 
-import * as ImagePicker from "expo-image-picker";
-import { Image } from "react-native";
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
@@ -99,11 +95,6 @@ export default function AdvancedSettingsScreen() {
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [commissionPct, setCommissionPct] = useState("");
-  const [openingCapital, setOpeningCapital] = useState("");
-  const [openingCash, setOpeningCash] = useState("");
-  const [openingInventory, setOpeningInventory] = useState("");
-  const [periodStart, setPeriodStart] = useState("");
   // Members = the owners/investors who put in capital and share profit.
   // Each: { name, amount (investment), profitSharePct (optional) }.
   const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
@@ -114,16 +105,6 @@ export default function AdvancedSettingsScreen() {
   const [newBookName, setNewBookName] = useState("");
   const [addingBook, setAddingBook] = useState(false);
   const [newBookPersona, setNewBookPersona] = useState<PersonaId>("custom");
-  const [showWorkflowEdit, setShowWorkflowEdit] = useState(false);
-  const [showAccountingEdit, setShowAccountingEdit] = useState(false);
-  const [currency, setCurrency] = useState("USD");
-  const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
-  const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
-  const [taxLabelCustom, setTaxLabelCustom] = useState("");
-  const [taxRate, setTaxRate] = useState("");
-  const [invoiceTheme, setInvoiceTheme] = useState("navy_gold");
-  const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
-  const [logo, setLogo] = useState<string>("");
   const [bizSection, setBizSection] = useState<"basic" | "contact" | "banking" | "terms" | "all">("basic");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
@@ -165,16 +146,11 @@ export default function AdvancedSettingsScreen() {
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
-      setCommissionPct(s.managerCommissionPct ? String(s.managerCommissionPct) : "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
       setAccountingStyle(s.accountingStyle === "retail_partnership" ? "retail_partnership" : "standard");
       const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
       setSelectedPersonas(configuredPersonas);
       setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
-      setOpeningCapital(s.openingCapital ? String(s.openingCapital) : "");
-      setOpeningCash(s.openingCash ? String(s.openingCash) : "");
-      setOpeningInventory(s.openingInventory ? String(s.openingInventory) : "");
-      setPeriodStart(s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : "");
       // Members: prefer the structured investors[]; fall back to legacy partnerNames[].
       const inv = Array.isArray(s.investors) ? s.investors : [];
       if (inv.length) {
@@ -193,7 +169,6 @@ export default function AdvancedSettingsScreen() {
           setAccountingBasis(v2.basis);
           setSelectedPersonas(v2.selectedPersonas);
           setActivePersona(v2.activePersona);
-          setCommissionPct(v2.retailPartnership.commissionPct ? String(v2.retailPartnership.commissionPct) : "");
           setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
         }
       } catch { /* legacy settings remain the fallback until V2 is available */ }
@@ -204,35 +179,9 @@ export default function AdvancedSettingsScreen() {
         setBooks(bks);
         setActiveBookState(api.activeBookId());
       } catch { /* books optional */ }
-      setCurrency(s.currency || "USD");
-      const rawLabel = s.taxLabel || "None";
-      if (rawLabel === "None") {
-        setTaxLabel("None");
-        setTaxLabelCustom("");
-      } else if (rawLabel === "Custom") {
-        setTaxLabel("Custom");
-        setTaxLabelCustom(s.taxLabelCustom || "");
-      } else {
-        setTaxLabel("Custom");
-        setTaxLabelCustom(rawLabel);
-      }
       if (s.themeMode && (s.themeMode === 'light' || s.themeMode === 'dark' || s.themeMode === 'navy_gold' || s.themeMode === 'amoled_blue' || s.themeMode === 'system')) {
         setMode(s.themeMode);
       }
-      setTaxRate(s.taxRate ? String(s.taxRate) : "");
-      setInvoiceTheme(s.invoiceTheme || "navy_gold");
-      setBizProfile({
-        businessName: s.businessName || "",
-        businessAddress: s.businessAddress || "",
-        businessPhone: s.businessPhone || "",
-        businessEmail: s.businessEmail || "",
-        taxRegNo: s.taxRegNo || "",
-        bankAccount: s.bankAccount || "",
-        upiId: s.upiId || "",
-        paymentDetails: s.paymentDetails || "",
-        invoiceTerms: s.invoiceTerms || "",
-      });
-      setLogo(s.logo || "");
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   }, []);
@@ -240,25 +189,6 @@ export default function AdvancedSettingsScreen() {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
-    // Normalize whatever the user typed (whitespace, exotic digits, single-digit
-    // month/day, DD/MM/YYYY) into strict YYYY-MM-DD before validating so a
-    // correct-but-differently-formatted date is no longer wrongly rejected.
-    let normalizedPeriodStart = "";
-    if (periodStart.trim()) {
-      normalizedPeriodStart = normalizeDateInput(periodStart);
-      if (!isValidDateString(normalizedPeriodStart)) {
-        setStatus({ ok: false, msg: `Couldn't read "${periodStart.trim()}" as a date. Please use YYYY-MM-DD (e.g. 2026-01-01).` });
-        return;
-      }
-      // Reflect the canonical form back into the field so the user sees what was saved.
-      if (normalizedPeriodStart !== periodStart) setPeriodStart(normalizedPeriodStart);
-      const today = new Date().toISOString().slice(0, 10);
-      if (normalizedPeriodStart > today) {
-        setStatus({ ok: false, msg: "Period start date cannot be in the future, as it filters out current transactions." });
-        return;
-      }
-    }
-
     setSaving(true);
     try {
       const meta = PROVIDERS.find((p) => p.id === provider)!;
@@ -276,7 +206,7 @@ export default function AdvancedSettingsScreen() {
           activePersona,
           retailPartnership: {
             enabled: accountingStyle === "retail_partnership",
-            commissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
+            commissionPct: 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
           },
@@ -285,16 +215,10 @@ export default function AdvancedSettingsScreen() {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
       await api.updateSettings({
-        googleApiKey: "", // API key is stored in the device secure keystore.
-        managerCommissionPct: commissionPct.trim() ? parseFloat(commissionPct) : 0,
         accountingBasis,
         selectedPersonas,
         activePersona,
         accountingStyle,
-        openingCapital: openingCapital.trim() ? parseFloat(openingCapital) : 0,
-        openingCash: openingCash.trim() ? parseFloat(openingCash) : 0,
-        openingInventory: openingInventory.trim() ? parseFloat(openingInventory) : 0,
-        currentPeriodStart: normalizedPeriodStart || "1970-01-01",
         // Members → both the structured investors[] AND legacy partnerNames[]
         // (kept in sync so drawings attribution + older code keep working).
         investors: members
@@ -307,50 +231,14 @@ export default function AdvancedSettingsScreen() {
           .filter((m) => m.name),
         partnerNames: members.map((m) => m.name.trim()).filter(Boolean),
         lockEnabled,
-        currency,
-        taxLabel,
-        taxLabelCustom: taxLabelCustom.trim(),
-        taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
-        invoiceTheme,
         themeMode: mode,
-        ...bizProfile,
-        logo,
       });
-      try {
-        await api.postV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: openingCash.trim() ? parseFloat(openingCash) : 0, inventory: openingInventory.trim() ? parseFloat(openingInventory) : 0, memo: "Opening balances" });
-      } catch (e: any) {
-        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
-      }
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Failed" });
     } finally {
       setSaving(false);
     }
-  };
-
-  // ~150KB cap on the encoded logo. A base64 string is ~4/3 of the raw bytes,
-  // so we compare the base64 length against this budget. Keeping the logo small
-  // guards Android's ~2MB SQLite CursorWindow (which a huge logo could overflow,
-  // breaking settings writes) even though the logo now lives outside the blob. [H4]
-  const LOGO_MAX_BYTES = 150 * 1024;
-  const pickLogo = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { setStatus({ ok: false, msg: "Gallery permission denied" }); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.4, mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1] });
-    if (res.canceled || !res.assets[0].base64) return;
-    const base64 = res.assets[0].base64;
-    // Approx decoded size = base64 chars * 3/4.
-    const approxBytes = Math.floor((base64.length * 3) / 4);
-    if (approxBytes > LOGO_MAX_BYTES) {
-      Alert.alert(
-        "Logo too large",
-        `This image is about ${Math.round(approxBytes / 1024)}KB. Please pick a smaller logo (under ${Math.round(LOGO_MAX_BYTES / 1024)}KB) — a tightly cropped square works best.`,
-        [{ text: "Pick another", onPress: () => { void pickLogo(); } }, { text: "Cancel", style: "cancel" }],
-      );
-      return;
-    }
-    setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${base64}`);
   };
 
   const testKey = async () => {
@@ -629,8 +517,8 @@ export default function AdvancedSettingsScreen() {
 
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
-              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your Gemini API access.</Text>
-              <AccordionRow title="AI Provider" subtitle="Google Gemini" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
+              <AccordionRow title="AI Provider" subtitle="Multiple providers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
                     <Pressable onPress={() => { setProvider("gemini"); setModelName("gemini-2.0-flash-001"); setBaseUrl(""); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider === "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider === "gemini" && { color: theme.color.brandPrimary }]}>Google Gemini</Text></Pressable>

@@ -113,13 +113,16 @@ export default function InventoryForm() {
 
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [commissionPct, setCommissionPct] = useState("");
 
   const closePeriod = async () => {
     const act = parseFloat(actual);
     if (isNaN(act) || act < 0) { setError("Enter actual stock first"); return; }
+    const pct = commissionPct.trim() === "" ? 0 : parseFloat(commissionPct);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setError("Enter a manager commission percentage from 0 to 100"); return; }
     setClosing(true); setError("");
     try {
-      await api.closePeriod(act, notes);
+      await api.closePeriod(act, notes, pct);
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setClosing(false); setConfirmClose(false); }
@@ -252,7 +255,7 @@ export default function InventoryForm() {
               <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
                 <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
                 <Text style={styles.hint}>
-                  Authoritative V2 close-books uses the current open period, records opening and closing inventory counts, snapshots the journal-derived results (including commission from Settings), and carries the closing inventory into the next period. Legacy close is used only when no versioned V2 book is active.
+                  Close the current inventory period, calculate COGS and gross profit, then record the manager commission for this period. The closing inventory carries forward into the next period.
                 </Text>
                 {!confirmClose ? (
                   <Pressable
@@ -268,6 +271,15 @@ export default function InventoryForm() {
                     <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>
                       This locks the current period. Previous transactions remain but are excluded from new Dashboard calculations.
                     </Text>
+                    <FormField
+                      label="Manager Commission % for this period"
+                      testID="input-close-commission-pct"
+                      value={commissionPct}
+                      onChangeText={setCommissionPct}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                    />
+                    <Text style={styles.hint}>Enter the approved percentage for this period. It is applied only to positive gross profit when the period closes.</Text>
                     <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
                       <Pressable testID="btn-close-cancel" onPress={() => setConfirmClose(false)} style={styles.closeCancelBtn}>
                         <Text style={styles.closeCancelText}>Cancel</Text>
