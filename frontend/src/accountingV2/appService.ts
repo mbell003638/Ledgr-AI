@@ -289,12 +289,12 @@ export class V2AppService {
   async createCreditNote(input: AnyRecord) { return this.createNoteV2(input, 'credit_note'); }
   async createDebitNote(input: AnyRecord) { return this.createNoteV2(input, 'debit_note'); }
   /** Post opening cash/inventory against capital. Self-correcting: see applyOpeningBalances. */
-  async postOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  async postOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
     return this.applyOpeningBalances(input);
   }
 
   /** Replace the opening-balance journal for the book, preserving the reversal audit trail. */
-  async updateOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  async updateOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
     return this.applyOpeningBalances(input);
   }
 
@@ -321,7 +321,7 @@ export class V2AppService {
    *    closed period and the earliest usable date (closed totals stay frozen,
    *    consistent with the document-service correction redirect [H2]/[H3])
    */
-  private async applyOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  private async applyOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
     const cash = cents(input.cash); const inventory = cents(input.inventory);
     if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
     const activeBook = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
@@ -363,13 +363,22 @@ export class V2AppService {
       if (assetBreakdown.length && cents(assetBreakdown.reduce((sum: number, asset: any) => sum + asset.amount, 0)) !== otherAssets) throw new Error('Other opening asset details must equal the other-assets total');
       const accountsPayable = cents(input.accountsPayable ?? Number(prior.accountsPayable || 0));
       const otherLiabilities = cents(input.otherLiabilities ?? Number(prior.otherLiabilities || 0));
+      const liabilityBreakdown = (input.liabilityBreakdown ?? prior.liabilityBreakdown ?? [])
+        .map((liability: any) => ({ name: String(liability?.name || "").trim(), amount: cents(liability?.amount), type: liability?.type === "creditor" ? "creditor" : "other" }))
+        .filter((liability: any) => liability.name || liability.amount);
+      if (liabilityBreakdown.some((liability: any) => liability.amount < 0 || (liability.amount > 0 && !liability.name))) throw new Error('Each opening liability requires a name and a non-negative amount');
+      if (liabilityBreakdown.length) {
+        const creditorTotal = cents(liabilityBreakdown.filter((liability: any) => liability.type === "creditor").reduce((sum: number, liability: any) => sum + liability.amount, 0));
+        const otherTotal = cents(liabilityBreakdown.filter((liability: any) => liability.type === "other").reduce((sum: number, liability: any) => sum + liability.amount, 0));
+        if (creditorTotal !== accountsPayable || otherTotal !== otherLiabilities) throw new Error('Opening liability details must equal the liability totals');
+      }
       const retainedEarnings = cents(input.retainedEarnings ?? Number(prior.retainedEarnings || 0));
       const ownerCapital = cents(input.ownerCapital ?? (cash + inventory + otherAssets - accountsPayable - otherLiabilities - retainedEarnings));
       if ([otherAssets, accountsPayable, otherLiabilities, retainedEarnings, ownerCapital].some((value) => !Number.isFinite(value) || value < 0)) throw new Error('Opening balances must be non-negative');
       const totalAssets = cents(cash + inventory + otherAssets);
       const totalLiabilitiesAndEquity = cents(accountsPayable + otherLiabilities + ownerCapital + retainedEarnings);
       if (totalAssets !== totalLiabilitiesAndEquity) throw new Error(`Opening balances do not balance: assets are ${totalAssets.toFixed(2)} and liabilities plus equity are ${totalLiabilitiesAndEquity.toFixed(2)}.`);
-      if (live.length === 1 && Number(prior.cash) === cash && Number(prior.inventory) === inventory && Number(prior.otherAssets || 0) === otherAssets && JSON.stringify(prior.assetBreakdown || []) === JSON.stringify(assetBreakdown) && Number(prior.accountsPayable || 0) === accountsPayable && Number(prior.otherLiabilities || 0) === otherLiabilities && Number(prior.ownerCapital ?? ownerCapital) === ownerCapital && Number(prior.retainedEarnings || 0) === retainedEarnings && prior.date === date) {
+      if (live.length === 1 && Number(prior.cash) === cash && Number(prior.inventory) === inventory && Number(prior.otherAssets || 0) === otherAssets && JSON.stringify(prior.assetBreakdown || []) === JSON.stringify(assetBreakdown) && Number(prior.accountsPayable || 0) === accountsPayable && Number(prior.otherLiabilities || 0) === otherLiabilities && JSON.stringify(prior.liabilityBreakdown || []) === JSON.stringify(liabilityBreakdown) && Number(prior.ownerCapital ?? ownerCapital) === ownerCapital && Number(prior.retainedEarnings || 0) === retainedEarnings && prior.date === date) {
         return { sourceId: live[0].id, alreadyPosted: true };
       }
       // Non-destructive correction: reverse every live opening set (normally one),
@@ -380,7 +389,7 @@ export class V2AppService {
       if (total === 0) return { sourceId: live[0]?.id ?? canonicalId, alreadyPosted: false, journal: null };
       const occupied = await this.db.first('SELECT id FROM v2_sources WHERE id=?', [canonicalId]);
       const sourceId = occupied ? `${canonicalId}:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : canonicalId;
-      const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, otherAssets, assetBreakdown, accountsPayable, otherLiabilities, ownerCapital, retainedEarnings, date } };
+      const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, otherAssets, assetBreakdown, accountsPayable, otherLiabilities, liabilityBreakdown, ownerCapital, retainedEarnings, date } };
       const lines: any[] = [];
       if (cash) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
       if (inventory) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });

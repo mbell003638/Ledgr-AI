@@ -20,8 +20,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   const [openingCash, setOpeningCash] = useState("");
   const [openingInventory, setOpeningInventory] = useState("");
   const [otherAssets, setOtherAssets] = useState<{ name: string; amount: string }[]>([]);
-  const [accountsPayable, setAccountsPayable] = useState("");
-  const [otherLiabilities, setOtherLiabilities] = useState("");
+  const [openingLiabilities, setOpeningLiabilities] = useState<{ name: string; amount: string; type: "creditor" | "other" }[]>([]);
   const [retainedEarnings, setRetainedEarnings] = useState("");
   const [ownerCapital, setOwnerCapital] = useState("");
   const [periodStart, setPeriodStart] = useState("");
@@ -45,8 +44,17 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         setOtherAssets(savedAssets.length
           ? savedAssets.map((asset: any) => ({ name: String(asset?.name || ""), amount: String(asset?.amount || "") }))
           : (Number(openingData.otherAssets || 0) ? [{ name: "Other asset", amount: String(openingData.otherAssets) }] : []));
-        setAccountsPayable(openingData.accountsPayable != null ? String(openingData.accountsPayable) : "0");
-        setOtherLiabilities(openingData.otherLiabilities != null ? String(openingData.otherLiabilities) : "0");
+        const savedLiabilities = Array.isArray(openingData.liabilityBreakdown) ? openingData.liabilityBreakdown : [];
+        setOpeningLiabilities(savedLiabilities.length
+          ? savedLiabilities.map((liability: any) => ({
+              name: String(liability?.name || ""),
+              amount: String(liability?.amount || ""),
+              type: liability?.type === "creditor" ? "creditor" : "other",
+            }))
+          : [
+              ...(Number(openingData.accountsPayable || 0) ? [{ name: "Supplier payable", amount: String(openingData.accountsPayable), type: "creditor" as const }] : []),
+              ...(Number(openingData.otherLiabilities || 0) ? [{ name: "Other liability", amount: String(openingData.otherLiabilities), type: "other" as const }] : []),
+            ]);
         setRetainedEarnings(openingData.retainedEarnings != null ? String(openingData.retainedEarnings) : "0");
         setOwnerCapital(openingData.ownerCapital != null ? String(openingData.ownerCapital) : "0");
 
@@ -83,6 +91,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   const updateOtherAsset = (index: number, field: "name" | "amount", value: string) => {
     setOtherAssets((prev) => prev.map((asset, i) => i === index ? { ...asset, [field]: value } : asset));
   };
+  const addOpeningLiability = () => setOpeningLiabilities((prev) => [...prev, { name: "", amount: "", type: "creditor" }]);
+  const removeOpeningLiability = (index: number) => setOpeningLiabilities((prev) => prev.filter((_, i) => i !== index));
+  const updateOpeningLiability = (index: number, field: "name" | "amount" | "type", value: string) => {
+    setOpeningLiabilities((prev) => prev.map((liability, i) => i === index ? { ...liability, [field]: value } as typeof liability : liability));
+  };
 
   const save = async () => {
     // Normalize the manually-typed period start (whitespace, exotic digits,
@@ -103,8 +116,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       .map((asset) => ({ name: asset.name.trim(), amount: parseFloat(asset.amount) || 0 }))
       .filter((asset) => asset.name || asset.amount);
     const otherAssetsVal = assetBreakdown.reduce((sum, asset) => sum + asset.amount, 0);
-    const accountsPayableVal = parseFloat(accountsPayable) || 0;
-    const otherLiabilitiesVal = parseFloat(otherLiabilities) || 0;
+    const liabilityBreakdown = openingLiabilities
+      .map((liability) => ({ name: liability.name.trim(), amount: parseFloat(liability.amount) || 0, type: liability.type }))
+      .filter((liability) => liability.name || liability.amount);
+    const accountsPayableVal = liabilityBreakdown.filter((liability) => liability.type === "creditor").reduce((sum, liability) => sum + liability.amount, 0);
+    const otherLiabilitiesVal = liabilityBreakdown.filter((liability) => liability.type === "other").reduce((sum, liability) => sum + liability.amount, 0);
     const retainedEarningsVal = parseFloat(retainedEarnings) || 0;
     const cleanedPreviewMembers = members.map((m) => parseFloat(m.amount) || 0);
     const ownerCapitalVal = isPartnerMode ? cleanedPreviewMembers.reduce((sum, value) => sum + value, 0) : (parseFloat(ownerCapital) || 0);
@@ -114,7 +130,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       setError("Give each other opening asset a name.");
       return;
     }
-        if (mode === "all" && [cashVal, invVal, ...assetBreakdown.map((asset) => asset.amount), accountsPayableVal, otherLiabilitiesVal, retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
+    if (mode === "all" && liabilityBreakdown.some((liability) => liability.amount > 0 && !liability.name)) {
+      setError("Give each opening liability a name.");
+      return;
+    }
+    if (mode === "all" && [cashVal, invVal, ...assetBreakdown.map((asset) => asset.amount), ...liabilityBreakdown.map((liability) => liability.amount), retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
       setError("Opening amounts cannot be negative.");
       return;
     }
@@ -144,7 +164,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       });
       // V2 accounting keeps opening balances in the dated double-entry ledger.
       try {
-        await api.updateV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" });
+        await api.updateV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, liabilityBreakdown, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" });
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
@@ -236,11 +256,27 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     </GlowPressable>
                   </View>
 
-                  <Text style={[styles.label, { marginTop: 14 }]}>Creditors / Supplier Payable ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={accountsPayable} onChangeText={setAccountsPayable} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
-
-                  <Text style={[styles.label, { marginTop: 14 }]}>Other Liabilities ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={otherLiabilities} onChangeText={setOtherLiabilities} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <View style={{ marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border }}>
+                    <Text style={styles.sectionHeader}>Opening Liabilities (Optional)</Text>
+                    <Text style={styles.helper}>Add any amounts your business already owes. Choose Supplier/Creditor for trade payables.</Text>
+                    {openingLiabilities.map((liability, index) => (
+                      <View key={index} style={[styles.memberCard, { marginTop: 8 }]}>
+                        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.name} onChangeText={(value) => updateOpeningLiability(index, "name", value)} placeholder="Liability name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
+                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.amount} onChangeText={(value) => updateOpeningLiability(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
+                          <Pressable onPress={() => removeOpeningLiability(index)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                          <Pressable onPress={() => updateOpeningLiability(index, "type", "creditor")} style={[styles.typeBtn, liability.type === "creditor" && styles.typeBtnActive]}><Text style={[styles.typeBtnText, liability.type === "creditor" && styles.typeBtnTextActive]}>Supplier / Creditor</Text></Pressable>
+                          <Pressable onPress={() => updateOpeningLiability(index, "type", "other")} style={[styles.typeBtn, liability.type === "other" && styles.typeBtnActive]}><Text style={[styles.typeBtnText, liability.type === "other" && styles.typeBtnTextActive]}>Other Liability</Text></Pressable>
+                        </View>
+                      </View>
+                    ))}
+                    <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addOpeningLiability} style={styles.addMemberBtn}>
+                      <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
+                      <Text style={styles.addMemberText}>Add Liability</Text>
+                    </GlowPressable>
+                  </View>
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Retained Earnings / Other Equity ($)</Text>
                   <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
@@ -316,7 +352,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 </GlowPressable>
               </View> : null}
 
-              {!isInvestorOnly ? <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0) - ((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0)).toFixed(2)}  |  Liabilities + equity: ${((parseFloat(accountsPayable) || 0) + (parseFloat(otherLiabilities) || 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View> : null}
+              {!isInvestorOnly ? <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0) - (openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0)).toFixed(2)}  |  Liabilities + equity: ${(openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View> : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </ScrollView>
@@ -349,7 +385,11 @@ function makeStyles(theme: any) {
     subLabel: { fontSize: 11, fontWeight: "600", color: theme.color.muted },
     helper: { fontSize: 11, color: theme.color.muted, marginTop: 4 },
     sectionHeader: { fontSize: 14, fontWeight: "700", color: theme.color.brandPrimary, marginBottom: 10 },
-    input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface },
+    input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface, ...(Platform.OS === "web" ? ({ outlineStyle: "none", outlineWidth: 0 } as any) : {}) },
+    typeBtn: { flex: 1, alignItems: "center", paddingVertical: 7, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+    typeBtnActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "18" },
+    typeBtnText: { fontSize: 11, fontWeight: "600", color: theme.color.muted },
+    typeBtnTextActive: { color: theme.color.brandPrimary },
     memberCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: 10, borderWidth: 1, borderColor: theme.color.border, marginBottom: 8 },
     removeBtn: { padding: 6 },
     addMemberBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", backgroundColor: theme.color.brandPrimary + "10", marginTop: 4 },
