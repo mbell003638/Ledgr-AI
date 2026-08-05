@@ -188,7 +188,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
               {!isInvestorOnly ? (
                 <>
                   <Text style={styles.label}>Opening Cash Balance ($)</Text>
-                  <TextInput
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingCash}
                     onChangeText={setOpeningCash}
                     keyboardType="decimal-pad"
@@ -198,7 +198,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Stock Value ($)</Text>
-                  <TextInput
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingInventory}
                     onChangeText={setOpeningInventory}
                     keyboardType="decimal-pad"
@@ -208,23 +208,23 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Shop / Security Deposits ($)</Text>
-                  <TextInput value={shopDeposit} onChangeText={setShopDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={shopDeposit} onChangeText={setShopDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>House Deposit ($)</Text>
-                  <TextInput value={houseDeposit} onChangeText={setHouseDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={houseDeposit} onChangeText={setHouseDeposit} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Creditors / Supplier Payable ($)</Text>
-                  <TextInput value={accountsPayable} onChangeText={setAccountsPayable} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={accountsPayable} onChangeText={setAccountsPayable} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Other Liabilities ($)</Text>
-                  <TextInput value={otherLiabilities} onChangeText={setOtherLiabilities} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={otherLiabilities} onChangeText={setOtherLiabilities} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Retained Earnings / Other Equity ($)</Text>
-                  <TextInput value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   <Text style={styles.helper}>Use this for profit or equity carried forward from before the app period. It is not current-period profit.</Text>
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Period Start Date (YYYY-MM-DD)</Text>
-                  <TextInput
+                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={periodStart}
                     onChangeText={setPeriodStart}
                     autoCapitalize="none"
@@ -245,7 +245,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 {members.map((m, i) => (
                   <View key={i} style={styles.memberCard}>
                     <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                      <TextInput
+                      <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                         value={m.name}
                         onChangeText={(v) => updateMember(i, "name", v)}
                         placeholder="Investor Name"
@@ -259,7 +259,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.subLabel}>Capital ($)</Text>
-                        <TextInput
+                        <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                           value={m.amount}
                           onChangeText={(v) => updateMember(i, "amount", v)}
                           keyboardType="decimal-pad"
@@ -270,7 +270,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.subLabel}>Profit Share %</Text>
-                        <TextInput
+                        <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                           value={m.profitSharePct}
                           onChangeText={(v) => updateMember(i, "profitSharePct", v)}
                           keyboardType="decimal-pad"
@@ -282,7 +282,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     </View>
                   </View>
                 ))}
-                {!isInvestorOnly && !isPartnerMode ? <><Text style={[styles.label, { marginTop: 14 }]}>Opening Owner Capital / Equity ($)</Text><TextInput value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} /></> : null}
+                {!isInvestorOnly && !isPartnerMode ? <><Text style={[styles.label, { marginTop: 14 }]}>Opening Owner Capital / Equity ($)</Text><TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} /></> : null}
                 <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addMember} style={styles.addMemberBtn}>
                   <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
                   <Text style={styles.addMemberText}>Add Investor</Text>
