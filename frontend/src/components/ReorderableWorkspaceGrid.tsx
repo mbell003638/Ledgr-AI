@@ -318,6 +318,7 @@ function ReorderableWorkspaceTile({
         runOnJS(onCancel)();
       }
     }), [
+      animationsEnabled,
       activeIndex,
       dragStartScrollY,
       dragX,

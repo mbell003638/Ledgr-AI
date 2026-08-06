@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable, InteractionManager } from "react-native";
+import { AppState, LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable , Image, Animated } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -9,6 +9,8 @@ import { StatusBar } from "expo-status-bar";
 
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { initStorage } from "@/src/db/backend";
+import { requireAuth } from "@/src/utils/lock";
+
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
 // Individual screens can still opt in explicitly if a visible indicator is needed.
@@ -52,9 +54,11 @@ class ErrorBoundary extends React.Component<
             <Text style={{ color: "#EE7C6E", fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
               {this.state.error.message}
             </Text>
-            <Text style={{ color: "#ccc", fontSize: 11, marginTop: 8, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
-              {this.state.error.stack?.slice(0, 800)}
-            </Text>
+            {__DEV__ ? (
+              <Text style={{ color: "#ccc", fontSize: 11, marginTop: 8, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
+                {this.state.error.stack?.slice(0, 800)}
+              </Text>
+            ) : null}
           </ScrollView>
           <Pressable
             onPress={() => this.setState({ error: null })}
@@ -136,9 +140,6 @@ function ThemedStack() {
   );
 }
 
-import * as ImagePicker from "expo-image-picker";
-import { Image, Animated, StyleSheet } from "react-native";
-
 function AppOpeningSplashScreen() {
   const scaleAnim = React.useRef(new Animated.Value(0.92)).current;
   const opacityAnim = React.useRef(new Animated.Value(0)).current;
@@ -148,7 +149,7 @@ function AppOpeningSplashScreen() {
       Animated.timing(opacityAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 50, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [opacityAnim, scaleAnim]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0A0A0C", justifyContent: "center", alignItems: "center", paddingHorizontal: 24 }}>
@@ -217,6 +218,19 @@ function WebScrollbarStyles() {
 export default function RootLayout() {
 
   const [storageReady, setStorageReady] = useState(false);
+  const [unlocked, setUnlocked] = useState(Platform.OS === "web");
+  const [unlocking, setUnlocking] = useState(false);
+
+  const attemptUnlock = React.useCallback(async () => {
+    if (Platform.OS === "web") {
+      setUnlocked(true);
+      return;
+    }
+    setUnlocking(true);
+    const ok = await requireAuth("Unlock Ledgr");
+    setUnlocked(ok);
+    setUnlocking(false);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,23 +247,43 @@ export default function RootLayout() {
         if (!cancelled) setStorageReady(true);
       });
 
-    if (Platform.OS !== "web") {
-      // Defer permission prompts off the first frames: requesting camera/media
-      // access competes with startup work and can stall the initial render on
-      // low-end Android. They are non-blocking best-effort either way.
-      InteractionManager.runAfterInteractions(() => {
-        ImagePicker.requestMediaLibraryPermissionsAsync().catch(() => {});
-        ImagePicker.requestCameraPermissionsAsync().catch(() => {});
-      });
-    }
-
     return () => {
       cancelled = true;
     };
   }, []);
 
+  useEffect(() => {
+    if (!storageReady) return;
+    attemptUnlock();
+    if (Platform.OS === "web") return;
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background") setUnlocked(false);
+      if (state === "active") attemptUnlock();
+    });
+    return () => subscription.remove();
+  }, [attemptUnlock, storageReady]);
+
   if (!storageReady) {
     return <AppOpeningSplashScreen />;
+  }
+  if (!unlocked) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0A0A0C", justifyContent: "center", alignItems: "center", padding: 32 }}>
+        <Image source={require("@/assets/images/icon.png")} style={{ width: 88, height: 88, borderRadius: 22, marginBottom: 24 }} />
+        <Text style={{ color: "#FFFFFF", fontSize: 28, fontWeight: "800", marginBottom: 8 }}>Ledgr is locked</Text>
+        <Text style={{ color: "#94A3B8", fontSize: 14, textAlign: "center", marginBottom: 24 }}>
+          Use your device lock to access your accounting data.
+        </Text>
+        <Pressable
+          disabled={unlocking}
+          onPress={attemptUnlock}
+          style={{ minWidth: 180, padding: 14, borderRadius: 12, alignItems: "center", backgroundColor: "#98C7A9", opacity: unlocking ? 0.65 : 1 }}
+        >
+          <Text style={{ color: "#102018", fontSize: 16, fontWeight: "700" }}>{unlocking ? "Unlocking…" : "Unlock Ledgr"}</Text>
+        </Pressable>
+      </View>
+    );
   }
   return (
     <ErrorBoundary>

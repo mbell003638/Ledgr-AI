@@ -128,8 +128,27 @@ function resolveApi(cfg: AIConfig): 'gemini' | 'openai' | 'anthropic' {
   return getProviderMeta(cfg.provider).api;
 }
 
+export function validateAIBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error('AI Base URL must be a valid URL.');
+  }
+  const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1';
+  if (parsed.protocol !== 'https:' && !(isLocal && parsed.protocol === 'http:')) {
+    throw new Error('AI Base URL must use HTTPS (HTTP is allowed only for localhost development).');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('AI Base URL must not contain credentials.');
+  }
+  return trimmed;
+}
+
 function resolveBaseUrl(cfg: AIConfig): string {
-  if (cfg.baseUrl && cfg.baseUrl.trim()) return cfg.baseUrl.replace(/\/+$/, '');
+  if (cfg.baseUrl && cfg.baseUrl.trim()) return validateAIBaseUrl(cfg.baseUrl);
   return getProviderMeta(cfg.provider).defaultBaseUrl.replace(/\/+$/, '');
 }
 
@@ -140,7 +159,7 @@ function resolveBaseUrl(cfg: AIConfig): string {
 async function call(
   cfg: AIConfig,
   prompt: string,
-  parts: Array<{ inlineData: { mimeType: string; data: string } }> = [],
+  parts: { inlineData: { mimeType: string; data: string } }[] = [],
   jsonSchema?: any
 ): Promise<string> {
   requireKey(cfg);

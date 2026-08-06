@@ -6,19 +6,19 @@
  * forget. Call `requireAuth()` before Change / Delete / Reset operations.
  *
  * Behavior:
- *  - If the device has no biometric/PIN enrolled, we DON'T hard-block the user
- *    out of their own data — we allow the action (there's nothing to
- *    authenticate against). This avoids locking someone out permanently.
- *  - If enrolled, we prompt; the action proceeds only on success.
+ *  - Disabled in Settings: the action proceeds without a prompt.
+ *  - Enabled: an enrolled device PIN/biometric is required and failures deny access.
  */
 
 import * as LocalAuthentication from 'expo-local-authentication';
+import { getSettings } from '@/src/db/local';
 
 export async function deviceHasLock(): Promise<boolean> {
   try {
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    return hasHardware && enrolled;
+    // SecurityLevel.SECRET includes a device PIN/password even when biometric
+    // hardware is unavailable. This matches authenticateAsync's device fallback.
+    const level = await LocalAuthentication.getEnrolledLevelAsync();
+    return level >= LocalAuthentication.SecurityLevel.SECRET;
   } catch {
     return false;
   }
@@ -26,15 +26,16 @@ export async function deviceHasLock(): Promise<boolean> {
 
 /**
  * Prompt for device authentication before a sensitive action.
- * Returns true if the user may proceed (authenticated, or no lock available).
+ * Returns true if App Lock is disabled or device authentication succeeds.
  */
 export async function requireAuth(reason = 'Confirm your identity to continue'): Promise<boolean> {
   try {
+    const settings = await getSettings();
+    if (!settings.lockEnabled) return true;
+
     const available = await deviceHasLock();
-    if (!available) {
-      // No enrolled lock — allow rather than trap the user out of their data.
-      return true;
-    }
+    if (!available) return false;
+
     const res = await LocalAuthentication.authenticateAsync({
       promptMessage: reason,
       cancelLabel: 'Cancel',
@@ -42,7 +43,6 @@ export async function requireAuth(reason = 'Confirm your identity to continue'):
     });
     return res.success;
   } catch {
-    // On any unexpected failure, fail safe by allowing (don't trap the user).
-    return true;
+    return false;
   }
 }

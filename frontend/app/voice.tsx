@@ -11,9 +11,9 @@ import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 
-type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
-
 import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
+
+type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 // Source tag prefixed onto notes/memo of records created via voice (fix M-5).
 const voiceNote = (note?: string) => `[Voice] ${note || ""}`.trim();

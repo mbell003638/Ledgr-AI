@@ -155,6 +155,11 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const accounts = store.accounts.filter((account) => account.bookId === options.bookId);
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const totalsById = new Map(accounts.map((account) => [account.id, { debit: 0, credit: 0 }]));
+  // P&L activity is tracked separately from the posted GL totals. Period-close
+  // journals must remain in the GL so temporary accounts are zero and retained
+  // earnings balances, but they are transfers rather than operating activity and
+  // must not erase a historical income statement.
+  const pnlTotalsById = new Map(accounts.map((account) => [account.id, { debit: 0, credit: 0 }]));
   const journals = store.journals.filter(
     (entry) => entry.bookId === options.bookId && isInRange(entry, options),
   );
@@ -164,6 +169,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   let totalCredit = 0;
 
   for (const journal of journals) {
+    const isPeriodClosingEntry = journal.memo === 'Period close';
     let journalDebit = 0;
     let journalCredit = 0;
     for (const line of journal.lines) {
@@ -193,6 +199,11 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       } else {
         accountTotal.debit += debit;
         accountTotal.credit += credit;
+        if (!isPeriodClosingEntry) {
+          const pnlTotal = pnlTotalsById.get(line.accountId)!;
+          pnlTotal.debit += debit;
+          pnlTotal.credit += credit;
+        }
         const account = accountsById.get(line.accountId)!;
         details.push({ journalId: journal.id, sourceId: journal.sourceId, date: journal.date,
           memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
@@ -220,6 +231,12 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     if (cogsTotal && inventoryTotal && accountsById.has(cogsAdj.cogsAccountId) && accountsById.has(cogsAdj.inventoryAccountId)) {
       cogsTotal.debit += amount;
       inventoryTotal.credit += amount;
+      const pnlCogsTotal = pnlTotalsById.get(cogsAdj.cogsAccountId);
+      const pnlInventoryTotal = pnlTotalsById.get(cogsAdj.inventoryAccountId);
+      if (pnlCogsTotal && pnlInventoryTotal) {
+        pnlCogsTotal.debit += amount;
+        pnlInventoryTotal.credit += amount;
+      }
       totalDebit += amount;
       totalCredit += amount;
       const cogsAccount = accountsById.get(cogsAdj.cogsAccountId)!;
@@ -261,7 +278,16 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const sumType = (type: V2AccountType) => cents(accountTotals
     .filter((account) => account.type === type)
     .reduce((sum, account) => sum + account.normalBalance, 0));
-  const cogs = cents(accountTotals
+  const pnlAccountTotals = accounts.map((account) => {
+    const raw = pnlTotalsById.get(account.id)!;
+    const debit = cents(raw.debit);
+    const credit = cents(raw.credit);
+    return { ...account, debit, credit, normalBalance: normalBalance(account.type, debit, credit) };
+  });
+  const sumPnlType = (type: V2AccountType) => cents(pnlAccountTotals
+    .filter((account) => account.type === type)
+    .reduce((sum, account) => sum + account.normalBalance, 0));
+  const cogs = cents(pnlAccountTotals
     .filter((account) => account.code === '5000')
     .reduce((sum, account) => sum + account.normalBalance, 0));
 
@@ -269,11 +295,12 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   // balances. Cash basis (M3) recognizes revenue/expenses only when money moves.
   const book = store.books.find((b) => b.id === options.bookId);
   const cashBasis = book?.basis === 'cash';
-  const accrualRevenue = sumType('revenue');
-  const accrualExpenses = sumType('expense');
-  // The balance sheet ALWAYS uses accrual current earnings so the accounting identity
-  // (assets = liabilities + equity + earnings) holds regardless of the P&L basis.
-  const accrualNetProfit = cents(accrualRevenue - accrualExpenses);
+  const accrualRevenue = sumPnlType('revenue');
+  const accrualExpenses = sumPnlType('expense');
+  // Historical P&L excludes closing transfers, while the balance sheet uses the
+  // temporary-account balances that remain in the posted GL. After close those are
+  // zero because the profit now lives in retained earnings, preventing double count.
+  const ledgerCurrentEarnings = cents(sumType('revenue') - sumType('expense'));
   let revenue = accrualRevenue;
   let expenses = accrualExpenses;
   // Accrual `cogs` is the periodic 5000 balance (incl. any open-period estimate) and is
@@ -297,7 +324,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const assets = sumType('asset');
   const liabilities = sumType('liability');
   const equity = sumType('equity');
-  const liabilitiesAndEquity = cents(liabilities + equity + accrualNetProfit);
+  const liabilitiesAndEquity = cents(liabilities + equity + ledgerCurrentEarnings);
   const balanceSheetDifference = cents(assets - liabilitiesAndEquity);
   if (Math.abs(balanceSheetDifference) > TOLERANCE) {
     errors.push({
@@ -323,7 +350,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       assets,
       liabilities,
       equity,
-      currentEarnings: accrualNetProfit,
+      currentEarnings: ledgerCurrentEarnings,
       liabilitiesAndEquity,
       difference: balanceSheetDifference,
       balanced: Math.abs(balanceSheetDifference) <= TOLERANCE,

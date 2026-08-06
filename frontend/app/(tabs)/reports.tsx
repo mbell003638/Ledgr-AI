@@ -1,9 +1,8 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share, Platform , Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { LineChart, PieChart } from "react-native-gifted-charts";
-import { Linking } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Ionicons } from "@expo/vector-icons";
@@ -149,10 +148,12 @@ export default function ReportsScreen() {
         setBs({
           assets: { cash: currentBs.assets.cash, inventory: currentBs.assets.inventory, extra: [
             { label: "Debtors", amount: (currentBs.assets.accountsReceivable || 0) },
+            { label: "Supplier Advances", amount: (currentBs.assets.supplierAdvances || 0) },
             { label: "Other Assets", amount: (currentBs.assets.other || 0) },
           ].filter((a) => a.amount), total: currentBs.assets.total },
           liabilities: { suppliersPayable: currentBs.liabilities.suppliersPayable, extra: [
             { label: "Commission Payable", amount: (currentBs.liabilities.commissionPayable || 0) },
+            { label: "Customer Advances", amount: (currentBs.liabilities.customerAdvances || 0) },
             { label: "Other Liabilities", amount: (currentBs.liabilities.other || 0) },
           ].filter((l) => l.amount), total: currentBs.liabilities.total },
           equity: currentBs.equity,

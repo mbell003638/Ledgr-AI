@@ -1,8 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert , Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
+
+import * as ImagePicker from "expo-image-picker";
+
+import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
+import { api, getAIConfig, setAIConfig } from "@/src/api";
+import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
+import { ScreenHeader, Card } from "@/src/components/UI";
+import { GlowPressable } from "@/src/components/GlowPressable";
+import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
+import { deviceHasLock, requireAuth } from "@/src/utils/lock";
+import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 
 const SectionTitle = ({ title, theme }: any) => (
   <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
@@ -65,18 +77,6 @@ const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: an
     {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
   </GlowPressable>
 );
-
-import * as ImagePicker from "expo-image-picker";
-import { Image } from "react-native";
-import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
-import { api, getAIConfig, setAIConfig } from "@/src/api";
-import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
-import { ScreenHeader, Card } from "@/src/components/UI";
-import { GlowPressable } from "@/src/components/GlowPressable";
-import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
-import { requireAuth } from "@/src/utils/lock";
-import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -216,6 +216,9 @@ export default function SettingsScreen() {
   const save = async () => {
     setSaving(true);
     try {
+      if (lockEnabled && !(await deviceHasLock())) {
+        throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
+      }
       const meta = PROVIDERS.find((p) => p.id === provider)!;
       await setAIConfig({
         provider,

@@ -82,7 +82,7 @@ export function useScreenData<T>(
         run('focus');
       });
       return () => task.cancel();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [run]),
   );
 

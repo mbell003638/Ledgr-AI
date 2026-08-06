@@ -88,7 +88,7 @@ export default function Expenses() {
   );
   const documentFor = (expense: Expense) => ({ title: `Expense: ${expense.category}`, subtitle: shortDate(expense.date), rows: [
     ["Amount", fmt(expense.amount, currencySymbol)], ["Notes", expense.notes || "—"],
-  ] as Array<[string, unknown]> });
+  ] as [string, unknown][] });
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

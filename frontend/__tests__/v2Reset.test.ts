@@ -1,9 +1,35 @@
 import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book } from '../src/accountingV2/appBootstrap';
 import { V2AppService } from '../src/accountingV2/appService';
-import { resetAllV2AccountingData, resetV2AccountingData } from '../src/accountingV2/resetBook';
+import { deleteV2BookData, resetAllV2AccountingData, resetV2AccountingData } from '../src/accountingV2/resetBook';
 
 describe('V2 accounting reset', () => {
+  it('permanently deletes one book and every V2 child without touching another book', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initializeV2Book(runner, {
+        book: { id: 'delete-me', name: 'Delete Me' },
+        period: { id: 'delete-period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      await initializeV2Book(runner, {
+        book: { id: 'keep-me', name: 'Keep Me' },
+        period: { id: 'keep-period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      await runner.run("UPDATE meta SET value='delete-me' WHERE key='v2_active_book_id'");
+      await new V2AppService(runner).createSale({ date: '2026-07-01', amount: 25 });
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', ['delete-me']))?.n)).toBeGreaterThan(0);
+
+      await expect(deleteV2BookData(runner, 'delete-me')).resolves.toBe(true);
+      await expect(deleteV2BookData(runner, 'default')).rejects.toThrow();
+
+      expect(await runner.first('SELECT id FROM v2_books WHERE id=?', ['delete-me'])).toBeNull();
+      expect(await runner.first('SELECT id FROM v2_books WHERE id=?', ['keep-me'])).toEqual({ id: 'keep-me' });
+      for (const table of ['v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources', 'v2_journal_entries', 'v2_inventory_counts', 'v2_members', 'v2_close_books']) {
+        expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM ' + table + ' WHERE book_id=?', ['delete-me']))?.n)).toBe(0);
+      }
+    } finally { close(); }
+  });
+
   it('clears ledger activity while preserving book configuration and a usable open period', async () => {
     const { runner, close } = makeNodeRunner();
     try {

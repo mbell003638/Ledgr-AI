@@ -47,6 +47,26 @@ describe('V2 close-books application integration', () => {
     } finally { close(); }
   });
 
+  it('settles manager commission payable through a V2 commission payment', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.createSale({ date: '2026-01-10', amount: 100, method: 'cash' });
+      const closed = await service.closeBooks({ actualStock: 0, openingInventory: 0, commissionPct: 10 });
+      expect(closed.result.snapshot.commission).toBe(10);
+
+      const payment = await service.createPayment({ date: '2026-02-01', amount: 6, type: 'commission_payment', method: 'cash' });
+      expect(payment.source.type).toBe('commission_payment');
+      expect(-await service.repo.accountBalance('active-v2', 'active-v2:account:2200')).toBe(4);
+      await expect(service.createPayment({ date: '2026-02-02', amount: 5, type: 'commission_payment', method: 'cash' }))
+        .rejects.toThrow(/exceeds the commission payable/i);
+
+      await service.deletePayment(payment.source.id);
+      expect(-await service.repo.accountBalance('active-v2', 'active-v2:account:2200')).toBe(10);
+      expect((await service.repo.reconcileBook('active-v2')).balanced).toBe(true);
+      expect(Number((await runner.first<{ n: number }>("SELECT COUNT(*) AS n FROM v2_sources WHERE type='commission_payment'"))?.n)).toBe(1);
+    } finally { close(); }
+  });
+
   it('falls back to legacy only when no active versioned V2 book exists', async () => {
     const { runner, close, service } = await setup();
     const legacy = jest.fn(async (actualStock: number, notes: string) => ({ legacy: true, actualStock, notes }));

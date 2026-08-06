@@ -14,9 +14,9 @@ import { requireAuth } from "@/src/utils/lock";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { parseMoneyInput } from "@/src/money";
 import { collapseLedgerRows, describeSourceNavigation, formatEditedStamp, type DisplayLedgerRow, type LedgerRow } from "@/src/utils/ledgerDisplay";
+import { GlowPressable } from "@/src/components/GlowPressable";
 
 type CashEntry = LedgerRow;
-import { GlowPressable } from "@/src/components/GlowPressable";
 
 const todayStr = () => {
   const d = new Date();
@@ -43,7 +43,7 @@ export default function CashBookScreen() {
   // Cash In "Type": general manual entry vs investor capital deposit (partnership mode).
   const [partnerMode, setPartnerMode] = useState(false);
   const [inKind, setInKind] = useState<"general" | "capital">("general");
-  const [investors, setInvestors] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [investors, setInvestors] = useState<{ id: string; name: string }[] | null>(null);
   const [investorId, setInvestorId] = useState<string | null>(null);
   const [loadingInvestors, setLoadingInvestors] = useState(false);
 
@@ -245,8 +245,7 @@ export default function CashBookScreen() {
                 <Text style={[styles.segText, direction === "out" && { color: "#fff" }]}>Cash Out</Text>
               </Pressable>
             </View>
-            {/* Cash In "Type" — General stays a plain cash entry; Investor capital
-                routes through api.depositInvestorCapital so the stake updates. */}
+            {/* General cash posts to income/expense; investor capital posts to equity. */}
             {!editId && direction === "in" && partnerMode ? (
               <View style={{ gap: 6 }}>
                 <View style={styles.chipRow}>
@@ -272,9 +271,14 @@ export default function CashBookScreen() {
                 ) : null}
               </View>
             ) : null}
+            {inKind === "general" ? (
+              <Text style={styles.accountingHint}>
+                {direction === "in" ? "General Cash In is recorded as income and increases profit." : "General Cash Out is recorded as an expense and reduces profit."}
+              </Text>
+            ) : null}
             <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="Amount" placeholderTextColor={theme.color.muted} style={styles.input} />
             <TextInput value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
-            <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (e.g. Owner deposit, petty cash)" placeholderTextColor={theme.color.muted} style={styles.input} />
+            <TextInput value={notes} onChangeText={setNotes} placeholder="Notes (e.g. counter sale, petty cash)" placeholderTextColor={theme.color.muted} style={styles.input} />
             <View style={styles.formBtns}>
               <Pressable onPress={resetForm} style={[styles.formBtn, styles.cancelBtn]}><Text style={styles.cancelText}>Cancel</Text></Pressable>
               <Pressable onPress={save} disabled={saving} style={[styles.formBtn, styles.saveBtn]}>
@@ -348,6 +352,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: "600", color: theme.color.onSurface },
   chipTextOn: { color: "#fff" },
   chipHint: { fontSize: 12, color: theme.color.muted },
+  accountingHint: { fontSize: 12, color: theme.color.muted, lineHeight: 17 },
   input: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   formBtns: { flexDirection: "row", gap: 8, marginTop: 4 },
   formBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.radius.md, alignItems: "center" },

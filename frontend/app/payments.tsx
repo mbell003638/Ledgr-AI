@@ -87,7 +87,7 @@ export default function PaymentsScreen() {
     title: `Payment`, subtitle: TYPE_LABEL[p.type], rows: [
     ["Recipient", getRecipientName(p)], ["Date", shortDate(p.date)], ["Amount", `${currSym}${Number(p.amount).toFixed(2)}`],
     ["Method", p.method || "—"], ["Notes", p.notes || "—"],
-  ] as Array<[string, unknown]> });
+  ] as [string, unknown][] });
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

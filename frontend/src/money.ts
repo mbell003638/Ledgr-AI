@@ -69,7 +69,7 @@ export function round2(amount: any): number {
 }
 
 /** Exact sum of a list of {amount} records (or raw numbers). */
-export function sumMoney(items: Array<{ amount?: any } | number> | null | undefined): number {
+export function sumMoney(items: ({ amount?: any } | number)[] | null | undefined): number {
   if (!Array.isArray(items)) return 0;
   const cents = items.reduce<number>(
     (c, it) => c + toCents(typeof it === 'number' ? it : it?.amount),

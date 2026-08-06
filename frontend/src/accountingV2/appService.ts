@@ -163,15 +163,18 @@ export class V2AppService {
     if (!party) return null;
     let roles: string[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
     if (!roles.includes(role)) return null;
-    const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment', 'credit_note', 'debit_note'];
+    const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment', 'credit_note', 'debit_note', 'opening_balance'];
     const placeholders = sourceTypes.map(() => '?').join(','); const accountCode = role === 'customer' ? '1100' : '2000';
     const rows = await this.db.all<any>(`SELECT s.id,s.type,s.date,s.reference,s.metadata,
       COALESCE(SUM(CASE WHEN a.code=? THEN l.debit ELSE 0 END),0) AS debit,
       COALESCE(SUM(CASE WHEN a.code=? THEN l.credit ELSE 0 END),0) AS credit
       FROM v2_sources s LEFT JOIN v2_journal_entries j ON j.source_id=s.id
       LEFT JOIN v2_journal_lines l ON l.journal_id=j.id AND l.party_id=? LEFT JOIN v2_accounts a ON a.id=l.account_id
-      WHERE s.book_id=? AND json_extract(s.metadata,'$.partyId')=? AND s.type IN (${placeholders})
-      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, ...sourceTypes]);
+      WHERE s.book_id=? AND (json_extract(s.metadata,'$.partyId')=? OR EXISTS (
+        SELECT 1 FROM v2_journal_entries je2 JOIN v2_journal_lines jl2 ON jl2.journal_id=je2.id
+        WHERE je2.source_id=s.id AND jl2.party_id=?
+      )) AND s.type IN (${placeholders})
+      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, id, ...sourceTypes]);
     const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
     if (role === 'customer') {
       let running = 0;
@@ -240,6 +243,36 @@ export class V2AppService {
     });
   }
 
+  /** Post a general Cash Book row into the authoritative ledger. */
+  async recordManualCash(input: { date: string; amount: number; direction: 'in' | 'out'; notes?: string }) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const value = cents(input.amount);
+    if (!Number.isFinite(value) || value <= 0) throw new Error('Cash amount must be positive');
+    await this.repo.ensureDefaultAccounts(context.bookId);
+    const isIn = input.direction === 'in';
+    const source: any = {
+      id: 'manual_cash_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+      bookId: context.bookId,
+      type: isIn ? 'manual_cash_income' : 'manual_cash_expense',
+      date: input.date,
+      metadata: { total: value, direction: input.direction, notes: input.notes || '' },
+    };
+    const cashId = `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`;
+    const counterpartId = `${context.bookId}:account:${isIn ? V2_ACCOUNT_CODES.SALES : V2_ACCOUNT_CODES.EXPENSES}`;
+    const lines = isIn
+      ? [{ accountId: cashId, debit: value, credit: 0 }, { accountId: counterpartId, debit: 0, credit: value }]
+      : [{ accountId: counterpartId, debit: value, credit: 0 }, { accountId: cashId, debit: 0, credit: value }];
+    const journal = await this.repo.postSourceJournal(source, {
+      bookId: context.bookId,
+      periodId: context.periodId,
+      date: input.date,
+      memo: input.notes?.trim() || (isIn ? 'General cash income' : 'General cash expense'),
+      lines,
+    });
+    return { source, journal };
+  }
+
   async listBills() {
     const context = await this.activeContext(); if (!context) return [];
     await this.repairPartyIdentities(context.bookId);
@@ -253,6 +286,33 @@ export class V2AppService {
   async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const cash = input.paymentType === 'cash'; return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'supplier', c.bookId); return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }); }
   async createPayment(input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    if (input.type === 'commission_payment') {
+      const value = amount(input.amount);
+      const payableId = `${c.bookId}:account:${V2_ACCOUNT_CODES.COMMISSION_PAYABLE}`;
+      const outstanding = cents(-await this.repo.accountBalance(c.bookId, payableId));
+      if (value > outstanding + 0.005) throw new Error('Commission payment exceeds the commission payable balance');
+      const paymentMethod = method(input.method);
+      const paymentCode = paymentMethod === 'bank' ? V2_ACCOUNT_CODES.BANK
+        : paymentMethod === 'card' ? V2_ACCOUNT_CODES.CARD
+        : paymentMethod === 'mobile' ? V2_ACCOUNT_CODES.MOBILE
+        : V2_ACCOUNT_CODES.CASH;
+      const source: any = {
+        id: 'commission_payment_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+        bookId: c.bookId,
+        type: 'commission_payment',
+        date: input.date,
+        metadata: { total: value, method: paymentMethod, notes: input.notes || '' },
+      };
+      const journal = await this.repo.postSourceJournal(source, {
+        bookId: c.bookId, periodId: c.periodId, date: input.date,
+        memo: input.notes?.trim() || 'Manager commission payment',
+        lines: [
+          { accountId: payableId, debit: value, credit: 0 },
+          { accountId: `${c.bookId}:account:${paymentCode}`, debit: 0, credit: value },
+        ],
+      });
+      return { source, journal };
+    }
     if (input.type === 'drawing') {
       const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [c.bookId]);
       if (book?.style === 'retail_partnership') {
@@ -372,13 +432,22 @@ export class V2AppService {
         const otherTotal = cents(liabilityBreakdown.filter((liability: any) => liability.type === "other").reduce((sum: number, liability: any) => sum + liability.amount, 0));
         if (creditorTotal !== accountsPayable || otherTotal !== otherLiabilities) throw new Error('Opening liability details must equal the liability totals');
       }
+      const linkedLiabilityBreakdown = [];
+      for (const liability of liabilityBreakdown) {
+        if (liability.type === 'creditor' && liability.amount > 0) {
+          const partyId = await this.party({ supplierName: liability.name }, 'supplier', bookId);
+          linkedLiabilityBreakdown.push({ ...liability, partyId });
+        } else {
+          linkedLiabilityBreakdown.push(liability);
+        }
+      }
       const retainedEarnings = cents(input.retainedEarnings ?? Number(prior.retainedEarnings || 0));
       const ownerCapital = cents(input.ownerCapital ?? (cash + inventory + otherAssets - accountsPayable - otherLiabilities - retainedEarnings));
       if ([otherAssets, accountsPayable, otherLiabilities, retainedEarnings, ownerCapital].some((value) => !Number.isFinite(value) || value < 0)) throw new Error('Opening balances must be non-negative');
       const totalAssets = cents(cash + inventory + otherAssets);
       const totalLiabilitiesAndEquity = cents(accountsPayable + otherLiabilities + ownerCapital + retainedEarnings);
       if (totalAssets !== totalLiabilitiesAndEquity) throw new Error(`Opening balances do not balance: assets are ${totalAssets.toFixed(2)} and liabilities plus equity are ${totalLiabilitiesAndEquity.toFixed(2)}.`);
-      if (live.length === 1 && Number(prior.cash) === cash && Number(prior.inventory) === inventory && Number(prior.otherAssets || 0) === otherAssets && JSON.stringify(prior.assetBreakdown || []) === JSON.stringify(assetBreakdown) && Number(prior.accountsPayable || 0) === accountsPayable && Number(prior.otherLiabilities || 0) === otherLiabilities && JSON.stringify(prior.liabilityBreakdown || []) === JSON.stringify(liabilityBreakdown) && Number(prior.ownerCapital ?? ownerCapital) === ownerCapital && Number(prior.retainedEarnings || 0) === retainedEarnings && prior.date === date) {
+      if (live.length === 1 && Number(prior.cash) === cash && Number(prior.inventory) === inventory && Number(prior.otherAssets || 0) === otherAssets && JSON.stringify(prior.assetBreakdown || []) === JSON.stringify(assetBreakdown) && Number(prior.accountsPayable || 0) === accountsPayable && Number(prior.otherLiabilities || 0) === otherLiabilities && JSON.stringify(prior.liabilityBreakdown || []) === JSON.stringify(linkedLiabilityBreakdown) && Number(prior.ownerCapital ?? ownerCapital) === ownerCapital && Number(prior.retainedEarnings || 0) === retainedEarnings && prior.date === date) {
         return { sourceId: live[0].id, alreadyPosted: true };
       }
       // Non-destructive correction: reverse every live opening set (normally one),
@@ -389,12 +458,16 @@ export class V2AppService {
       if (total === 0) return { sourceId: live[0]?.id ?? canonicalId, alreadyPosted: false, journal: null };
       const occupied = await this.db.first('SELECT id FROM v2_sources WHERE id=?', [canonicalId]);
       const sourceId = occupied ? `${canonicalId}:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : canonicalId;
-      const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, otherAssets, assetBreakdown, accountsPayable, otherLiabilities, liabilityBreakdown, ownerCapital, retainedEarnings, date } };
+      const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, otherAssets, assetBreakdown, accountsPayable, otherLiabilities, liabilityBreakdown: linkedLiabilityBreakdown, ownerCapital, retainedEarnings, date } };
       const lines: any[] = [];
       if (cash) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
       if (inventory) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, debit: inventory, credit: 0 });
       if (otherAssets) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.OTHER_ASSETS}`, debit: otherAssets, credit: 0 });
-      if (accountsPayable) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.AP}`, debit: 0, credit: accountsPayable });
+      const creditorLines = linkedLiabilityBreakdown.filter((liability: any) => liability.type === 'creditor' && liability.amount > 0);
+      for (const liability of creditorLines) {
+        lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: liability.partyId, debit: 0, credit: liability.amount, memo: liability.name });
+      }
+      if (accountsPayable && !creditorLines.length) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.AP}`, debit: 0, credit: accountsPayable });
       if (otherLiabilities) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.OTHER_LIABILITIES}`, debit: 0, credit: otherLiabilities });
       if (ownerCapital) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CAPITAL}`, debit: 0, credit: ownerCapital });
       if (retainedEarnings) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.RETAINED_EARNINGS}`, debit: 0, credit: retainedEarnings });
@@ -535,7 +608,7 @@ export class V2AppService {
   async deleteReceipt(id: string) { return this.documents.deleteReceipt(id); }
   async deleteInvoice(id: string) { return this.documents.reverseSource(id, 'invoice', 'Delete invoice', true); }
   async deleteExpense(id: string) { return this.documents.reverseSource(id, 'expense', 'Delete expense', true); }
-  async deletePayment(id: string) { const type = await this.sourceType(id); if (type !== 'supplier_payment' && type !== 'drawing') throw new Error('Payment not found'); return this.documents.reverseSource(id, type, type === 'drawing' ? 'Delete member drawing' : 'Delete supplier payment', true); }
+  async deletePayment(id: string) { const type = await this.sourceType(id); if (type !== 'supplier_payment' && type !== 'drawing' && type !== 'commission_payment') throw new Error('Payment not found'); return this.documents.reverseSource(id, type, type === 'drawing' ? 'Delete member drawing' : type === 'commission_payment' ? 'Delete commission payment' : 'Delete supplier payment', true); }
   async deleteSale(id: string) {
     const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
     if (!row) throw new Error('Sale not found');
@@ -561,6 +634,7 @@ export class V2AppService {
     const type = await this.sourceType(id);
     const next = await this.editInput(input);
     if (type === 'supplier_payment') return this.documents.replaceSource(id, type, 'Edit supplier payment', () => this.createPayment(next));
+    if (type === 'commission_payment') return this.documents.replaceSource(id, type, 'Edit commission payment', () => this.createPayment({ ...next, type }));
     if (type !== 'drawing') throw new Error('Payment not found');
     const source = await this.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [id]);
     let metadata: AnyRecord = {};
@@ -663,7 +737,7 @@ const MIRROR_ERROR_CAP = 50;
 export const lastMirrorErrors: MirrorError[] = [];
 export function recordMirrorError(operation: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  // eslint-disable-next-line no-console
+
   console.warn(`[V2] legacy mirror write failed for ${operation}: ${message}`);
   lastMirrorErrors.push({ operation, message, at: new Date().toISOString() });
   if (lastMirrorErrors.length > MIRROR_ERROR_CAP) lastMirrorErrors.splice(0, lastMirrorErrors.length - MIRROR_ERROR_CAP);
@@ -724,12 +798,12 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.updatePayment(id, payload); try { await legacy.updatePayment(id, payload); } catch (error) { recordMirrorError('updatePayment', error); } return res; }
+      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') { const res = await v2.updatePayment(id, payload); try { await legacy.updatePayment(id, payload); } catch (error) { recordMirrorError('updatePayment', error); } return res; }
       return legacy.updatePayment(id, payload);
     },
     deletePayment: async (id: string) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing') { const res = await v2.deletePayment(id); try { await legacy.deletePayment(id); } catch (error) { recordMirrorError('deletePayment', error); } return res; }
+      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') { const res = await v2.deletePayment(id); try { await legacy.deletePayment(id); } catch (error) { recordMirrorError('deletePayment', error); } return res; }
       return legacy.deletePayment(id);
     },
     markInvoicePaid: async (id: string, payload: AnyRecord = {}) => {

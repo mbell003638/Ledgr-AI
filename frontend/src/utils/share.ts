@@ -17,7 +17,7 @@ export async function sharePlainText(text: string, title = "Ledgr") {
     // Fallback: copy to clipboard
     if (typeof navigator !== "undefined" && (navigator as any).clipboard) {
       await (navigator as any).clipboard.writeText(text);
-      // eslint-disable-next-line no-alert
+
       window.alert("Copied to clipboard!\n\nPaste it in WhatsApp / email.");
     }
     return;

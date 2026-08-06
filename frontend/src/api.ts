@@ -4,7 +4,7 @@ import { bumpDataVersion } from '@/src/utils/dataVersion';
 import { dedupeLegacyMirrors } from '@/src/utils/ledgerDisplay';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
-import type { AIConfig, ProviderId } from '@/src/db/ai';
+import type { AIConfig } from '@/src/db/ai';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, recordMirrorError } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
@@ -94,7 +94,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
     ops.push(AsyncStorage.removeItem(AI_API_KEY_KEY));
   }
   if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
-  if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, cfg.baseUrl));
+  if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
   const [secureOk] = await Promise.all([
     secureKeyWrite ?? Promise.resolve(true),
     ...ops,
@@ -227,10 +227,18 @@ async function buildAiSnapshot(from: string, to: string) {
   };
 }
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
+const legacyCreateTransactions: Record<AppCreateName, (value: any) => Promise<any>> = {
+  createSale: db.createSale,
+  createInvoice: db.createInvoice,
+  createReceipt: db.createReceipt,
+  createBill: db.createBill,
+  createPayment: db.createPayment,
+  createExpense: db.createExpense,
+};
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
   if (!runner) {
-    const r = await (db[name] as (value: any) => Promise<any>)(payload);
+    const r = await legacyCreateTransactions[name](payload);
     bumpDataVersion();
     return r;
   }
@@ -260,9 +268,19 @@ async function createTransaction(name: AppCreateName, payload: any) {
   return result;
 }
 
-async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill', ...args: any[]) {
+type AppMutationName = 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill';
+const legacyMutations: Record<AppMutationName, (...args: any[]) => Promise<any>> = {
+  updateReceipt: db.updateReceipt, deleteReceipt: db.deleteReceipt,
+  markInvoicePaid: db.markInvoicePaid,
+  updateInvoice: db.updateInvoice, deleteInvoice: db.deleteInvoice,
+  updateExpense: db.updateExpense, deleteExpense: db.deleteExpense,
+  updatePayment: db.updatePayment, deletePayment: db.deletePayment,
+  updateSale: db.updateSale, deleteSale: db.deleteSale,
+  updateBill: db.updateBill, deleteBill: db.deleteBill,
+};
+async function mutateTransaction(name: AppMutationName, ...args: any[]) {
   const runner = activeSqlRunner();
-    const dbFn = (db as any)[name];
+    const dbFn = legacyMutations[name];
     if (!runner) {
       const r = await dbFn(...args);
       bumpDataVersion();
@@ -272,6 +290,10 @@ async function mutateTransaction(name: 'updateReceipt'|'deleteReceipt'|'markInvo
     bumpDataVersion();
     return r;
 }
+const legacyCreateNotes = {
+  createCreditNote: db.createCreditNote,
+  createDebitNote: db.createDebitNote,
+};
 
 /**
  * [Finding A] Create a credit/debit note. The customer screen sends {customerId}
@@ -298,13 +320,13 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
     const v2 = new V2AppService(runner);
     const v2Res = await (name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
     // Legacy mirror (best-effort, keyed by debtorId like the other documents).
-    try { await (db[name] as (value: any) => Promise<any>)({ ...mapped, invoiceId: mapped.invoiceId || mapped.invoiceSourceId || null }); }
+    try { await legacyCreateNotes[name]({ ...mapped, invoiceId: mapped.invoiceId || mapped.invoiceSourceId || null }); }
     catch (error) { recordMirrorError(name, error); }
     bumpDataVersion();
     const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
     return { ...v2Res, id: v2Res.source?.id, noteNumber: v2Res.source?.reference || v2Res.source?.id, amount: total };
   }
-  const r = await (db[name] as (value: any) => Promise<any>)(mapped);
+  const r = await legacyCreateNotes[name](mapped);
   bumpDataVersion();
   return r;
 }
@@ -330,7 +352,7 @@ async function exportDivergenceWarnings(): Promise<string[]> {
       return Number(row?.n || 0);
     };
     // (legacyCount, v2 source type, human label)
-    const checks: Array<[Promise<any[]>, string, string]> = [
+    const checks: [Promise<any[]>, string, string][] = [
       [db.listInvoices(), 'invoice', 'invoices'],
       [db.listBills(), 'bill', 'bills'],
       [db.listReceipts(), 'receipt', 'receipts'],
@@ -623,7 +645,7 @@ export const api = {
     }
     return [];
   },
-  listInvestors: async (): Promise<Array<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }>> => {
+  listInvestors: async (): Promise<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }[]> => {
     const settings = await db.getSettings();
     if (settings.accountingStyle !== 'retail_partnership') return [];
     const runner = activeSqlRunner();
@@ -744,7 +766,18 @@ export const api = {
     }
     return db.listCashEntries();
   },
-  createCashEntry: async (e: any) => { const r = await db.createCashEntry(e); bumpDataVersion(); return r; },
+  createCashEntry: async (e: any) => {
+    const runner = activeSqlRunner();
+    if (runner) {
+      const service = new V2AppService(runner);
+      if (await service.activeContext(e.date)) {
+        const result = await service.recordManualCash(e);
+        bumpDataVersion();
+        return result;
+      }
+    }
+    const result = await db.createCashEntry(e); bumpDataVersion(); return result;
+  },
   updateCashEntry: async (id: string, e: any) => { const r = await db.updateCashEntry(id, e); bumpDataVersion(); return r; },
   deleteCashEntry: async (id: string) => { const r = await db.deleteCashEntry(id); bumpDataVersion(); return r; },
 
@@ -837,8 +870,8 @@ export const api = {
       if (ctx) {
         const d = await getV2Dashboard(runner, ctx.bookId);
         return {
-          assets: { cash: d.cash, inventory: d.inventoryValue, accountsReceivable: d.accountsReceivable, other: d.otherAssets, total: d.assets },
-          liabilities: { suppliersPayable: d.accountsPayable, commissionPayable: d.commissionPayable, other: d.otherLiabilities, total: d.liabilities },
+          assets: { cash: d.cash, inventory: d.inventoryValue, accountsReceivable: d.accountsReceivable, supplierAdvances: d.supplierAdvances, other: d.otherAssets, total: d.assets },
+          liabilities: { suppliersPayable: d.accountsPayable, customerAdvances: d.customerAdvances, commissionPayable: d.commissionPayable, other: d.otherLiabilities, total: d.liabilities },
           equity: d.netWorth,
         };
       }

@@ -26,15 +26,6 @@ export default function VoiceFab() {
   const pulseScale = useSharedValue(1);
 
   useEffect(() => {
-    (async () => {
-      try {
-        await AudioModule.requestRecordingPermissionsAsync();
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      } catch (e) { console.warn(e); }
-    })();
-  }, []);
-
-  useEffect(() => {
     if (phase === "recording") {
       if (!animationsEnabled) { pulseScale.value = 1; return; }
       pulseScale.value = withRepeat(
@@ -48,13 +39,14 @@ export default function VoiceFab() {
     } else {
       pulseScale.value = withTiming(1);
     }
-  }, [phase]);
+  }, [animationsEnabled, phase, pulseScale]);
 
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
       const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) throw new Error("Microphone permission required.");
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
       setPhase("recording");
@@ -238,7 +230,7 @@ export default function VoiceFab() {
             {phase === "recording" || phase === "processing" ? (
               <View style={styles.recordingBox}>
                 <Text style={[styles.hintText, { color: theme.color.muted }]}>
-                  "Paid supplier 1000 USD on July 17"
+                  “Paid supplier 1000 USD on July 17”
                 </Text>
                 <Animated.View style={animatedMicStyle}>
                   <Pressable 
@@ -260,7 +252,7 @@ export default function VoiceFab() {
               <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
                 {transcript ? (
                   <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <Text style={{ fontStyle: "italic", color: theme.color.muted }}>"{transcript}"</Text>
+                    <Text style={{ fontStyle: "italic", color: theme.color.muted }}>“{transcript}”</Text>
                   </View>
                 ) : null}
 

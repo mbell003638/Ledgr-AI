@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { PERSONAS, type PersonaId, defaultBookConfig } from "@/src/accountingV2/config";
+import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
+import { deviceHasLock } from "@/src/utils/lock";
 
 type BizType = "shop" | "service" | "salon" | "handyman" | "vendor" | "it_consultant" | "freelancer";
 
@@ -40,6 +41,9 @@ export default function Onboarding() {
     const finalBizType = bizType || "shop";
     setSaving(true);
     try {
+      if (lockEnabled && !(await deviceHasLock())) {
+        throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
+      }
       const preset = BIZ_TYPES.find((b) => b.key === finalBizType) || BIZ_TYPES[0];
       const v2Personas = selectedPersonas.length ? selectedPersonas : ['custom' as PersonaId];
       const activeBookId = api.activeBookId();
@@ -104,7 +108,7 @@ export default function Onboarding() {
 
         {step === 1 && (
           <View>
-            <Text style={styles.title}>What's your business name?</Text>
+            <Text style={styles.title}>What’s your business name?</Text>
             <Text style={styles.sub}>This appears on invoices and reports.</Text>
             <TextInput
               value={bizName}
@@ -135,8 +139,8 @@ export default function Onboarding() {
           <View>
             <Text style={styles.title}>Protect your books?</Text>
             <Text style={styles.sub}>
-              Use your phone's fingerprint, face or PIN to lock sensitive actions like deleting or
-              resetting data. There's no separate password to remember — it uses your device lock.
+              Use your phone’s fingerprint, face or PIN to lock sensitive actions like deleting or
+              resetting data. There’s no separate password to remember — it uses your device lock.
             </Text>
             <View style={{ marginTop: theme.spacing.xl, gap: 10 }}>
               <Pressable

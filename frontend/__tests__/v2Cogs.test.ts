@@ -86,4 +86,26 @@ describe('computePeriodicCogs — closing count must differ from the opening cou
       expect(result.cogs).toBe(0);
     } finally { close(); }
   });
+
+  it('does not count an opening-balance Inventory debit as a purchase', async () => {
+    const { runner, close, base, closeRepo, book, purchase, bounds } = await setup();
+    try {
+      await base.postSourceJournal({ id: 'opening-source', bookId: book.id, type: 'opening_balance', date: '2026-01-01', metadata: { inventory: 200 } }, {
+        bookId: book.id, periodId: 'p1', date: '2026-01-01', memo: 'Opening balances',
+        lines: [
+          { accountId: book.id + ':account:1200', debit: 200, credit: 0 },
+          { accountId: book.id + ':account:3000', debit: 0, credit: 200 },
+        ],
+      });
+      await closeRepo.recordInventoryCount({ id: 'open-with-journal', bookId: book.id, periodId: 'p1', date: '2026-01-01', value: 200 });
+      await closeRepo.recordInventoryCount({ id: 'close-with-journal', bookId: book.id, periodId: 'p1', date: '2026-01-31', value: 250 });
+      await purchase('2026-01-15', 400);
+
+      const result = await computePeriodicCogs(runner, book.id, bounds);
+      expect(result.openingInventory).toBe(200);
+      expect(result.purchases).toBe(400);
+      expect(result.closingInventory).toBe(250);
+      expect(result.cogs).toBe(350);
+    } finally { close(); }
+  });
 });

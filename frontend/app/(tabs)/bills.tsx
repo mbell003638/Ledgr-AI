@@ -83,7 +83,7 @@ export default function BillsScreen() {
   const documentFor = (bill: any) => ({ title: "Vendor Bill", subtitle: shortDate(bill.date), rows: [
     ["Supplier", suppliers[bill.supplierId] || "Unknown supplier"], ["Amount", fmt(bill.amount, bill.currency)],
     ["Payment", bill.paymentType], ["Invoice #", bill.invoiceNo || "—"], ["Notes", bill.notes || "—"],
-  ] as Array<[string, unknown]> });
+  ] as [string, unknown][] });
   const reverseBill = (bill: any) => confirmAction(
     "Reverse / Delete Bill",
     "This creates the appropriate V2 reversal and removes the bill from active records.",

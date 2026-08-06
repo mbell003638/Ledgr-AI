@@ -48,13 +48,23 @@ export function periodicCogs(inputs: PeriodicCogsInputs): number {
 
 type AccountMovementRow = { debit: number; credit: number };
 
-async function inventoryMovement(db: SqlRunner, bookId: string, condition: string, params: unknown[]): Promise<number> {
+async function inventoryMovement(
+  db: SqlRunner,
+  bookId: string,
+  condition: string,
+  params: unknown[],
+  options: { excludeOpeningBalances?: boolean } = {},
+): Promise<number> {
+  const sourceFilter = options.excludeOpeningBalances
+    ? "AND (s.type IS NULL OR s.type NOT LIKE 'opening_balance%')"
+    : '';
   const row = await db.first<AccountMovementRow>(
     `SELECT COALESCE(SUM(l.debit),0) AS debit, COALESCE(SUM(l.credit),0) AS credit
      FROM v2_accounts a
      JOIN v2_journal_lines l ON l.account_id = a.id
      JOIN v2_journal_entries j ON j.id = l.journal_id
-     WHERE j.book_id = ? AND a.code = ? AND ${condition}`,
+     LEFT JOIN v2_sources s ON s.id = j.source_id
+     WHERE j.book_id = ? AND a.code = ? AND ${condition} ${sourceFilter}`,
     [bookId, V2_ACCOUNT_CODES.INVENTORY, ...params],
   );
   return round2(Number(row?.debit || 0) - Number(row?.credit || 0));
@@ -81,8 +91,17 @@ export async function computePeriodicCogs(
     ? round2(Number(startCount.value))
     : await inventoryMovement(db, bookId, 'j.date < ?', [start]);
 
-  // Purchases: net Inventory debit movement inside the period.
-  const purchases = Math.max(0, await inventoryMovement(db, bookId, 'j.date >= ? AND j.date <= ?', [start, end]));
+  // Purchases: net Inventory debit movement inside the period, excluding the
+  // opening-balance source and its correction reversals. Opening inventory is
+  // already represented separately above; counting its journal here would add
+  // it twice in opening + purchases - closing.
+  const purchases = Math.max(0, await inventoryMovement(
+    db,
+    bookId,
+    'j.date >= ? AND j.date <= ?',
+    [start, end],
+    { excludeOpeningBalances: true },
+  ));
 
   // Closing inventory: latest physical count within/at the period end that is DISTINCT from
   // the count consumed as the opening count. Without this guard a lone count dated exactly on

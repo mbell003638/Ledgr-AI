@@ -17,6 +17,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLLECTIONS, CollectionName, SqlRunner } from './schema';
 import { initializeV2Book, accountingBookVersion } from '../accountingV2/appBootstrap';
+import { deleteV2BookData } from '../accountingV2/resetBook';
 import {
   readColl as sqlRead,
   writeColl as sqlWrite,
@@ -107,11 +108,16 @@ export async function renameBook(id: string, name: string): Promise<void> {
 
 export async function deleteBook(id: string): Promise<void> {
   if (id === DEFAULT_BOOK) throw new Error('The main account cannot be deleted.');
-  // Wipe this book's data (async keys; sqlite rows are namespaced too).
+  // Remove the authoritative normalized ledger first. If it fails, leave the
+  // visible book/index intact instead of pretending financial data was deleted.
+  if (runner) await deleteV2BookData(runner, id);
+
+  // Wipe this book's namespaced legacy payload and logo.
   for (const c of COLLECTIONS) {
     await AsyncStorage.removeItem(`ledgr:${id}:${c}`);
   }
   await AsyncStorage.removeItem(`ledgr:${id}:settings`);
+  await AsyncStorage.removeItem(`ledgr:${id}:logo`);
   const books = (await listBooks()).filter((b) => b.id !== id);
   await AsyncStorage.setItem(BOOKS_INDEX_KEY, JSON.stringify(books));
   if (activeBook === id) await setActiveBook(DEFAULT_BOOK);
@@ -245,14 +251,14 @@ export function settingsStorageKey(): string { return settingsKey(); }
 export function logoStorageKey(): string { return logoKey(); }
 
 /** Snapshot the current raw values of the given AsyncStorage keys. */
-export async function snapshotKeys(keys: string[]): Promise<Array<[string, string | null]>> {
+export async function snapshotKeys(keys: string[]): Promise<[string, string | null][]> {
   const pairs = await AsyncStorage.multiGet(keys);
   // multiGet returns readonly [key, value|null][]; normalize to a mutable copy.
   return pairs.map(([k, v]) => [k, v ?? null] as [string, string | null]);
 }
 
 /** Restore a snapshot: re-set keys that had a value, remove keys that were absent. */
-export async function restoreKeys(snapshot: Array<[string, string | null]>): Promise<void> {
+export async function restoreKeys(snapshot: [string, string | null][]): Promise<void> {
   const toSet: [string, string][] = [];
   const toRemove: string[] = [];
   for (const [k, v] of snapshot) {

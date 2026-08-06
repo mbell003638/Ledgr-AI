@@ -57,6 +57,39 @@ export async function factoryResetV2Data(db: SqlRunner): Promise<void> {
   }
 }
 
+/** Permanently remove one non-default book and every authoritative V2 child row. */
+export async function deleteV2BookData(db: SqlRunner, bookId: string): Promise<boolean> {
+  if (!bookId || bookId === 'default') throw new Error('The main account cannot be deleted.');
+  const book = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [bookId]);
+  if (!book) return false;
+
+  await db.exec('SAVEPOINT v2_delete_book');
+  try {
+    await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_invoice_allocations WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_close_books WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_inventory_counts WHERE book_id=?', [bookId]);
+    await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_sources WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_members WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_personas WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_parties WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_accounts WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_periods WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_books WHERE id=?', [bookId]);
+    await db.run('DELETE FROM meta WHERE key=?', ['v2_book_version:' + bookId]);
+    await db.exec('RELEASE SAVEPOINT v2_delete_book');
+    return true;
+  } catch (error) {
+    try {
+      await db.exec('ROLLBACK TO SAVEPOINT v2_delete_book');
+      await db.exec('RELEASE SAVEPOINT v2_delete_book');
+    } catch { /* preserve the deletion failure */ }
+    throw error;
+  }
+}
+
 /** Clear one V2 book's accounting activity while preserving its identity/configuration. */
 export async function resetV2AccountingData(db: SqlRunner, bookId: string, periodStart: string) {
   const book = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [bookId]);

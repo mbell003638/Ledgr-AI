@@ -26,7 +26,7 @@ const tagNote = (note?: string) => `${AI_TAG} ${note || ""}`.trim();
  */
 function sanitizeOcrField(value: unknown, maxLen?: number): string {
   let s = typeof value === "string" ? value : value == null ? "" : String(value);
-  // eslint-disable-next-line no-control-regex
+
   s = s.replace(/[\u0000-\u001F\u007F]+/g, " ");
   s = s.replace(/\s+/g, " ").trim();
   if (maxLen && s.length > maxLen) s = s.slice(0, maxLen);
@@ -213,7 +213,7 @@ export default function AskBooks() {
             <View>
               <View style={styles.welcome}>
                 <Ionicons name="sparkles-outline" size={32} color={theme.color.brandPrimary} />
-                <Text style={styles.welcomeText}>Ask me anything about your finances. I'll answer using your actual data.</Text>
+                <Text style={styles.welcomeText}>Ask me anything about your finances. I’ll answer using your actual data.</Text>
               </View>
               <Text style={styles.suggestLabel}>Try asking</Text>
               {SUGGESTIONS.map((s) => (

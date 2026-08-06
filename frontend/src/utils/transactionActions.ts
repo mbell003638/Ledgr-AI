@@ -16,7 +16,7 @@ const escapeHtml = (value: unknown) => String(value ?? "")
 export type TransactionDocument = {
   title: string;
   subtitle?: string;
-  rows: Array<[string, unknown]>;
+  rows: [string, unknown][];
   amount?: number;
   themeColors?: any;
   biz?: any;

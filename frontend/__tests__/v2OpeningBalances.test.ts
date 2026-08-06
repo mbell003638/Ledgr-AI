@@ -143,4 +143,29 @@ describe('V2 opening balances — self-correcting engine', () => {
       expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
     } finally { close(); }
   });
+  it('links each opening supplier payable to a real supplier so later payments settle the due', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.postOpeningBalances({
+        date: '2026-01-01',
+        cash: 100,
+        inventory: 0,
+        accountsPayable: 40,
+        ownerCapital: 60,
+        liabilityBreakdown: [{ name: 'Opening Supplier', amount: 40, type: 'creditor' }],
+      });
+      const payable = await runner.first<{ party_id: string; credit: number }>(
+        "SELECT l.party_id,l.credit FROM v2_journal_lines l JOIN v2_accounts a ON a.id=l.account_id WHERE a.code='2000' AND l.credit>0",
+      );
+      expect(payable).toMatchObject({ credit: 40 });
+      expect(await runner.first('SELECT name,roles FROM v2_parties WHERE id=?', [payable?.party_id])).toEqual({
+        name: 'Opening Supplier',
+        roles: '["supplier"]',
+      });
+      await service.createPayment({ date: '2026-01-10', amount: 15, supplierId: payable?.party_id, supplierName: 'Opening Supplier', type: 'supplier_payment', method: 'cash' });
+      expect((await service.getPartyDetail(String(payable?.party_id), 'supplier'))?.balance).toBe(25);
+      expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
+    } finally { close(); }
+  });
+
 });

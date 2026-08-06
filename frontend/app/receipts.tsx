@@ -89,7 +89,7 @@ export default function ReceiptsScreen() {
   const documentFor = (r: Receipt) => ({ title: `Receipt ${r.receiptNumber}`, subtitle: MODE_LABEL[r.mode], rows: [
     ["Customer", r.clientName || "Walk-in"], ["Date", shortDate(r.date)], ["Amount", `${currSym}${Number(r.amount).toFixed(2)}`],
     ["Method", r.method || "—"], ["Notes", r.notes || "—"],
-  ] as Array<[string, unknown]> });
+  ] as [string, unknown][] });
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

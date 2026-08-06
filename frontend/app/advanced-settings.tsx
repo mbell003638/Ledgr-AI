@@ -4,6 +4,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
+import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
+import { api, getAIConfig, setAIConfig } from "@/src/api";
+import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { ScreenHeader, Card } from "@/src/components/UI";
+import { GlowPressable } from "@/src/components/GlowPressable";
+import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
+import { deviceHasLock, requireAuth } from "@/src/utils/lock";
+import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
+
 const SectionTitle = ({ title, theme }: any) => (
   <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
 );
@@ -75,15 +84,6 @@ const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: an
     {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
   </GlowPressable>
 );
-
-import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
-import { api, getAIConfig, setAIConfig } from "@/src/api";
-import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { ScreenHeader, Card } from "@/src/components/UI";
-import { GlowPressable } from "@/src/components/GlowPressable";
-import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
-import { requireAuth } from "@/src/utils/lock";
-import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
@@ -191,6 +191,9 @@ export default function AdvancedSettingsScreen() {
   const save = async () => {
     setSaving(true);
     try {
+      if (lockEnabled && !(await deviceHasLock())) {
+        throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
+      }
       const meta = PROVIDERS.find((p) => p.id === provider)!;
       await setAIConfig({
         provider,
@@ -553,7 +556,7 @@ export default function AdvancedSettingsScreen() {
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Protect your sensitive actions and backups.</Text>
               <AccordionRow title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <Text style={styles.hint}>Use your phone's fingerprint / face / PIN to protect sensitive actions.</Text>
+                  <Text style={styles.hint}>Use your phone’s fingerprint / face / PIN to protect sensitive actions.</Text>
                   <Pressable onPress={() => setLockEnabled((v) => !v)} style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}>
                     <Ionicons name={lockEnabled ? "lock-closed" : "lock-open-outline"} size={18} color={lockEnabled ? theme.color.onBrandPrimary : theme.color.onSurface} />
                     <Text style={[styles.lockToggleText, lockEnabled && { color: theme.color.onBrandPrimary }]}>{lockEnabled ? "App Lock ON" : "App Lock OFF"}</Text>

@@ -95,7 +95,7 @@ export default function ScanImport() {
       const [raw, settings] = await Promise.all([api.analyzeDocument(input), api.getSettings().catch(() => ({}))]);
       const mapped = mapAnalyzedDocument(raw);
       const partnership = (settings as any)?.accountingStyle === "retail_partnership";
-      let investors: Array<{ id: string; name: string }> = [];
+      let investors: { id: string; name: string }[] = [];
       if (partnership) { try { investors = await api.listInvestors(); } catch { investors = []; } }
       const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
         let importable = true;

@@ -80,7 +80,7 @@ export default function SalesScreen() {
   const documentFor = (sale: any) => ({
     title: "Sale",
     subtitle: shortDate(sale.date),
-    rows: [["Amount", fmt(sale.amount, currSym)], ["Notes", sale.notes || "—"]] as Array<[string, unknown]>,
+    rows: [["Amount", fmt(sale.amount, currSym)], ["Notes", sale.notes || "—"]] as [string, unknown][],
   });
 
   const reverseSale = (sale: any) => confirmAction(

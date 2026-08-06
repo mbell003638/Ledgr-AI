@@ -52,15 +52,17 @@ describe('period close into retained earnings', () => {
       const afterAll = await buildPersistentV2Reports(runner, { bookId: book.id });
       expect(afterAll.trialBalance.accounts.find((a) => a.code === '1200')?.normalBalance).toBe(120);
 
-      // Closed-period temporaries netted to zero → all-time P&L shows ONLY open-period earnings (0).
-      expect(afterAll.profitAndLoss.revenue).toBe(0);
-      expect(afterAll.profitAndLoss.netProfit).toBe(0);
+      // Closing transfers zero the GL temporary balances but historical P&L keeps the operating activity.
+      expect(afterAll.profitAndLoss.revenue).toBe(400);
+      expect(afterAll.profitAndLoss.cogs).toBe(30);
+      expect(afterAll.profitAndLoss.netProfit).toBe(340);
 
       // Retained Earnings (3300) now carries the closed period's net profit; standard book
       // keeps it in equity (no member allocation).
       expect(afterAll.trialBalance.accounts.find((a) => a.code === '3300')?.normalBalance).toBe(340);
 
       // The accounting identity still holds and the trial balance is balanced.
+      expect(afterAll.balanceSheet.currentEarnings).toBe(0);
       expect(afterAll.balanceSheet.balanced).toBe(true);
       expect(afterAll.trialBalance.balanced).toBe(true);
       expect((await base.reconcileBook(book.id)).balanced).toBe(true);
@@ -70,7 +72,7 @@ describe('period close into retained earnings', () => {
     } finally { close(); }
   });
 
-  it('scopes an all-time P&L to open-period activity after a close', async () => {
+  it('preserves closed-period activity in historical and all-time P&L', async () => {
     const { runner, close, book, post, closeRepo } = await setup();
     try {
       await post('sale1', 'p1', '2026-01-10', [['1000', 300, 0], ['4000', 0, 300]]);
@@ -82,12 +84,13 @@ describe('period close into retained earnings', () => {
       await post('sale2', 'p2', '2026-02-05', [['1000', 75, 0], ['4000', 0, 75]]);
 
       const all = await buildPersistentV2Reports(runner, { bookId: book.id });
-      expect(all.profitAndLoss.revenue).toBe(75); // only the open period's sale
-      expect(all.profitAndLoss.netProfit).toBe(75);
+      expect(all.profitAndLoss.revenue).toBe(375); // January 300 + February 75
+      expect(all.profitAndLoss.netProfit).toBe(375);
 
-      // A P&L filtered to January shows the closed period's activity net to zero.
+      // A P&L filtered to January excludes the closing transfer and retains January operations.
       const jan = await buildPersistentV2Reports(runner, { bookId: book.id, from: '2026-01-01', to: '2026-01-31' });
-      expect(jan.profitAndLoss.netProfit).toBe(0);
+      expect(jan.profitAndLoss.revenue).toBe(300);
+      expect(jan.profitAndLoss.netProfit).toBe(300);
     } finally { close(); }
   });
 });

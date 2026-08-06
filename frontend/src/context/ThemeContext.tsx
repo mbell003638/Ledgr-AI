@@ -8,6 +8,8 @@ type Mode = 'light' | 'dark' | 'navy_gold' | 'amoled_blue' | 'system';
 const STORAGE_KEY = 'theme_mode';
 const ANIMATION_STORAGE_KEY = 'animations_enabled';
 
+const COLOR_MAP = { light: lightColors, dark: darkColors, navy_gold: navyGoldColors, amoled_blue: amoledBlueColors };
+
 type Ctx = {
   theme: ThemeType;
   mode: Mode;
@@ -60,11 +62,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const effective: 'light' | 'dark' | 'navy_gold' | 'amoled_blue' = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
 
-  const colorMap = { light: lightColors, dark: darkColors, navy_gold: navyGoldColors, amoled_blue: amoledBlueColors };
-
   const value = useMemo<Ctx>(() => ({
     theme: {
-      color: colorMap[effective],
+      color: COLOR_MAP[effective],
       spacing, radius, font, effects, motion,
     },
     mode, effective, setMode, animationsEnabled, setAnimationsEnabled,

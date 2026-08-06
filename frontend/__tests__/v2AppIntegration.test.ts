@@ -37,6 +37,23 @@ describe('V2 application write integration', () => {
     } finally { close(); }
   });
 
+  it('posts general Cash Book income and expense to V2 cash and P&L accounts', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.recordManualCash({ date: '2026-07-01', amount: 100, direction: 'in', notes: 'Counter income' });
+      await service.recordManualCash({ date: '2026-07-02', amount: 30, direction: 'out', notes: 'Petty cash expense' });
+      const { buildPersistentV2Reports } = await import('../src/accountingV2/persistentReports');
+      const report = await buildPersistentV2Reports(runner, { bookId: 'active-v2' });
+      expect(report.profitAndLoss).toMatchObject({ revenue: 100, expenses: 30, netProfit: 70 });
+      expect(report.balanceSheet.assets).toBe(70);
+      expect((await service.listCashMovements()).map((row: any) => row.sourceType)).toEqual([
+        'manual_cash_expense',
+        'manual_cash_income',
+      ]);
+      expect((await service.repo.reconcileBook('active-v2')).balanced).toBe(true);
+    } finally { close(); }
+  });
+
   it('selects the active versioned V2 book and its open period for the posting date', async () => {
     const { runner, close, service } = await setup();
     try {

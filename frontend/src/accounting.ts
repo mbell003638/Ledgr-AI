@@ -24,7 +24,7 @@ export const num = moneyNum;
 export const round2 = m2;
 
 /** Sum a list of {amount} records (or raw numbers) safely (drift-safe). */
-export function sumAmounts(items: Array<{ amount?: any } | number> | null | undefined): number {
+export function sumAmounts(items: ({ amount?: any } | number)[] | null | undefined): number {
   return sumMoney(items);
 }
 

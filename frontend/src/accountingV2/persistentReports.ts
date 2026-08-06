@@ -18,15 +18,14 @@ export async function persistentV2ReportsOrFallback<TLegacy>(
   options: V2ReportOptions,
   legacy: () => Promise<TLegacy>,
 ): Promise<PersistentReportResult<TLegacy>> {
-  if (db) {
-    try {
-      const book = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [options.bookId]);
-      if (book) return { source: 'v2', report: await buildPersistentV2Reports(db, options) };
-    } catch {
-      // SQLite reads must never prevent the legacy report path from rendering.
-    }
-  }
-  return { source: 'legacy', report: await legacy() };
+  if (!db) return { source: 'legacy', report: await legacy() };
+
+  // Missing V2 setup may legitimately use the compatibility report. Once a V2
+  // book exists, however, database/report failures must be visible: silently
+  // switching engines can display stale or materially different financials.
+  const book = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [options.bookId]);
+  if (!book) return { source: 'legacy', report: await legacy() };
+  return { source: 'v2', report: await buildPersistentV2Reports(db, options) };
 }
 
 /** Load normalized SQLite postings into the report engine; journal rows are the sole authority. */
@@ -34,11 +33,18 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
   const books = await db.all<any>('SELECT id,name,style,basis,created_at FROM v2_books WHERE id=?', [options.bookId]);
   const accounts = await db.all<any>('SELECT id,book_id,code,name,type,payment_method,active FROM v2_accounts WHERE book_id=?', [options.bookId]);
   const entries = await db.all<any>('SELECT id,book_id,period_id,source_id,date,memo,reversal_of FROM v2_journal_entries WHERE book_id=? ORDER BY date,id', [options.bookId]);
-  const journals = [] as any[];
-  for (const entry of entries) {
-    const lines = await db.all<any>('SELECT account_id,party_id,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [entry.id]);
-    journals.push({ id:entry.id, bookId:entry.book_id, periodId:entry.period_id, sourceId:entry.source_id || undefined, date:entry.date, memo:entry.memo, reversalOf:entry.reversal_of || undefined, lines:lines.map(l=>({accountId:l.account_id,partyId:l.party_id||undefined,debit:Number(l.debit),credit:Number(l.credit),memo:l.memo||undefined})) });
+  const lineRows = await db.all<any>(
+    'SELECT l.journal_id,l.account_id,l.party_id,l.debit,l.credit,l.memo FROM v2_journal_lines l ' +
+    'JOIN v2_journal_entries j ON j.id=l.journal_id WHERE j.book_id=? ORDER BY j.date,j.id,l.id',
+    [options.bookId],
+  );
+  const linesByJournal = new Map<string, any[]>();
+  for (const line of lineRows) {
+    const lines = linesByJournal.get(line.journal_id) || [];
+    lines.push({ accountId:line.account_id, partyId:line.party_id||undefined, debit:Number(line.debit), credit:Number(line.credit), memo:line.memo||undefined });
+    linesByJournal.set(line.journal_id, lines);
   }
+  const journals = entries.map((entry) => ({ id:entry.id, bookId:entry.book_id, periodId:entry.period_id, sourceId:entry.source_id || undefined, date:entry.date, memo:entry.memo, reversalOf:entry.reversal_of || undefined, lines:linesByJournal.get(entry.id) || [] }));
   // Sources and allocations are needed for cash-basis P&L (money actually received/paid).
   const sourceRows = await db.all<any>('SELECT id,book_id,type,date,reference,metadata FROM v2_sources WHERE book_id=?', [options.bookId]);
   const allocationRows = await db.all<any>('SELECT id,book_id,invoice_source_id,receipt_source_id,amount,allocated_at FROM v2_invoice_allocations WHERE book_id=?', [options.bookId]);

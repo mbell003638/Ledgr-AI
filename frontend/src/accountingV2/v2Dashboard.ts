@@ -61,13 +61,15 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   const cash = cents(getBal('1000') + getBal('1010') + getBal('1020') + getBal('1030'));
   const inventoryValue = cents(getBal('1200'));
   const accountsReceivable = cents(getBal('1100'));
+  const supplierAdvances = cents(getBal('1210'));
   const accountsPayable = cents(getBal('2000'));
+  const customerAdvances = cents(getBal('2100'));
   const commissionPayable = cents(getBal('2200'));
   const otherAssets = cents(getBal('1500'));
   const otherLiabilities = cents(getBal('2500'));
 
-  const assets = cents(cash + inventoryValue + accountsReceivable + otherAssets);
-  const liabilities = cents(accountsPayable + commissionPayable + otherLiabilities);
+  const assets = cents(cash + inventoryValue + accountsReceivable + supplierAdvances + otherAssets);
+  const liabilities = cents(accountsPayable + customerAdvances + commissionPayable + otherLiabilities);
   const netWorth = cents(assets - liabilities);
   const drawings = cents(getBal('3100'));
 
@@ -98,7 +100,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
     netWorth,
     cash,
     inventoryValue,
-    accountsReceivable, accountsPayable, commissionPayable, otherAssets, otherLiabilities,
+    accountsReceivable, supplierAdvances, accountsPayable, customerAdvances, commissionPayable, otherAssets, otherLiabilities,
     openingBalance: opening.assets,
     openingInventory: opening.inventory,
     openingCash: opening.cash,

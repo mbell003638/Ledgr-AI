@@ -204,7 +204,7 @@ function ReportPreview({ report, theme, styles, label }: { report: MonthlyReport
         </View>
         {hasPartners && report.partnerCount > 0 ? (
           <View style={styles.heroRow}>
-            <Text style={styles.heroLabel}>Each Partner's Share{report.splitLabel ? ` (${report.splitLabel})` : ""}</Text>
+            <Text style={styles.heroLabel}>Each Partner’s Share{report.splitLabel ? ` (${report.splitLabel})` : ""}</Text>
             <Text style={styles.heroValue}>{money(report.partnerShareEach, sym)}</Text>
           </View>
         ) : null}

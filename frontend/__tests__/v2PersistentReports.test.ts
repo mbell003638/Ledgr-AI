@@ -91,15 +91,16 @@ describe('persistent V2 reports', () => {
     } finally { close(); }
   });
 
-  it('safely falls back when a persistent report read fails', async () => {
+  it('surfaces a persistent report read failure instead of silently changing accounting engines', async () => {
     const broken = {
-      all: async () => { throw new Error('database unavailable'); },
-      first: async () => null,
+      all: async () => [],
+      first: async () => { throw new Error('database unavailable'); },
       exec: async () => undefined,
       run: async () => undefined,
     } satisfies SqlRunner;
     const fallback = jest.fn(async () => 'legacy report');
 
-    await expect(persistentV2ReportsOrFallback(broken, { bookId: 'default' }, fallback)).resolves.toEqual({ source: 'legacy', report: 'legacy report' });
+    await expect(persistentV2ReportsOrFallback(broken, { bookId: 'default' }, fallback)).rejects.toThrow('database unavailable');
+    expect(fallback).not.toHaveBeenCalled();
   });
 });

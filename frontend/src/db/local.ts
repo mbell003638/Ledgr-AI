@@ -1942,6 +1942,27 @@ export async function createReceipt(r: {
   return receipt;
 }
 
+export async function updateReceipt(id: string, patch: any) {
+  const existing = (await readColl<any>('receipts')).find((item: any) => item.id === id);
+  if (!existing) throw new Error('Receipt not found');
+  const replacement = {
+    ...existing,
+    ...patch,
+    mode: patch.mode || existing.mode,
+    amount: patch.amount ?? existing.amount,
+    date: patch.date || existing.date,
+    allocations: patch.allocations ?? existing.allocations,
+    lines: patch.lines ?? existing.lines,
+  };
+  await deleteReceipt(id);
+  try {
+    return await createReceipt(replacement);
+  } catch (error) {
+    try { await createReceipt(existing); } catch { /* preserve the edit failure */ }
+    throw error;
+  }
+}
+
 export async function deleteReceipt(id: string) {
   const receipts = await readColl<any>('receipts');
   const receipt = receipts.find((x: any) => x.id === id);
