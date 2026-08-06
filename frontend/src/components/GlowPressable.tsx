@@ -32,6 +32,7 @@ type GlowPressableProps = {
   clipSafe?: boolean;
   glowRadius?: number;
   accessibilityRole?: any;
+  accessibilityLabel?: string;
   accessibilityState?: any;
   prominent?: boolean;
   haptic?: boolean;
@@ -56,12 +57,13 @@ type GlowPressableProps = {
 export function GlowPressable(props: GlowPressableProps) {
   const { animationsEnabled } = useAnimations();
   if (!animationsEnabled) {
-    const { children, style, testID, disabled, accessibilityRole, accessibilityState, onPress, onLongPress, onPressIn, onPressOut } = props;
+    const { children, style, testID, disabled, accessibilityRole, accessibilityLabel, accessibilityState, onPress, onLongPress, onPressIn, onPressOut } = props;
     return (
       <Pressable
         testID={testID}
         disabled={disabled}
         accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel}
         accessibilityState={accessibilityState}
         onPress={onPress}
         onLongPress={onLongPress}
@@ -82,6 +84,7 @@ function AnimatedGlowPressable({
   glowRadius,
   disabled,
   accessibilityRole,
+  accessibilityLabel,
   accessibilityState,
   prominent = false,
   animateBorder = true,
@@ -171,6 +174,7 @@ function AnimatedGlowPressable({
       testID={testID}
       disabled={disabled}
       accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={accessibilityState}
       onHoverIn={Platform.OS === "web" ? () => animateHover(1) : undefined}
       onHoverOut={Platform.OS === "web" ? () => animateHover(0) : undefined}

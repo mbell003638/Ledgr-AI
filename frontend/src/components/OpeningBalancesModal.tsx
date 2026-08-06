@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, Modal, Platform, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, Modal, Platform, ScrollView, ActivityIndicator, KeyboardAvoidingView, type TextInputProps } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -13,6 +13,45 @@ interface Props {
   mode?: "all" | "investor";
 }
 
+/**
+ * Keep the focus indicator inside the input's own rounded border. Browsers draw
+ * their default outline outside the element, where a modal or ScrollView can
+ * clip the top/bottom and leave the "half glow" seen in the opening setup.
+ */
+function OpeningTextInput({ style, onFocus, onBlur, ...props }: TextInputProps) {
+  const theme = useTheme();
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <TextInput
+      {...props}
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+      style={[
+        style,
+        {
+          borderColor: focused ? theme.color.brandPrimary : theme.color.border,
+          borderRadius: theme.radius.input,
+        },
+        Platform.OS === "web"
+          ? ({
+              outlineStyle: "none",
+              outlineWidth: 0,
+              outlineColor: "transparent",
+              boxShadow: "none",
+              boxSizing: "border-box",
+            } as any)
+          : null,
+      ]}
+    />
+  );
+}
 export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all" }: Props) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -218,7 +257,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
               {!isInvestorOnly ? (
                 <>
                   <Text style={styles.label}>Opening Cash Balance (Optional) ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                  <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingCash}
                     onChangeText={setOpeningCash}
                     keyboardType="decimal-pad"
@@ -228,7 +267,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   />
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Stock / Inventory (Optional) ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                  <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingInventory}
                     onChangeText={setOpeningInventory}
                     keyboardType="decimal-pad"
@@ -244,8 +283,8 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     {otherAssets.map((asset, index) => (
                       <View key={index} style={[styles.memberCard, { marginTop: 8 }]}>
                         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.name} onChangeText={(value) => updateOtherAsset(index, "name", value)} placeholder="Asset name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
-                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.amount} onChangeText={(value) => updateOtherAsset(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
+                          <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.name} onChangeText={(value) => updateOtherAsset(index, "name", value)} placeholder="Asset name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
+                          <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={asset.amount} onChangeText={(value) => updateOtherAsset(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
                           <Pressable onPress={() => removeOtherAsset(index)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
                         </View>
                       </View>
@@ -262,8 +301,8 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     {openingLiabilities.map((liability, index) => (
                       <View key={index} style={[styles.memberCard, { marginTop: 8 }]}>
                         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.name} onChangeText={(value) => updateOpeningLiability(index, "name", value)} placeholder="Liability name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
-                          <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.amount} onChangeText={(value) => updateOpeningLiability(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
+                          <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.name} onChangeText={(value) => updateOpeningLiability(index, "name", value)} placeholder="Liability name" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1, marginTop: 0 }]} />
+                          <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={liability.amount} onChangeText={(value) => updateOpeningLiability(index, "amount", value)} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, { width: 110, marginTop: 0 }]} />
                           <Pressable onPress={() => removeOpeningLiability(index)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
                         </View>
                         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
@@ -279,16 +318,16 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                   </View>
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Retained Earnings / Other Equity ($)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   <Text style={styles.helper}>Use this for profit or equity carried forward from before the app period. It is not current-period profit.</Text>
 
                   {!isPartnerMode ? <>
                     <Text style={[styles.label, { marginTop: 14 }]}>Opening Owner Capital / Equity ($)</Text>
-                    <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                    <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   </> : null}
 
                   <Text style={[styles.label, { marginTop: 14 }]}>Period Start Date (YYYY-MM-DD)</Text>
-                  <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                  <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={periodStart}
                     onChangeText={setPeriodStart}
                     autoCapitalize="none"
@@ -309,7 +348,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 {members.map((m, i) => (
                   <View key={i} style={styles.memberCard}>
                     <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                      <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                      <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                         value={m.name}
                         onChangeText={(v) => updateMember(i, "name", v)}
                         placeholder="Investor Name"
@@ -323,7 +362,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.subLabel}>Capital ($)</Text>
-                        <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                        <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                           value={m.amount}
                           onChangeText={(v) => updateMember(i, "amount", v)}
                           keyboardType="decimal-pad"
@@ -334,7 +373,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.subLabel}>Profit Share %</Text>
-                        <TextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
+                        <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                           value={m.profitSharePct}
                           onChangeText={(v) => updateMember(i, "profitSharePct", v)}
                           keyboardType="decimal-pad"

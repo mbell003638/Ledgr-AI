@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert , Image } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Switch, Alert, Image, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
@@ -590,6 +590,22 @@ export default function SettingsScreen() {
               </View>
             </GlowPressable>
 
+            <GlowPressable
+              topHighlight={false}
+              haptic
+              accessibilityRole="link"
+              accessibilityLabel="Open Ledgr privacy policy"
+              onPress={() => Linking.openURL("https://github.com/mbell003638/Ledgr-AI/blob/codex-sol/docs/PRIVACY_POLICY.md")}
+              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20 }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Privacy & Data</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Privacy policy, AI data use and deletion information</Text>
+                </View>
+                <Ionicons name="open-outline" size={20} color={theme.color.brandPrimary} />
+              </View>
+            </GlowPressable>
             {status && (
               <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
                 <Ionicons name={status.ok ? "checkmark-circle" : "alert-circle"} size={18} color={status.ok ? theme.color.success : theme.color.error} />

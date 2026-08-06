@@ -198,9 +198,22 @@ describe('V2 UI contracts', () => {
     expect(openingBalances).toContain('KeyboardAvoidingView');
     expect(openingBalances).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
     expect(openingBalances).toContain('keyboardShouldPersistTaps="handled"');
+    expect(openingBalances).toContain('function OpeningTextInput');
+    expect(openingBalances).toContain('outlineStyle: "none"');
+    expect(openingBalances).toContain('borderRadius: theme.radius.input');
     expect(cashbook).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
     expect(customer).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
     expect(supplier).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+  });
+  it('opening assets and liabilities use named dynamic rows', () => {
+    const openingBalances = readSource('src/components/OpeningBalancesModal.tsx');
+    expect(openingBalances).toContain('addOtherAsset');
+    expect(openingBalances).toContain('Add Other Asset');
+    expect(openingBalances).toContain('addOpeningLiability');
+    expect(openingBalances).toContain('Add Liability');
+    expect(openingBalances).toContain('Supplier / Creditor');
+    expect(openingBalances).toContain('Other Liability');
+    expect(openingBalances).toContain('liabilityBreakdown');
   });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
