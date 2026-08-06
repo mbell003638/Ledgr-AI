@@ -1,124 +1,72 @@
-# Ledgr AI — Standalone Offline Shop Accounting
+# Ledgr Codex — Local-First Business Accounting
 
-A single-user, on-device shop accounting app. **No backend server. No login. Works fully offline.**
-Data lives on the phone (AsyncStorage). The only network calls are optional AI features
-(voice/OCR) that go **directly** to Google Gemini using your own API key.
+Ledgr Codex is a mobile accounting app for small businesses. It keeps its authoritative double-entry books in on-device SQLite, works without a developer-operated backend, and can be used offline for all non-AI features.
 
 ## Features
 
-- Suppliers, bills, sales, payments, inventory
-- Dashboard, P&L, balance sheet, trial balance, monthly/daily summaries
-- Period close & carry-forward
-- **Backup / Restore** — export all data as a JSON file, share via WhatsApp, import on another device
-- AI (optional): voice-command entry, receipt OCR, statement reconciliation (Google Gemini)
-- USD-only currency
-- Light / dark / system theme
+- Sales, purchases, invoices, receipts, payments, expenses, inventory, assets and liabilities
+- Cash Book, P&L, Balance Sheet, Trial Balance, partner capital and period-close reports
+- Dynamic opening balances for cash, stock, named assets, named liabilities and investor capital
+- Retail-partnership periods with physical inventory close and manager commission payable
+- Multiple business books and configurable feature sets
+- JSON backup and restore of the full accounting state
+- Optional AI-assisted voice entry, OCR, reconciliation and questions about the books
+- Multiple display currencies and light, dark or system theme
 
-## Data & privacy
+## Storage, privacy and AI
 
-- All accounting data is stored locally on the device via AsyncStorage.
-- Nothing is uploaded to any server we run — there is no server.
-- The Gemini API key is stored locally and **stripped from backup files** before sharing.
+- The authoritative accounting ledger is stored locally in SQLite. AsyncStorage remains for preferences, compatibility and fallback paths.
+- There is no Ledgr-operated backend, advertising SDK, analytics SDK or cross-app tracking.
+- AI is optional. The user chooses Google Gemini, Anthropic, OpenRouter, or a custom HTTPS-compatible endpoint.
+- AI requests go directly from the device to the selected provider when the user invokes an AI action.
+- The AI API key is stored in the device secure credential store and excluded from exported backups.
+- Android operating-system backup is disabled. User-created JSON backups are readable and should be handled securely.
 
-## AI setup (optional)
+See docs/PRIVACY_POLICY.md, docs/PLAY_DATA_SAFETY.md and docs/PLAY_RELEASE_CHECKLIST.md.
 
-1. Get a free Gemini API key at [aistudio.google.com](https://aistudio.google.com).
-2. Open the app → **Settings** → paste the key → **Test API Key**.
-3. Without a key, all non-AI features still work fully offline.
+## Android identity
 
-## Backup / Restore
+Current Codex Android identity:
 
-- **Export & Share** (Settings): writes `ledgr-backup-YYYY-MM-DD.json` and opens the share
-  sheet — pick WhatsApp, Drive, email, etc.
-- **Import File** (Settings): pick a previously exported backup to restore. This **replaces**
-  current data; after import, pull-to-refresh or reopen a screen to see restored records.
+- Display name: Ledgr Codex
+- Application ID: com.ahem.ledgrai.codexsol
+- Public version: 1.0.0
+- Android version code: 1
 
-Backups include the **full double-entry (V2) ledger** — the chart of accounts and every
-journal entry — in addition to the record collections (suppliers, bills, sales, payments,
-inventory, invoices, etc.). Restoring re-hydrates the complete accounting state so reports
-(P&L, balance sheet, trial balance) reconcile exactly as they did on the source device. The
-Gemini API key is still **stripped** from the exported file before sharing.
+The Codex ID intentionally differs from Fable5-Opus so both builds can be installed on one device. Confirm this permanent ID before the first Play upload; it cannot be changed after publication. The independent iOS bundle identifier is com.ahem.ledgrai.
 
-## Building the APK / AAB
+## Android build workflow
 
-Builds run in **GitHub Actions** via `.github/workflows/build-apk.yml`. The
-workflow is **manually dispatched** (Actions tab → *Build Ledgr AI Android* →
-*Run workflow*). Type-check and unit tests run first as a `test` job; the build
-job only starts if they pass.
+.github/workflows/build-apk.yml is manual-only. A normal push does not start the APK/AAB workflow.
 
-1. Trigger the workflow from the **Actions** tab.
-2. Wait for the green check (~15–25 min).
-3. Open the run → **Artifacts**:
-   - `Ledgr-AI-APK` — installable `.apk` for sideloading / testing on your phone.
-   - `Ledgr-AI-AAB` — `.aab` bundle for **Google Play Store** upload.
+Before building, configure a permanent upload keystore through these GitHub repository secrets:
 
-> If no release keystore secret is configured, the artifacts are named
-> `Ledgr-AI-APK-testsigned` / `Ledgr-AI-AAB-testsigned` — see **Release signing**
-> below.
-
-### Installing the APK on your phone
-
-1. Download and unzip the `Ledgr-AI-APK` artifact.
-2. Transfer the `.apk` to your phone (WhatsApp/Drive/USB).
-3. Enable "Install unknown apps" for your file manager, then tap the `.apk`.
-
-## Release signing
-
-⚠️ **Google Play requires every update to be signed with the same key forever.**
-If you ship with a throwaway key you can never update the app. The workflow supports
-two signing modes and picks automatically based on whether the release keystore
-secrets are present.
-
-### Play-Store signing (persistent keystore)
-
-Configure these four **repository secrets** (Settings → Secrets and variables →
-Actions). When all four are present, the workflow decodes your keystore and signs
-the APK/AAB with it, and the artifacts are named `Ledgr-AI-APK` / `Ledgr-AI-AAB`.
-
-| Secret | What it is |
+| Secret | Purpose |
 | --- | --- |
-| `RELEASE_KEYSTORE_B64` | Base64 of your persistent `.keystore` file |
-| `RELEASE_KEY_ALIAS` | The key alias inside the keystore |
-| `RELEASE_STORE_PASSWORD` | The keystore (store) password |
-| `RELEASE_KEY_PASSWORD` | The key password |
+| RELEASE_KEYSTORE_B64 | Base64-encoded permanent upload keystore |
+| RELEASE_KEY_ALIAS | Alias inside the keystore |
+| RELEASE_STORE_PASSWORD | Keystore password |
+| RELEASE_KEY_PASSWORD | Key password |
 
-Generate a keystore once and base64-encode it:
+With all four secrets, the workflow produces a release APK and Play-uploadable AAB. Without them, it creates only a throwaway test-signed APK named Ledgr-AI-APK-testsigned; it does not create an AAB.
 
-```
-keytool -genkeypair -v -keystore ledgr-release.keystore \
-  -alias ledgr -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 ledgr-release.keystore   # paste output into RELEASE_KEYSTORE_B64
-```
+Never upload a test-signed artifact to Google Play. Store the original keystore and passwords outside the repository in at least two secure recovery locations.
 
-Keep the original `.keystore` file and passwords backed up somewhere safe and
-**out of the repo** — losing them means you can never update the published app.
-Secret values are consumed via the runner's `env:` mapping and are never printed
-to the build log.
+## Local verification
 
-### Test-signed fallback (no secrets configured)
+From the frontend directory run:
 
-If the secrets above are **not** set, the workflow still produces installable
-builds by generating a throwaway keystore at build time, but it:
+    npm ci
+    npx tsc --noEmit
+    npm run lint:ci
+    npx jest --ci --runInBand
+    npx expo-doctor
+    npm audit --omit=dev --audit-level=high
 
-- prints a prominent `⚠ TEST-SIGNED BUILD — NOT for Play Store …` warning, and
-- suffixes the artifacts as `Ledgr-AI-APK-testsigned` / `Ledgr-AI-AAB-testsigned`.
+For local development:
 
-**Never upload a `-testsigned` build to the Play Store.** These are for
-sideloading and QA only. Configure the four secrets before your first store upload.
+    cd frontend
+    npm ci
+    npx expo start
 
-## Package identifier
-
-`com.ahem.ledgrai` — the Android `package` and iOS `bundleIdentifier` (in
-`frontend/app.json`). Set once; **cannot be changed** after the first Play Store
-upload.
-
-## Local development
-
-```
-cd frontend
-npm install       # or yarn
-npx expo start    # Metro dev server (debug)
-```
-
-Note: a **debug** build needs the Metro server running. The **release** APK/AAB embeds the
-JS bundle and runs standalone with no server.
+A release APK/AAB embeds the JavaScript bundle and does not require Metro.

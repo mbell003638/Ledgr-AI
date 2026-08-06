@@ -101,3 +101,4 @@ test_result.md
 memory/
 *.ps1
 backend/
+*.keystore

@@ -75,7 +75,7 @@ Validation: **45/45 Jest suites, 276 tests passing; `tsc --noEmit` clean.**
 | Bundle ID drift — `app.json` shipped `com.mbell.ledgr.opt` (Android `package` + iOS `bundleIdentifier`) while docs intended `com.mbell.ledgr` | C2 | Aligned Android `package` and iOS `bundleIdentifier` to `com.mbell.ledgr` (nothing shipped to Play yet). Fixed Expo `slug` from placeholder `frontend` → `ledgr-ai`; aligned `scheme` `frontend` → `ledgr` and `name` `Ledgr Opt` → `Ledgr` (no code referenced the old scheme literal, so deep-linking stays coherent). | `frontend/app.json` |
 | Tests never gated the working branches — `test.yml` only triggered on `[main, master, feature/html-parity, phase2-sqlite-storage]`, and `build-apk.yml` had no test gate at all | H2 | `test.yml` now triggers on push to **all** branches (`branches: ['**']`) plus `pull_request` and `workflow_dispatch`; switched install to `npm ci` with npm cache and runner `jest --ci`. Added a `test` job to `build-apk.yml` (checkout, Node 22 + npm cache, `npm ci`, `tsc --noEmit`, `jest --ci`) and made the build job `needs: test`. | `.github/workflows/test.yml`, `.github/workflows/build-apk.yml` |
 | `LogBox.ignoreAllLogs(true)` suppressed **every** RN warning in dev **and** release, hiding real runtime issues from users | H4 / L4 | Replaced with a `__DEV__`-gated `LogBox.ignoreLogs([])` (suppresses nothing by default) carrying a comment on how to add targeted string suppressions; never runs in release. | `frontend/app/_layout.tsx` (LogBox lines only) |
-| Repo hygiene — tracked media dumps, conversation logs, UI mockups, agent scratch dirs, and an archived FastAPI `backend/` bloated the tree; README declares there is no backend | H1 | Deleted media/log/mockup/scratch files and the `test_reports/`, `.emergent/`, `.agents/`, `memory/`, and `backend/` directories (each verified unreferenced by workflows/frontend/docs first — the only `backend` imports point at `frontend/src/db/backend.ts`, a different module). Moved `LEDGR_AI_MASTER_PROMPT.md` and `design_guidelines.json` into `docs/`. Extended `.gitignore` to keep them out going forward. Also removed the tracked root `.gitconfig` and the stray root `tests/` Python remnant. | repo root, `.gitignore`, `docs/` |
+| Repo hygiene — tracked media dumps, conversation logs, UI mockups, agent scratch dirs and archived backend code bloated the tree | H1 | Deleted confirmed-unreferenced media, logs, mockups, scratch directories, archived backend code, stale master prompts/design specifications and generated test reports. Git history remains unchanged. | repo root and ignore rules |
 | Phantom dependencies — `date-fns`, `dayjs`, `react-native-linear-gradient` declared but imported nowhere | M6 / M7 | Re-verified zero imports across `frontend/src` + `frontend/app`, removed the three from `package.json`, and regenerated `package-lock.json` (`--package-lock-only`). **Kept** `react-native-worklets` (required non-optional peer of `react-native-reanimated` v4) and `expo-camera` (active config plugin in `app.json`) despite zero direct imports. | `frontend/package.json`, `frontend/package-lock.json` |
 | Release-signing docs pointed at the old throwaway-keystore behavior; identifier + backup docs out of date | — | Added a **Release signing** section documenting the four GitHub secrets and the test-signed fallback; corrected the package identifier to `com.mbell.ledgr`; updated **Backup / Restore** to note backups include the full double-entry (V2) ledger; removed references to deleted files. | `README.md` |
 
@@ -111,7 +111,7 @@ fallback) and the H2 test-gating fix (tests on all branches; build needs test).
 
 | Change | Detail | Files |
 | --- | --- | --- |
-| App identifier rebranded — no `mbell` anywhere in the app | Android `package` + iOS `bundleIdentifier` are now **`com.ahem.ledgrai`** (supersedes the `com.mbell.ledgr` value referenced in earlier rows; nothing was ever shipped to Play, so the identifier is still freely changeable). Docs updated to match. | `frontend/app.json`, `README.md`, `frontend/BLUEPRINT.md` |
+| App identifier rebranded before publication | Android and iOS were changed to com.ahem.ledgrai at that audit point. The later side-by-side Codex Android ID com.ahem.ledgrai.codexsol supersedes this row; iOS remains com.ahem.ledgrai. | frontend/app.json and current release checklist |
 
 ## Round 2 — verification audit, UI performance & cash-basis fixes (2026-08-03)
 
@@ -223,3 +223,13 @@ An Opus auditor drove the real api surface through complete simulated user journ
 | markUnpaid threw an unhandled "Amount must be positive" | Low | Status-only edits are safe no-ops; receipted invoices get a clear message; UI catches errors |
 
 Validation after round 11: **58/58 suites, 425 tests passing; tsc clean.** Auditor's journey suite passes (4 pre-fix bug-repro assertions inverted by design).
+
+## Round 14 — Play release evidence and documentation cleanup (2026-08-06)
+
+| Finding | Resolution | Evidence |
+|---|---|---|
+| Release documentation contradicted the SQLite-first, multi-provider, secure-key implementation | Replaced the README with a code-accurate guide and removed unreferenced stale specification artifacts. | README.md and repository reference scan |
+| Identity docs named an older package | Standardized docs on com.ahem.ledgrai.codexsol and retained an owner confirmation gate before first upload. | frontend/app.json and Play checklist |
+| Docs claimed a test-signed AAB existed | Corrected the docs: without permanent signing secrets, the workflow creates only a test-signed APK. | build-apk.yml and README.md |
+| Permanent .keystore files were not ignored | Added the extension to root and frontend ignore rules. | .gitignore files |
+| Listing copy and 2026 policy gates were missing | Added listing, API 36, developer-verification, Data Safety, financial-features and AAB-inspection gates. | Play release documents |
