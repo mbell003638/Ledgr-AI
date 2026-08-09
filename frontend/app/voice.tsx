@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,7 @@ import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 
 import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
+import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -30,18 +31,15 @@ export default function VoiceModal() {
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await AudioModule.requestRecordingPermissionsAsync();
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      } catch (e) { console.warn(e); }
-    })();
-  }, []);
 
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
+      const permission = await runWithSystemPrompt(() => AudioModule.requestRecordingPermissionsAsync());
+      if (!permission.granted) {
+        throw new Error("Microphone access is required to use the voice assistant.");
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
       setPhase("recording");

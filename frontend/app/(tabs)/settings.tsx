@@ -9,16 +9,12 @@ import * as ImagePicker from "expo-image-picker";
 import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { CURRENCIES, TAX_LABELS, type TaxLabel } from "@/src/db/local";
+import { CURRENCIES, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
-import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-
-const SectionTitle = ({ title, theme }: any) => (
-  <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
-);
+import { type PersonaId } from "@/src/accountingV2/config";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -51,33 +47,6 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   );
 };
 
-const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: any) => (
-  <GlowPressable
-    topHighlight={false}
-    haptic
-    onPress={onPress}
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: 48,
-      paddingVertical: 12,
-      paddingHorizontal: 10,
-      marginHorizontal: -10,
-      borderWidth: 0,
-      borderBottomWidth: isLast ? 0 : 1,
-      borderBottomColor: theme.color.border,
-      borderRadius: 14,
-    }}
-  >
-    <View style={{ flex: 1, paddingRight: 16 }}>
-      <Text style={[{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }, rightElement?.titleStyle]}>{title}</Text>
-      {subtitle && <Text style={[{ fontSize: 12, color: theme.color.muted, marginTop: 4 }, rightElement?.subtitleStyle]}>{subtitle}</Text>}
-    </View>
-    {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
-  </GlowPressable>
-);
-
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -87,7 +56,7 @@ export default function SettingsScreen() {
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   // Members = the owners/investors who put in capital and share profit.
   // Each: { name, amount (investment), profitSharePct (optional) }.
   const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
@@ -96,8 +65,8 @@ export default function SettingsScreen() {
   const [books, setBooks] = useState<{ id: string; name: string; businessType?: string }[]>([]);
   const [activeBook, setActiveBookState] = useState("default");
   const [newBookName, setNewBookName] = useState("");
-  const [addingBook, setAddingBook] = useState(false);
-  const [newBookPersona, setNewBookPersona] = useState<PersonaId>("custom");
+  const [, setAddingBook] = useState(false);
+  const [newBookPersona] = useState<PersonaId>("custom");
   const [currency, setCurrency] = useState("USD");
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");

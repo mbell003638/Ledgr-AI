@@ -10,6 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
+import { isSystemPromptActive } from "@/src/utils/systemPrompt";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -220,6 +221,7 @@ export default function RootLayout() {
   const [storageReady, setStorageReady] = useState(false);
   const [unlocked, setUnlocked] = useState(Platform.OS === "web");
   const [unlocking, setUnlocking] = useState(false);
+  const shouldUnlockOnActive = React.useRef(false);
 
   const attemptUnlock = React.useCallback(async () => {
     if (Platform.OS === "web") {
@@ -258,8 +260,18 @@ export default function RootLayout() {
     if (Platform.OS === "web") return;
 
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "background") setUnlocked(false);
-      if (state === "active") attemptUnlock();
+      if (state === "background") {
+        // Permission, picker, and biometric sheets are owned by Android and
+        // can briefly background the activity. They must not lock the app.
+        if (isSystemPromptActive()) return;
+        shouldUnlockOnActive.current = true;
+        setUnlocked(false);
+        return;
+      }
+      if (state === "active" && shouldUnlockOnActive.current) {
+        shouldUnlockOnActive.current = false;
+        attemptUnlock();
+      }
     });
     return () => subscription.remove();
   }, [attemptUnlock, storageReady]);

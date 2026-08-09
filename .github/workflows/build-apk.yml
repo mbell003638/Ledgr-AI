@@ -199,7 +199,7 @@ jobs:
           find frontend/android -name "*.aab" -type f
 
       - name: Upload APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: Ledgr-AI-APK${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/apk/release/*.apk
@@ -207,7 +207,7 @@ jobs:
 
       - name: Upload AAB
         if: steps.check.outputs.has_keystore == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: Ledgr-AI-AAB${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/bundle/release/*.aab

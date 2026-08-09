@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -69,7 +69,7 @@ export default function BillsScreen() {
     loader,
   );
   const bills = data?.bills ?? [];
-  const suppliers = data?.suppliers ?? {};
+  const suppliers = useMemo(() => data?.suppliers ?? {}, [data?.suppliers]);
   const load = reload;
 
   const onRowPress = useCallback((item: any) => setSelected(item), []);

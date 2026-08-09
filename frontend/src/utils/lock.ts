@@ -12,6 +12,7 @@
 
 import * as LocalAuthentication from 'expo-local-authentication';
 import { getSettings } from '@/src/db/local';
+import { runWithSystemPrompt } from '@/src/utils/systemPrompt';
 
 export async function deviceHasLock(): Promise<boolean> {
   try {
@@ -36,11 +37,13 @@ export async function requireAuth(reason = 'Confirm your identity to continue'):
     const available = await deviceHasLock();
     if (!available) return false;
 
-    const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: reason,
-      cancelLabel: 'Cancel',
-      disableDeviceFallback: false,
-    });
+    const res = await runWithSystemPrompt(() =>
+      LocalAuthentication.authenticateAsync({
+        promptMessage: reason,
+        cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
+      }),
+    );
     return res.success;
   } catch {
     return false;
