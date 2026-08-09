@@ -348,7 +348,7 @@ export async function initStorage(): Promise<{ mode: StorageMode; migration?: an
   try { await loadActiveBook(); } catch { /* stay on default */ }
   try {
     // Lazy import so a failure to load expo-sqlite can't crash module load.
-    const { getExpoRunner } = require('./expoRunner');
+    const { getExpoRunner } = await import('./expoRunner');
     const r: SqlRunner = await getExpoRunner();
     const migration = await migrateFromAsyncStorage(r, AsyncStorage.getItem, COLLECTIONS);
     runner = r;

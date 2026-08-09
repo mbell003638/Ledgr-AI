@@ -15,7 +15,7 @@ export default function DebtorsRedirectScreen() {
     } else {
       router.replace("/suppliers" as any);
     }
-  }, [id]);
+  }, [id, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface, justifyContent: "center", alignItems: "center" }}>

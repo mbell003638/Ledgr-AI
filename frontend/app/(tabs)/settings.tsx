@@ -12,8 +12,7 @@ import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { CURRENCIES, type TaxLabel } from "@/src/db/local";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
-import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
-import { deviceHasLock, requireAuth } from "@/src/utils/lock";
+import { deviceHasLock } from "@/src/utils/lock";
 import { type PersonaId } from "@/src/accountingV2/config";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
@@ -56,17 +55,10 @@ export default function SettingsScreen() {
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   // Members = the owners/investors who put in capital and share profit.
   // Each: { name, amount (investment), profitSharePct (optional) }.
   const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
   const [lockEnabled, setLockEnabled] = useState(false);
-  // Books = separate isolated accounts (e.g. Shop, Technician).
-  const [books, setBooks] = useState<{ id: string; name: string; businessType?: string }[]>([]);
-  const [activeBook, setActiveBookState] = useState("default");
-  const [newBookName, setNewBookName] = useState("");
-  const [, setAddingBook] = useState(false);
-  const [newBookPersona] = useState<PersonaId>("custom");
   const [currency, setCurrency] = useState("USD");
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
   const [taxLabelCustom, setTaxLabelCustom] = useState("");
@@ -74,37 +66,13 @@ export default function SettingsScreen() {
   const [invoiceTheme, setInvoiceTheme] = useState("navy_gold");
   const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
   const [logo, setLogo] = useState<string>("");
-  const [bizSection, setBizSection] = useState<"basic" | "contact" | "banking" | "terms" | "all">("basic");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
   const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
   const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const updateAccountingStyle = async (style: "retail_partnership" | "standard") => {
-    setAccountingStyle(style);
-    await api.updateSettings({ accountingStyle: style });
-    try {
-      const v2 = await api.getV2BookConfig();
-      if (v2) {
-        await api.updateV2BookConfig({
-          style,
-          basis: v2.basis,
-          selectedPersonas: v2.selectedPersonas,
-          activePersona: v2.activePersona,
-          retailPartnership: {
-            ...v2.retailPartnership,
-            enabled: style === "retail_partnership",
-          },
-        });
-      }
-    } catch { /* v2 update fallback */ }
-  };
 
   const load = useCallback(async () => {
     try {
@@ -141,12 +109,6 @@ export default function SettingsScreen() {
         }
       } catch { /* legacy settings remain the fallback until V2 is available */ }
       setLockEnabled(!!s.lockEnabled);
-      // Load the list of books (accounts) + which one is active.
-      try {
-        const bks = await api.listBooks();
-        setBooks(bks);
-        setActiveBookState(api.activeBookId());
-      } catch { /* books optional */ }
       setCurrency(s.currency || "USD");
       const rawLabel = s.taxLabel || "None";
       if (rawLabel === "None") {
@@ -178,7 +140,7 @@ export default function SettingsScreen() {
       setLogo(s.logo || "");
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [setMode]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -264,151 +226,6 @@ export default function SettingsScreen() {
       return;
     }
     setLogo(`data:${res.assets[0].mimeType || "image/jpeg"};base64,${base64}`);
-  };
-
-  const testKey = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const meta = PROVIDERS.find((p) => p.id === provider)!;
-      await setAIConfig({
-        provider,
-        apiKey: key.trim(),
-        model: modelName.trim() || meta.defaultModel,
-        baseUrl: baseUrl.trim() || undefined,
-      });
-      const r = await api.testKey();
-      setTestResult({ ok: true, msg: `✓ Connected` });
-    } catch (e: any) {
-      setTestResult({ ok: false, msg: `✗ ${e.message || "Failed"}` });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const [busy, setBusy] = useState<"export" | "import" | null>(null);
-
-  const doExport = async () => {
-    setBusy("export"); setStatus(null);
-    try {
-      const full: any = await api.exportBackup();
-      const { warnings, ...data } = full; // warnings are for the UI, not the file
-      const warns: string[] = Array.isArray(warnings) ? warnings : [];
-      if (warns.length) {
-        Alert.alert("Heads up before exporting", warns.join("\n\n"));
-      }
-      const stamp = new Date().toISOString().slice(0, 10);
-      await shareJsonFile(`ledgr-backup-${stamp}.json`, data);
-      setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Export failed" });
-    } finally { setBusy(null); }
-  };
-
-  const doImport = async () => {
-    setBusy("import"); setStatus(null);
-    try {
-      const picked = await pickJsonFile();
-      if (!picked.ok) {
-        if (picked.reason === "invalid") {
-          setStatus({ ok: false, msg: "Backup file is unreadable or corrupted." });
-        }
-        setBusy(null); return;
-      }
-      const data = picked.data;
-      if (!data || !data._meta || data._meta.app !== "ledgr") {
-        setStatus({ ok: false, msg: "Not a Ledgr backup file." });
-        setBusy(null); return;
-      }
-      const result: any = await api.importBackup({ ...data, mode: "replace" });
-      const warn: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
-      if (warn.length) {
-        Alert.alert("Restore complete — please review", warn.join("\n\n"));
-      }
-      setStatus({ ok: true, msg: "Data restored! Restart or pull-to-refresh." });
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Import failed" });
-    } finally { setBusy(null); }
-  };
-
-  const doReset = async () => {
-    const ok = await requireAuth("Confirm to reset all accounting data");
-    if (!ok) {
-      setConfirmReset(false);
-      return;
-    }
-    setResetting(true); setStatus(null);
-    try {
-      await api.resetAll();
-      setStatus({ ok: true, msg: "All accounting data reset. Gemini key preserved." });
-      setConfirmReset(false);
-      await load();
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Reset failed" });
-    } finally { setResetting(false); }
-  };
-
-  const updateMember = (i: number, field: "name" | "amount" | "profitSharePct", v: string) =>
-    setMembers((prev) => prev.map((m, idx) => (idx === i ? { ...m, [field]: v } : m)));
-  const addMember = () => setMembers((prev) => [...prev, { name: "", amount: "", profitSharePct: "" }]);
-  const removeMember = (i: number) => setMembers((prev) => prev.filter((_, idx) => idx !== i));
-
-  const switchBook = async (id: string) => {
-    if (id === activeBook) return;
-    await api.setActiveBook(id);
-    setActiveBookState(id);
-    const targetBook = books.find((b) => b.id === id);
-    const s = await api.getSettings();
-    const bookTheme = s.themeMode || (id === "default" ? "light" : id.charCodeAt(id.length - 1) % 2 === 0 ? "amoled_blue" : "navy_gold");
-    setMode(bookTheme as any);
-    await api.updateSettings({ themeMode: bookTheme });
-    setStatus({ ok: true, msg: `Switched to "${targetBook?.name || "Account"}". Records & theme updated.` });
-    await load();
-  };
-  const addBook = async () => {
-    if (!newBookName.trim()) return;
-    setAddingBook(true);
-    try {
-      const meta = await api.createBook(newBookName.trim());
-      setNewBookName("");
-      const bks = await api.listBooks();
-      setBooks(bks);
-      const defaultNewTheme = bks.length % 3 === 0 ? "navy_gold" : bks.length % 2 === 0 ? "amoled_blue" : "dark";
-      await api.setActiveBook(meta.id);
-      setActiveBookState(meta.id);
-      setMode(defaultNewTheme as any);
-      await api.updateSettings({ themeMode: defaultNewTheme, businessName: meta.name });
-      
-      try {
-        const v2 = await api.getV2BookConfig();
-        if (v2) {
-          await api.updateV2BookConfig({
-            ...v2,
-            selectedPersonas: [newBookPersona],
-            activePersona: newBookPersona,
-          });
-        }
-      } catch {}
-
-      setStatus({ ok: true, msg: `Created & switched to new account "${meta.name}".` });
-      await load();
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Could not create account" });
-    } finally { setAddingBook(false); }
-  };
-  const removeBook = async (id: string) => {
-    const ok = await requireAuth("Confirm to delete this account");
-    if (!ok) return;
-    try {
-      await api.deleteBook(id);
-      const bks = await api.listBooks();
-      setBooks(bks);
-      setActiveBookState(api.activeBookId());
-      setStatus({ ok: true, msg: "Account deleted." });
-      await load();
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Could not delete account" });
-    }
   };
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);

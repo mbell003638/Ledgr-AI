@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
-import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";

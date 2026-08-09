@@ -13,6 +13,7 @@ import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
+import { v2Services } from '@/src/accountingV2/runtime';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -404,7 +405,7 @@ export const api = {
   v2: () => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return require('@/src/accountingV2/runtime').v2Services();
+    return v2Services();
   },
   initializeV2Book: async (options: Parameters<typeof initializeV2Book>[1]) => {
     const runner = activeSqlRunner();

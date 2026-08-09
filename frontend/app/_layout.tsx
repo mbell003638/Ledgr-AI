@@ -74,15 +74,6 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// ---------- Icon fonts (simplified — no CDN fetch for native builds) ----------
-function useIconFontsSafe(): [boolean, Error | null] {
-  // In native APK builds, vector-icon fonts are bundled by the autolinking
-  // plugin. We don't need to load them at runtime. Returning [true, null]
-  // immediately so the splash screen hides without waiting for a font fetch.
-  // The CDN-fetch path was only needed for Expo Go, which we are not using.
-  return [true, null];
-}
-
 // ---------- Themed Stack ----------
 function ThemedStack() {
   const theme = useTheme();

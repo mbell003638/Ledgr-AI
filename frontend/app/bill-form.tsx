@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -16,7 +16,6 @@ export default function BillForm() {
   const router = useRouter();
   const params = useLocalSearchParams<{ supplierId?: string; id?: string }>();
   const editId = params.id;
-  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState<string>(params.supplierId || "");
   const [amount, setAmount] = useState("");
   const currency = "USD";
@@ -33,9 +32,7 @@ export default function BillForm() {
   useEffect(() => {
     (async () => {
       const s = await api.listSuppliers();
-      setSuppliers(s);
-      if (!supplierId && !editId && s.length) setSupplierId(s[0].id);
-      const st = await api.getSettings();
+      if (!params.supplierId && !editId && s.length) setSupplierId(s[0].id);
       if (editId) {
         const bills = await api.listBills();
         const b = bills.find((x: any) => x.id === editId);
@@ -51,7 +48,7 @@ export default function BillForm() {
         }
       }
     })();
-  }, []);
+  }, [editId, params.supplierId]);
 
   const runOcr = async (base64: string, mimeType: string) => {
     setOcrLoading(true);
@@ -65,9 +62,6 @@ export default function BillForm() {
         let match = list.find((s: any) => s.name.toLowerCase().includes(r.supplierName.toLowerCase()));
         if (!match) {
           match = await api.createSupplier({ name: r.supplierName });
-          setSuppliers([...list, match]);
-        } else {
-          setSuppliers(list);
         }
         setSupplierId(match.id);
       }
@@ -163,27 +157,8 @@ export default function BillForm() {
     finally { setDeleting(false); }
   };
 
-  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
-  const [addingSupplier, setAddingSupplier] = useState(false);
-
-  const handleCreateSupplierInline = async () => {
-    if (!newSupplierName.trim()) return;
-    setAddingSupplier(true);
-    try {
-      const created = await api.createSupplier({ name: newSupplierName.trim(), phone: newSupplierPhone.trim() });
-      setSuppliers((prev) => [...prev, created]);
-      setSupplierId(created.id);
-      setShowAddSupplierModal(false);
-      setNewSupplierName("");
-      setNewSupplierPhone("");
-    } catch (e: any) {
-      setError(e.message || "Failed to create supplier");
-    } finally {
-      setAddingSupplier(false);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>

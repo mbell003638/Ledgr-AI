@@ -21,7 +21,6 @@ export default function SupplierDetail() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [biz, setBiz] = useState<any>({});
-  const [currCode, setCurrCode] = useState("USD");
   const [currency, setCurrency] = useState("$");
   const [deleting, setDeleting] = useState(false);
 
@@ -40,7 +39,6 @@ export default function SupplierDetail() {
       setData(r);
       setBiz(settings);
       const code = settings.currency || "USD";
-      setCurrCode(code);
       setCurrency(getCurrencySymbol(code));
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }

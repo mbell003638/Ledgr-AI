@@ -81,7 +81,7 @@ export default function PartiesScreen() {
     `parties:${api.activeBookId()}`,
     loader,
   );
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const isPartnerMode = data?.isPartnerMode ?? false;
   const load = reload;
 

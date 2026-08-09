@@ -7,15 +7,11 @@ import { router } from "expo-router";
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { ScreenHeader, Card } from "@/src/components/UI";
+import { ScreenHeader } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-
-const SectionTitle = ({ title, theme }: any) => (
-  <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 1, marginLeft: 12, marginBottom: 8, marginTop: theme.spacing.xl }}>{title}</Text>
-);
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -54,37 +50,6 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   );
 };
 
-const SimpleRow = ({ title, subtitle, onPress, isLast, theme, rightElement }: any) => (
-  <GlowPressable
-    topHighlight={false}
-    animateBorder={false}
-    pressScale={0.97}
-    hoverScale={1.008}
-    haptic
-    hoverLift={-2}
-    onPress={onPress}
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: 48,
-      paddingVertical: 12,
-      paddingHorizontal: 10,
-      marginHorizontal: -10,
-      borderWidth: 0,
-      borderBottomWidth: isLast ? 0 : 1,
-      borderBottomColor: theme.color.border,
-      borderRadius: 14,
-    }}
-  >
-    <View style={{ flex: 1, paddingRight: 16 }}>
-      <Text style={[{ fontSize: 15, fontWeight: "500", color: theme.color.onSurface }, rightElement?.titleStyle]}>{title}</Text>
-      {subtitle && <Text style={[{ fontSize: 12, color: theme.color.muted, marginTop: 4 }, rightElement?.subtitleStyle]}>{subtitle}</Text>}
-    </View>
-    {rightElement?.custom || <Ionicons name="chevron-forward" size={20} color={rightElement?.chevronColor || theme.color.muted} />}
-  </GlowPressable>
-);
-
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -105,7 +70,6 @@ export default function AdvancedSettingsScreen() {
   const [newBookName, setNewBookName] = useState("");
   const [addingBook, setAddingBook] = useState(false);
   const [newBookPersona, setNewBookPersona] = useState<PersonaId>("custom");
-  const [bizSection, setBizSection] = useState<"basic" | "contact" | "banking" | "terms" | "all">("basic");
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
@@ -184,7 +148,7 @@ export default function AdvancedSettingsScreen() {
       }
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [setMode]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -255,7 +219,7 @@ export default function AdvancedSettingsScreen() {
         model: modelName.trim() || meta.defaultModel,
         baseUrl: baseUrl.trim() || undefined,
       });
-      const r = await api.testKey();
+      await api.testKey();
       setTestResult({ ok: true, msg: `✓ Connected` });
     } catch (e: any) {
       setTestResult({ ok: false, msg: `✗ ${e.message || "Failed"}` });

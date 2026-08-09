@@ -13,13 +13,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { Card, ScreenHeader } from "@/src/components/UI";
+import { Card } from "@/src/components/UI";
 import {
   ALL_FEATURES,
   getEnabledFeatures,
   getPersonaBaselineFeatures,
   FeatureKey,
-  FeatureMeta,
 } from "@/src/utils/featureFlags";
 
 export default function CustomizeFeaturesScreen() {

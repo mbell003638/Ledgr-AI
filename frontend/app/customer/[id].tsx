@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Linking, Modal, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { fmt, shortDate } from "@/src/theme";
+import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";

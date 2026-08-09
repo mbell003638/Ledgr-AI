@@ -1,16 +1,15 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, TextInput, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { useScreenData } from "@/src/hooks/useScreenData";
 import { getCurrencySymbol } from "@/src/db/local";
 import { confirmAction } from "@/src/utils/alerts";
-import { Empty, Card } from "@/src/components/UI";
+import { Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
@@ -25,11 +24,6 @@ type Receipt = {
 };
 type Invoice = { id: string; invoiceNumber: string; clientName: string; total: number; status: string; date: string };
 type Debtor = { id: string; name: string; balance?: number };
-
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 
 const MODE_LABEL: Record<Mode, string> = {
   cash_sale: "Cash Sale",
@@ -59,7 +53,7 @@ export default function ReceiptsScreen() {
     `receipts:${api.activeBookId()}`,
     loader,
   );
-  const receipts = data?.receipts ?? [];
+  const receipts = useMemo(() => data?.receipts ?? [], [data?.receipts]);
   const currSym = data?.currSym ?? "$";
   const load = reload;
 

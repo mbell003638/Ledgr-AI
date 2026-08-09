@@ -27,7 +27,6 @@ export function localTodayIso(): string {
 function toAsciiDigits(raw: string): string {
   let out = '';
   for (const ch of raw) {
-    const code = ch.codePointAt(0)!;
     // Any Unicode decimal digit: fold to its 0-9 value via the code-point gap
     // to the block's zero. String(Number) handles the common blocks reliably;
     // fall back to a per-block table for the ones JS's Number() won't take.
@@ -121,7 +120,7 @@ export function normalizeDateInput(input: string | null | undefined): string {
     return cleaned;
   }
 
-  const y = Number(year), m = Number(month), d = Number(day);
+  const m = Number(month), d = Number(day);
   if (m < 1 || m > 12 || d < 1 || d > 31) return cleaned; // impossible → reject downstream
   const canonical = `${year.padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   // Final guard: only return the canonical form if it is a real calendar date

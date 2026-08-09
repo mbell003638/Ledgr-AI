@@ -21,7 +21,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";
-import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
+import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {

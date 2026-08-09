@@ -15,11 +15,6 @@ const TYPE_COLOR: Record<string, string> = {
   sale: "#34C759", bill: "#FF3B30", payment: "#FF9500",
   drawing: "#AF52DE", expense: "#FF2D55", invoice: "#007AFF",
 };
-const TYPE_LABEL: Record<string, string> = {
-  sale: "Sale", bill: "Purchase", payment: "Payment",
-  drawing: "Drawing", expense: "Expense", invoice: "Invoice",
-};
-
 export default function DayBook() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);

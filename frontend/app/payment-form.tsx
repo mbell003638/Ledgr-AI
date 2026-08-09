@@ -18,7 +18,6 @@ export default function PaymentForm() {
   const params = useLocalSearchParams<{ id?: string }>();
   const editId = params.id;
   const [type, setType] = useState<PayType>("supplier_payment");
-  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierId, setSupplierId] = useState("");
   const [partnerName, setPartnerName] = useState("");
   const [partnerOptions, setPartnerOptions] = useState<string[]>([]);
@@ -36,8 +35,7 @@ export default function PaymentForm() {
     (async () => {
       try {
         const s = await api.listSuppliers();
-        setSuppliers(s);
-        if (s.length && !supplierId && !editId) setSupplierId(s[0].id);
+        if (s.length && !editId) setSupplierId(s[0].id);
         const st = await api.getSettings();
         setIsPartnerMode(st.accountingStyle === 'retail_partnership');
         setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
@@ -57,7 +55,7 @@ export default function PaymentForm() {
         }
       } catch {}
     })();
-  }, []);
+  }, [editId]);
 
   const [supplierName, setSupplierName] = useState("");
 

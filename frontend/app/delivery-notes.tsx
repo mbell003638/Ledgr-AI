@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Alert, Linking, InteractionManager,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Modal, Linking, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";

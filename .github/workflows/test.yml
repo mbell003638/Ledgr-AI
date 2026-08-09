@@ -42,7 +42,7 @@ jobs:
         run: npx expo-doctor
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm run audit:ci
 
       - name: TypeScript type-check
         run: npx tsc --noEmit

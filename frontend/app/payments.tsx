@@ -52,7 +52,7 @@ export default function PaymentsScreen() {
     `payments:${api.activeBookId()}`,
     loader,
   );
-  const payments = data?.payments ?? [];
+  const payments = useMemo(() => data?.payments ?? [], [data?.payments]);
   const supplierMap = data?.supplierMap ?? {};
   const currSym = data?.currSym ?? "$";
   const isPartnerMode = data?.isPartnerMode ?? false;

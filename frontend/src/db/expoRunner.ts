@@ -15,7 +15,7 @@ export function getExpoRunner(): Promise<SqlRunner> {
   if (_dbPromise) return _dbPromise;
   _dbPromise = (async () => {
     // Lazy require so tests / web bundles don't need the native module present.
-    const SQLite = require('expo-sqlite');
+    const SQLite = await import('expo-sqlite');
     const db = await SQLite.openDatabaseAsync('ledgr.db');
     await db.execAsync('PRAGMA journal_mode = WAL;');
     const runner: SqlRunner = {

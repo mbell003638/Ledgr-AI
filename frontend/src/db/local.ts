@@ -37,26 +37,7 @@ import { exportV2Data, importV2Data, hasV2Payload, type V2ImportResult } from '.
  * below is storage-agnostic.
  */
 
-const KEYS = {
-  suppliers: 'ledgr:suppliers',
-  bills: 'ledgr:bills',
-  sales: 'ledgr:sales',
-  payments: 'ledgr:payments',
-  inventoryChecks: 'ledgr:inventoryChecks',
-  periods: 'ledgr:periods',
-  settings: 'ledgr:settings',
-  expenses: 'ledgr:expenses',
-  debtors: 'ledgr:debtors',
-  invoices: 'ledgr:invoices',
-  quotes: 'ledgr:quotes',
-  receipts: 'ledgr:receipts',
-  creditNotes: 'ledgr:creditNotes',
-  debitNotes: 'ledgr:debitNotes',
-  deliveryNotes: 'ledgr:deliveryNotes',
-  cashEntries: 'ledgr:cashEntries',
-} as const;
-
-export type Collection = keyof typeof KEYS;
+export type Collection = (typeof SQL_COLLECTIONS)[number] | 'settings';
 
 // ---------- write serialization (prevents lost-update races) ----------
 // All mutating create/update/delete ops chain onto this promise so that
@@ -216,8 +197,8 @@ export async function updateSettings(partial: Record<string, any>) {
 
 // ---------- Suppliers ----------
 export async function listSuppliers() {
-  const [suppliers, bills, payments, s] = await Promise.all([
-    readColl<any>('suppliers'), readColl<any>('bills'), readColl<any>('payments'), getSettings(),
+  const [suppliers, bills, payments] = await Promise.all([
+    readColl<any>('suppliers'), readColl<any>('bills'), readColl<any>('payments'),
   ]);
   return suppliers.map((sup: any) => {
     const billTotal = bills
@@ -903,7 +884,6 @@ export async function monthlySummary(month: string) {
 }
 
 export async function dailySummary(date: string) {
-  const s = await getSettings();
   const on = (d: string) => (d || '').slice(0, 10) === date;
   const bills = (await readColl<any>('bills')).filter((b: any) => on(b.date));
   const sales = (await readColl<any>('sales')).filter((x: any) => on(x.date));
@@ -1311,7 +1291,6 @@ export async function creditorsReport(from?: string, to?: string) {
   const [suppliers, bills, payments] = await Promise.all([
     readColl<any>('suppliers'), readColl<any>('bills'), readColl<any>('payments'),
   ]);
-  const supMap: Record<string, any> = Object.fromEntries(suppliers.map((s: any) => [s.id, s]));
   const inRange = (d: string) => (!from || (d || '').slice(0, 10) >= from) && (!to || (d || '').slice(0, 10) <= to);
   const result: any[] = [];
   for (const sup of suppliers) {
@@ -1752,7 +1731,6 @@ export async function markInvoicePaid(id: string) {
 
   // Find the debtor linked to this invoice (by name match).
   const debtors = await readColl<any>('debtors');
-  const norm = (s: string) => (s || '').trim().toLowerCase();
   const debtor = debtors.find((d: any) =>
     (d.invoices || []).some((i: any) => i.id === id)
   );
@@ -2444,7 +2422,6 @@ export async function receiptsRegister(from: string, to: string) {
   const total = +rows.reduce((s: number, r: any) => s + r.amount, 0).toFixed(2);
   return { from, to, rows, byMethod, byMode, total, count: rows.length };
 }
-
 
 
 

@@ -3,8 +3,6 @@ import { View, Text, TextInput, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
-
 import { GlowPressable } from "@/src/components/GlowPressable";
 type PartyItem = { id: string; name: string; phone?: string; role?: string };
 

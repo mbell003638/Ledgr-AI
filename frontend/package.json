@@ -10,7 +10,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "lint:ci": "expo lint --no-cache --max-warnings 90",
+    "lint:ci": "expo lint --no-cache --max-warnings 0",
+    "audit:ci": "node ./scripts/audit-ci.js",
     "test": "jest"
   },
   "dependencies": {

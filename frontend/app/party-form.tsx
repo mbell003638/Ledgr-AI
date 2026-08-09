@@ -38,7 +38,7 @@ export default function PartyForm() {
         }
       } catch (e: any) { setError(e.message); }
     })();
-  }, [editId]);
+  }, [editId, partyType]);
 
   const save = async () => {
     if (!name.trim()) { setError("Enter a name"); return; }

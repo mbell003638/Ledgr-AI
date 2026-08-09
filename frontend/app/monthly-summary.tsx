@@ -12,7 +12,6 @@ import { printHtml } from "@/src/utils/print";
 import {
   assembleMonthlyReport,
   buildMonthlyReportHtml,
-  resolveReportPalette,
   money,
   type MonthlyReportData,
   type InvoiceThemeId,

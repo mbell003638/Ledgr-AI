@@ -27,8 +27,6 @@ export default function SaleForm() {
   const [saleType, setSaleType] = useState<"cash" | "party">("cash");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [existing, setExisting] = useState<{ id: string; name: string }[]>([]);
-
   useEffect(() => {
     (async () => {
       if (editId) {
@@ -44,12 +42,8 @@ export default function SaleForm() {
           }
         }
       }
-      try {
-        const d = await api.listDebtors();
-        setExisting((d || []).map((x: any) => ({ id: x.id, name: x.name })));
-      } catch { /* optional */ }
     })();
-  }, []);
+  }, [editId]);
 
   type LineItem = { description: string; qty: string; rate: string };
   const [lines, setLines] = useState<LineItem[]>([]);

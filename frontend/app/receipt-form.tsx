@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, ScrollView, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -35,7 +35,6 @@ export default function ReceiptFormScreen() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [currSym, setCurrSym] = useState("$");
-  const [taxRate, setTaxRate] = useState(0);
 
   const [mode, setMode] = useState<Mode>("against_invoice");
   const [amount, setAmount] = useState("");
@@ -56,7 +55,6 @@ export default function ReceiptFormScreen() {
       setInvoices((il as Invoice[]).filter((i) => i.status !== "paid"));
       setDebtors(dl as Debtor[]);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
-      setTaxRate(Number(s.taxRate) || 0);
 
       if (editId) {
         const rl = await api.listReceipts();
