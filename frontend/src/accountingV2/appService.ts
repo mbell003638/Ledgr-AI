@@ -16,6 +16,7 @@ const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'ca
 const amount = (value: any) => Number(value);
 const cents = round2;
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const isGenericAccountsPayableName = (value: any) => /^(creditors?|accounts? payable)$/.test(normalized(value));
 let partyRepairSequence = 0;
 const partyDisplayName = (value: any) => {
   let name = String(value || '').trim();
@@ -31,7 +32,43 @@ const stablePartyId = (role: V2PartyRole, input: AnyRecord) => {
 export type V2ActiveContext = { bookId: string; periodId: string };
 export type V2CloseBooksAppInput = { actualStock: number; openingInventory: number; commissionPct: number; notes?: string };
 export type V2CloseBooksAppResult = { source: 'v2'; result: CloseBooksResult };
+export type V2OpeningBalancesInput = {
+  date?: string;
+  cash: number;
+  inventory: number;
+  otherAssets?: number;
+  assetBreakdown?: { name: string; amount: number }[];
+  accountsPayable?: number;
+  otherLiabilities?: number;
+  liabilityBreakdown?: { name: string; amount: number; type: 'creditor' | 'other' }[];
+  ownerCapital?: number;
+  retainedEarnings?: number;
+  memo?: string;
+};
+export type V2ClosingBalancePartner = { memberId?: string; name: string; amount: number; profitSharePct?: number };
+export type V2ClosingBalancesImportInput = V2OpeningBalancesInput & {
+  ownerCapital: number;
+  partnerCapitals: V2ClosingBalancePartner[];
+  createMissingPartners?: boolean;
+  createMissingCreditors?: boolean;
+};
+export type V2ScanPartyRequest = { name: string; role: V2PartyRole };
+export type V2ScanPartyPreflightItem = V2ScanPartyRequest & {
+  status: 'existing' | 'missing' | 'role_missing' | 'ignored_generic_ap';
+  partyId?: string;
+  requiresCreation: boolean;
+};
+export type V2ScanTransactionImportInput = {
+  entryType: 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
+  date: string;
+  partyName?: string;
+  amount: number;
+  method?: 'cash' | 'credit';
+  notes?: string;
+  createMissingParty?: boolean;
+};
 type PeriodRow = { id: string; start_date: string; end_date: string };
+type MemberCapitalRow = { id: string; name: string; profit_share_pct: number };
 const dayAfter = (date: string) => { const d = new Date(`${date}T00:00:00.000Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
 const endOfMonth = (date: string) => { const d = new Date(`${date}T00:00:00.000Z`); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10); };
 
@@ -85,6 +122,72 @@ export class V2AppService {
       if (!roles.includes(role)) await this.db.run('UPDATE v2_parties SET roles=? WHERE id=?', [JSON.stringify([...roles, role]), id]);
     }
     return id;
+  }
+
+  /** Exact normalized-name lookup with no repair/upsert side effects. */
+  private async partyByName(bookId: string, name: string, role?: V2PartyRole) {
+    const rows = await this.db.all<{ id: string; name: string; roles: string }>('SELECT id,name,roles FROM v2_parties WHERE book_id=? AND archived=0', [bookId]);
+    const matches = rows.filter((row) => normalized(row.name) === normalized(name));
+    if (!matches.length) return null;
+    if (!role) return matches[0];
+    return matches.find((row) => {
+      try { return (JSON.parse(row.roles || '[]') as string[]).includes(role); } catch { return false; }
+    }) || matches[0];
+  }
+
+  /**
+   * Read-only support-ledger preflight for scan review. It deliberately queries
+   * parties directly: listParties performs identity repair and therefore is not
+   * suitable for a UI preflight that promises zero writes before confirmation.
+   */
+  async preflightScanParties(requests: V2ScanPartyRequest[]) {
+    const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) {
+      throw new Error('No active versioned V2 book');
+    }
+    const unique = new Map<string, V2ScanPartyRequest>();
+    for (const request of requests || []) {
+      const name = String(request?.name || '').trim();
+      const role = request?.role === 'supplier' ? 'supplier' : 'customer';
+      if (!name) throw new Error(`${role === 'supplier' ? 'Supplier' : 'Customer'} name is required`);
+      unique.set(`${role}:${normalized(name)}`, { name, role });
+    }
+    const items: V2ScanPartyPreflightItem[] = [];
+    for (const request of unique.values()) {
+      if (request.role === 'supplier' && isGenericAccountsPayableName(request.name)) {
+        items.push({ ...request, status: 'ignored_generic_ap', requiresCreation: false });
+        continue;
+      }
+      const existing = await this.partyByName(active.value, request.name, request.role);
+      if (!existing) {
+        items.push({ ...request, status: 'missing', requiresCreation: true });
+        continue;
+      }
+      let roles: string[] = [];
+      try { roles = JSON.parse(existing.roles || '[]'); } catch { roles = []; }
+      const hasRole = roles.includes(request.role);
+      items.push({ ...request, partyId: existing.id, status: hasRole ? 'existing' : 'role_missing', requiresCreation: !hasRole });
+    }
+    return { items, requiresApproval: items.some((item) => item.requiresCreation) };
+  }
+
+  private async approvedScanParty(bookId: string, name: string, role: V2PartyRole, createMissingParty: boolean) {
+    const cleanName = String(name || '').trim();
+    if (!cleanName) throw new Error(`${role === 'supplier' ? 'Supplier' : 'Customer'} name is required`);
+    if (role === 'supplier' && isGenericAccountsPayableName(cleanName)) {
+      throw new Error(`'${cleanName}' is an aggregate Accounts Payable label, not a supplier`);
+    }
+    const existing = await this.partyByName(bookId, cleanName, role);
+    let roles: string[] = [];
+    try { roles = existing ? JSON.parse(existing.roles || '[]') : []; } catch { roles = []; }
+    if (existing && roles.includes(role)) return existing.id;
+    if (!createMissingParty) {
+      throw new Error(`${role === 'supplier' ? 'Supplier' : 'Customer'} ledger '${cleanName}' requires confirmed creation`);
+    }
+    return this.party({
+      ...(existing ? { partyId: existing.id } : {}),
+      [role === 'customer' ? 'clientName' : 'supplierName']: cleanName,
+    }, role, bookId);
   }
 
   async ensureParty(name: string, role: V2PartyRole, details: { phone?: string; email?: string } = {}) {
@@ -326,6 +429,52 @@ export class V2AppService {
     });
   }
   async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
+
+  /**
+   * Confirmed scan write. Any missing party/role and its transaction are created
+   * inside one outer savepoint; callers must explicitly authorize support-ledger
+   * creation after using preflightScanParties.
+   */
+  async importScanTransaction(input: V2ScanTransactionImportInput) {
+    const context = await this.activeContext(input.date);
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    return this.repo.runInTransaction(async () => {
+      const partyName = String(input.partyName || '').trim();
+      const allowCreation = Boolean(input.createMissingParty);
+      switch (input.entryType) {
+        case 'sale':
+          if (input.method === 'credit') {
+            const partyId = await this.approvedScanParty(context.bookId, partyName, 'customer', allowCreation);
+            return this.createInvoice({ ...input, partyId, clientName: partyName, total: input.amount });
+          }
+          return this.createSale({ ...input, method: 'cash' });
+        case 'purchase_bill': {
+          const partyId = await this.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation);
+          return this.createBill({ ...input, partyId, supplierName: partyName, paymentType: input.method === 'credit' ? 'credit' : 'cash' });
+        }
+        case 'receipt_in':
+          if (!partyName) return this.createSale({ ...input, method: 'cash' });
+          return this.createReceipt({
+            ...input,
+            partyId: await this.approvedScanParty(context.bookId, partyName, 'customer', allowCreation),
+            clientName: partyName,
+            method: 'cash',
+          });
+        case 'payment_out':
+          return this.createPayment({
+            ...input,
+            partyId: await this.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation),
+            supplierName: partyName,
+            type: 'supplier_payment',
+            method: 'cash',
+          });
+        case 'expense':
+          return this.createExpense({ ...input, method: 'cash' });
+        default:
+          throw new Error('Unsupported scan transaction type');
+      }
+    });
+  }
   /**
    * [Finding A] Post a credit/debit note through the V2 ledger so it hits the
    * journal + party balance (dashboard / party detail / statements), instead of
@@ -349,13 +498,123 @@ export class V2AppService {
   async createCreditNote(input: AnyRecord) { return this.createNoteV2(input, 'credit_note'); }
   async createDebitNote(input: AnyRecord) { return this.createNoteV2(input, 'debit_note'); }
   /** Post opening cash/inventory against capital. Self-correcting: see applyOpeningBalances. */
-  async postOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  async postOpeningBalances(input: V2OpeningBalancesInput) {
     return this.applyOpeningBalances(input);
   }
 
   /** Replace the opening-balance journal for the book, preserving the reversal audit trail. */
-  async updateOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  async updateOpeningBalances(input: V2OpeningBalancesInput) {
     return this.applyOpeningBalances(input);
+  }
+
+  /**
+   * Import a closing balance sheet as the next opening position. The balance
+   * sheet is posted once by the self-correcting opening engine; partner stakes
+   * only establish each member's carried capital snapshot and never create a
+   * second cash/capital journal.
+   */
+  async importClosingBalances(input: V2ClosingBalancesImportInput) {
+    return this.repo.runInTransaction(async () => {
+      const activeBook = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+      if (!activeBook?.value || await accountingBookVersion(this.db, activeBook.value) !== V2_BOOK_VERSION) {
+        throw new Error('No active versioned V2 book with an open accounting period');
+      }
+      const bookId = activeBook.value;
+      const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [bookId]);
+      const members = await this.db.all<MemberCapitalRow>('SELECT id,name,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY id', [bookId]);
+      const hasPartnerScope = (input.partnerCapitals || []).length > 0 || Boolean(input.createMissingPartners) || members.length > 0;
+      if (hasPartnerScope && book?.style !== 'retail_partnership') {
+        throw new Error('Closing reports with partner stakes can only be imported in Partnership Mode');
+      }
+      const memberById = new Map(members.map((member) => [member.id, member]));
+      const membersByName = new Map<string, MemberCapitalRow[]>();
+      for (const member of members) {
+        const key = normalized(member.name);
+        membersByName.set(key, [...(membersByName.get(key) || []), member]);
+      }
+
+      const matchedIds = new Set<string>();
+      const newMemberIds = new Set<string>();
+      const partnerCapitals = (input.partnerCapitals || []).map((partner) => {
+        const partnerName = String(partner?.name || '').trim();
+        const partnerAmount = cents(Number(partner?.amount));
+        if (!partnerName || !Number.isFinite(partnerAmount) || partnerAmount < 0) {
+          throw new Error('Every closing-report partner requires a name and a non-negative capital amount');
+        }
+        const candidates = membersByName.get(normalized(partnerName)) || [];
+        if (candidates.length > 1) throw new Error(`Configured partner name '${partnerName}' is ambiguous`);
+        let member = (partner.memberId ? memberById.get(String(partner.memberId)) : undefined) || candidates[0];
+        if (!member) {
+          if (!input.createMissingPartners) throw new Error(`No configured partner matches '${partnerName}'`);
+          const profitSharePct = Number(partner.profitSharePct);
+          if (!Number.isFinite(profitSharePct) || profitSharePct < 0 || profitSharePct > 100) {
+            throw new Error(`A valid profit share is required to create partner '${partnerName}'`);
+          }
+          const memberKey = normalized(partnerName).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'member';
+          let memberId = `${bookId}:member:${memberKey}`;
+          let suffix = 2;
+          while (memberById.has(memberId)) memberId = `${bookId}:member:${memberKey}-${suffix++}`;
+          member = { id: memberId, name: partnerName, profit_share_pct: profitSharePct };
+          memberById.set(member.id, member);
+          membersByName.set(normalized(member.name), [member]);
+          newMemberIds.add(member.id);
+        } else if (partner.profitSharePct !== undefined) {
+          const suppliedShare = Number(partner.profitSharePct);
+          if (!Number.isFinite(suppliedShare) || suppliedShare < 0 || suppliedShare > 100 || Math.abs(suppliedShare - Number(member.profit_share_pct)) > 0.005) {
+            throw new Error(`Profit share for existing partner '${member.name}' must match the configured ${Number(member.profit_share_pct)}%`);
+          }
+        }
+        if (matchedIds.has(member.id)) throw new Error(`Closing report contains partner '${member.name}' more than once`);
+        matchedIds.add(member.id);
+        return { memberId: member.id, name: member.name, amount: partnerAmount, profitSharePct: Number(member.profit_share_pct) };
+      });
+
+      const missing = members.filter((member) => !matchedIds.has(member.id));
+      if (missing.length) throw new Error(`Closing report is missing configured partner${missing.length === 1 ? '' : 's'}: ${missing.map((member) => member.name).join(', ')}`);
+      const profitShareTotal = cents(partnerCapitals.reduce((sum, partner) => sum + partner.profitSharePct, 0));
+      if (partnerCapitals.length && Math.abs(profitShareTotal - 100) > 0.005) {
+        throw new Error(`Partner profit shares must total 100% (currently ${profitShareTotal}%)`);
+      }
+      const ownerCapital = cents(Number(input.ownerCapital));
+      const partnerTotal = cents(partnerCapitals.reduce((sum, partner) => sum + partner.amount, 0));
+      if (hasPartnerScope && (!Number.isFinite(ownerCapital) || Math.abs(partnerTotal - ownerCapital) > 0.005)) {
+        throw new Error(`Partner stakes (${partnerTotal.toFixed(2)}) must equal owner capital (${Number.isFinite(ownerCapital) ? ownerCapital.toFixed(2) : 'invalid'})`);
+      }
+
+      const namedCreditors = (input.liabilityBreakdown || [])
+        .filter((liability) => liability.type === 'creditor' && Number(liability.amount) > 0 && !isGenericAccountsPayableName(liability.name))
+        .map((liability) => ({ name: liability.name, role: 'supplier' as const }));
+      const creditorPreflight = await this.preflightScanParties(namedCreditors);
+      const creditorCreations = creditorPreflight.items.filter((item) => item.requiresCreation);
+      if (creditorCreations.length && !input.createMissingCreditors) {
+        throw new Error(`Supplier ledger creation requires confirmation for: ${creditorCreations.map((item) => item.name).join(', ')}`);
+      }
+
+      for (const partner of partnerCapitals) {
+        if (!newMemberIds.has(partner.memberId)) continue;
+        await this.db.run(
+          'INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
+          [partner.memberId, bookId, partner.name, partner.amount, partner.amount, partner.profitSharePct],
+        );
+      }
+
+      // applyOpeningBalances owns reversal/repost and journal balancing. Its
+      // nested savepoint plus this outer savepoint make the journal, metadata,
+      // and member snapshots one all-or-nothing import.
+      const result = await this.applyOpeningBalances(input);
+      const source = await this.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=? AND book_id=?', [result.sourceId, bookId]);
+      if (source) {
+        let metadata: AnyRecord = {};
+        try { metadata = JSON.parse(source.metadata || '{}'); } catch { /* preserve the canonical balances below */ }
+        metadata.partnerCapitals = partnerCapitals;
+        metadata.closingBalanceImport = true;
+        await this.db.run('UPDATE v2_sources SET metadata=? WHERE id=? AND book_id=?', [JSON.stringify(metadata), result.sourceId, bookId]);
+      }
+      for (const partner of partnerCapitals) {
+        await this.db.run('UPDATE v2_members SET current_capital=? WHERE id=? AND book_id=?', [partner.amount, partner.memberId, bookId]);
+      }
+      return { ...result, partnerCapitals };
+    });
   }
 
   async getOpeningBalances() {
@@ -381,7 +640,7 @@ export class V2AppService {
    *    closed period and the earliest usable date (closed totals stay frozen,
    *    consistent with the document-service correction redirect [H2]/[H3])
    */
-  private async applyOpeningBalances(input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) {
+  private async applyOpeningBalances(input: V2OpeningBalancesInput) {
     const cash = cents(input.cash); const inventory = cents(input.inventory);
     if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(inventory) || inventory < 0) throw new Error('Opening balances must be non-negative');
     const activeBook = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
@@ -434,8 +693,9 @@ export class V2AppService {
       }
       const linkedLiabilityBreakdown = [];
       for (const liability of liabilityBreakdown) {
-        if (liability.type === 'creditor' && liability.amount > 0) {
-          const partyId = await this.party({ supplierName: liability.name }, 'supplier', bookId);
+        if (liability.type === 'creditor' && liability.amount > 0 && !isGenericAccountsPayableName(liability.name)) {
+          const existing = await this.partyByName(bookId, liability.name, 'supplier');
+          const partyId = await this.party({ ...(existing ? { partyId: existing.id } : {}), supplierName: liability.name }, 'supplier', bookId);
           linkedLiabilityBreakdown.push({ ...liability, partyId });
         } else {
           linkedLiabilityBreakdown.push(liability);

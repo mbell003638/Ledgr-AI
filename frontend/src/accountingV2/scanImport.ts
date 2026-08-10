@@ -26,7 +26,7 @@ export type ScanTransactionRow = {
 export type ScanOpeningRow = { kind: 'opening_balances'; asOfDate: string; openingCash: number; stockValue: number };
 export type ScanAssetRow = { kind: 'asset'; name: string; amount: number; date: string };
 export type ScanLiabilityRow = { kind: 'liability'; name: string; amount: number; date: string };
-export type ScanPartnerRow = { kind: 'partner'; name: string; capital: number; date: string };
+export type ScanPartnerRow = { kind: 'partner'; name: string; capital: number; profitSharePct?: number; date: string };
 export type ScanRow = ScanTransactionRow | ScanOpeningRow | ScanAssetRow | ScanLiabilityRow | ScanPartnerRow;
 
 export type FlaggedScanRow = { label: string; reason: string };
@@ -36,6 +36,25 @@ export type MappedDocument = {
   validRows: ScanRow[];
   flaggedRows: FlaggedScanRow[];
 };
+
+export type BalancedOpeningSet = {
+  date: string;
+  cash: number;
+  inventory: number;
+  otherAssets: number;
+  assetBreakdown: { name: string; amount: number }[];
+  accountsPayable: number;
+  otherLiabilities: number;
+  liabilityBreakdown: { name: string; amount: number; type: 'creditor' | 'other' }[];
+  ownerCapital: number;
+  partnerCapitals: { name: string; amount: number; profitSharePct?: number }[];
+  totalAssets: number;
+  totalLiabilities: number;
+};
+
+export type BalancedOpeningSetResult =
+  | { value: BalancedOpeningSet; error: null }
+  | { value: null; error: string };
 
 export const AMOUNT_BOUNDS_REASON = `Amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`;
 export const DATE_BOUNDS_REASON = `Date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`;
@@ -71,6 +90,76 @@ export function normalizeScanDate(value: unknown): string | null {
 
 const CASH_NAME = /\bcash\b/i;
 const STOCK_NAME = /\b(stock|inventory)\b/i;
+const CREDITOR_NAME = /^(creditors?|accounts? payable)$/i;
+const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+/**
+ * Collapse editable setup rows into one balanced opening set. Balance-style
+ * documents must be posted atomically: importing their assets and liabilities
+ * as independent transactions would invent counter-balances and overstate the
+ * balance sheet.
+ */
+export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResult {
+  const setupRows = rows.filter((row) => row.kind !== 'transaction');
+  const openings = setupRows.filter((row): row is ScanOpeningRow => row.kind === 'opening_balances');
+  if (openings.length !== 1) return { value: null, error: 'A balance report must contain exactly one cash and stock opening row' };
+
+  const dateValues = setupRows.map((row) => row.kind === 'opening_balances' ? row.asOfDate : row.date);
+  const normalizedDates = dateValues.map(normalizeScanDate);
+  if (normalizedDates.some((date) => !date)) {
+    return { value: null, error: 'Enter the statement date shown on the report (YYYY-MM-DD); the scan date is not used automatically' };
+  }
+  const dates = [...new Set(normalizedDates as string[])];
+  if (dates.length !== 1) return { value: null, error: 'All opening-balance rows must use the same statement date' };
+
+  const opening = openings[0];
+  if (![opening.openingCash, opening.stockValue].every((value) => Number.isFinite(value) && value >= 0 && value <= MAX_AI_AMOUNT)) {
+    return { value: null, error: AMOUNT_BOUNDS_REASON };
+  }
+  const assets = setupRows.filter((row): row is ScanAssetRow => row.kind === 'asset');
+  const liabilities = setupRows.filter((row): row is ScanLiabilityRow => row.kind === 'liability');
+  const partners = setupRows.filter((row): row is ScanPartnerRow => row.kind === 'partner');
+  if ([...assets, ...liabilities].some((row) => !row.name.trim() || !isValidScanAmount(row.amount)) ||
+      partners.some((row) => !row.name.trim() || !isValidScanAmount(row.capital) ||
+        (row.profitSharePct !== undefined && (!Number.isFinite(row.profitSharePct) || row.profitSharePct < 0 || row.profitSharePct > 100)))) {
+    return { value: null, error: 'Every opening asset, liability, and partner needs a name and valid positive amount' };
+  }
+
+  const assetBreakdown = assets.map((row) => ({ name: row.name.trim(), amount: cents(row.amount) }));
+  const liabilityBreakdown = liabilities.map((row) => ({
+    name: row.name.trim(), amount: cents(row.amount), type: CREDITOR_NAME.test(row.name.trim()) ? 'creditor' as const : 'other' as const,
+  }));
+  const cash = cents(opening.openingCash);
+  const inventory = cents(opening.stockValue);
+  const otherAssets = cents(assetBreakdown.reduce((sum, row) => sum + row.amount, 0));
+  const accountsPayable = cents(liabilityBreakdown.filter((row) => row.type === 'creditor').reduce((sum, row) => sum + row.amount, 0));
+  const otherLiabilities = cents(liabilityBreakdown.filter((row) => row.type === 'other').reduce((sum, row) => sum + row.amount, 0));
+  const totalAssets = cents(cash + inventory + otherAssets);
+  const totalLiabilities = cents(accountsPayable + otherLiabilities);
+  const ownerCapital = cents(totalAssets - totalLiabilities);
+  if (ownerCapital < 0) return { value: null, error: 'Opening liabilities cannot exceed opening assets' };
+
+  const partnerCapitals = partners.map((row) => ({
+    name: row.name.trim(), amount: cents(row.capital),
+    ...(row.profitSharePct === undefined ? {} : { profitSharePct: row.profitSharePct }),
+  }));
+  const partnerTotal = cents(partnerCapitals.reduce((sum, row) => sum + row.amount, 0));
+  if (partnerCapitals.length && Math.abs(partnerTotal - ownerCapital) > 0.005) {
+    return {
+      value: null,
+      error: `Partner stakes (${partnerTotal.toFixed(2)}) must equal assets minus liabilities (${ownerCapital.toFixed(2)})`,
+    };
+  }
+
+  return {
+    value: {
+      date: dates[0], cash, inventory, otherAssets, assetBreakdown,
+      accountsPayable, otherLiabilities, liabilityBreakdown, ownerCapital,
+      partnerCapitals, totalAssets, totalLiabilities,
+    },
+    error: null,
+  };
+}
 
 /**
  * Map the raw analyzeDocumentAI JSON into bounds-checked rows.
@@ -138,7 +227,9 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
   // ---- Book setup ----
   const setup = asRecord(doc.setup);
   if (setup) {
-    const asOfDate = normalizeScanDate(setup.asOfDate) || today;
+    // A statement date is accounting evidence, not a convenience default. If
+    // the document does not visibly provide one, leave it blank for review.
+    const asOfDate = normalizeScanDate(setup.asOfDate) || '';
 
     let openingCash = nonNegativeAmount(setup.openingCash);
     let stockValue = nonNegativeAmount(setup.stockValue);
@@ -204,7 +295,12 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       const label = `Partner ${name || '?'} ${partner.capital ?? '?'}`;
       if (!name) { flaggedRows.push({ label, reason: 'Partner name is missing' }); continue; }
       if (!isValidScanAmount(partner.capital)) { flaggedRows.push({ label, reason: AMOUNT_BOUNDS_REASON }); continue; }
-      validRows.push({ kind: 'partner', name, capital: partner.capital, date: asOfDate });
+      const profitSharePct = partner.profitSharePct === undefined ? undefined : Number(partner.profitSharePct);
+      if (profitSharePct !== undefined && (!Number.isFinite(profitSharePct) || profitSharePct < 0 || profitSharePct > 100)) {
+        flaggedRows.push({ label, reason: 'Partner profit share must be between 0 and 100 percent' });
+        continue;
+      }
+      validRows.push({ kind: 'partner', name, capital: partner.capital, ...(profitSharePct === undefined ? {} : { profitSharePct }), date: asOfDate });
     }
   }
 

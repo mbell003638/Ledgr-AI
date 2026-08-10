@@ -3,6 +3,7 @@ import path from 'path';
 import { ANALYZE_DOCUMENT_SCHEMA, buildAnalyzeDocumentPrompt } from '../src/db/ai';
 import {
   mapAnalyzedDocument,
+  buildBalancedOpeningSet,
   normalizeScanDate,
   isValidScanAmount,
   AMOUNT_BOUNDS_REASON,
@@ -63,6 +64,86 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
 });
 
 describe('mapAnalyzedDocument', () => {
+  it('builds the photographed closing report as one balanced opening composite', () => {
+    const mapped = mapAnalyzedDocument({
+      docType: 'closing_report',
+      summary: 'Partner stakes reconciliation and closing balance sheet',
+      entries: [],
+      setup: {
+        asOfDate: '2026-08-10',
+        openingCash: 0,
+        extraAssets: [
+          { name: 'Cash USD at Home', amount: 37741.17 },
+          { name: 'Cash FC in Shop', amount: 948.04 },
+          { name: 'Cash USD in Shop', amount: 0 },
+          { name: 'Physical Stock', amount: 150527.46 },
+          { name: 'Shop Deposit', amount: 7500 },
+          { name: 'House Deposit', amount: 750 },
+        ],
+        creditorsTotal: 36215.42,
+        extraLiabilities: [{ name: 'Commission Payable', amount: 6063.15 }],
+        partners: [
+          { name: 'Amit', capital: 68935.48, profitSharePct: 50 },
+          { name: 'Rahim', capital: 86252.62, profitSharePct: 50 },
+        ],
+      },
+    });
+
+    expect(mapped.flaggedRows).toHaveLength(1);
+    expect(mapped.flaggedRows[0]).toMatchObject({ label: 'Asset Cash USD in Shop 0' });
+    const result = buildBalancedOpeningSet(mapped.validRows);
+    expect(result.error).toBeNull();
+    expect(result.value).toEqual({
+      date: '2026-08-10',
+      cash: 38689.21,
+      inventory: 150527.46,
+      otherAssets: 8250,
+      assetBreakdown: [
+        { name: 'Shop Deposit', amount: 7500 },
+        { name: 'House Deposit', amount: 750 },
+      ],
+      accountsPayable: 36215.42,
+      otherLiabilities: 6063.15,
+      liabilityBreakdown: [
+        { name: 'Creditors', amount: 36215.42, type: 'creditor' },
+        { name: 'Commission Payable', amount: 6063.15, type: 'other' },
+      ],
+      ownerCapital: 155188.1,
+      partnerCapitals: [
+        { name: 'Amit', amount: 68935.48, profitSharePct: 50 },
+        { name: 'Rahim', amount: 86252.62, profitSharePct: 50 },
+      ],
+      totalAssets: 197466.67,
+      totalLiabilities: 42278.57,
+    });
+    expect(result.value && result.value.totalAssets - result.value.totalLiabilities).toBeCloseTo(155188.1, 2);
+    expect(result.value?.partnerCapitals.reduce((sum, partner) => sum + partner.amount, 0)).toBeCloseTo(155188.1, 2);
+  });
+
+  it('leaves a missing closing-statement date blank and requires explicit review', () => {
+    const mapped = mapAnalyzedDocument({
+      docType: 'closing_report',
+      summary: 'Closing report without a visible statement date',
+      entries: [],
+      setup: {
+        openingCash: 100,
+        stockValue: 50,
+        creditorsTotal: 25,
+        partners: [{ name: 'Owner', capital: 125 }],
+      },
+    });
+
+    const opening = mapped.validRows.find((row) => row.kind === 'opening_balances') as ScanOpeningRow;
+    expect(opening.asOfDate).toBe('');
+    expect(mapped.validRows.filter((row) => row.kind !== 'transaction').every((row) =>
+      (row.kind === 'opening_balances' ? row.asOfDate : row.date) === '',
+    )).toBe(true);
+    expect(buildBalancedOpeningSet(mapped.validRows)).toEqual({
+      value: null,
+      error: 'Enter the statement date shown on the report (YYYY-MM-DD); the scan date is not used automatically',
+    });
+  });
+
   it('maps a closing report: cash rows summed into openingCash, stock → stockValue, deposits → assets, creditors → liabilities, partners listed', () => {
     const mapped = mapAnalyzedDocument({
       docType: 'closing_report',
@@ -173,10 +254,46 @@ describe('scan-import screen UI contract', () => {
 
   it('confirms before writing and imports only through existing api functions', () => {
     expect(source).toMatch(/Alert\.alert\(\s*`Import \$\{selected\.length\} selected\?`/);
-    for (const fn of ['api.createSale', 'api.createBill', 'api.createReceipt', 'api.createPayment', 'api.createExpense',
+    for (const fn of ['api.preflightV2ScanParties', 'api.importV2ScanTransaction', 'api.importV2ClosingBalances',
       'api.updateV2OpeningBalances', 'api.createManualAsset', 'api.createManualLiability', 'api.depositInvestorCapital']) {
       expect(source).toContain(fn);
     }
+  });
+
+  it('preflights every support ledger that the selected import can create', () => {
+    expect(source).toContain('const partyRequests = (): MissingPartyLedger[]');
+    expect(source).toContain('review.row.entryType === "purchase_bill"');
+    expect(source).toContain('review.row.entryType === "payment_out"');
+    expect(source).toContain('review.row.entryType === "receipt_in" && name');
+    expect(source).toContain('review.row.entryType === "sale" && review.row.method === "credit" && name');
+    expect(source).toContain('liability.type === "creditor" && !/^(creditors?|accounts? payable)$/i.test(liability.name.trim())');
+    expect(source).toContain('api.preflightV2ScanParties(requestedPartyLedgers)');
+    expect(source).toContain('Customer" : "Supplier"} ledger');
+    expect(source).toContain('Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)');
+    expect(source).toContain('"New supporting ledgers:"');
+    expect(source).toContain('testID="scan-support-records"');
+    expect(source).toMatch(/balancedPartnerPlan\.entries\s*\n\s*\.filter\(\(entry\) => !entry\.memberId\)/);
+  });
+
+  it('does not disclose existing customer or supplier names as new support ledgers', () => {
+    expect(source).toContain('partyPreflightItems.filter((item) => item.requiresCreation)');
+    expect(source).toContain('preflight.items.filter((item) => item.requiresCreation)');
+    expect(source).not.toMatch(/pendingSupportRecords[\s\S]*?\.filter\(\(item\) => item\.status === "existing"\)/);
+  });
+
+  it('performs only a read-only preflight until the user approves the confirmation alert', () => {
+    const start = source.indexOf('const confirmImport = async () => {');
+    const end = source.indexOf('const transactionsRows =', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const confirmation = source.slice(start, end);
+    expect(confirmation.match(/api\.[A-Za-z0-9_]+/g)).toEqual(['api.preflightV2ScanParties']);
+    expect(confirmation).not.toMatch(/api\.(?:findOrCreateParty|createSale|createInvoice|createBill|createReceipt|createPayment|createExpense|importV2ClosingBalances|importV2ScanTransaction)/);
+    expect(confirmation.match(/onPress: \(\) => runImport\(freshMissingLedgers\)/g)).toHaveLength(2);
+    expect(confirmation.match(/\{ text: "Cancel", style: "cancel" \}/g)).toHaveLength(2);
+    expect(source).toMatch(/Nothing is saved\s+without your confirmation\./);
+    expect(source).toContain('await api.importV2ScanTransaction({');
+    expect(source).toContain('createMissingParty: !!partyKey && approvedPartyCreationKeys.has(partyKey)');
   });
 
   it('is registered as a route and reachable from Ask and the quick-action menu', () => {

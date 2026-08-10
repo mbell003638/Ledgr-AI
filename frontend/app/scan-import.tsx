@@ -11,6 +11,7 @@ import { getCurrencySymbol } from "@/src/db/local";
 import { Card } from "@/src/components/UI";
 import {
   mapAnalyzedDocument,
+  buildBalancedOpeningSet,
   normalizeScanDate,
   isValidScanAmount,
   AMOUNT_BOUNDS_REASON,
@@ -29,6 +30,11 @@ const scanNote = (base?: string) => `${SCAN_TAG} ${base || "Imported from docume
 const MAX_BASE64_CHARS = 8 * 1024 * 1024;
 
 type RowStatus = { state: "created" | "failed"; message: string };
+type MissingPartyLedger = { name: string; role: "customer" | "supplier" };
+type PartyPreflightItem = MissingPartyLedger & {
+  status: "existing" | "missing" | "role_missing" | "ignored_generic_ap";
+  requiresCreation: boolean;
+};
 type ReviewRow = {
   id: number;
   row: ScanRow;
@@ -37,6 +43,7 @@ type ReviewRow = {
   infoReason?: string; // set on non-importable info rows (e.g. partner manual step)
   amountText: string;
   stockText: string; // opening-balances row only
+  shareText: string; // partner row only
   dateText: string;
   partyText: string; // party name / asset name / liability name / partner name
   status?: RowStatus;
@@ -71,8 +78,13 @@ export default function ScanImport() {
   const [flagged, setFlagged] = useState<FlaggedScanRow[]>([]);
   const [pasteText, setPasteText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [preflighting, setPreflighting] = useState(false);
   const [currencySymbol, setCurrencySymbol] = useState("$");
   const [doneCounts, setDoneCounts] = useState({ created: 0, failed: 0, manual: 0 });
+  const [partnershipMode, setPartnershipMode] = useState(false);
+  const [configuredInvestors, setConfiguredInvestors] = useState<{ id: string; name: string; profitSharePct: number }[]>([]);
+  const [partyPreflightItems, setPartyPreflightItems] = useState<PartyPreflightItem[]>([]);
+  const [partyLookupReady, setPartyLookupReady] = useState(false);
 
   React.useEffect(() => {
     api.getSettings().then((s: any) => setCurrencySymbol(getCurrencySymbol(s.currency || "USD"))).catch(() => {});
@@ -95,18 +107,18 @@ export default function ScanImport() {
       const [raw, settings] = await Promise.all([api.analyzeDocument(input), api.getSettings().catch(() => ({}))]);
       const mapped = mapAnalyzedDocument(raw);
       const partnership = (settings as any)?.accountingStyle === "retail_partnership";
-      let investors: { id: string; name: string }[] = [];
-      if (partnership) { try { investors = await api.listInvestors(); } catch { investors = []; } }
+      let investors: { id: string; name: string; profitSharePct: number }[] = [];
+      const [investorResult] = await Promise.allSettled([
+        partnership ? api.listInvestors() : Promise.resolve([]),
+      ]);
+      if (investorResult.status === "fulfilled") investors = investorResult.value;
       const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
-        let importable = true;
+        const importable = true;
         let infoReason: string | undefined;
         if (row.kind === "partner") {
           const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
-          if (!match) {
-            importable = false;
-            infoReason = partnership
-              ? `Manual step: no investor named "${row.name}" exists yet — add them on the Investors screen, then record their capital there.`
-              : `Manual step: partner capital can only be recorded in Partnership Mode. Note ${row.name}'s stake and set it up in Settings.`;
+          if (!match && !partnership) {
+            infoReason = `Partner stakes require Partnership Mode and matching investors before this report can be imported.`;
           }
         }
         return {
@@ -117,6 +129,7 @@ export default function ScanImport() {
           infoReason,
           amountText: String(row.kind === "transaction" ? row.amount : row.kind === "opening_balances" ? row.openingCash : row.kind === "partner" ? row.capital : row.amount),
           stockText: row.kind === "opening_balances" ? String(row.stockValue) : "",
+          shareText: row.kind === "partner" && Number.isFinite(row.profitSharePct) ? String(row.profitSharePct) : "",
           dateText: row.kind === "transaction" ? row.date : row.kind === "opening_balances" ? row.asOfDate : row.date,
           partyText: row.kind === "transaction" ? row.partyName : row.kind === "opening_balances" ? "" : row.name,
         };
@@ -125,6 +138,10 @@ export default function ScanImport() {
       setSummary(mapped.summary);
       setRows(reviewRows);
       setFlagged(mapped.flaggedRows);
+      setPartnershipMode(partnership);
+      setConfiguredInvestors(investors);
+      setPartyPreflightItems([]);
+      setPartyLookupReady(false);
       setPhase("review");
     } catch (e: any) {
       setError(friendlyError(e));
@@ -168,9 +185,85 @@ export default function ScanImport() {
     await analyze({ text });
   };
 
+  const setupRows = rows.filter((r) => r.row.kind !== "transaction");
+  const hasBalancedOpeningSet = setupRows.length > 1;
+
   const updateRow = (id: number, patch: Partial<ReviewRow>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    setRows((prev) => {
+      const edited = prev.find((r) => r.id === id);
+      const synchronizeSetupDate = hasBalancedOpeningSet && edited?.row.kind !== "transaction" && patch.dateText !== undefined;
+      return prev.map((r) => {
+        if (synchronizeSetupDate && r.row.kind !== "transaction") return { ...r, dateText: patch.dateText! };
+        return r.id === id ? { ...r, ...patch } : r;
+      });
+    });
   };
+
+  const editedScanRow = (r: ReviewRow): ScanRow => {
+    const amount = Number(r.amountText);
+    const date = r.dateText;
+    switch (r.row.kind) {
+      case "transaction": return { ...r.row, amount, date, partyName: r.partyText.trim() };
+      case "opening_balances": return { ...r.row, openingCash: amount, stockValue: Number(r.stockText), asOfDate: date };
+      case "asset": return { ...r.row, amount, date, name: r.partyText.trim() };
+      case "liability": return { ...r.row, amount, date, name: r.partyText.trim() };
+      case "partner": return { ...r.row, capital: amount, profitSharePct: Number(r.shareText), date, name: r.partyText.trim() };
+    }
+  };
+
+  const partnerImportPlan = (
+    partners: { name: string; amount: number; profitSharePct?: number }[],
+    investors = configuredInvestors,
+  ): {
+    problem: string | null;
+    entries: { memberId?: string; name: string; amount: number; profitSharePct: number }[];
+    createNames: string[];
+  } => {
+    const empty = (problem: string) => ({ problem, entries: [], createNames: [] });
+    if (partners.length > 0 && !partnershipMode) {
+      return empty("This report contains partner stakes. Enable Partnership Mode before importing or creating partner ledgers.");
+    }
+    const investorByName = new Map(investors.map((investor) => [investor.name.trim().toLowerCase(), investor]));
+    const reportNames = new Set(partners.map((partner) => partner.name.trim().toLowerCase()));
+    const missing = investors.filter((investor) => !reportNames.has(investor.name.trim().toLowerCase()));
+    if (missing.length > 0) {
+      return empty(`The report is missing configured investor${missing.length === 1 ? "" : "s"}: ${missing.map((investor) => investor.name).join(", ")}. Every configured investor must be represented.`);
+    }
+    if (reportNames.size !== partners.length) return empty("Each partner must appear exactly once in the report.");
+
+    const newPartners = partners.filter((partner) => !investorByName.has(partner.name.trim().toLowerCase()));
+    const invalidNewShares = newPartners.filter((partner) => !Number.isFinite(partner.profitSharePct) || Number(partner.profitSharePct) <= 0 || Number(partner.profitSharePct) > 100);
+    if (invalidNewShares.length > 0) {
+      return empty(`Set a valid profit share for new partner${invalidNewShares.length === 1 ? "" : "s"}: ${invalidNewShares.map((partner) => partner.name).join(", ")}. Create them manually in Investors if the report does not show the shares.`);
+    }
+    const resultingShare = investors.reduce((sum, investor) => sum + Number(investor.profitSharePct || 0), 0)
+      + newPartners.reduce((sum, partner) => sum + Number(partner.profitSharePct), 0);
+    if (newPartners.length > 0 && Math.abs(resultingShare - 100) > 0.005) {
+      return empty(`Configured and new partner profit shares must total 100% (currently ${resultingShare.toFixed(2)}%). Correct the shares or create the ledgers manually.`);
+    }
+    return {
+      problem: null,
+      createNames: newPartners.map((partner) => partner.name),
+      entries: partners.map((partner) => {
+        const match = investorByName.get(partner.name.trim().toLowerCase());
+        return {
+          memberId: match?.id,
+          name: partner.name,
+          amount: partner.amount,
+          profitSharePct: match ? Number(match.profitSharePct) : Number(partner.profitSharePct),
+        };
+      }),
+    };
+  };
+
+  const balancedOpeningResult = hasBalancedOpeningSet
+    ? buildBalancedOpeningSet(setupRows.map(editedScanRow))
+    : null;
+  const balancedPartnerPlan = balancedOpeningResult?.value
+    ? partnerImportPlan(balancedOpeningResult.value.partnerCapitals)
+    : { problem: null, entries: [], createNames: [] };
+  const balancedOpeningProblem = balancedOpeningResult?.error
+    || balancedPartnerPlan.problem;
 
   // Re-validate an edited row's fields at import time. Returns an error reason
   // or null when safe. All amounts go through the shared AI caps and every date
@@ -187,45 +280,38 @@ export default function ScanImport() {
       return null;
     }
     if (!isValidScanAmount(Number(r.amountText))) return AMOUNT_BOUNDS_REASON;
+    if (r.row.kind === "transaction" && r.row.entryType === "sale" && r.row.method === "credit" && !r.partyText.trim()) {
+      return "Customer name is required for a credit sale";
+    }
+    if (r.row.kind === "transaction" && (r.row.entryType === "purchase_bill" || r.row.entryType === "payment_out") && !r.partyText.trim()) {
+      return "Supplier name is required";
+    }
     if ((r.row.kind === "asset" || r.row.kind === "liability" || r.row.kind === "partner") && !r.partyText.trim()) return "Name is required";
     return null;
   };
 
-  // Execute ONE confirmed, validated row through the existing api surface.
-  const writeRow = async (r: ReviewRow) => {
+  // Execute ONE confirmed, validated ordinary row through the existing api surface.
+  const writeRow = async (r: ReviewRow, approvedPartyCreationKeys = new Set<string>()) => {
     const date = normalizeScanDate(normalizeDateInput(r.dateText))!;
     const amount = Number(r.amountText);
     const party = r.partyText.trim();
     const row = r.row;
     if (row.kind === "transaction") {
       const notes = scanNote(row.notes || rowTitle(row));
-      switch (row.entryType) {
-        case "sale":
-          await api.createSale({ amount, date, paymentType: row.method, notes });
-          return;
-        case "purchase_bill":
-          await api.createBill({ supplierName: party || "Unknown supplier", amount, date, paymentType: row.method, notes });
-          return;
-        case "receipt_in": {
-          if (party) {
-            const customer = await api.findOrCreateParty(party, "customer");
-            if (!customer) throw new Error(`Could not find or create customer "${party}"`);
-            await api.createReceipt({ mode: "advance", debtorId: customer.id, clientName: customer.name, amount, date, method: "cash", notes });
-          } else {
-            await api.createReceipt({ mode: "cash_sale", amount, date, method: "cash", clientName: "", notes });
-          }
-          return;
-        }
-        case "payment_out": {
-          const supplier = await api.findOrCreateParty(party || "Unknown supplier", "supplier");
-          if (!supplier) throw new Error(`Could not find or create supplier "${party}"`);
-          await api.createPayment({ date, amount, currency: "USD", type: "supplier_payment", supplierId: supplier.id, method: "cash", notes });
-          return;
-        }
-        case "expense":
-          await api.createExpense({ category: "General", amount, date, notes: scanNote(party ? `${party}${row.notes ? " — " + row.notes : ""}` : row.notes) });
-          return;
-      }
+      const role = row.entryType === "purchase_bill" || row.entryType === "payment_out" ? "supplier"
+        : row.entryType === "receipt_in" || (row.entryType === "sale" && row.method === "credit") ? "customer"
+        : null;
+      const partyKey = role && party ? `${role}:${party.trim().toLowerCase().replace(/\s+/g, " ")}` : "";
+      await api.importV2ScanTransaction({
+        entryType: row.entryType,
+        date,
+        partyName: party || undefined,
+        amount,
+        method: row.method,
+        notes,
+        createMissingParty: !!partyKey && approvedPartyCreationKeys.has(partyKey),
+      });
+      return;
     }
     if (row.kind === "opening_balances") {
       await api.updateV2OpeningBalances({ date, cash: amount, inventory: Number(r.stockText), memo: scanNote("Imported opening balances") });
@@ -248,18 +334,125 @@ export default function ScanImport() {
     }
   };
 
-  const selected = rows.filter((r) => r.checked && r.importable);
+  const selectedTransactions = rows.filter((r) => r.row.kind === "transaction" && r.checked && r.importable);
+  const selected = hasBalancedOpeningSet
+    ? [...selectedTransactions, ...setupRows]
+    : rows.filter((r) => r.checked && r.importable);
+  const screenBusy = importing || preflighting;
 
-  const runImport = async () => {
+  const partyRequests = (): MissingPartyLedger[] => {
+    const required: MissingPartyLedger[] = [];
+    for (const review of selectedTransactions) {
+      if (review.row.kind !== "transaction") continue;
+      const name = review.partyText.trim();
+      if (review.row.entryType === "purchase_bill" && name) required.push({ name, role: "supplier" });
+      if (review.row.entryType === "payment_out" && name) required.push({ name, role: "supplier" });
+      if (review.row.entryType === "receipt_in" && name) required.push({ name, role: "customer" });
+      if (review.row.entryType === "sale" && review.row.method === "credit" && name) required.push({ name, role: "customer" });
+    }
+    if (hasBalancedOpeningSet && balancedOpeningResult?.value) {
+      for (const liability of balancedOpeningResult.value.liabilityBreakdown) {
+        if (liability.type === "creditor" && !/^(creditors?|accounts? payable)$/i.test(liability.name.trim())) {
+          required.push({ name: liability.name.trim(), role: "supplier" });
+        }
+      }
+    }
+    const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+    const unique = new Map(required.map((item) => [`${item.role}:${normalized(item.name)}`, item]));
+    return [...unique.values()];
+  };
+
+  const requestedPartyLedgers = partyRequests();
+  const partyRequestKey = JSON.stringify(requestedPartyLedgers);
+  React.useEffect(() => {
+    if (phase !== "review") return;
+    let active = true;
+    setPartyLookupReady(false);
+    api.preflightV2ScanParties(requestedPartyLedgers)
+      .then((result) => {
+        if (!active) return;
+        setPartyPreflightItems(result.items);
+        setPartyLookupReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPartyPreflightItems([]);
+        setPartyLookupReady(false);
+      });
+    return () => { active = false; };
+    // The serialized key changes whenever selection or an editable party name changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyRequestKey, phase]);
+
+  const missingPartyLedgers = partyLookupReady ? partyPreflightItems.filter((item) => item.requiresCreation) : [];
+  const pendingSupportRecords = [
+    ...missingPartyLedgers.map((item) => `${item.role === "customer" ? "Customer" : "Supplier"} ledger — ${item.name}`),
+    ...balancedPartnerPlan.entries
+      .filter((entry) => !entry.memberId)
+      .map((entry) => `Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)`),
+  ];
+
+  const selectedRecordLines = () => {
+    const lines = selectedTransactions.map((review) => {
+      if (review.row.kind !== "transaction") return "";
+      const party = review.partyText.trim();
+      const detail = party ? ` — ${party}` : "";
+      return `${rowTitle(review.row)}${detail}: ${fmt(Number(review.amountText) || 0, currencySymbol)} on ${review.dateText}`;
+    });
+    if (hasBalancedOpeningSet && balancedOpeningResult?.value) {
+      lines.unshift(`Balanced opening set: ${fmt(balancedOpeningResult.value.totalAssets, currencySymbol)} assets as of ${balancedOpeningResult.value.date}`);
+    }
+    return lines.filter(Boolean);
+  };
+
+  const runImport = async (approvedSupportLedgers: MissingPartyLedger[] = missingPartyLedgers) => {
     setImporting(true); setError("");
     let created = 0; let failed = 0;
     const next = [...rows];
+    const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+    const approvedPartyCreationKeys = new Set(approvedSupportLedgers.map((item) => `${item.role}:${normalized(item.name)}`));
+    if (hasBalancedOpeningSet) {
+      const rebuilt = buildBalancedOpeningSet(next.filter((r) => r.row.kind !== "transaction").map(editedScanRow));
+      const partnerPlan = rebuilt.value ? partnerImportPlan(rebuilt.value.partnerCapitals) : { problem: null, entries: [], createNames: [] };
+      const problem = rebuilt.error || partnerPlan.problem;
+      if (!rebuilt.value || problem) {
+        const message = problem || "The balanced opening set is incomplete.";
+        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "failed", message }; });
+        setRows([...next]);
+        setError(message);
+        setDoneCounts({ created: 0, failed: 1, manual: 0 });
+        setImporting(false);
+        return;
+      }
+      try {
+        await api.importV2ClosingBalances({
+          ...rebuilt.value,
+          memo: scanNote("Imported balanced opening set from closing report"),
+          createMissingPartners: partnerPlan.createNames.length > 0,
+          createMissingCreditors: approvedSupportLedgers.some((item) => item.role === "supplier"
+            && rebuilt.value!.liabilityBreakdown.some((liability) => liability.type === "creditor" && normalized(liability.name) === normalized(item.name))),
+          partnerCapitals: partnerPlan.entries,
+        });
+        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "created", message: "Imported in balanced opening set" }; });
+        created++;
+      } catch (e: any) {
+        const message = e?.message || "Balanced opening set import failed";
+        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "failed", message }; });
+        setRows([...next]);
+        setError(message);
+        setDoneCounts({ created: 0, failed: 1, manual: 0 });
+        setImporting(false);
+        return;
+      }
+      setRows([...next]);
+    }
     for (const r of next) {
+      if (hasBalancedOpeningSet && r.row.kind !== "transaction") continue;
       if (!r.checked || !r.importable) continue;
       const problem = rowProblem(r);
       if (problem) { r.status = { state: "failed", message: problem }; failed++; continue; }
       try {
-        await writeRow(r);
+        await writeRow(r, approvedPartyCreationKeys);
         r.status = { state: "created", message: "Created" };
         created++;
       } catch (e: any) {
@@ -269,41 +462,83 @@ export default function ScanImport() {
       setRows([...next]);
     }
     setRows([...next]);
-    setDoneCounts({ created, failed, manual: rows.filter((x) => !x.importable).length });
+    setDoneCounts({ created, failed, manual: 0 });
     setImporting(false);
     setPhase("done");
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (selected.length === 0) return;
+    if (hasBalancedOpeningSet && balancedOpeningProblem) {
+      setError(balancedOpeningProblem);
+      return;
+    }
+    setPreflighting(true);
+    setError("");
+    let freshMissingLedgers: MissingPartyLedger[];
+    try {
+      const preflight = await api.preflightV2ScanParties(requestedPartyLedgers);
+      setPartyPreflightItems(preflight.items);
+      setPartyLookupReady(true);
+      freshMissingLedgers = preflight.items.filter((item) => item.requiresCreation);
+    } catch {
+      setPartyLookupReady(false);
+      setError("Could not verify customer and supplier ledgers. Nothing was created; check your book and try again.");
+      setPreflighting(false);
+      return;
+    }
+    setPreflighting(false);
+    const transactionRecords = selectedRecordLines();
+    const supportRecords = [
+      ...freshMissingLedgers.map((item) => `${item.role === "customer" ? "Customer" : "Supplier"} ledger — ${item.name}`),
+      ...balancedPartnerPlan.entries
+        .filter((entry) => !entry.memberId)
+        .map((entry) => `Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)`),
+    ];
+    const recordDisclosure = [
+      "Records to create:",
+      ...transactionRecords.map((record) => `• ${record}`),
+      ...(supportRecords.length ? ["", "New supporting ledgers:", ...supportRecords.map((record) => `• ${record}`)] : []),
+    ].join("\n");
     const total = selected.reduce((sum, r) => sum + (Number(r.amountText) || 0) + (r.row.kind === "opening_balances" ? Number(r.stockText) || 0 : 0), 0);
+    if (hasBalancedOpeningSet) {
+      Alert.alert(
+        "Import balanced opening set?",
+        `The complete statement will be written atomically. Assets, liabilities, and partner stakes cannot be imported separately.\n\n${recordDisclosure}`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Import balanced opening set", isPreferred: true, onPress: () => runImport(freshMissingLedgers) },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       `Import ${selected.length} selected?`,
-      `${selected.length} entr${selected.length === 1 ? "y" : "ies"} will be written to your books (total value ${fmt(total, currencySymbol)}). Each record is tagged ${SCAN_TAG} so you can find it later.`,
+      `${selected.length} entr${selected.length === 1 ? "y" : "ies"} will be written to your books (total value ${fmt(total, currencySymbol)}). Each record is tagged ${SCAN_TAG}.\n\n${recordDisclosure}`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: `Import ${selected.length}`, isPreferred: true, onPress: runImport },
+        { text: `Import ${selected.length}`, isPreferred: true, onPress: () => runImport(freshMissingLedgers) },
       ],
     );
   };
 
   const transactionsRows = rows.filter((r) => r.row.kind === "transaction");
-  const setupRows = rows.filter((r) => r.row.kind !== "transaction");
 
   const renderRow = (r: ReviewRow) => {
     const problem = r.importable ? rowProblem(r) : null;
+    const isLockedSetupRow = hasBalancedOpeningSet && r.row.kind !== "transaction";
     const border = !r.importable ? theme.color.muted : problem ? theme.color.error : theme.color.brandPrimary;
     return (
       <View key={r.id} style={[styles.row, { borderLeftColor: border }]} testID={`scan-row-${r.id}`}>
         <View style={styles.rowHeader}>
           <Pressable
             testID={`scan-check-${r.id}`}
-            disabled={!r.importable || !!problem || importing || phase === "done"}
+            disabled={isLockedSetupRow || !r.importable || !!problem || screenBusy || phase === "done"}
             onPress={() => updateRow(r.id, { checked: !r.checked })}
             style={styles.checkWrap}
           >
             <Ionicons
-              name={!r.importable ? "information-circle-outline" : problem ? "close-circle" : r.checked ? "checkbox" : "square-outline"}
+              name={!r.importable ? "information-circle-outline" : problem ? "close-circle" : isLockedSetupRow || r.checked ? "checkbox" : "square-outline"}
               size={22}
               color={!r.importable ? theme.color.muted : problem ? theme.color.error : r.checked ? theme.color.brandPrimary : theme.color.muted}
             />
@@ -316,14 +551,14 @@ export default function ScanImport() {
           ) : null}
         </View>
         {r.infoReason ? <Text style={styles.infoText}>{r.infoReason}</Text> : null}
-        {r.importable ? (
+        {r.importable || r.row.kind === "partner" ? (
           <View style={styles.fieldRow}>
             {r.row.kind !== "opening_balances" ? (
               <View style={{ flex: 1.2 }}>
                 <Text style={styles.fieldLabel}>{r.row.kind === "transaction" ? "Party" : "Name"}</Text>
                 <TextInput
                   value={r.partyText}
-                  editable={!importing && phase !== "done"}
+                  editable={!screenBusy && phase !== "done"}
                   onChangeText={(t) => updateRow(r.id, { partyText: t })}
                   placeholder={r.row.kind === "transaction" ? "Optional" : "Name"}
                   placeholderTextColor={theme.color.muted}
@@ -335,7 +570,7 @@ export default function ScanImport() {
               <Text style={styles.fieldLabel}>{r.row.kind === "opening_balances" ? "Cash" : "Amount"}</Text>
               <TextInput
                 value={r.amountText}
-                editable={!importing && phase !== "done"}
+                editable={!screenBusy && phase !== "done"}
                 onChangeText={(t) => updateRow(r.id, { amountText: t })}
                 keyboardType="decimal-pad"
                 placeholderTextColor={theme.color.muted}
@@ -347,9 +582,23 @@ export default function ScanImport() {
                 <Text style={styles.fieldLabel}>Stock</Text>
                 <TextInput
                   value={r.stockText}
-                  editable={!importing && phase !== "done"}
+                  editable={!screenBusy && phase !== "done"}
                   onChangeText={(t) => updateRow(r.id, { stockText: t })}
                   keyboardType="decimal-pad"
+                  placeholderTextColor={theme.color.muted}
+                  style={styles.fieldInput}
+                />
+              </View>
+            ) : null}
+            {r.row.kind === "partner" ? (
+              <View style={{ flex: 0.8 }}>
+                <Text style={styles.fieldLabel}>Profit share %</Text>
+                <TextInput
+                  value={r.shareText}
+                  editable={!screenBusy && phase !== "done"}
+                  onChangeText={(t) => updateRow(r.id, { shareText: t })}
+                  keyboardType="decimal-pad"
+                  placeholder="Required if new"
                   placeholderTextColor={theme.color.muted}
                   style={styles.fieldInput}
                 />
@@ -359,7 +608,7 @@ export default function ScanImport() {
               <Text style={styles.fieldLabel}>Date</Text>
               <TextInput
                 value={r.dateText}
-                editable={!importing && phase !== "done"}
+                editable={!screenBusy && phase !== "done"}
                 onChangeText={(t) => updateRow(r.id, { dateText: t })}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={theme.color.muted}
@@ -463,8 +712,21 @@ export default function ScanImport() {
 
             {setupRows.length > 0 ? (
               <>
-                <Text style={styles.section}>Book setup ({setupRows.length})</Text>
+                <Text style={styles.section}>{hasBalancedOpeningSet ? "Balanced opening set" : "Book setup"} ({setupRows.length})</Text>
+                {hasBalancedOpeningSet ? (
+                  <Text style={[styles.infoText, { marginBottom: theme.spacing.md }]} testID="scan-balanced-opening-info">
+                    All rows below form one accounting entry. They share one statement date and will be imported together; individual selection is disabled.
+                  </Text>
+                ) : null}
                 {setupRows.map(renderRow)}
+                {hasBalancedOpeningSet && balancedPartnerPlan.createNames.length > 0 && !balancedOpeningProblem ? (
+                  <Text style={styles.infoText} testID="scan-partners-to-create">
+                    New investor ledgers will be created after confirmation: {balancedPartnerPlan.createNames.join(", ")}. Review their profit shares above.
+                  </Text>
+                ) : null}
+                {hasBalancedOpeningSet && balancedOpeningProblem ? (
+                  <Text style={styles.flaggedText} testID="scan-balanced-opening-error">⚠ {balancedOpeningProblem}</Text>
+                ) : null}
               </>
             ) : null}
 
@@ -483,6 +745,22 @@ export default function ScanImport() {
               </>
             ) : null}
 
+            {phase === "review" && selected.length > 0 ? (
+              <Card style={{ marginTop: theme.spacing.lg }} testID="scan-support-records">
+                <Text style={styles.section2}>Records created after confirmation</Text>
+                <Text style={styles.hint}>
+                  Your selected entries are listed above. The app also checks whether those entries need customer, supplier, or investor ledgers; no ledger is created during this review.
+                </Text>
+                {!partyLookupReady ? (
+                  <Text style={styles.infoText}>Customer and supplier ledgers will be checked again before the confirmation appears.</Text>
+                ) : pendingSupportRecords.length > 0 ? (
+                  pendingSupportRecords.map((record) => <Text key={record} style={styles.infoText}>• New {record}</Text>)
+                ) : (
+                  <Text style={styles.infoText}>No new supporting ledgers are currently required.</Text>
+                )}
+              </Card>
+            ) : null}
+
             {phase === "done" ? (
               <Card style={{ marginTop: theme.spacing.lg }} testID="scan-done-card">
                 <Text style={styles.section2}>Import finished</Text>
@@ -498,11 +776,13 @@ export default function ScanImport() {
               <Pressable
                 testID="btn-import-selected"
                 onPress={confirmImport}
-                disabled={importing || selected.length === 0}
-                style={[styles.actionBtn, { marginTop: theme.spacing.lg }, (importing || selected.length === 0) && { opacity: 0.5 }]}
+                disabled={screenBusy || selected.length === 0 || !!balancedOpeningProblem}
+                style={[styles.actionBtn, { marginTop: theme.spacing.lg }, (screenBusy || selected.length === 0 || !!balancedOpeningProblem) && { opacity: 0.5 }]}
               >
-                {importing ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
-                <Text style={styles.actionText}>{importing ? "Importing…" : `Import ${selected.length} selected`}</Text>
+                {screenBusy ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
+                <Text style={styles.actionText}>
+                  {preflighting ? "Checking ledgers…" : importing ? "Importing…" : hasBalancedOpeningSet ? "Import balanced opening set" : `Import ${selected.length} selected`}
+                </Text>
               </Pressable>
             ) : null}
           </>

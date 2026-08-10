@@ -19,11 +19,17 @@ import { resetV2AccountingData } from '../src/accountingV2/resetBook';
 
 const BOOK = 'ob-book';
 
-async function setup(periodStart = '2026-01-01', periodEnd = '2026-12-31') {
+async function setup(
+  periodStart = '2026-01-01',
+  periodEnd = '2026-12-31',
+  members: { name: string; openingContribution: number; profitSharePct: number }[] = [],
+  style: 'standard' | 'retail_partnership' = 'standard',
+) {
   const node = makeNodeRunner();
   await initializeV2Book(node.runner, {
-    book: { id: BOOK, name: 'Opening Balance Shop' },
+    book: { id: BOOK, name: 'Opening Balance Shop', style },
     period: { id: `${BOOK}:period:${periodStart}`, startDate: periodStart, endDate: periodEnd },
+    members,
   });
   return { ...node, service: new V2AppService(node.runner) };
 }
@@ -34,6 +40,171 @@ const reversalCount = async (runner: any) =>
   Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n);
 
 describe('V2 opening balances — self-correcting engine', () => {
+  it('imports the photographed closing report as one journal without inventing asset, liability, or capital-deposit sources', async () => {
+    const { runner, close, service } = await setup('2026-01-01', '2026-12-31', [], 'retail_partnership');
+    try {
+      await expect(service.importClosingBalances({
+        date: '2026-08-10',
+        cash: 38689.21,
+        inventory: 150527.46,
+        otherAssets: 8250,
+        assetBreakdown: [
+          { name: 'Shop Deposit', amount: 7500 },
+          { name: 'House Deposit', amount: 750 },
+        ],
+        accountsPayable: 36215.42,
+        otherLiabilities: 6063.15,
+        liabilityBreakdown: [
+          { name: 'Creditors', amount: 36215.42, type: 'creditor' },
+          { name: 'Commission Payable', amount: 6063.15, type: 'other' },
+        ],
+        ownerCapital: 155188.1,
+        createMissingPartners: true,
+        partnerCapitals: [
+          { name: 'Amit', amount: 68935.48, profitSharePct: 50 },
+          { name: 'Rahim', amount: 86252.62, profitSharePct: 50 },
+        ],
+        memo: '[Scan] Closing report import',
+      })).resolves.toMatchObject({
+        alreadyPosted: false,
+        partnerCapitals: [
+          { memberId: `${BOOK}:member:amit`, name: 'Amit', amount: 68935.48, profitSharePct: 50 },
+          { memberId: `${BOOK}:member:rahim`, name: 'Rahim', amount: 86252.62, profitSharePct: 50 },
+        ],
+      });
+
+      expect(await runner.all('SELECT type FROM v2_sources WHERE book_id=? ORDER BY type', [BOOK])).toEqual([
+        { type: 'opening_balance' },
+      ]);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(1);
+      expect(Number((await runner.first("SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=? AND type IN ('capital_injection','manual_asset','manual_liability')", [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_parties WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_parties WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+
+      const balances = await runner.all<{ code: string; balance: number }>(`
+        SELECT a.code,ROUND(SUM(l.debit-l.credit),2) AS balance
+        FROM v2_accounts a
+        JOIN v2_journal_lines l ON l.account_id=a.id
+        JOIN v2_journal_entries j ON j.id=l.journal_id
+        WHERE a.book_id=?
+        GROUP BY a.code
+        ORDER BY a.code
+      `, [BOOK]);
+      expect(balances).toEqual([
+        { code: '1000', balance: 38689.21 },
+        { code: '1200', balance: 150527.46 },
+        { code: '1500', balance: 8250 },
+        { code: '2000', balance: -36215.42 },
+        { code: '2500', balance: -6063.15 },
+        { code: '3000', balance: -155188.1 },
+      ]);
+      expect(await runner.all('SELECT name,opening_contribution,current_capital,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY id', [BOOK])).toEqual([
+        { name: 'Amit', opening_contribution: 68935.48, current_capital: 68935.48, profit_share_pct: 50 },
+        { name: 'Rahim', opening_contribution: 86252.62, current_capital: 86252.62, profit_share_pct: 50 },
+      ]);
+      const source = await runner.first<{ metadata: string }>("SELECT metadata FROM v2_sources WHERE book_id=? AND type='opening_balance'", [BOOK]);
+      expect(JSON.parse(source?.metadata || '{}')).toMatchObject({
+        closingBalanceImport: true,
+        cash: 38689.21,
+        inventory: 150527.46,
+        otherAssets: 8250,
+        accountsPayable: 36215.42,
+        otherLiabilities: 6063.15,
+        ownerCapital: 155188.1,
+        partnerCapitals: [
+          { memberId: `${BOOK}:member:amit`, name: 'Amit', amount: 68935.48, profitSharePct: 50 },
+          { memberId: `${BOOK}:member:rahim`, name: 'Rahim', amount: 86252.62, profitSharePct: 50 },
+        ],
+      });
+      expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
+    } finally { close(); }
+  });
+
+  it('rolls back the complete closing-report import when partner stakes do not match equity', async () => {
+    const { runner, close, service } = await setup('2026-01-01', '2026-12-31', [
+      { name: 'Amit', openingContribution: 0, profitSharePct: 50 },
+      { name: 'Rahim', openingContribution: 0, profitSharePct: 50 },
+    ], 'retail_partnership');
+    try {
+      await expect(service.importClosingBalances({
+        date: '2026-08-10',
+        cash: 100,
+        inventory: 0,
+        ownerCapital: 100,
+        partnerCapitals: [
+          { name: 'Amit', amount: 50 },
+          { name: 'Rahim', amount: 49.99 },
+        ],
+      })).rejects.toThrow('Partner stakes (99.99) must equal owner capital (100.00)');
+
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(await runner.all('SELECT name,current_capital FROM v2_members WHERE book_id=? ORDER BY id', [BOOK])).toEqual([
+        { name: 'Amit', current_capital: 0 },
+        { name: 'Rahim', current_capital: 0 },
+      ]);
+    } finally { close(); }
+  });
+
+  it.each([
+    [
+      'a new partner is missing an explicit share',
+      [{ name: 'Amit', amount: 50, profitSharePct: 50 }, { name: 'Rahim', amount: 50 }],
+      /valid profit share is required to create partner 'Rahim'/,
+    ],
+    [
+      'new partner shares do not total 100%',
+      [{ name: 'Amit', amount: 50, profitSharePct: 60 }, { name: 'Rahim', amount: 50, profitSharePct: 50 }],
+      /partner profit shares must total 100%/i,
+    ],
+  ])('creates no member or journal when %s', async (_label, partnerCapitals, error) => {
+    const { runner, close, service } = await setup('2026-01-01', '2026-12-31', [], 'retail_partnership');
+    try {
+      await expect(service.importClosingBalances({
+        date: '2026-08-10', cash: 100, inventory: 0, ownerCapital: 100,
+        createMissingPartners: true,
+        partnerCapitals,
+      })).rejects.toThrow(error as RegExp);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_members WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+    } finally { close(); }
+  });
+
+  it('rejects partner-stake imports outside Partnership Mode without writing anything', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await expect(service.importClosingBalances({
+        date: '2026-08-10', cash: 100, inventory: 0, ownerCapital: 100,
+        createMissingPartners: true,
+        partnerCapitals: [{ name: 'Owner', amount: 100, profitSharePct: 100 }],
+      })).rejects.toThrow('Closing reports with partner stakes can only be imported in Partnership Mode');
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_members WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+    } finally { close(); }
+  });
+
+  it('atomically imports a standard closing report when it has no partner section', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await expect(service.importClosingBalances({
+        date: '2026-08-10',
+        cash: 100,
+        inventory: 50,
+        otherAssets: 20,
+        assetBreakdown: [{ name: 'Deposit', amount: 20 }],
+        accountsPayable: 30,
+        liabilityBreakdown: [{ name: 'Creditors', amount: 30, type: 'creditor' }],
+        ownerCapital: 140,
+        partnerCapitals: [],
+      })).resolves.toMatchObject({ alreadyPosted: false, partnerCapitals: [] });
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(1);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_parties WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
+    } finally { close(); }
+  });
+
   it('changes the period-start DATE by reversing and reposting atomically (no dead end)', async () => {
     const { runner, close, service } = await setup();
     try {
@@ -164,6 +335,42 @@ describe('V2 opening balances — self-correcting engine', () => {
       });
       await service.createPayment({ date: '2026-01-10', amount: 15, supplierId: payable?.party_id, supplierName: 'Opening Supplier', type: 'supplier_payment', method: 'cash' });
       expect((await service.getPartyDetail(String(payable?.party_id), 'supplier'))?.balance).toBe(25);
+      expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
+    } finally { close(); }
+  });
+
+  it('creates support only for a typed named creditor and never creates a party for generic Creditors', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const input = {
+        date: '2026-01-01', cash: 100, inventory: 0,
+        accountsPayable: 40, ownerCapital: 60,
+        partnerCapitals: [],
+        liabilityBreakdown: [
+          { name: 'Creditors', amount: 25, type: 'creditor' as const },
+          { name: 'Named Supplier', amount: 15, type: 'creditor' as const },
+        ],
+      };
+      await expect(service.importClosingBalances(input)).rejects.toThrow('Supplier ledger creation requires confirmation for: Named Supplier');
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_parties WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
+
+      await service.importClosingBalances({ ...input, createMissingCreditors: true });
+
+      expect(await runner.all('SELECT name,roles FROM v2_parties WHERE book_id=? ORDER BY name', [BOOK])).toEqual([
+        { name: 'Named Supplier', roles: '["supplier"]' },
+      ]);
+      const payableLines = await runner.all<{ party_id: string | null; credit: number; memo: string }>(`
+        SELECT l.party_id,l.credit,l.memo
+        FROM v2_journal_lines l
+        JOIN v2_accounts a ON a.id=l.account_id
+        WHERE a.book_id=? AND a.code='2000'
+        ORDER BY l.credit DESC
+      `, [BOOK]);
+      expect(payableLines).toEqual([
+        { party_id: null, credit: 25, memo: 'Creditors' },
+        { party_id: expect.any(String), credit: 15, memo: 'Named Supplier' },
+      ]);
       expect((await service.repo.reconcileBook(BOOK)).balanced).toBe(true);
     } finally { close(); }
   });

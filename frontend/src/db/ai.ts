@@ -522,7 +522,11 @@ export const ANALYZE_DOCUMENT_SCHEMA = {
         creditorsTotal: { type: 'number' },
         partners: {
           type: 'array',
-          items: { type: 'object', properties: { name: { type: 'string' }, capital: { type: 'number' } }, required: ['name', 'capital'] },
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string' }, capital: { type: 'number' }, profitSharePct: { type: 'number' } },
+            required: ['name', 'capital'],
+          },
         },
       },
     },
@@ -554,7 +558,7 @@ export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
     "'receipt_in' (money received), 'payment_out' (money paid out to a supplier/party), or 'expense' (operating cost). " +
     "Use ISO dates (YYYY-MM-DD); amounts are positive numbers; method is 'cash' or 'credit' when stated.\n" +
     '- setup: fill ONLY for balance/closing-style documents that show point-in-time balances (opening balances, closing report, ' +
-    'net worth statement). asOfDate is the statement/closing date.\n' +
+    'net worth statement). asOfDate is the statement/closing date ONLY when visibly present; otherwise omit it. Never use today or the scan date as the statement date.\n' +
     '- Cash mapping rule: SUM every cash balance row (e.g. "Cash at Shop", "Cash USD at Home", petty cash, cash in hand at any ' +
     'location) into the single openingCash number. Do NOT list cash rows in extraAssets.\n' +
     '- Stock mapping rule: physical stock / inventory value goes into stockValue, NOT extraAssets.\n' +
@@ -563,7 +567,7 @@ export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
     "- creditorsTotal: a total 'creditors' / accounts-payable figure if shown.\n" +
     '- extraLiabilities: every OTHER liability row (commission payable, loans, accrued charges) as {name, amount}.\n' +
     '- partners: partner/member capital stakes (e.g. a Partner Stakes Reconciliation) as {name, capital} using the ENDING/closing ' +
-    'stake for each partner.\n' +
+    'stake for each partner. Include profitSharePct only when the document visibly states each partner share (for example, 50/50 means 50 for each); never infer a missing share.\n' +
     '- summary: one short paragraph describing the document AND how you mapped it (mention that cash rows were summed into ' +
     'opening cash and stock was mapped to stock value, when applicable).\n' +
     '- If nothing extractable is present, return empty entries and no setup.\n\n' +

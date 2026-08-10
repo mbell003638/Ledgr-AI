@@ -5,7 +5,7 @@ import { dedupeLegacyMirrors } from '@/src/utils/ledgerDisplay';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, recordMirrorError } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, recordMirrorError, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
@@ -458,6 +458,25 @@ export const api = {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await new V2AppService(runner).updateOpeningBalances(input);
+    bumpDataVersion();
+    return r;
+  },
+  importV2ClosingBalances: async (input: V2ClosingBalancesImportInput) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).importClosingBalances(input);
+    bumpDataVersion();
+    return r;
+  },
+  preflightV2ScanParties: async (requests: V2ScanPartyRequest[]) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).preflightScanParties(requests);
+  },
+  importV2ScanTransaction: async (input: V2ScanTransactionImportInput) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).importScanTransaction(input);
     bumpDataVersion();
     return r;
   },
