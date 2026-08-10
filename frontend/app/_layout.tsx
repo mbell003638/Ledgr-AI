@@ -10,7 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
-import { isSystemPromptActive } from "@/src/utils/systemPrompt";
+import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -213,6 +213,7 @@ export default function RootLayout() {
   const [unlocked, setUnlocked] = useState(Platform.OS === "web");
   const [unlocking, setUnlocking] = useState(false);
   const shouldUnlockOnActive = React.useRef(false);
+  const backgroundLockTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const attemptUnlock = React.useCallback(async () => {
     if (Platform.OS === "web") {
@@ -250,21 +251,41 @@ export default function RootLayout() {
     attemptUnlock();
     if (Platform.OS === "web") return;
 
+    const cancelPendingBackgroundLock = () => {
+      if (backgroundLockTimer.current) {
+        clearTimeout(backgroundLockTimer.current);
+        backgroundLockTimer.current = null;
+      }
+    };
+
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "background") {
         // Permission, picker, and biometric sheets are owned by Android and
-        // can briefly background the activity. They must not lock the app.
-        if (isSystemPromptActive()) return;
-        shouldUnlockOnActive.current = true;
-        setUnlocked(false);
+        // can briefly background the activity. Debounce the lock so their
+        // immediate matching `active` event can cancel it.
+        cancelPendingBackgroundLock();
+        backgroundLockTimer.current = scheduleBackgroundLock(
+          () => AppState.currentState,
+          () => {
+            backgroundLockTimer.current = null;
+            shouldUnlockOnActive.current = true;
+            setUnlocked(false);
+          },
+        );
         return;
       }
-      if (state === "active" && shouldUnlockOnActive.current) {
-        shouldUnlockOnActive.current = false;
-        attemptUnlock();
+      if (state === "active") {
+        cancelPendingBackgroundLock();
+        if (shouldUnlockOnActive.current) {
+          shouldUnlockOnActive.current = false;
+          attemptUnlock();
+        }
       }
     });
-    return () => subscription.remove();
+    return () => {
+      cancelPendingBackgroundLock();
+      subscription.remove();
+    };
   }, [attemptUnlock, storageReady]);
 
   if (!storageReady) {
