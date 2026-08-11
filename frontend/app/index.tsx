@@ -12,7 +12,9 @@ export default function Index() {
         const s = await api.getSettings();
         setDest(s.hasOnboarded ? "/(tabs)" : "/onboarding");
       } catch {
-        setDest("/(tabs)");
+        // Fail closed. If persisted setup state cannot be read, never assume
+        // that accounting screens are authorized.
+        setDest("/onboarding");
       }
     })();
   }, []);

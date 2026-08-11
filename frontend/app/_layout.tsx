@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 
 
 import { ThemeProvider, useTheme, useThemeMode } from "@/src/context/ThemeContext";
+import { OnboardingGateProvider, useOnboardingGate } from "@/src/context/OnboardingContext";
 import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
 import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
@@ -78,8 +79,10 @@ class ErrorBoundary extends React.Component<
 function ThemedStack() {
   const theme = useTheme();
   const { effective } = useThemeMode();
+  const { ready: onboardingReady, hasOnboarded } = useOnboardingGate();
   const { width } = useWindowDimensions();
   const isWideWeb = Platform.OS === "web" && width >= 768;
+  if (!onboardingReady) return <AppOpeningSplashScreen />;
   return (
     <View style={{ flex: 1, backgroundColor: isWideWeb ? theme.color.surfaceTertiary : theme.color.surface, alignItems: "center" }}>
       <StatusBar style={effective === "dark" ? "light" : "dark"} />
@@ -95,8 +98,9 @@ function ThemedStack() {
           shadowRadius: isWideWeb ? 24 : 0,
           elevation: isWideWeb ? 8 : 0,
         }}
-      >
+        >
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.surface } }}>
+        <Stack.Protected guard={hasOnboarded}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
         <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
@@ -124,8 +128,11 @@ function ThemedStack() {
         <Stack.Screen name="debtors" options={{ presentation: "card" }} />
         <Stack.Screen name="daybook" options={{ presentation: "card" }} />
         <Stack.Screen name="ask" options={{ presentation: "card" }} />
-        <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
         <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
+        </Stack.Protected>
+        <Stack.Protected guard={!hasOnboarded}>
+          <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
+        </Stack.Protected>
         </Stack>
       </View>
     </View>
@@ -314,8 +321,10 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
-        <WebScrollbarStyles />
-            <ThemedStack />
+            <OnboardingGateProvider>
+              <WebScrollbarStyles />
+              <ThemedStack />
+            </OnboardingGateProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
+import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader } from "@/src/components/UI";
@@ -56,6 +57,7 @@ export default function AdvancedSettingsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
   const { setAnimationsEnabled } = useAnimations();
+  const { requireOnboarding } = useOnboardingGate();
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
@@ -323,6 +325,9 @@ export default function AdvancedSettingsScreen() {
     setResetting(true); setStatus(null);
     try {
       await api.factoryReset();
+      // Flip the protected-route guard immediately. Expo Router removes every
+      // accounting screen from navigation history before we show onboarding.
+      requireOnboarding();
       // factoryReset wipes the persisted theme/animation prefs, but the live
       // ThemeContext only hydrates on mount — reset it in memory too so the app
       // returns to its pristine system-default look immediately (not the user's

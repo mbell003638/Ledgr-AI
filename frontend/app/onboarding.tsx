@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert } from "react-native";
+import React, { useState, useMemo, useCallback } from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
+import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
@@ -26,6 +27,7 @@ export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const { markOnboarded } = useOnboardingGate();
 
   const [step, setStep] = useState(0);
   const [bizType, setBizType] = useState<BizType | null>(null);
@@ -35,6 +37,18 @@ export default function Onboarding() {
   const [lockEnabled, setLockEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const LAST_STEP = 3;
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        // Hardware Back navigates within onboarding. On the first step it is
+        // consumed, so it cannot reach an old screen left in native history.
+        setStep((current) => current > 0 ? current - 1 : current);
+        return true;
+      });
+      return () => subscription.remove();
+    }, []),
+  );
 
   const finish = async () => {
     const finalBizName = bizName.trim() || "My Business";
@@ -67,6 +81,7 @@ export default function Onboarding() {
         activePersona: v2Personas[0],
         accountingStyle: v2Personas.includes('retail') ? 'retail_partnership' : 'standard',
       });
+      markOnboarded();
       router.replace("/(tabs)");
     } catch (e: any) {
       console.warn("onboarding finish error:", e);
