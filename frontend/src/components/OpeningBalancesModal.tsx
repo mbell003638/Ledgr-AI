@@ -97,15 +97,16 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         setRetainedEarnings(openingData.retainedEarnings != null ? String(openingData.retainedEarnings) : "0");
         setOwnerCapital(openingData.ownerCapital != null ? String(openingData.ownerCapital) : "0");
 
-        setPeriodStart(s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : "");
+        setPeriodStart(openingData.date || (s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : ""));
         const partnerActive = s.accountingStyle === "retail_partnership";
         setIsPartnerMode(partnerActive);
 
-        const inv = Array.isArray(s.investors) ? s.investors : [];
+        const scannedPartners = Array.isArray(openingData.partnerCapitals) ? openingData.partnerCapitals : [];
+        const inv = scannedPartners.length ? scannedPartners : (Array.isArray(s.investors) ? s.investors : []);
         if (inv.length) {
           setMembers(inv.map((m: any) => ({
             name: String(m?.name ?? ""),
-            amount: m?.amount != null && m.amount !== 0 ? String(m.amount) : "",
+            amount: m?.amount != null && m.amount !== 0 ? String(m.amount) : (m?.openingContribution != null ? String(m.openingContribution) : ""),
             profitSharePct: m?.profitSharePct != null && m.profitSharePct !== 0 ? String(m.profitSharePct) : "",
           })));
         } else {
@@ -194,19 +195,29 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         }))
         .filter((m) => m.name);
 
-      await api.updateSettings({
-        openingCash: cashVal,
-        openingInventory: invVal,
-        currentPeriodStart: normalizedPeriodStart || "",
-        investors: cleanedMembers,
-        partnerNames: cleanedMembers.map((m) => m.name),
-      });
       // V2 accounting keeps opening balances in the dated double-entry ledger.
       try {
-        await api.updateV2OpeningBalances({ date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, liabilityBreakdown, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" });
+        const openingInput = { date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, liabilityBreakdown, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" };
+        if (isPartnerMode) {
+          await api.importV2ClosingBalances({
+            ...openingInput,
+            partnerCapitals: cleanedMembers.map((member) => ({ name: member.name, amount: member.amount, profitSharePct: member.profitSharePct })),
+            createMissingPartners: false,
+            createMissingCreditors: false,
+          });
+        } else {
+          await api.updateV2OpeningBalances(openingInput);
+        }
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
+      await api.updateSettings({
+        openingCash: cashVal,
+        openingInventory: invVal,
+        currentPeriodStart: normalizedPeriodStart || periodStart || "",
+        investors: cleanedMembers,
+        partnerNames: cleanedMembers.map((m) => m.name),
+      });
       if (isPartnerMode) {
         try {
           const config = await api.getV2BookConfig();

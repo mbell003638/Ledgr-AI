@@ -234,6 +234,24 @@ describe('V2 UI contracts', () => {
     expect(openingBalances).toContain('Other Liability');
     expect(openingBalances).toContain('liabilityBreakdown');
   });
+  it('exposes safe corrections for scanned opening sets, capital, assets, and custom report ranges', () => {
+    const assets = readApp('assets.tsx');
+    const investor = readApp('investor/[id].tsx');
+    const cashbook = readApp('cashbook.tsx');
+    const inventory = readApp('inventory-form.tsx');
+    const reports = readApp('(tabs)/reports.tsx');
+
+    expect(assets).toContain('Scanned / Opening Balances');
+    expect(assets).toContain('edit-opening-balance-set');
+    expect(assets).toContain('updateManualBalanceTransaction');
+    expect(investor).toContain('updateInvestorCapital');
+    expect(investor).toContain('deleteInvestorCapital');
+    expect(cashbook).toContain('opening?.cash ?? settings.openingCash');
+    expect(inventory).toContain('opening?.inventory ?? settings.openingInventory');
+    expect(reports).toContain('const [customFrom');
+    expect(reports).toContain('The From date must be on or before the To date');
+    expect(reports).toContain('Applying custom range');
+  });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');

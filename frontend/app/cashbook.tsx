@@ -15,6 +15,7 @@ import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidatio
 import { parseMoneyInput } from "@/src/money";
 import { collapseLedgerRows, describeSourceNavigation, formatEditedStamp, type DisplayLedgerRow, type LedgerRow } from "@/src/utils/ledgerDisplay";
 import { GlowPressable } from "@/src/components/GlowPressable";
+import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 type CashEntry = LedgerRow;
 
@@ -51,15 +52,18 @@ export default function CashBookScreen() {
   const [openingDate, setOpeningDate] = useState("");
   const [editingOpening, setEditingOpening] = useState(false);
   const [openingInput, setOpeningInput] = useState("");
+  const [hasV2Opening, setHasV2Opening] = useState(false);
+  const [openingVisible, setOpeningVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [list, settings] = await Promise.all([api.listCashEntries(), api.getSettings()]);
+      const [list, settings, opening] = await Promise.all([api.listCashEntries(), api.getSettings(), api.getV2OpeningBalances()]);
       setEntries(list);
-      const op = Number(settings.openingCash || 0);
+      const op = Number(opening?.cash ?? settings.openingCash ?? 0);
+      setHasV2Opening(Boolean(opening));
       setOpeningCash(op);
       setOpeningInput(String(op));
-      setOpeningDate(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr());
+      setOpeningDate(opening?.date || (settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr()));
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
       setPartnerMode(settings.accountingStyle === "retail_partnership");
       setInvestors(null); // refetched on demand so new investors show up
@@ -128,7 +132,11 @@ export default function CashBookScreen() {
     if (e.editable === false || e.origin === "v2") {
       // Opening-balance rows edit right here via the Opening Cash tile.
       if (String(e.sourceType || "").startsWith("opening_balance")) {
-        setEditingOpening(true);
+        setOpeningVisible(true);
+        return;
+      }
+      if (e.sourceType === "capital_injection" && e.memberId) {
+        router.push({ pathname: "/investor/[id]", params: { id: e.memberId } } as any);
         return;
       }
       // Everything else routes to the screen that owns the source document.
@@ -217,7 +225,7 @@ export default function CashBookScreen() {
           </View>
         </View>
         {!editingOpening ? (
-          <Pressable onPress={() => setEditingOpening(true)} style={styles.openingValBox}>
+          <Pressable onPress={() => hasV2Opening ? setOpeningVisible(true) : setEditingOpening(true)} style={styles.openingValBox}>
             <Text style={styles.openingValText}>{fmt(openingCash, currSym)}</Text>
             <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
           </Pressable>
@@ -288,6 +296,7 @@ export default function CashBookScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
+      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />

@@ -9,6 +9,7 @@ import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 export default function InventoryForm() {
   const theme = useTheme();
@@ -31,10 +32,12 @@ export default function InventoryForm() {
   const [openingDateInput, setOpeningDateInput] = useState("");
   const [editingOpening, setEditingOpening] = useState(false);
   const [openingInput, setOpeningInput] = useState("");
+  const [hasV2Opening, setHasV2Opening] = useState(false);
+  const [openingVisible, setOpeningVisible] = useState(false);
 
   const loadData = async () => {
     try {
-      const [v2, settings, config] = await Promise.all([api.v2InventoryOverview(), api.getSettings(), api.getV2BookConfig().catch(() => null)]);
+      const [v2, settings, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getSettings(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
       if (v2) {
         setUsingV2(true);
         setExpected(Number(v2.expected || 0));
@@ -47,10 +50,11 @@ export default function InventoryForm() {
         setInfo(legacyExpected);
         setHistory(Array.isArray(legacyHistory) ? legacyHistory : []);
       }
-      const op = Number(settings.openingInventory || 0);
+      const op = Number(opening?.inventory ?? settings.openingInventory ?? 0);
+      setHasV2Opening(Boolean(opening));
       setPeriodPolicy(config?.periodPolicy || { mode: "flexible" });
-      setOpeningEffectiveDate(String(settings.currentPeriodStart || ""));
-      setOpeningDateInput(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : new Date().toISOString().slice(0, 10));
+      setOpeningEffectiveDate(String(opening?.date || settings.currentPeriodStart || ""));
+      setOpeningDateInput(opening?.date || (settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : new Date().toISOString().slice(0, 10)));
       setOpeningStock(op);
       setOpeningInput(String(op));
     } catch (e) { console.warn(e); }
@@ -171,7 +175,7 @@ export default function InventoryForm() {
                     </View>
                   </View>
                   {!editingOpening ? (
-                    <Pressable onPress={() => setEditingOpening(true)} style={styles.openingValBox}>
+                    <Pressable onPress={() => hasV2Opening ? setOpeningVisible(true) : setEditingOpening(true)} style={styles.openingValBox}>
                       <Text style={styles.openingValText}>{fmt(openingStock)}</Text>
                       <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
                     </Pressable>
@@ -328,6 +332,7 @@ export default function InventoryForm() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); loadData(); }} />
     </SafeAreaView>
   );
 }

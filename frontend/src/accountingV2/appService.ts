@@ -388,6 +388,7 @@ export class V2AppService {
         sourceId: row.source_id || null,
         sourceType: row.source_type || null,
         sourceNotes: meta.notes ? String(meta.notes) : '',
+        memberId: meta.memberId ? String(meta.memberId) : null,
         reversalOf: row.reversal_of || null,
         sourceReversed: !!meta.reversed,
         sourceDeleted: !!meta.deleted,
@@ -910,6 +911,23 @@ export class V2AppService {
     const type = await this.sourceType(sourceId);
     if (type !== 'manual_asset' && type !== 'manual_liability') throw new Error('Manual balance transaction not found');
     return this.documents.reverseSource(sourceId, type, 'Delete manual balance transaction', true);
+  }
+  async updateManualBalanceTransaction(sourceId: string, input: AnyRecord) {
+    const row = await this.db.first<{ type: string; metadata: string }>('SELECT type,metadata FROM v2_sources WHERE id=?', [sourceId]);
+    if (!row || (row.type !== 'manual_asset' && row.type !== 'manual_liability')) throw new Error('Manual balance transaction not found');
+    let prior: AnyRecord = {};
+    try { prior = JSON.parse(row.metadata || '{}'); } catch { prior = {}; }
+    const next = await this.editInput({ ...prior, ...input });
+    if (row.type === 'manual_asset') {
+      return this.documents.replaceSource(sourceId, row.type, 'Edit manual asset', () => this.recordManualAsset({
+        date: next.date, name: next.name, category: next.category, amount: next.amount ?? next.total,
+        funding: next.funding || 'cash', notes: next.notes,
+      }));
+    }
+    return this.documents.replaceSource(sourceId, row.type, 'Edit manual liability', () => this.recordManualLiability({
+      date: next.date, name: next.name, category: next.category, amount: next.amount ?? next.total,
+      recognition: next.recognition || 'expense', notes: next.notes,
+    }));
   }
   async sourceType(id: string): Promise<string | null> {
     const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [id]);

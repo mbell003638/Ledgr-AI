@@ -5,6 +5,7 @@ import { round2 } from '../money';
 import { buildPersistentV2Reports } from './persistentReports';
 import { partnershipProfitFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
+import { V2DocumentService } from './documentService';
 
 const cents = round2;
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -37,7 +38,11 @@ type PeriodRow = { id: string; start_date: string; end_date: string };
 /** Partnership-only member ledger backed by balanced V2 journals. */
 export class V2InvestorLedgerService {
   private readonly repo: V2SqlRepository;
-  constructor(readonly db: SqlRunner) { this.repo = new V2SqlRepository(db); }
+  private readonly documents: V2DocumentService;
+  constructor(readonly db: SqlRunner) {
+    this.repo = new V2SqlRepository(db);
+    this.documents = new V2DocumentService(this.repo);
+  }
 
   async detail(bookId: string, memberId: string): Promise<InvestorLedgerDetail> {
     await this.requirePartnership(bookId);
@@ -104,6 +109,18 @@ export class V2InvestorLedgerService {
     return { source, journal };
   }
 
+  /** Correct a capital deposit without erasing its accounting history. */
+  async updateDeposit(sourceId: string, input: { bookId: string; memberId: string; date: string; amount: number; notes?: string }) {
+    await this.requireOwnedMovement(sourceId, input.bookId, input.memberId, 'capital_injection');
+    return this.documents.replaceSource(sourceId, 'capital_injection', 'Edit capital deposit', () => this.deposit(input));
+  }
+
+  /** Reverse a capital deposit and retain the original journal for audit. */
+  async deleteDeposit(sourceId: string, bookId: string, memberId: string) {
+    await this.requireOwnedMovement(sourceId, bookId, memberId, 'capital_injection');
+    return this.documents.reverseSource(sourceId, 'capital_injection', 'Delete capital deposit', true);
+  }
+
   async draw(input: { bookId: string; memberId: string; date: string; amount: number; notes?: string }) {
     await this.requirePartnership(input.bookId);
     const member = await this.member(input.bookId, input.memberId);
@@ -127,6 +144,20 @@ export class V2InvestorLedgerService {
     const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [bookId]);
     if (!book) throw new Error('Book not found');
     if (book.style !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+  }
+
+  private async requireOwnedMovement(sourceId: string, bookId: string, memberId: string, type: 'capital_injection' | 'drawing') {
+    await this.requirePartnership(bookId);
+    const member = await this.member(bookId, memberId);
+    const row = await this.db.first<{ metadata: string }>(
+      'SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type=?',
+      [sourceId, bookId, type],
+    );
+    if (!row) throw new Error(type === 'capital_injection' ? 'Capital deposit not found' : 'Drawing not found');
+    const metadata = this.metadata(row.metadata);
+    if (metadata.reversed || metadata.deleted || !this.matchesMember(metadata, member)) {
+      throw new Error(type === 'capital_injection' ? 'Capital deposit not found for this investor' : 'Drawing not found for this investor');
+    }
   }
 
   private async member(bookId: string, id: string) {

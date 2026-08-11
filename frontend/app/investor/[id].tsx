@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { fmt, shortDate } from '@/src/theme';
 import { getCurrencySymbol } from '@/src/db/local';
 import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
 import type { InvestorLedgerDetail, InvestorLedgerTransaction } from '@/src/accountingV2/investorLedgerService';
+import { OpeningBalancesModal } from '@/src/components/OpeningBalancesModal';
 
 type Action = 'deposit' | 'draw';
 const actionMeta = {
@@ -36,6 +37,8 @@ export default function InvestorDetailScreen() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [editSourceId, setEditSourceId] = useState<string | null>(null);
+  const [openingVisible, setOpeningVisible] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -65,7 +68,26 @@ export default function InvestorDetailScreen() {
     }
   }, [requestedAction, router]);
 
-  const closeForm = () => { setAction(null); setAmount(''); setNotes(''); setFormError(''); };
+  const closeForm = () => { setAction(null); setEditSourceId(null); setAmount(''); setNotes(''); setFormError(''); };
+  const editTransaction = (item: InvestorLedgerTransaction) => {
+    if (item.type === 'opening_capital') { setOpeningVisible(true); return; }
+    if (item.type !== 'capital_injection') return;
+    setEditSourceId(item.id);
+    setAction('deposit');
+    setAmount(String(item.amount));
+    setDate(item.date);
+    setNotes(item.notes || '');
+  };
+  const deleteCapital = (item: InvestorLedgerTransaction) => {
+    if (!id || item.type !== 'capital_injection') return;
+    Alert.alert('Reverse capital deposit?', 'The deposit will be removed from cash and partner capital with an equal reversal. The audit trail is retained.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reverse', style: 'destructive', onPress: async () => {
+        try { await api.deleteInvestorCapital(id, item.id); setLoading(true); await load(); }
+        catch (e: any) { Alert.alert('Could not reverse deposit', e?.message || 'Please try again.'); }
+      } },
+    ]);
+  };
   const save = async () => {
     if (!id || !action) return;
     const value = Number(amount);
@@ -76,7 +98,8 @@ export default function InvestorDetailScreen() {
     setSaving(true); setFormError('');
     try {
       const input = { amount: value, date: dateIso, notes: notes.trim() };
-      if (action === 'deposit') await api.depositInvestorCapital(id, input);
+      if (action === 'deposit' && editSourceId) await api.updateInvestorCapital(id, editSourceId, input);
+      else if (action === 'deposit') await api.depositInvestorCapital(id, input);
       else await api.drawInvestorFunds(id, input);
       closeForm();
       setLoading(true);
@@ -130,7 +153,7 @@ export default function InvestorDetailScreen() {
               <View style={styles.countBadge}><Text style={styles.countText}>{data.transactions.length}</Text></View>
             </View>
             {data.transactions.length ? data.transactions.map((item, index) => (
-              <TransactionRow key={item.id} item={item} currency={currency} isLast={index === data.transactions.length - 1} theme={theme} styles={styles} />
+              <TransactionRow key={item.id} item={item} currency={currency} isLast={index === data.transactions.length - 1} theme={theme} styles={styles} onEdit={editTransaction} onDelete={deleteCapital} />
             )) : <Empty title="No capital activity yet" hint="Deposits, drawings, and period-close allocations will appear here." />}
           </Card>
           <View style={{ height: 48 }} />
@@ -145,14 +168,14 @@ export default function InvestorDetailScreen() {
               {action ? <>
               <View style={styles.sheetTitleRow}>
                 <View style={styles.sheetIcon}><Ionicons name={actionMeta[action].icon} size={22} color={theme.color.brandPrimary} /></View>
-                <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
+                <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{editSourceId ? 'Edit Capital Deposit' : actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
                 <Pressable onPress={closeForm}><Ionicons name="close" size={24} color={theme.color.muted} /></Pressable>
               </View>
               <FormField label="Amount" first testID="investor-action-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
               <FormField label="Date" value={date} onChangeText={setDate} autoCapitalize="none" placeholder="YYYY-MM-DD" />
               <FormField label="Notes" multiline value={notes} onChangeText={setNotes} placeholder="Optional transaction note" />
               <FormActions
-                primaryLabel={`Post ${actionMeta[action].title}`}
+                primaryLabel={editSourceId ? 'Save Correction' : `Post ${actionMeta[action].title}`}
                 primaryTestID="investor-action-save"
                 onPrimary={save}
                 primaryBusy={saving}
@@ -163,6 +186,7 @@ export default function InvestorDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
     </SafeAreaView>
   );
 }
@@ -171,17 +195,21 @@ function Summary({ label, value, color, icon, styles }: any) {
   return <View style={styles.summary}><Ionicons name={icon} size={17} color={color} /><Text style={styles.summaryLabel}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.summaryValue, { color }]}>{value}</Text></View>;
 }
 
-function TransactionRow({ item, currency, isLast, theme, styles }: { item: InvestorLedgerTransaction; currency: string; isLast: boolean; theme: any; styles: any }) {
+function TransactionRow({ item, currency, isLast, theme, styles, onEdit, onDelete }: { item: InvestorLedgerTransaction; currency: string; isLast: boolean; theme: any; styles: any; onEdit: (item: InvestorLedgerTransaction) => void; onDelete: (item: InvestorLedgerTransaction) => void }) {
   const drawing = item.type === 'drawing';
   const meta = item.type === 'capital_injection' ? { label: 'Capital Deposit', icon: 'arrow-down' as const, color: theme.color.success }
     : drawing ? { label: 'Drawing', icon: 'arrow-up' as const, color: theme.color.warning }
     : item.type === 'profit_allocation' ? { label: 'Profit Allocation', icon: 'pie-chart-outline' as const, color: theme.color.brandPrimary }
     : { label: 'Opening Capital', icon: 'flag-outline' as const, color: theme.color.info };
-  return <View style={[styles.txRow, !isLast && styles.txDivider]}>
+  const correctable = item.type === 'capital_injection' || item.type === 'opening_capital';
+  return <Pressable onPress={() => correctable && onEdit(item)} style={[styles.txRow, !isLast && styles.txDivider]}>
     <View style={[styles.txIcon, { backgroundColor: meta.color + '18' }]}><Ionicons name={meta.icon} size={17} color={meta.color} /></View>
     <View style={{ flex: 1 }}><Text style={styles.txTitle}>{meta.label}</Text><Text numberOfLines={1} style={styles.txNote}>{shortDate(item.date)} · {item.notes}</Text></View>
-    <Text style={[styles.txAmount, { color: drawing ? theme.color.warning : meta.color }]}>{drawing ? '−' : '+'}{fmt(item.amount, currency)}</Text>
-  </View>;
+    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+      <Text style={[styles.txAmount, { color: drawing ? theme.color.warning : meta.color }]}>{drawing ? '−' : '+'}{fmt(item.amount, currency)}</Text>
+      {correctable ? <View style={{ flexDirection: 'row', gap: 10 }}><Ionicons name="pencil-outline" size={15} color={theme.color.muted} />{item.type === 'capital_injection' ? <Pressable hitSlop={8} onPress={(event) => { event.stopPropagation(); onDelete(item); }}><Ionicons name="trash-outline" size={15} color={theme.color.error} /></Pressable> : null}</View> : null}
+    </View>
+  </Pressable>;
 }
 
 function makeStyles(theme: any) { return StyleSheet.create({

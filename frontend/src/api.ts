@@ -513,6 +513,13 @@ export const api = {
     bumpDataVersion();
     return r;
   },
+  updateManualBalanceTransaction: async (sourceId: string, input: any) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Manual balance transactions require SQLite storage');
+    const r = await new V2AppService(runner).updateManualBalanceTransaction(sourceId, input);
+    bumpDataVersion();
+    return r;
+  },
   getSettings: () => db.getSettings(),
   updateSettings: async (s: any) => { const r = await db.updateSettings(s); bumpDataVersion(); return r; },
   testKey: async () => ai.testKey(await getAIConfig()),
@@ -826,6 +833,35 @@ export const api = {
     const r = await db.recordInvestorCapital(id, input);
     bumpDataVersion();
     return r;
+  },
+  updateInvestorCapital: async (id: string, sourceId: string, input: { amount: number; date: string; notes?: string }) => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Editing posted capital requires SQLite storage');
+    const app = new V2AppService(runner);
+    const context = await app.activeContext(input.date);
+    if (!context) throw new Error('Posting date is outside the open accounting period');
+    const result = await new V2InvestorLedgerService(runner).updateDeposit(sourceId, { ...input, bookId: context.bookId, memberId: id });
+    try {
+      await db.deleteCashEntry(sourceId);
+      await db.createCashEntry({ id: result.source.id, v2SourceId: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' });
+    } catch { /* V2 remains authoritative */ }
+    bumpDataVersion();
+    return result;
+  },
+  deleteInvestorCapital: async (id: string, sourceId: string) => {
+    const settings = await db.getSettings();
+    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Reversing posted capital requires SQLite storage');
+    const app = new V2AppService(runner);
+    const context = await app.activeContext();
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const result = await new V2InvestorLedgerService(runner).deleteDeposit(sourceId, context.bookId, id);
+    try { await db.deleteCashEntry(sourceId); } catch { /* V2 remains authoritative */ }
+    bumpDataVersion();
+    return result;
   },
   drawInvestorFunds: async (id: string, input: { amount: number; date: string; notes?: string }) => {
     const settings = await db.getSettings();

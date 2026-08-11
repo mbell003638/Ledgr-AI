@@ -12,6 +12,7 @@ import { ScreenHeader, Card } from "@/src/components/UI";
 import { FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { parseMoneyInput } from "@/src/money";
+import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 type EntryMode = "asset" | "liability";
 type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
@@ -43,14 +44,18 @@ export default function AssetsScreen() {
   const [notes, setNotes] = useState("");
   const [funding, setFunding] = useState<(typeof assetFunding)[number]["id"]>("cash");
   const [recognition, setRecognition] = useState<(typeof liabilityRecognition)[number]["id"]>("expense");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [opening, setOpening] = useState<any>(null);
+  const [openingVisible, setOpeningVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError("");
-      const [settings, rows, dashboard] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions(), api.dashboard()]);
+      const [settings, rows, dashboard, openingBalances] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions(), api.dashboard(), api.getV2OpeningBalances()]);
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
       setEntries(rows as BalanceEntry[]);
       setCreditorsTotal(Number((dashboard as any)?.accountsPayable || 0));
+      setOpening(openingBalances);
       loadedVersion.current = getDataVersion();
     } catch (e: any) {
       setError(e?.message || "Could not load balance transactions.");
@@ -65,7 +70,14 @@ export default function AssetsScreen() {
   }, [load]));
 
   const resetForm = () => {
-    setDate(today()); setName(""); setCategory(""); setAmount(""); setNotes(""); setFunding("cash"); setRecognition("cash"); setError("");
+    setEditId(null); setDate(today()); setName(""); setCategory(""); setAmount(""); setNotes(""); setFunding("cash"); setRecognition("expense"); setError("");
+  };
+
+  const edit = (entry: BalanceEntry) => {
+    setEditId(entry.id); setMode(entry.type); setDate(entry.date); setName(entry.name); setCategory(entry.category || "");
+    setAmount(String(entry.amount)); setNotes(entry.notes || ""); setError("");
+    if (entry.type === "asset" && assetFunding.some((option) => option.id === entry.counterparty)) setFunding(entry.counterparty as typeof funding);
+    if (entry.type === "liability" && liabilityRecognition.some((option) => option.id === entry.counterparty)) setRecognition(entry.counterparty as typeof recognition);
   };
 
   const save = async () => {
@@ -76,7 +88,11 @@ export default function AssetsScreen() {
     if (!name.trim() || !Number.isFinite(value) || value <= 0) { setError("Enter a name and a positive amount."); return; }
     setSaving(true); setError("");
     try {
-      if (mode === "asset") {
+      if (editId) {
+        await api.updateManualBalanceTransaction(editId, mode === "asset"
+          ? { date: dateIso, name: name.trim(), category: category.trim() || "Other asset", amount: value, funding, notes: notes.trim() }
+          : { date: dateIso, name: name.trim(), category: category.trim() || "Other liability", amount: value, recognition, notes: notes.trim() });
+      } else if (mode === "asset") {
         await api.createManualAsset({ date: dateIso, name: name.trim(), category: category.trim() || "Other asset", amount: value, funding, notes: notes.trim() });
       } else {
         await api.createManualLiability({ date: dateIso, name: name.trim(), category: category.trim() || "Other liability", amount: value, recognition, notes: notes.trim() });
@@ -112,15 +128,28 @@ export default function AssetsScreen() {
           <Text style={styles.guidanceText}>Use this for shop/security deposits, equipment, loans, and accrued costs. Supplier dues are created automatically by Vendor Bills and cleared by Supplier Payments.</Text>
         </Card>
 
+        {opening ? <Card style={styles.openingCard}>
+          <View style={styles.openingHeader}>
+            <View style={{ flex: 1 }}><Text style={styles.cardTitle}>Scanned / Opening Balances</Text><Text style={styles.hint}>One balanced opening journal · {opening.date || "opening date"}</Text></View>
+            <Pressable testID="edit-opening-balance-set" onPress={() => setOpeningVisible(true)} style={styles.editOpeningBtn}><Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} /><Text style={styles.editOpeningText}>Edit set</Text></Pressable>
+          </View>
+          <OpeningLine label="Opening cash" amount={Number(opening.cash || 0)} currSym={currSym} styles={styles} />
+          <OpeningLine label="Opening stock" amount={Number(opening.inventory || 0)} currSym={currSym} styles={styles} />
+          {(opening.assetBreakdown || []).map((item: any, index: number) => <OpeningLine key={`asset-${index}`} label={item.name || "Other asset"} amount={Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
+          {(opening.liabilityBreakdown || []).map((item: any, index: number) => <OpeningLine key={`liability-${index}`} label={item.name || "Opening liability"} amount={-Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
+          {(opening.partnerCapitals || []).map((item: any, index: number) => <OpeningLine key={`partner-${index}`} label={`${item.name || "Partner"} capital`} amount={-Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
+          <Text style={styles.openingHelp}>Edit or remove individual components from Edit set. Ledgr will require the complete set to remain balanced before saving.</Text>
+        </Card> : null}
+
         <View style={styles.modeRow}>
-          <Pressable onPress={() => { setMode("asset"); setError(""); }} style={[styles.modeBtn, isAsset && styles.modeActive]}><Text style={[styles.modeText, isAsset && styles.modeTextActive]}>Add Asset</Text></Pressable>
-          <Pressable onPress={() => { setMode("liability"); setError(""); }} style={[styles.modeBtn, !isAsset && styles.modeActive]}><Text style={[styles.modeText, !isAsset && styles.modeTextActive]}>Add Liability</Text></Pressable>
+          <Pressable onPress={() => { if (mode !== "asset") resetForm(); setMode("asset"); setError(""); }} style={[styles.modeBtn, isAsset && styles.modeActive]}><Text style={[styles.modeText, isAsset && styles.modeTextActive]}>Add Asset</Text></Pressable>
+          <Pressable onPress={() => { if (mode !== "liability") resetForm(); setMode("liability"); setError(""); }} style={[styles.modeBtn, !isAsset && styles.modeActive]}><Text style={[styles.modeText, !isAsset && styles.modeTextActive]}>Add Liability</Text></Pressable>
         </View>
 
         <Card>
           <View style={styles.formTitleRow}>
             <View style={styles.formIcon}><Ionicons name={isAsset ? "business-outline" : "document-text-outline"} size={19} color={theme.color.brandPrimary} /></View>
-            <View><Text style={styles.cardTitle}>{isAsset ? "Record an Asset" : "Record a Liability"}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "A liability is normally due, not cash received; choose what created the obligation."}</Text></View>
+            <View><Text style={styles.cardTitle}>{editId ? `Edit ${isAsset ? "Asset" : "Liability"}` : (isAsset ? "Record an Asset" : "Record a Liability")}</Text><Text style={styles.hint}>{isAsset ? "Debit asset; credit the selected funding source." : "A liability is normally due, not cash received; choose what created the obligation."}</Text></View>
           </View>
           <FormField label="Transaction date" first value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} placeholder="YYYY-MM-DD" />
           <FormField label={isAsset ? "Asset name" : "Liability name"} value={name} onChangeText={setName} placeholder={isAsset ? "e.g. Shop security deposit" : "e.g. Business loan"} />
@@ -134,14 +163,16 @@ export default function AssetsScreen() {
             })}
           </View>
           <FormField label="Notes (optional)" multiline value={notes} onChangeText={setNotes} placeholder="Reference or explanation" />
-          <FormActions primaryLabel="Post to Accounts" onPrimary={save} primaryBusy={saving} error={error} />
+          <FormActions primaryLabel={editId ? "Save Correction" : "Post to Accounts"} onPrimary={save} primaryBusy={saving} error={error} />
+          {editId ? <Pressable onPress={resetForm} style={{ alignItems: "center", paddingTop: 12 }}><Text style={{ color: theme.color.muted, fontWeight: "600" }}>Cancel editing</Text></Pressable> : null}
         </Card>
 
-        <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
+        <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
         <BalanceSummary title="Creditors / Supplier Payable" amount={creditorsTotal} currSym={currSym} styles={styles} theme={theme} />
-        <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={totalLiabilities} currSym={currSym} styles={styles} onDelete={remove} theme={theme} />
+        <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={totalLiabilities} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
         <View style={{ height: 120 }} />
       </ScrollView>
+      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
     </SafeAreaView>
   );
 }
@@ -153,12 +184,15 @@ function BalanceSummary({ title, amount, currSym, styles, theme }: { title: stri
     <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{fmt(amount, currSym)}</Text></View>
   </Card>;
 }
-function BalanceList({ title, icon, entries, total, currSym, styles, onDelete, theme }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onDelete: (entry: BalanceEntry) => void; theme: any }) {
+function OpeningLine({ label, amount, currSym, styles }: { label: string; amount: number; currSym: string; styles: any }) {
+  return <View style={styles.openingLine}><Text style={styles.entryName}>{label}</Text><Text style={[styles.entryAmount, amount < 0 && styles.openingCredit]}>{amount < 0 ? '−' : ''}{fmt(Math.abs(amount), currSym)}</Text></View>;
+}
+function BalanceList({ title, icon, entries, total, currSym, styles, onEdit, onDelete, theme }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onEdit: (entry: BalanceEntry) => void; onDelete: (entry: BalanceEntry) => void; theme: any }) {
   return <Card style={styles.listCard}>
     <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name={icon} size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>
     {!entries.length ? <Text style={styles.empty}>No posted transactions yet.</Text> : entries.map((entry) => <View key={entry.id} style={styles.entry}>
       <View style={{ flex: 1 }}><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryMeta}>{entry.date}{entry.category ? ` · ${entry.category}` : ""}{entry.notes ? ` · ${entry.notes}` : ""}</Text></View>
-      <View style={styles.entryRight}><Text style={styles.entryAmount}>{fmt(entry.amount, currSym)}</Text><Pressable onPress={() => onDelete(entry)} hitSlop={10}><Ionicons name="trash-outline" size={16} color={theme.color.muted} /></Pressable></View>
+      <View style={styles.entryRight}><Text style={styles.entryAmount}>{fmt(entry.amount, currSym)}</Text><View style={{ flexDirection: "row", gap: 12 }}><Pressable onPress={() => onEdit(entry)} hitSlop={10}><Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} /></Pressable><Pressable onPress={() => onDelete(entry)} hitSlop={10}><Ionicons name="trash-outline" size={16} color={theme.color.muted} /></Pressable></View></View>
     </View>)}
     <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{fmt(total, currSym)}</Text></View>
   </Card>;
@@ -169,6 +203,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   scroll: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.xxxl },
   guidance: { flexDirection: "row", gap: 9, alignItems: "flex-start", marginBottom: theme.spacing.md },
   guidanceText: { flex: 1, color: theme.color.muted, fontSize: 12, lineHeight: 18 },
+  openingCard: { marginBottom: theme.spacing.md }, openingHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }, editOpeningBtn: { flexDirection: "row", gap: 5, alignItems: "center", borderWidth: 1, borderColor: theme.color.brandPrimary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 }, editOpeningText: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "700" }, openingLine: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: theme.color.border }, openingCredit: { color: theme.color.warning }, openingHelp: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 10 },
   modeRow: { flexDirection: "row", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, padding: 3, marginBottom: theme.spacing.md },
   modeBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: theme.radius.sm }, modeActive: { backgroundColor: theme.color.brandPrimary },
   modeText: { color: theme.color.muted, fontWeight: "700", fontSize: 13 }, modeTextActive: { color: theme.color.onBrandPrimary || "#fff" },

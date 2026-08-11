@@ -33,6 +33,7 @@ export type LedgerRow = {
   postedAt?: string | null; // journal created_at (posted_at ISO timestamp)
   sourceReversed?: boolean; // the row's source has been reversed
   sourceDeleted?: boolean; // the row's source was deleted (reversed, no re-post)
+  memberId?: string | null; // owning investor for capital movements
   /** Legacy-mirror linkage (optional — only legacy rows dual-written next to a
    *  V2 journal carry these; see dedupeLegacyMirrors). */
   type?: string | null; // legacy cash-entry kind, e.g. 'capital_injection'

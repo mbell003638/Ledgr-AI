@@ -67,6 +67,9 @@ export default function ReportsScreen() {
   const [rangePresetSel, setRangePresetSel] = useState("This Month");
   const [from, setFrom] = useState(() => rangePreset("This Month").from);
   const [to, setTo] = useState(() => rangePreset("This Month").to);
+  const [customFrom, setCustomFrom] = useState(() => rangePreset("This Month").from);
+  const [customTo, setCustomTo] = useState(() => rangePreset("This Month").to);
+  const [rangeNotice, setRangeNotice] = useState("");
   const [reportSource, setReportSource] = useState<"v2" | "legacy">("legacy");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
@@ -86,7 +89,11 @@ export default function ReportsScreen() {
     setRangePresetSel(p);
     if (p !== "Custom") {
       const r = rangePreset(p);
+      setLoading(true); setRangeNotice("");
       setFrom(r.from); setTo(r.to);
+      setCustomFrom(r.from); setCustomTo(r.to);
+    } else {
+      setCustomFrom(from); setCustomTo(to); setRangeNotice("");
     }
   };
 
@@ -167,22 +174,22 @@ export default function ReportsScreen() {
       setProfitTrend(pt); setAssetDist(ad);
       setCreditors(cr); setDebtors(dr);
       setTaxRep(tx); setSalesReg(sr); setReceiptsReg(rr);
+      setRangeNotice(`Showing ${from} to ${to}`);
     } catch (e) { console.warn(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, [from, to]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Custom-range Apply: normalize the typed dates (Samsung minus signs, DD/MM,
-  // dots, exotic digits) then validate, reflecting the canonical form back into
-  // the inputs. `load` depends on [from, to], so when the canonical value
-  // differs from current state the setFrom/setTo alone re-triggers the focus
-  // effect with the new range; only reload directly when nothing changed.
+  // Custom fields are drafts. Reports change only when Apply succeeds, so
+  // typing a partial date cannot silently issue a different report query.
   const applyCustomRange = () => {
-    const f = normalizeDateInput(from);
-    if (!isValidDateString(f)) { showAlert("Invalid date", `Couldn't read "${from.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
-    const t = normalizeDateInput(to);
-    if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${to.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    const f = normalizeDateInput(customFrom);
+    if (!isValidDateString(f)) { showAlert("Invalid date", `Couldn't read "${customFrom.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    const t = normalizeDateInput(customTo);
+    if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${customTo.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
+    if (f > t) { showAlert("Invalid range", "The From date must be on or before the To date."); return; }
+    setCustomFrom(f); setCustomTo(t); setLoading(true); setRangeNotice("Applying custom range…");
     if (f === from && t === to) { load(); return; }
     setFrom(f); setTo(t);
   };
@@ -389,18 +396,21 @@ export default function ReportsScreen() {
 
       {/* Custom date inputs (shown when Custom selected) */}
       {rangePresetSel === "Custom" && (
+        <View>
         <View style={styles.customRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.customLabel}>From</Text>
-            <TextInput value={from} onChangeText={setFrom} onBlur={() => { if (from.trim()) setFrom(normalizeDateInput(from)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+            <TextInput value={customFrom} onChangeText={setCustomFrom} onBlur={() => { if (customFrom.trim()) setCustomFrom(normalizeDateInput(customFrom)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.customLabel}>To</Text>
-            <TextInput value={to} onChangeText={setTo} onBlur={() => { if (to.trim()) setTo(normalizeDateInput(to)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
+            <TextInput value={customTo} onChangeText={setCustomTo} onBlur={() => { if (customTo.trim()) setCustomTo(normalizeDateInput(customTo)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
           <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={() => applyCustomRange()} style={styles.applyBtn}>
             <Text style={styles.applyText}>Apply</Text>
           </GlowPressable>
+        </View>
+        {rangeNotice ? <Text style={styles.rangeNotice}>{rangeNotice}</Text> : null}
         </View>
       )}
 
@@ -785,6 +795,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   customInput: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary },
   applyBtn: { backgroundColor: theme.color.brandPrimary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.md },
   applyText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  rangeNotice: { color: theme.color.muted, fontSize: 11, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
   shareBar: { flexDirection: "row", gap: 8, paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
   shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: theme.radius.md },
   shareBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },

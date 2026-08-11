@@ -75,6 +75,23 @@ describe('V2 partnership investor ledger', () => {
     } finally { close(); }
   });
 
+  it('corrects and reverses a capital deposit while retaining balanced audit history', async () => {
+    const { runner, repo, book, ledger, close } = await setup();
+    try {
+      const original = await ledger.deposit({ bookId: book.id, memberId: 'alice', date: '2026-07-10', amount: 50, notes: 'Initial amount' });
+      const corrected = await ledger.updateDeposit(original.source.id, { bookId: book.id, memberId: 'alice', date: '2026-07-11', amount: 75, notes: 'Corrected amount' });
+
+      await expect(ledger.detail(book.id, 'alice')).resolves.toEqual(expect.objectContaining({ totalInjected: 75, currentCapitalBalance: 175 }));
+      expect(await runner.first('SELECT metadata FROM v2_sources WHERE id=?', [original.source.id])).toEqual(expect.objectContaining({ metadata: expect.stringContaining('"reversed":1') }));
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n)).toBe(1);
+
+      await ledger.deleteDeposit(corrected.source.id, book.id, 'alice');
+      await expect(ledger.detail(book.id, 'alice')).resolves.toEqual(expect.objectContaining({ totalInjected: 0, currentCapitalBalance: 100 }));
+      expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n)).toBe(2);
+      expect((await repo.reconcileBook(book.id)).balanced).toBe(true);
+    } finally { close(); }
+  });
+
   it('rejects investor details and postings for a standard entity book', async () => {
     const { book, ledger, close } = await setup('standard');
     try {

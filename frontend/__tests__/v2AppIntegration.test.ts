@@ -293,4 +293,22 @@ describe('V2 application write integration', () => {
       expect(dashboard.otherAssets).toBe(750);
       expect(dashboard.netWorth).toBe(0);
     } finally { close(); }
-  });});
+  });
+
+  it('edits manual assets and liabilities through reversal and repost', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const asset = await service.recordManualAsset({ date: '2026-07-10', name: 'Shop deposit', amount: 750, funding: 'cash' });
+      const liability = await service.recordManualLiability({ date: '2026-07-11', name: 'Old loan', amount: 200, recognition: 'cash' });
+      await service.updateManualBalanceTransaction(asset.source.id, { date: '2026-07-12', name: 'Shop security deposit', amount: 800, funding: 'bank', notes: 'Corrected' });
+      await service.updateManualBalanceTransaction(liability.source.id, { date: '2026-07-13', name: 'Equipment loan', amount: 250, recognition: 'asset' });
+
+      await expect(service.listManualBalanceTransactions()).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'asset', name: 'Shop security deposit', amount: 800, counterparty: 'bank' }),
+        expect.objectContaining({ type: 'liability', name: 'Equipment loan', amount: 250, counterparty: 'asset' }),
+      ]));
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL'))?.n)).toBe(2);
+      expect((await service.repo.reconcileBook('active-v2')).balanced).toBe(true);
+    } finally { close(); }
+  });
+});
