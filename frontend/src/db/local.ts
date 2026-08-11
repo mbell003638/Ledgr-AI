@@ -12,9 +12,6 @@ import {
   storageMode as backendStorageMode,
   activeSqlRunner as backendActiveSqlRunner,
   activeBookIsDefault,
-  collStorageKey,
-  settingsStorageKey,
-  logoStorageKey,
   snapshotKeys,
   restoreKeys,
   readBooksIndexRaw,
@@ -1343,19 +1340,13 @@ export async function closePeriod(actualStock: number, notes = '', commissionPct
 }
 
 // ---------- Backup / Restore / Reset ----------
-// The 16 legacy collections captured by a backup (15 array collections above +
-// the settings document, handled separately). Order is deterministic so wipe
+// The current document collections captured by a backup (plus the preferences
+// document, handled separately). Order is deterministic so wipe
 // and restore always touch the same set. [H1]
 const BACKUP_COLLECTIONS = SQL_COLLECTIONS; // the 15 data collections (settings is handled separately)
-// Backup format version. Bumped from 8 → 9 when the V2 ledger payload + the
-// relocated logo key were added to the backup. [C1/H4]
-// Bumped 9 → 10 [Finding D] when the backup began capturing the books index +
-// EVERY book's namespaced legacy payload (collections/settings/logo), so a
-// restore makes ALL books selectable and intact — not just the active one. The
-// V2 ledger payload already covered every book (shared v2_* tables). Older
-// backups (< 10) still import with their prior single-book behavior + warnings.
+// Current backup format. Older schemas were never released and are intentionally
+// unsupported; this clean-install app restores only an exact current-format file.
 export const BACKUP_VERSION = 10;
-const SUPPORTED_BACKUP_VERSION = 10;
 
 export type ImportBackupResult = {
   ok: true;
@@ -1371,12 +1362,10 @@ export async function exportBackup() {
   BACKUP_COLLECTIONS.forEach((c, i) => { data[c] = colls[i]; });
 
   // Settings blob no longer carries the logo (see resolveLogo/[H4]); include the
-  // logo separately so a restore rehydrates it into the dedicated key. Resolve
-  // from the dedicated key, falling back to any not-yet-migrated inline logo,
-  // and strip the inline copy from the exported settings so it never ships twice.
+  // logo separately so a restore rehydrates it into the dedicated key.
   const rawSettings = await readSettings();
   const dedicatedLogo = await backendReadLogo();
-  const logo = dedicatedLogo || (isDataUri(rawSettings?.logo) ? rawSettings.logo : '');
+  const logo = dedicatedLogo;
   const settings = { ...rawSettings };
   if (isDataUri(settings.logo)) delete settings.logo;
   if (logo) settings.hasLogo = true;
@@ -1391,9 +1380,9 @@ export async function exportBackup() {
   }
 
   // [Finding D] Multi-book capture. The top-level data/settings/logo above are
-  // the DEFAULT book (kept for backward compatibility). Additionally capture:
+  // the DEFAULT book. Additionally capture:
   //   - `books`:    the raw books index (so every book is listable on restore)
-  //   - `bookData`: each SECONDARY book's namespaced legacy payload
+  //   - `bookData`: each SECONDARY book's namespaced document payload
   // The default book is excluded from `bookData` (it is the top-level payload).
   const booksIndex = await readBooksIndexRaw();
   const bookData: Record<string, { collections: Record<string, any[]>; settings: any; logo: string }> = {};
@@ -1415,35 +1404,22 @@ export async function exportBackup() {
 
 /**
  * Restore a backup. ATOMIC + CLEARING:
- *   - Clears ALL 16 collections (and V2 tables when a v2 payload is present)
- *     BEFORE applying the backup, so a collection absent from an older backup
- *     can't leak stale rows into the restored state. [H1]
+ *   - Clears all document collections and V2 tables before applying the backup.
  *   - In SQLite mode the whole restore (all collections + settings + V2) runs
  *     inside ONE transaction and rolls back entirely on any error. [C3]
- *   - In AsyncStorage mode the affected keys are snapshotted first and restored
- *     on failure (best-effort rollback). [C3]
- * Returns `v2Missing: true` when the backup predates the V2 ledger so the UI can
- * warn that double-entry data will be rebuilt from legacy records. [C1]
+ * Only exact current-format backups with a normalized V2 payload are accepted.
  */
 export async function importBackup(data: any): Promise<ImportBackupResult> {
-  // Version guard: refuse backups whose schema version is newer than we understand,
-  // so a backup from a future app version can't silently corrupt current data.
   const meta = data && typeof data === 'object' ? data._meta : undefined;
-  if (meta) {
-    if (meta.app && meta.app !== 'ledgr') {
-      throw new Error('This file is not a Ledgr backup.');
-    }
-    const v = Number(meta.version);
-    if (Number.isFinite(v) && v > SUPPORTED_BACKUP_VERSION) {
-      throw new Error(`This backup was made by a newer version of Ledgr (format v${v}). Please update the app before restoring.`);
-    }
-  }
+  if (!meta || meta.app !== 'ledgr') throw new Error('This file is not a Ledgr backup.');
+  const version = Number(meta.version);
+  if (version !== BACKUP_VERSION) throw new Error(`Unsupported Ledgr backup format v${Number.isFinite(version) ? version : 'unknown'}. Only format v${BACKUP_VERSION} can be restored.`);
+  if (!hasV2Payload(data?.v2)) throw new Error('This backup does not contain the current V2 accounting ledger.');
 
   const runner = backendActiveSqlRunner();
   const sqliteMode = backendStorageMode() === 'sqlite' && !!runner && activeBookIsDefault();
-  const v2Present = hasV2Payload(data?.v2);
+  if (!runner || !sqliteMode) throw new Error('Current-format backup restore requires SQLite storage on the main account.');
   const warnings: string[] = [];
-  let v2Result: V2ImportResult | null = null;
 
   // What the restore writes into a collection: the backup's array, or [] when
   // that collection is absent (so it is CLEARED, never left stale). [H1]
@@ -1452,10 +1428,7 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
     (data?.settings && typeof data.settings === 'object') ? { ...base, ...data.settings } : base;
   // Never let a stale inline logo ride along inside the settings blob.
   const stripInlineLogo = (s: any) => { if (s && isDataUri(s.logo)) delete s.logo; return s; };
-  const logoValue: string | null =
-    typeof data?.logo === 'string' ? data.logo
-      : (data?.settings && isDataUri(data.settings.logo)) ? data.settings.logo
-        : null;
+  const logoValue: string | null = typeof data?.logo === 'string' ? data.logo : null;
 
   if (sqliteMode && runner) {
     // ----- SQLite: one atomic transaction for EVERYTHING -----
@@ -1475,41 +1448,13 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
         if (logoValue) await runner.run("INSERT INTO settings(key,value) VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [logoValue]);
         else await runner.run("DELETE FROM settings WHERE key='logo'");
       }
-      if (v2Present) {
-        v2Result = await importV2Data(runner, data.v2);
-        warnings.push(...v2Result.warnings);
-      }
+      const v2Result: V2ImportResult = await importV2Data(runner, data.v2);
+      warnings.push(...v2Result.warnings);
     });
-  } else {
-    // ----- AsyncStorage: snapshot → apply → rollback-on-failure -----
-    const keysToSnapshot = [
-      ...BACKUP_COLLECTIONS.map((c) => collStorageKey(c)),
-      settingsStorageKey(),
-      logoStorageKey(),
-    ];
-    const snapshot = await snapshotKeys(keysToSnapshot);
-    try {
-      for (const c of BACKUP_COLLECTIONS) {
-        await writeColl(c, collValue(c)); // clears absent collections too [H1]
-      }
-      const nextSettings = stripInlineLogo(mergedSettings(await readSettings()));
-      if (logoValue != null) nextSettings.hasLogo = !!logoValue;
-      await writeSettings(nextSettings);
-      if (logoValue != null) await backendWriteLogo(logoValue);
-      // If a runner exists but we're on a secondary book, the V2 tables are still
-      // SQLite-backed and shared. Restore them in their own SQLite transaction.
-      if (v2Present && runner) {
-        v2Result = await withImportTransaction(runner, async () => importV2Data(runner, data.v2));
-        warnings.push(...v2Result.warnings);
-      }
-    } catch (e) {
-      await restoreKeys(snapshot); // best-effort rollback
-      throw e;
-    }
   }
 
   // [Finding D] Restore the books index + every SECONDARY book's namespaced
-  // legacy payload (collections/settings/logo). These live in AsyncStorage for
+  // document payload (collections/settings/logo). These live in AsyncStorage for
   // ALL storage modes (only the default book uses the SQLite store), so this
   // runs after the default-book restore above regardless of mode. We snapshot
   // the exact keys first and roll them back on any failure. The shared v2_*
@@ -1546,22 +1491,11 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
     }
   }
 
-  // Older backups (format < 9) carry NO v2 payload. Per spec we restore the
-  // legacy collections only and leave the existing V2 ledger untouched (we do
-  // NOT wipe it — that would destroy authoritative data with nothing to replace
-  // it), surfacing a warning so the UI can tell the user the double-entry ledger
-  // will be rebuilt from legacy records where possible (e.g. opening balances on
-  // next dashboard load, and the V1 fallback path). [C1]
-  const v2Missing = !v2Present;
-  if (v2Missing && runner) {
-    warnings.push('This backup predates the V2 ledger — double-entry data will be rebuilt from legacy records where possible.');
-  }
-
   return {
     ok: true,
     mode: 'replace',
-    v2Restored: !!v2Result?.restored,
-    v2Missing,
+    v2Restored: true,
+    v2Missing: false,
     warnings,
   };
 }
