@@ -81,9 +81,6 @@ describe('factoryReset — pristine defaults (db behavior)', () => {
       businessName: 'Old Shop',
       hasOnboarded: true,
       themeMode: 'amoled_blue',
-      accountingStyle: 'retail_partnership',
-      openingCash: 500,
-      openingInventory: 300,
       logo: 'data:image/png;base64,AAAA',
     });
     expect(await readLogo()).toBe('data:image/png;base64,AAAA');
@@ -95,9 +92,9 @@ describe('factoryReset — pristine defaults (db behavior)', () => {
     // false so the redirect to /onboarding can't be bypassed on next launch.
     expect(s.hasOnboarded).toBe(false);
     expect(s.businessName ?? '').toBe('');
-    expect(Number(s.openingCash || 0)).toBe(0);
-    expect(Number(s.openingInventory || 0)).toBe(0);
-    expect(s.accountingStyle ?? 'standard').not.toBe('retail_partnership');
+    expect(s).not.toHaveProperty('openingCash');
+    expect(s).not.toHaveProperty('openingInventory');
+    expect(s).not.toHaveProperty('accountingStyle');
     // Logo cleared (stored outside the settings blob).
     expect(await readLogo()).toBe('');
     expect(s.hasLogo).toBeFalsy();

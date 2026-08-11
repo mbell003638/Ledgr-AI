@@ -11,7 +11,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-import { createSale, getSettings, listSales, resetAll, updateSettings, factoryReset } from '../src/db/local';
+import { updateSettings, factoryReset } from '../src/db/local';
 import {
   createBook,
   setActiveBook,
@@ -22,34 +22,6 @@ import {
 
 beforeEach(() => { for (const key of Object.keys(mem)) delete mem[key]; });
 afterEach(async () => { await setActiveBook('default'); });
-
-describe('legacy ledger reset', () => {
-  it('clears entries and investor accounting data while preserving business identity, onboarding, theme, and style configuration', async () => {
-    await updateSettings({
-      businessName: 'Test Business',
-      hasOnboarded: true,
-      themeMode: 'amoled_blue',
-      accountingStyle: 'retail_partnership',
-      selectedPersonas: ['retail'],
-      partnerNames: ['Amit'],
-      investors: [{ id: 'amit', name: 'Amit', amount: 100, profitSharePct: 100 }],
-    });
-    await createSale({ date: '2026-07-30', amount: 50 });
-
-    await resetAll();
-
-    expect(await listSales()).toEqual([]);
-    expect(await getSettings()).toMatchObject({
-      businessName: 'Test Business',
-      hasOnboarded: true,
-      themeMode: 'amoled_blue',
-      accountingStyle: 'retail_partnership',
-      selectedPersonas: ['retail'],
-      partnerNames: [],
-      investors: [],
-    });
-  });
-});
 
 describe('books + active-book teardown (factoryReset support) [C4/M2]', () => {
   it('removes the books index and the active-book pointer, and resets the in-memory active book', async () => {

@@ -30,10 +30,6 @@ const AI_API_KEY_KEY  = 'ai_api_key';
 const AI_MODEL_KEY    = 'ai_model';
 const AI_BASE_URL_KEY = 'ai_base_url';
 
-// Legacy keys kept for migration
-const LEGACY_GEMINI_KEY   = 'gemini_api_key';
-const LEGACY_GEMINI_MODEL = 'gemini_model';
-
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
 // per-book settings blob. A factory reset must wipe these too so the device is
 // returned to a truly pristine state (the user explicitly wants preferences
@@ -54,29 +50,24 @@ export const FACTORY_RESET_PREF_KEYS = [
 ] as const;
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, baseUrl, legacyKey, legacyModel] = await Promise.all([
+  const [provider, secureKey, storedKey, model, baseUrl] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     storage.secureGet(AI_API_KEY_KEY, ''),
     AsyncStorage.getItem(AI_API_KEY_KEY),
     AsyncStorage.getItem(AI_MODEL_KEY),
     AsyncStorage.getItem(AI_BASE_URL_KEY),
-    AsyncStorage.getItem(LEGACY_GEMINI_KEY),
-    AsyncStorage.getItem(LEGACY_GEMINI_MODEL),
   ]);
-  // Migrate every historical plaintext key into the device keychain/keystore.
-  const resolvedKey = secureKey || storedKey || legacyKey || '';
+  const resolvedKey = secureKey || storedKey || '';
   if (resolvedKey && !secureKey) {
     await Promise.all([
       storage.secureSet(AI_API_KEY_KEY, resolvedKey),
       AsyncStorage.removeItem(AI_API_KEY_KEY),
-      AsyncStorage.removeItem(LEGACY_GEMINI_KEY),
     ]);
   }
-  const resolvedModel = model ?? legacyModel ?? ai.DEFAULT_GEMINI_MODEL;
   return {
     provider: ai.normalizeProviderId(provider),
     apiKey: resolvedKey,
-    model: resolvedModel,
+    model: model ?? ai.DEFAULT_GEMINI_MODEL,
     baseUrl: baseUrl ?? undefined,
   };
 }
@@ -103,7 +94,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
     throw new Error('Could not securely save your API key on this device. Please try again.');
   }
 }
-// Legacy shims so existing screens (voice.tsx, bill-form.tsx) keep compiling
+// Convenience aliases used by the current voice and bill screens.
 export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
 export async function setGeminiKey(v: string) { await setAIConfig({ apiKey: v }); }
 export async function getGeminiModel(): Promise<string> { return (await getAIConfig()).model; }
@@ -121,32 +112,20 @@ async function reconcileStatement(
 ) {
   const extracted = await ai.reconcileStatementAI(await getAIConfig(), imageBase64, mimeType);
 
-  // V2 is authoritative whenever it is active. Legacy collections remain only as a fallback.
   let ourBills: any[] = [], ourPayments: any[] = [];
   const runner = activeSqlRunner();
-  const service = runner ? new V2AppService(runner) : null;
-  const context = service ? await service.activeContext() : null;
-  if (context && service && partyId) {
-    const detail: any = await service.getPartyDetail(partyId, party);
-    if (party === 'customer' && detail) {
-      ourBills = (detail.statement?.ledger || []).filter((item: any) => item.kind === 'invoice').map((item: any) => ({ amount: item.debit, date: item.date, reference: item.ref }));
-      ourPayments = (detail.payments || []).map((item: any) => ({ amount: item.amount, date: item.date }));
-    } else if (party === 'supplier' && detail) {
-      ourBills = detail.bills || [];
-      ourPayments = detail.payments || [];
-    }
-  } else if (partyId && party === 'customer') {
-    const debtors = await db.listDebtors();
-    const d = debtors.find((x: any) => x.id === partyId);
-    if (d) {
-      ourBills = (d.invoices || []).map((i: any) => ({ ...i, amount: i.amount, date: i.date, reference: i.invoiceNumber }));
-      ourPayments = (d.payments || []).map((item: any) => ({ ...item, amount: item.amount, date: item.date }));
-    }
-  } else if (partyId) {
-    const all = await db.listBills();
-    ourBills = all.filter((item: any) => item.supplierId === partyId);
-    const payments = await db.listPayments();
-    ourPayments = payments.filter((item: any) => item.supplierId === partyId && item.type === 'supplier_payment');
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const service = new V2AppService(runner);
+  if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
+  if (!partyId) throw new Error('Choose a customer or supplier before reconciling');
+  const detail: any = await service.getPartyDetail(partyId, party);
+  if (!detail) throw new Error(`${party === 'customer' ? 'Customer' : 'Supplier'} was not found in the active V2 book`);
+  if (party === 'customer') {
+    ourBills = (detail.statement?.ledger || []).filter((item: any) => item.kind === 'invoice').map((item: any) => ({ amount: item.debit, date: item.date, reference: item.ref }));
+    ourPayments = (detail.payments || []).map((item: any) => ({ amount: item.amount, date: item.date }));
+  } else {
+    ourBills = detail.bills || [];
+    ourPayments = detail.payments || [];
   }
 
   const daysBetween = (a: string, b: string) => {
@@ -184,72 +163,44 @@ async function reconcileStatement(
 async function buildAiSnapshot(from: string, to: string) {
   const settings = await db.getSettings();
   const runner = activeSqlRunner();
-  if (runner) {
-    const service = new V2AppService(runner);
-    const context = await service.activeContext();
-    if (context) {
-      const [dashboard, reports, parties, salesAndInvoices, expenseSources] = await Promise.all([
-        getV2Dashboard(runner, context.bookId),
-        buildPersistentV2Reports(runner, { bookId: context.bookId, from, to }),
-        service.listParties(),
-        service.listSalesAndInvoices(),
-        runner.all<any>("SELECT date,metadata FROM v2_sources WHERE book_id=? AND type='expense' AND date>=? AND date<=? ORDER BY date DESC", [context.bookId, from, to]),
-      ]);
-      const expensesByCategory: Record<string, number> = {};
-      for (const row of expenseSources) {
-        let meta: any = {}; try { meta = JSON.parse(row.metadata || '{}'); } catch { continue; }
-        if (!meta.reversed && !meta.deleted) expensesByCategory.General = (expensesByCategory.General || 0) + Number(meta.total || 0);
-      }
-      return {
-        source: 'v2', currency: settings.currency, businessName: settings.businessName,
-        snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
-        yearToDate: reports.profitAndLoss,
-        creditors: parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })),
-        debtors: parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })),
-        expensesByCategory,
-        openInvoices: salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 20).map((item: any) => ({ number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })),
-      };
-    }
-  }
-  const [dashboard, pnlYear, creditors, debtors, expenses, invoices] = await Promise.all([
-    db.dashboard(), db.pnlRange(from, to), db.creditorsReport(), db.debtorsReport(), db.listExpenses(), db.listInvoices(),
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const service = new V2AppService(runner);
+  const context = await service.activeContext();
+  if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+  const [dashboard, reports, parties, salesAndInvoices, expenseSources] = await Promise.all([
+    getV2Dashboard(runner, context.bookId),
+    buildPersistentV2Reports(runner, { bookId: context.bookId, from, to }),
+    service.listParties(),
+    service.listSalesAndInvoices(),
+    runner.all<any>("SELECT date,metadata FROM v2_sources WHERE book_id=? AND type='expense' AND date>=? AND date<=? ORDER BY date DESC", [context.bookId, from, to]),
   ]);
   const expensesByCategory: Record<string, number> = {};
-  for (const expense of expenses as any[]) expensesByCategory[expense.category || 'General'] = (expensesByCategory[expense.category || 'General'] || 0) + Number(expense.amount || 0);
+  for (const row of expenseSources) {
+    let meta: any = {}; try { meta = JSON.parse(row.metadata || '{}'); } catch { continue; }
+    if (!meta.reversed && !meta.deleted) expensesByCategory.General = (expensesByCategory.General || 0) + Number(meta.total || 0);
+  }
   return {
-    source: 'legacy', currency: settings.currency, businessName: settings.businessName,
+    source: 'v2', currency: settings.currency, businessName: settings.businessName,
     snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
-    yearToDate: pnlYear,
-    creditors: (creditors as any[]).filter((c) => c.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((c) => ({ name: c.name, owed: c.balance })),
-    debtors: (debtors as any[]).filter((d) => d.balance !== 0).sort((a, b) => b.balance - a.balance).slice(0, 20).map((d) => ({ name: d.name, owes: d.balance })),
+    yearToDate: reports.profitAndLoss,
+    creditors: parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })),
+    debtors: parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })),
     expensesByCategory,
-    openInvoices: (invoices as any[]).filter((i) => i.status === 'unpaid').sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 20).map((i) => ({ number: i.invoiceNumber, client: i.clientName, amount: i.total })),
+    openInvoices: salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 20).map((item: any) => ({ number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })),
   };
 }
-
-const ACCOUNTING_SETTING_KEYS = new Set([
-  'managerCommissionPct', 'currentPeriodStart', 'openingInventory', 'openingCash',
-  'openingCapital', 'investors', 'partnerNames', 'extraAssets', 'extraLiabilities',
-  'accountingStyle', 'accountingBasis', 'selectedPersonas', 'activePersona',
-]);
-
-const withoutAccountingSettings = (value: Record<string, any>) => Object.fromEntries(
-  Object.entries(value || {}).filter(([key]) => !ACCOUNTING_SETTING_KEYS.has(key)),
-);
 
 /** Settings store preferences only. Accounting state and configuration live in V2. */
 async function preferenceSettings() {
   const settings = await db.getSettings();
-  await db.clearAccountingSettings();
-  const preferences = withoutAccountingSettings(settings);
   const runner = activeSqlRunner();
-  if (!runner) return preferences;
+  if (!runner) return settings;
   const service = new V2AppService(runner);
   const context = await service.activeContext();
-  if (!context) return preferences;
+  if (!context) return settings;
   const config = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
   return {
-    ...preferences,
+    ...settings,
     accountingStyle: config.style,
     accountingBasis: config.basis,
     selectedPersonas: config.selectedPersonas,
@@ -257,39 +208,23 @@ async function preferenceSettings() {
   };
 }
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
-const legacyCreateTransactions: Record<AppCreateName, (value: any) => Promise<any>> = {
-  createSale: db.createSale,
-  createInvoice: db.createInvoice,
-  createReceipt: db.createReceipt,
-  createBill: db.createBill,
-  createPayment: db.createPayment,
-  createExpense: db.createExpense,
-};
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
-  if (!runner) {
-    const r = await legacyCreateTransactions[name](payload);
-    bumpDataVersion();
-    return r;
-  }
-  const writes = createAppWriteRouter(new V2AppService(runner), db);
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const service = new V2AppService(runner);
+  const writes = createAppWriteRouter(service);
 
   const injected = { ...payload };
-  if (name === 'createBill' || name === 'createPayment') {
-    if (injected.supplierId && !injected.supplierName) {
-      try {
-        const s = await db.getSupplier(injected.supplierId);
-        injected.supplierName = s.name;
-      } catch {}
-    }
-  } else if (name === 'createInvoice' || name === 'createReceipt') {
-    if ((injected.partyId || injected.debtorId) && !injected.clientName) {
-      try {
-        const debtors = await db.listDebtors();
-        const partyId = injected.partyId || injected.debtorId;
-        const d = debtors.find((x: any) => x.id === partyId);
-        if (d) injected.clientName = d.name;
-      } catch {}
+  const partyId = name === 'createBill' || name === 'createPayment'
+    ? injected.supplierId
+    : name === 'createInvoice' || name === 'createReceipt'
+      ? (injected.partyId || injected.debtorId)
+      : null;
+  if (partyId && !injected.supplierName && !injected.clientName) {
+    const party = (await service.listParties()).find((item: any) => item.id === partyId);
+    if (party) {
+      if (name === 'createBill' || name === 'createPayment') injected.supplierName = party.name;
+      else injected.clientName = party.name;
     }
   }
 
@@ -299,36 +234,18 @@ async function createTransaction(name: AppCreateName, payload: any) {
 }
 
 type AppMutationName = 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill';
-const legacyMutations: Record<AppMutationName, (...args: any[]) => Promise<any>> = {
-  updateReceipt: db.updateReceipt, deleteReceipt: db.deleteReceipt,
-  markInvoicePaid: db.markInvoicePaid,
-  updateInvoice: db.updateInvoice, deleteInvoice: db.deleteInvoice,
-  updateExpense: db.updateExpense, deleteExpense: db.deleteExpense,
-  updatePayment: db.updatePayment, deletePayment: db.deletePayment,
-  updateSale: db.updateSale, deleteSale: db.deleteSale,
-  updateBill: db.updateBill, deleteBill: db.deleteBill,
-};
 async function mutateTransaction(name: AppMutationName, ...args: any[]) {
   const runner = activeSqlRunner();
-    const dbFn = legacyMutations[name];
-    if (!runner) {
-      const r = await dbFn(...args);
-      bumpDataVersion();
-      return r;
-    }
-    const r = await (createAppMutationRouter(new V2AppService(runner), db) as any)[name](...args);
-    bumpDataVersion();
-    return r;
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const r = await (createAppMutationRouter(new V2AppService(runner)) as any)[name](...args);
+  bumpDataVersion();
+  return r;
 }
-const legacyCreateNotes = {
-  createCreditNote: db.createCreditNote,
-  createDebitNote: db.createDebitNote,
-};
 
 /**
  * [Finding A] Create a credit/debit note. The customer screen sends {customerId}
- * and the supplier screen sends {supplierId}; db.createNote requires {debtorId}.
- * We map those fields to a canonical shape, route the note through the V2 write
+ * and the supplier screen sends {supplierId}. We map those fields to a canonical
+ * shape and route the note through the V2 write
  * path so it hits the journal + party balance and is visible on party detail /
  * statements. Active V2 books have one write path and no compatibility mirror.
  */
@@ -345,16 +262,12 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
     supplierName: isSupplier ? partyName : raw.supplierName,
   };
   const runner = activeSqlRunner();
-  if (runner && await new V2AppService(runner).activeContext(mapped.date)) {
-    const v2 = new V2AppService(runner);
-    const v2Res = await (name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
-    bumpDataVersion();
-    const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
-    return { ...v2Res, id: v2Res.source?.id, noteNumber: v2Res.source?.reference || v2Res.source?.id, amount: total };
-  }
-  const r = await legacyCreateNotes[name](mapped);
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const v2 = new V2AppService(runner);
+  const v2Res = await (name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
   bumpDataVersion();
-  return r;
+  const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
+  return { ...v2Res, id: v2Res.source?.id, noteNumber: v2Res.source?.reference || v2Res.source?.id, amount: total };
 }
 
 /**
@@ -370,6 +283,48 @@ async function mergedInvestorLedgerDetail(id: string): Promise<InvestorLedgerDet
   const context = await app.activeContext();
   if (!context) throw new Error('No active versioned V2 book with an open accounting period');
   return new V2InvestorLedgerService(runner).detail(context.bookId, id);
+}
+
+/** Read source documents from the authoritative ledger in screen-friendly form. */
+async function v2SourceDocuments(types: string[]) {
+  const runner = activeSqlRunner();
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const service = new V2AppService(runner);
+  const context = await service.activeContext();
+  if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+  const placeholders = types.map(() => '?').join(',');
+  const rows = await runner.all<any>(
+    `SELECT s.id,s.type,s.date,s.reference,s.metadata,p.name AS party_name
+     FROM v2_sources s LEFT JOIN v2_parties p ON p.id=json_extract(s.metadata,'$.partyId')
+     WHERE s.book_id=? AND s.type IN (${placeholders}) ORDER BY s.date DESC,s.id DESC`,
+    [context.bookId, ...types],
+  );
+  return rows.flatMap((row: any) => {
+    let metadata: any = {};
+    try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; }
+    if (metadata.deleted || metadata.reversed) return [];
+    return [{
+      ...metadata,
+      id: row.id,
+      type: row.type,
+      date: row.date,
+      reference: row.reference || '',
+      amount: Number(metadata.total || 0),
+      total: Number(metadata.total || 0),
+      partyId: metadata.partyId || null,
+      partyName: row.party_name || '',
+      clientName: row.party_name || '',
+      supplierName: row.party_name || '',
+    }];
+  });
+}
+
+async function v2Report(from?: string, to?: string) {
+  const runner = activeSqlRunner();
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  const context = await new V2AppService(runner).activeContext();
+  if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+  return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to });
 }
 
 export const api = {
@@ -501,10 +456,10 @@ export const api = {
   },
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
-    const r = await db.updateSettings(withoutAccountingSettings(s));
+    const r = await db.updateSettings(s);
     const preferences = await preferenceSettings();
     bumpDataVersion();
-    return { ...withoutAccountingSettings(r), ...preferences };
+    return { ...r, ...preferences };
   },
   testKey: async () => ai.testKey(await getAIConfig()),
 
@@ -520,30 +475,16 @@ export const api = {
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const name = (p.name || '').trim();
     if (!name) throw new Error('Party name is required');
-    const existingDebtors = await db.listDebtors();
-    const existingSuppliers = await db.listSuppliers();
-    if ([...existingDebtors, ...existingSuppliers].some((x: any) => norm(x.name) === norm(name))) {
-      throw new Error(`A party or customer named '${name}' already exists in this account.`);
-    }
     const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      const ctx = await service.activeContext();
-      if (ctx) {
-        const id = p.id || `party_${Date.now()}`;
-        const roles = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
-        await service.repo.createParty({
-          id,
-          bookId: ctx.bookId,
-          name,
-          phone: p.phone,
-          email: p.email,
-          roles,
-        });
-        return { id, name, phone: p.phone, email: p.email, roles };
-      }
-    }
-    return p.type === 'customer' ? db.createDebtor({ ...p, name }) : db.createSupplier({ ...p, name });
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    const ctx = await service.activeContext();
+    if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
+    if ((await service.listParties()).some((party: any) => norm(party.name) === norm(name))) throw new Error(`A party named '${name}' already exists in this account.`);
+    const id = p.id || `party_${Date.now()}`;
+    const roles = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
+    await service.repo.createParty({ id, bookId: ctx.bookId, name, phone: p.phone, email: p.email, roles });
+    return { id, name, phone: p.phone, email: p.email, roles };
   },
 
   findOrCreateParty: async (rawName: string, role: 'customer' | 'supplier' = 'customer', details?: { phone?: string; email?: string }) => {
@@ -552,109 +493,34 @@ export const api = {
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
     const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      if (await service.activeContext()) {
-        const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
-        const party = existing || await service.ensureParty(name, role, details);
-        const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
-        if (!roles.includes(role)) await service.ensureParty(name, role, details);
-        try {
-          const legacy = role === 'customer' ? await db.listDebtors() : await db.listSuppliers();
-          if (!legacy.some((item: any) => norm(item.name) === norm(name))) {
-            if (role === 'customer') await db.createDebtor({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
-            else await db.createSupplier({ name: party.name, phone: details?.phone || '', email: details?.email || '' });
-          }
-        } catch { /* V2 remains authoritative */ }
-        return { id: party.id, name: party.name, role: roles.length > 1 ? 'both' : role };
-      }
-    }
-
-    const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
-    const dMatch = debtors.find((x: any) => norm(x.name) === norm(name));
-    const sMatch = suppliers.find((x: any) => norm(x.name) === norm(name));
-
-    if (dMatch || sMatch) {
-      const match = dMatch || sMatch;
-      // If party exists as debtor but not supplier and role is supplier, auto-add supplier entry
-      if (role === 'supplier' && !sMatch && dMatch) {
-        try { await db.createSupplier({ name: dMatch.name, phone: dMatch.phone || details?.phone || '' }); } catch {}
-      }
-      // If party exists as supplier but not debtor and role is customer, auto-add debtor entry
-      if (role === 'customer' && !dMatch && sMatch) {
-        try { await db.createDebtor({ name: sMatch.name, phone: sMatch.phone || details?.phone || '' }); } catch {}
-      }
-      return { id: match.id, name: match.name, role: (dMatch && sMatch) ? 'both' : (dMatch ? 'customer' : 'supplier') };
-    }
-
-    // Party does not exist -> auto create it in the books
-    try {
-      const created = role === 'customer' 
-        ? await db.createDebtor({ name, phone: details?.phone || '', email: details?.email || '' })
-        : await db.createSupplier({ name, phone: details?.phone || '', email: details?.email || '' });
-      return { id: created.id, name: created.name, role };
-    } catch {
-      const freshAll = [...(await db.listDebtors()), ...(await db.listSuppliers())];
-      const freshMatch = freshAll.find((x: any) => norm(x.name) === norm(name));
-      return freshMatch ? { id: freshMatch.id, name: freshMatch.name, role: freshMatch.role || role } : null;
-    }
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
+    const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
+    const party = existing || await service.ensureParty(name, role, details);
+    const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
+    if (!roles.includes(role)) await service.ensureParty(name, role, details);
+    return { id: party.id, name: party.name, role: roles.length > 1 ? 'both' : role };
   },
 
   searchParties: async (query: string) => {
     const q = (query || '').trim().toLowerCase();
     const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      if (await service.activeContext()) {
-        const parties = await service.listParties();
-        return parties
-          .filter((party: any) => !q || party.name.toLowerCase().includes(q))
-          .map((party: any) => ({
-            id: party.id, name: party.name, phone: party.phone || '',
-            role: party.roles.length > 1 ? 'both' : party.roles[0],
-          }));
-      }
-    }
-    const [debtors, suppliers] = await Promise.all([db.listDebtors(), db.listSuppliers()]);
-    const map = new Map<string, { id: string; name: string; phone: string; role: string }>();
-
-    for (const d of debtors as any[]) {
-      if (d.name) map.set(d.name.trim().toLowerCase(), { id: d.id, name: d.name, phone: d.phone || '', role: 'customer' });
-    }
-    for (const s of suppliers as any[]) {
-      const k = s.name.trim().toLowerCase();
-      const existing = map.get(k);
-      if (existing) {
-        existing.role = 'both';
-      } else {
-        map.set(k, { id: s.id, name: s.name, phone: s.phone || '', role: 'supplier' });
-      }
-    }
-
-    const list = Array.from(map.values());
-    if (!q) return list;
-    return list.filter((p) => p.name.toLowerCase().includes(q));
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
+    const parties = await service.listParties();
+    return parties
+      .filter((party: any) => !q || party.name.toLowerCase().includes(q))
+      .map((party: any) => ({ id: party.id, name: party.name, phone: party.phone || '', role: party.roles.length > 1 ? 'both' : party.roles[0] }));
   },
 
   listParties: async () => {
     const runner = activeSqlRunner();
-    if (!runner) return [];
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
-    if (await service.activeContext()) {
-      const v2Parties = await service.listParties();
-      const [suppliers, debtors] = await Promise.all([db.listSuppliers(), db.listDebtors()]);
-      const v1Map = new Map();
-      for (const s of suppliers) v1Map.set(s.id, s.name);
-      for (const d of debtors) v1Map.set(d.id, d.name);
-      return v2Parties.map(p => {
-        const isId = /^[0-9]+-[a-z0-9]+$/.test(p.name) || p.name === p.id;
-        if (isId && v1Map.get(p.id)) {
-          p.name = v1Map.get(p.id);
-        }
-        return p;
-      });
-    }
-    return [];
+    if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
+    return service.listParties();
   },
   listInvestors: async (): Promise<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }[]> => {
     const runner = activeSqlRunner();
@@ -679,29 +545,32 @@ export const api = {
     return [];
   },
   listSalesAndInvoices: async () => {
-    const runner=activeSqlRunner(); if(!runner)return db.listSales();
-    const service=new V2AppService(runner); return (await service.activeContext()) ? service.listSalesAndInvoices() : db.listSales();
+    const runner=activeSqlRunner(); if(!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listSalesAndInvoices();
   },
   // Suppliers
-  listSuppliers: () => db.listSuppliers(),
-  createSupplier: (s: any) => db.createSupplier(s),
+  listSuppliers: async () => (await api.listParties()).filter((party: any) => party.roles.includes('supplier')).map((party: any) => ({ ...party, balance: party.payable })),
+  createSupplier: (s: any) => api.createParty({ ...s, roles: ['supplier'] }),
   updateSupplier: async (id: string, s: any) => {
-    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.updateParty(id, s); }
-    return db.updateSupplier(id, s);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'supplier')) throw new Error('Supplier not found');
+    return service.updateParty(id, s);
   },
   getSupplier: async (id: string) => {
-    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'supplier'); if (detail) return detail; }
-    return db.getSupplier(id);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'supplier');
+    if (!detail) throw new Error('Supplier not found');
+    return detail;
   },
   deleteSupplier: async (id: string) => {
-    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'supplier')) return service.archiveParty(id); }
-    return db.deleteSupplier(id);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'supplier')) throw new Error('Supplier not found');
+    return service.archiveParty(id);
   },
   listBills: async () => {
     const runner = activeSqlRunner();
-    if (!runner) return db.listBills();
-    const service = new V2AppService(runner);
-    return (await service.activeContext()) ? service.listBills() : db.listBills();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listBills() as Promise<any[]>;
   },
   createBill: (b: any) => createTransaction('createBill', b),
   updateBill: (id: string, b: any) => mutateTransaction('updateBill', id, b),
@@ -709,16 +578,15 @@ export const api = {
 
   listSales: async () => {
     const runner = activeSqlRunner();
-    if (!runner) return db.listSales();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
-    const rows = await service.listSalesAndInvoices();
-    return (await service.activeContext()) ? rows : db.listSales();
+    return service.listSalesAndInvoices();
   },
   createSale: (s: any) => createTransaction('createSale', s),
   updateSale: (id: string, s: any) => mutateTransaction('updateSale', id, s),
   deleteSale: (id: string) => mutateTransaction('deleteSale', id),
 
-  listPayments: () => db.listPayments(),
+  listPayments: async () => (await v2SourceDocuments(['supplier_payment','drawing','commission_payment'])).map((row: any) => ({ ...row, supplierId: row.partyId, partnerName: row.partnerName || row.memberName })),
   createPayment: (p: any) => createTransaction('createPayment', p),
   updatePayment: (id: string, p: any) => mutateTransaction('updatePayment', id, p),
   deletePayment: (id: string) => mutateTransaction('deletePayment', id),
@@ -734,11 +602,6 @@ export const api = {
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).deleteV2InventoryCount(id);
   },
-  listInventory: () => db.listInventory(),
-  expectedInventory: () => db.expectedInventory(),
-  createInventory: (i: any) => db.createInventory(i),
-  deleteInventory: (id: string) => db.deleteInventory(id),
-
   // Cash Book (manual cash in/out ledger)
   listCashEntries: async () => {
     const runner = activeSqlRunner();
@@ -754,11 +617,12 @@ export const api = {
         // and surface the user's own note as appended detail.
         const v2Entries = (await service.listCashMovements()).map((entry: any) => ({
           ...entry,
+          id: entry.sourceType === 'manual_cash_income' || entry.sourceType === 'manual_cash_expense' ? entry.sourceId : entry.id,
           notes: entry.sourceType === 'capital_injection' && entry.sourceNotes && !String(entry.notes || '').includes(entry.sourceNotes)
             ? `${entry.notes} — ${entry.sourceNotes}`
             : entry.notes,
           origin: 'v2',
-          editable: false,
+          editable: entry.sourceType === 'manual_cash_income' || entry.sourceType === 'manual_cash_expense',
         }));
         return v2Entries;
       }
@@ -777,8 +641,14 @@ export const api = {
     }
     throw new Error('No active versioned V2 book with an open accounting period');
   },
-  updateCashEntry: async (id: string, e: any) => { const r = await db.updateCashEntry(id, e); bumpDataVersion(); return r; },
-  deleteCashEntry: async (id: string) => { const r = await db.deleteCashEntry(id); bumpDataVersion(); return r; },
+  updateCashEntry: async (id: string, e: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const result = await new V2AppService(runner).updateManualCash(id, e); bumpDataVersion(); return result;
+  },
+  deleteCashEntry: async (id: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const result = await new V2AppService(runner).deleteManualCash(id); bumpDataVersion(); return result;
+  },
 
   getInvestorLedger: async (id: string): Promise<InvestorLedgerDetail> => {
     const runner = activeSqlRunner();
@@ -833,15 +703,10 @@ export const api = {
   // Dashboard & reports
   dashboard: async () => {
     const runner = activeSqlRunner();
-    if (runner) {
-      const service = new V2AppService(runner);
-      const ctx = await service.activeContext();
-      if (ctx) {
-        await preferenceSettings();
-        return getV2Dashboard(runner, ctx.bookId);
-      }
-    }
-    return db.dashboard();
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const ctx = await new V2AppService(runner).activeContext();
+    if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
+    return getV2Dashboard(runner, ctx.bookId);
   },
   pnl: async () => {
     const runner = activeSqlRunner();
@@ -857,7 +722,7 @@ export const api = {
         };
       }
     }
-    return db.pnl();
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
   balanceSheet: async () => {
     const runner = activeSqlRunner();
@@ -873,7 +738,7 @@ export const api = {
         };
       }
     }
-    return db.balanceSheet();
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
   trialBalance: async () => {
     const runner = activeSqlRunner();
@@ -896,13 +761,47 @@ export const api = {
         };
       }
     }
-    return db.trialBalance();
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
-  capitalStatement: () => db.capitalStatement(),
-  drawingsHistory: () => db.drawingsHistory(),
-  monthlyProfitTrend: (months?: number) => db.monthlyProfitTrend(months),
-  assetDistribution: () => db.assetDistribution(),
-  monthlySummary: (m: string) => db.monthlySummary(m),
+  capitalStatement: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner); const context = await service.activeContext();
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const period = await service.getActivePeriod();
+    const report = await v2Report(period?.startDate, period?.endDate);
+    const members = await api.listInvestors();
+    const investors = await Promise.all(members.map(async (member: any) => {
+      const detail = await mergedInvestorLedgerDetail(member.id);
+      const profitShare = Math.round(report.profitAndLoss.netProfit * Number(member.profitSharePct || 0)) / 100;
+      return { id: member.id, name: member.name, contributed: detail.openingCapital + detail.totalInjected, drawings: detail.totalDrawings, profitShare, balance: detail.currentCapitalBalance, profitSharePct: member.profitSharePct };
+    }));
+    return { netProfit: report.profitAndLoss.netProfit, investors };
+  },
+  drawingsHistory: async () => (await v2SourceDocuments(['drawing'])).map((row: any) => ({ ...row, investorId: row.memberId })),
+  monthlyProfitTrend: async (months = 6) => {
+    const out: any[] = []; const now = new Date();
+    for (let offset = months - 1; offset >= 0; offset--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const from = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      const to = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+      const report = await v2Report(from, to);
+      out.push({ month: from.slice(0, 7), revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, netProfit: report.profitAndLoss.netProfit });
+    }
+    return out;
+  },
+  assetDistribution: async () => {
+    const d = await api.dashboard();
+    return [
+      { label: 'Cash', value: d.cash }, { label: 'Inventory', value: d.inventoryValue },
+      { label: 'Receivables', value: d.accountsReceivable }, { label: 'Other Assets', value: d.otherAssets },
+    ].filter((item) => Number(item.value) !== 0);
+  },
+  monthlySummary: async (m: string) => {
+    const from = `${m}-01`; const [year, month] = m.split('-').map(Number);
+    const to = `${m}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+    const report = await v2Report(from, to);
+    return { month: m, periodStart: from, revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, expenses: report.profitAndLoss.expenses - report.profitAndLoss.cogs, commission: 0, managerCommissionPct: 0, netProfit: report.profitAndLoss.netProfit };
+  },
   dailySummary: async (d: string) => {
     const runner = activeSqlRunner();
     if (runner) {
@@ -928,7 +827,7 @@ export const api = {
         };
       }
     }
-    return db.dailySummary(d);
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
 
   // Backup + danger
@@ -947,12 +846,17 @@ export const api = {
     // Surface the atomic-import outcome (v2 restore status + warnings) to callers.
     return result;
   },
-  listPeriods: () => db.listPeriods(),
+  listPeriods: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const context = await new V2AppService(runner).activeContext(); if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const rows = await runner.all<any>('SELECT p.id,p.start_date,p.end_date,c.closed_at,c.snapshot FROM v2_periods p JOIN v2_close_books c ON c.period_id=p.id WHERE p.book_id=? ORDER BY p.end_date DESC', [context.bookId]);
+    return rows.map((row: any) => { const snapshot = JSON.parse(row.snapshot || '{}'); return { id: row.id, startDate: row.start_date, endDate: row.end_date, closedAt: row.closed_at, ...snapshot, closingCash: Number(snapshot.cash || 0) + Number(snapshot.bank || 0), closingInventory: Number(snapshot.inventory || 0) }; });
+  },
   closePeriod: async (actualStock: number, notes = '', commissionPct = 0, date?: string) => {
     const runner = activeSqlRunner();
-    if (!runner) return db.closePeriod(actualStock, notes, commissionPct, date);
+    if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
-    const closeBooks = createCloseBooksRouter(service, db.closePeriod);
+    const closeBooks = createCloseBooksRouter(service);
     const overview = await service.inventoryOverview();
     const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory || 0), commissionPct, notes, date });
     bumpDataVersion();
@@ -1013,7 +917,7 @@ export const api = {
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY, LEGACY_GEMINI_KEY, LEGACY_GEMINI_MODEL,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
@@ -1032,57 +936,76 @@ export const api = {
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
 
   // Expenses
-  listExpenses: () => db.listExpenses(),
+  listExpenses: async () => (await v2SourceDocuments(['expense'])).map((row: any) => ({ ...row, category: row.category || 'Expense' })),
   createExpense: (e: any) => createTransaction('createExpense', e),
   updateExpense: (id: string, e: any) => mutateTransaction('updateExpense', id, e),
   deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
 
   // Debtors
-  listDebtors: () => db.listDebtors(),
+  listDebtors: async () => (await api.listParties()).filter((party: any) => party.roles.includes('customer')).map((party: any) => ({ ...party, balance: party.receivable })),
   getCustomer: async (id: string) => {
-    const runner = activeSqlRunner(); if (runner) { const detail = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail; }
-    return (await db.listDebtors()).find((item: any) => item.id === id) || null;
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer');
+    if (!detail) throw new Error('Customer not found');
+    return detail;
   },
-  createDebtor: (d: any) => db.createDebtor(d),
+  createDebtor: (d: any) => api.createParty({ ...d, roles: ['customer'] }),
   updateDebtor: async (id: string, d: any) => {
-    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.updateParty(id, d); }
-    return db.updateDebtor(id, d);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'customer')) throw new Error('Customer not found');
+    return service.updateParty(id, d);
   },
   deleteDebtor: async (id: string) => {
-    const runner = activeSqlRunner(); if (runner) { const service = new V2AppService(runner); if (await service.getPartyDetail(id, 'customer')) return service.archiveParty(id); }
-    return db.deleteDebtor(id);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'customer')) throw new Error('Customer not found');
+    return service.archiveParty(id);
   },
-  addDebtorPayment: (id: string, p: any) => db.addDebtorPayment(id, p),
-  deleteDebtorPayment: (debtorId: string, paymentId: string) => db.deleteDebtorPayment(debtorId, paymentId),
-  updateDebtorPayment: (debtorId: string, paymentId: string, u: any) => db.updateDebtorPayment(debtorId, paymentId, u),
   getDebtorStatement: async (id: string) => {
-    const runner = activeSqlRunner(); if (runner) { const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer'); if (detail) return detail.statement; }
-    return db.getDebtorStatement(id);
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer');
+    if (!detail) throw new Error('Customer not found');
+    return detail.statement;
   },
   // Date-range reports
-  pnlRange: (from: string, to: string) => db.pnlRange(from, to),
-  creditorsReport: (from?: string, to?: string) => db.creditorsReport(from, to),
-  debtorsReport: (from?: string, to?: string) => db.debtorsReport(from, to),
+  pnlRange: async (from: string, to: string) => {
+    const report = await v2Report(from, to);
+    return { revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, cogs: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, expenses: report.profitAndLoss.expenses - report.profitAndLoss.cogs, netProfit: report.profitAndLoss.netProfit };
+  },
+  creditorsReport: async (_from?: string, _to?: string) => (await api.listSuppliers()).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0 })),
+  debtorsReport: async (_from?: string, _to?: string) => (await api.listDebtors()).map((party: any) => ({ id: party.id, name: party.name, balance: party.receivable || party.balance || 0 })),
 
   // Invoices
-  listInvoices: () => db.listInvoices(),
+  listInvoices: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    const statuses = new Map((await service.listSalesAndInvoices()).filter((row: any) => row.type === 'invoice').map((row: any) => [row.id, row]));
+    return (await v2SourceDocuments(['invoice'])).map((row: any) => {
+      const live: any = statuses.get(row.id);
+      return { ...row, invoiceNumber: row.reference || row.id, status: live?.status || row.status || 'unpaid', openAmount: live?.openAmount ?? row.total, lines: Array.isArray(row.lines) ? row.lines : [] };
+    });
+  },
   createInvoice: (inv: any) => createTransaction('createInvoice', inv),
   updateInvoice: (id: string, inv: any) => mutateTransaction('updateInvoice', id, inv),
   deleteInvoice: (id: string) => mutateTransaction('deleteInvoice', id),
   markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, input || {}),
-  overdueInvoices: () => db.overdueInvoices(),
+  overdueInvoices: async () => (await api.listInvoices()).filter((invoice: any) => invoice.status !== 'paid' && invoice.dueDate && invoice.dueDate < new Date().toISOString().slice(0, 10)),
 
   // Receipts (money actually received)
-  listReceipts: () => db.listReceipts(),
+  listReceipts: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const receipts = await v2SourceDocuments(['receipt']);
+    const ids = receipts.map((row: any) => row.id);
+    const allocations = ids.length ? await runner.all<any>(`SELECT receipt_source_id,invoice_source_id,amount FROM v2_invoice_allocations WHERE receipt_source_id IN (${ids.map(() => '?').join(',')})`, ids) : [];
+    return receipts.map((row: any) => ({ ...row, receiptNumber: row.reference || row.id, debtorId: row.partyId, mode: row.mode || (Number(row.advance) > 0 ? 'advance' : 'against_invoice'), allocations: allocations.filter((item: any) => item.receipt_source_id === row.id).map((item: any) => ({ invoiceId: item.invoice_source_id, invoiceSourceId: item.invoice_source_id, amountApplied: Number(item.amount), amount: Number(item.amount) })) }));
+  },
   createReceipt: (r: any) => createTransaction('createReceipt', r),
   updateReceipt: (id: string, input: any) => mutateTransaction('updateReceipt', id, input),
   deleteReceipt: (id: string) => mutateTransaction('deleteReceipt', id),
-  invoicePaidAmount: (invoiceId: string) => db.invoicePaidAmount(invoiceId),
-
-  // Advances / Deposits (advance receipts applied to invoices later)
-  getAdvanceCredit: (debtorId: string) => db.getAdvanceCredit(debtorId),
-  listAdvances: (debtorId: string) => db.listAdvances(debtorId),
-  applyAdvanceToInvoice: async (debtorId: string, invoiceId: string, amount?: number) => { const r = await db.applyAdvanceToInvoice(debtorId, invoiceId, amount); bumpDataVersion(); return r; },
+  invoicePaidAmount: async (invoiceId: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const row = await runner.first<{ total: number }>('SELECT COALESCE(SUM(amount),0) total FROM v2_invoice_allocations WHERE invoice_source_id=?', [invoiceId]);
+    return Number(row?.total || 0);
+  },
 
   // Quotes / Estimates (non-posting until converted)
   listQuotes: () => db.listQuotes(),
@@ -1093,19 +1016,15 @@ export const api = {
   convertQuoteToInvoice: async (id: string, opts?: any) => {
     // [Finding B] Route the invoice creation through the SAME V2 write path the
     // invoices screen uses so the converted invoice is visible to the V2 ledger
-    // (dashboard, reports, party detail) — not stranded in the legacy collection.
+    // (dashboard, reports, party detail) — not stranded outside the ledger.
     const r = await db.convertQuoteToInvoice(id, opts, (payload: any) => createTransaction('createInvoice', payload));
     bumpDataVersion();
     return r;
   },
 
   // Credit / Debit Notes (post-sale adjustments: discounts, returns, extra charges)
-  listCreditNotes: (debtorId?: string) => db.listCreditNotes(debtorId),
-  listDebitNotes: (debtorId?: string) => db.listDebitNotes(debtorId),
   createCreditNote: async (n: any) => createNote('createCreditNote', n),
   createDebitNote: async (n: any) => createNote('createDebitNote', n),
-  deleteCreditNote: async (id: string) => { const r = await db.deleteCreditNote(id); bumpDataVersion(); return r; },
-  deleteDebitNote: async (id: string) => { const r = await db.deleteDebitNote(id); bumpDataVersion(); return r; },
 
   // Delivery Notes / Challans (goods movement, no ledger posting)
   listDeliveryNotes: () => db.listDeliveryNotes(),
@@ -1114,7 +1033,32 @@ export const api = {
   deleteDeliveryNote: async (id: string) => { const r = await db.deleteDeliveryNote(id); bumpDataVersion(); return r; },
 
   // Enhanced reports
-  taxReport: (from: string, to: string) => db.taxReport(from, to),
-  salesRegister: (from: string, to: string) => db.salesRegister(from, to),
-  receiptsRegister: (from: string, to: string) => db.receiptsRegister(from, to),
+  taxReport: async (from: string, to: string) => {
+    const [settings, config, invoices, receipts, bills] = await Promise.all([
+      api.getSettings(), api.getV2BookConfig(), v2SourceDocuments(['invoice']), v2SourceDocuments(['receipt']), v2SourceDocuments(['cash_purchase','credit_purchase']),
+    ]);
+    const inRange = (row: any) => row.date >= from && row.date <= to;
+    const taxOf = (gross: number, rate: number) => rate > 0 ? Math.round((gross - gross / (1 + rate / 100)) * 100) / 100 : 0;
+    const basis = config?.basis === 'cash' ? 'cash' : 'accrual';
+    const outputRows = (basis === 'accrual' ? invoices : receipts).filter(inRange);
+    const outputBase = outputRows.reduce((sum: number, row: any) => sum + Number(row.total || row.amount || 0), 0);
+    const outputTax = outputRows.reduce((sum: number, row: any) => sum + taxOf(Number(row.total || row.amount || 0), Number(row.taxRate || settings.taxRate || 0)), 0);
+    const rate = Number(settings.taxRate || 0);
+    const inputRows = bills.filter(inRange);
+    const inputBase = inputRows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    const inputTax = inputRows.reduce((sum: number, row: any) => sum + taxOf(Number(row.amount || 0), Number(row.taxRate || rate)), 0);
+    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax: 0, debitNoteTax: 0, netOutputTax: outputTax, inputBase, inputTax, netTaxPayable: Math.round((outputTax - inputTax) * 100) / 100 };
+  },
+  salesRegister: async (from: string, to: string) => {
+    const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));
+    const cashTotal = rows.filter((row: any) => row.type === 'Cash Sale').reduce((sum: number, row: any) => sum + row.amount, 0);
+    const invoiceTotal = rows.filter((row: any) => row.type === 'Invoice').reduce((sum: number, row: any) => sum + row.amount, 0);
+    return { from, to, rows: rows.sort((a: any,b: any) => a.date.localeCompare(b.date)), total: cashTotal + invoiceTotal, cashTotal, invoiceTotal, count: rows.length };
+  },
+  receiptsRegister: async (from: string, to: string) => {
+    const rows = (await api.listReceipts()).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, ref: row.receiptNumber, party: row.clientName || 'Walk-in', mode: row.mode, method: row.method || 'cash', amount: row.amount }));
+    const byMethod: Record<string, number> = {}; const byMode: Record<string, number> = {};
+    for (const row of rows) { byMethod[row.method] = (byMethod[row.method] || 0) + row.amount; byMode[row.mode] = (byMode[row.mode] || 0) + row.amount; }
+    return { from, to, rows: rows.sort((a: any,b: any) => a.date.localeCompare(b.date)), byMethod, byMode, total: rows.reduce((sum: number, row: any) => sum + row.amount, 0), count: rows.length };
+  },
 };

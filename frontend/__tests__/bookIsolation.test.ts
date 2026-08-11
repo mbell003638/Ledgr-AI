@@ -17,7 +17,7 @@ import { initSchema } from '../src/db/schema';
 import { initializeV2Book, accountingBookVersion, V2_BOOK_VERSION } from '../src/accountingV2/appBootstrap';
 import { V2AppService } from '../src/accountingV2/appService';
 import { getV2Dashboard } from '../src/accountingV2/v2Dashboard';
-import { buildPersistentV2Reports, persistentV2ReportsOrFallback } from '../src/accountingV2/persistentReports';
+import { buildPersistentV2Reports, persistentV2Reports } from '../src/accountingV2/persistentReports';
 import { resetV2AccountingData } from '../src/accountingV2/resetBook';
 import { exportV2Data, importV2Data } from '../src/db/v2Backup';
 import {
@@ -338,7 +338,7 @@ describe('Item 5 — Secondary book routing (V2 vs legacy)', () => {
   it('DOCUMENTS the gap: with NO runner, createBook cannot initialize V2 so the book has no V2 layer', async () => {
     // Reproduce backend.createBook when runner===null: the V2 init branch is skipped.
     // We assert the *consequence* against a fresh V2 DB: a book that was never
-    // initialized has version=null, so activeContext/reports fall back to legacy.
+    // initialized has version=null, so activeContext and reports reject it.
     const { runner, close } = await twoBookRunner();
     const svc = new V2AppService(runner);
     try {
@@ -346,17 +346,13 @@ describe('Item 5 — Secondary book routing (V2 vs legacy)', () => {
       // never given a V2 record (createBook's `if (runner)` guard was false).
       await setActiveV2Book(runner, 'ghost');
       expect(await accountingBookVersion(runner, 'ghost')).toBeNull();
-      // activeContext refuses a non-versioned book -> app read path uses legacy.
+      // activeContext refuses a non-versioned book.
       expect(await svc.activeContext('2026-03-01')).toBeNull();
       // The RAW report builder throws BOOK_NOT_FOUND for a book with no V2 record
       // (proving it never silently borrows another book's numbers)...
       await expect(buildPersistentV2Reports(runner, { bookId: 'ghost' })).rejects.toThrow(/not found/i);
-      // ...and the APP-FACING wrapper catches that and delegates to the legacy loader,
-      // so a non-V2 (secondary) book renders via the legacy engine, not V2.
-      const legacy = jest.fn(async () => ({ legacy: true }));
-      const result = await persistentV2ReportsOrFallback(runner, { bookId: 'ghost' }, legacy);
-      expect(result.source).toBe('legacy');
-      expect(legacy).toHaveBeenCalledTimes(1);
+      // ...and the app-facing wrapper surfaces the same missing-book error.
+      await expect(persistentV2Reports(runner, { bookId: 'ghost' })).rejects.toThrow(/not found/i);
     } finally { close(); }
   });
 });

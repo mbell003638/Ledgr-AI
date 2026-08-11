@@ -98,52 +98,22 @@ function toUsd(amount: number) {
 }
 
 // ---------- Settings ----------
-// Detects a base64/inline image data-URI (what the picker historically wrote
-// straight into settings.logo, risking a CursorWindow overflow). [H4]
+// Detects a base64/inline image data-URI selected by the current logo picker.
 function isDataUri(v: any): v is string {
   return typeof v === 'string' && v.startsWith('data:');
 }
 
-/**
- * Resolve the business logo, migrating a legacy inline logo out of the settings
- * blob on first read. Returns the logo data-URI (or '' when none).
- *
- * Lazy migration: if the settings document still carries an inline `logo`
- * data-URI, copy it to the dedicated logo storage key and strip it from the
- * settings doc (keeping only a small `hasLogo` marker). This runs at most once
- * per book — after migration `settings.logo` is gone.
- */
-async function resolveLogo(s: any): Promise<string> {
-  if (isDataUri(s?.logo)) {
-    // Legacy inline logo → relocate to the dedicated key, strip from settings.
-    try {
-      await backendWriteLogo(s.logo);
-      const { logo: _drop, ...rest } = s;
-      await writeSettings({ ...rest, hasLogo: true });
-    } catch { /* if migration write fails, still surface the inline value */ }
-    return s.logo;
-  }
-  // Otherwise the authoritative logo lives in the dedicated key.
+/** Resolve the business logo from its dedicated per-book storage key. */
+async function resolveLogo(): Promise<string> {
   try { return await backendReadLogo(); } catch { return ''; }
 }
 
-export async function getSettings() {
+export async function getSettings(): Promise<Record<string, any>> {
   const s = await readSettings();
-  const logo = await resolveLogo(s);
+  const logo = await resolveLogo();
   return {
-    managerCommissionPct: s.managerCommissionPct ?? 0.0,
-    currentPeriodStart: s.currentPeriodStart ?? '1970-01-01',
-    openingInventory: s.openingInventory ?? 0.0,
-    openingCash: s.openingCash ?? 0.0,
-    openingCapital: s.openingCapital ?? 0.0,
-    // Per-investor capital contributions: [{ id, name, amount, date }].
-    // openingCapital (above) is kept as a fallback/legacy combined figure.
-    investors: Array.isArray(s.investors) ? s.investors : [],
-    partnerNames: Array.isArray(s.partnerNames) && s.partnerNames.length ? s.partnerNames : [],
     // Security: hashed device-lock preference for destructive actions.
     lockEnabled: s.lockEnabled ?? false,
-    extraAssets: Array.isArray(s.extraAssets) ? s.extraAssets : [],
-    extraLiabilities: Array.isArray(s.extraLiabilities) ? s.extraLiabilities : [],
     currency: s.currency ?? 'USD',
     taxLabel: s.taxLabel ?? 'None',
     taxLabelCustom: s.taxLabelCustom ?? '',
@@ -163,59 +133,33 @@ export async function getSettings() {
     hasLogo: !!logo,
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
-    selectedPersonas: Array.isArray(s.selectedPersonas) ? s.selectedPersonas : ['custom'],
-    activePersona: s.activePersona ?? 'custom',
-    accountingStyle: s.accountingStyle ?? 'standard',
-    // Revenue recognition: 'cash' = revenue when money received (cash sales +
-    // receipts); 'accrual' = revenue when billed (cash sales + invoices raised).
-    accountingBasis: s.accountingBasis === 'cash' ? 'cash' : 'accrual',
     invoiceTheme: s.invoiceTheme ?? 'navy_gold',
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',
     enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
   };
 }
+
+const ACCOUNTING_SETTING_KEYS = new Set([
+  'managerCommissionPct', 'currentPeriodStart', 'openingInventory', 'openingCash',
+  'openingCapital', 'investors', 'partnerNames', 'extraAssets', 'extraLiabilities',
+  'accountingStyle', 'accountingBasis', 'selectedPersonas', 'activePersona',
+]);
+
 export async function updateSettings(partial: Record<string, any>) {
   const s = await readSettings();
-  const next: Record<string, any> = { ...s, ...partial };
+  const preferences = Object.fromEntries(Object.entries(partial).filter(([key]) => !ACCOUNTING_SETTING_KEYS.has(key)));
+  const next: Record<string, any> = { ...s, ...preferences };
   // Route the logo to its dedicated key; never persist the data-URI in the
   // settings blob (would risk the CursorWindow overflow this fix prevents). [H4]
-  if ('logo' in partial) {
-    const logoVal = partial.logo;
+  if ('logo' in preferences) {
+    const logoVal = preferences.logo;
     await backendWriteLogo(isDataUri(logoVal) ? logoVal : '');
     delete next.logo;
     next.hasLogo = isDataUri(logoVal);
-  } else if (isDataUri(next.logo)) {
-    // A stale inline logo lingering in the doc from before migration: relocate it.
-    await backendWriteLogo(next.logo);
-    delete next.logo;
-    next.hasLogo = true;
   }
   await writeSettings(next);
   return next;
-}
-
-/** Keep the preference document free of accounting state and configuration. */
-export async function clearAccountingSettings() {
-  const current = await readSettings();
-  const {
-    managerCommissionPct: _managerCommissionPct,
-    currentPeriodStart: _currentPeriodStart,
-    openingInventory: _openingInventory,
-    openingCash: _openingCash,
-    openingCapital: _openingCapital,
-    investors: _investors,
-    partnerNames: _partnerNames,
-    extraAssets: _extraAssets,
-    extraLiabilities: _extraLiabilities,
-    accountingStyle: _accountingStyle,
-    accountingBasis: _accountingBasis,
-    selectedPersonas: _selectedPersonas,
-    activePersona: _activePersona,
-    ...preferences
-  } = current;
-  if (Object.keys(preferences).length !== Object.keys(current).length) await writeSettings(preferences);
-  return preferences;
 }
 
 // ---------- Suppliers ----------

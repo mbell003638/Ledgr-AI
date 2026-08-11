@@ -172,10 +172,7 @@ export default function VoiceFab() {
             method: "cash", notes: parsed.notes || parsed.summary,
           });
         } else if (parsed.intent === "inventory") {
-          let postedV2 = false;
-          try { await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary }); postedV2 = true; }
-          catch (e: any) { if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e; }
-          if (!postedV2) { const info = await api.expectedInventory(); await api.createInventory({ date, expectedStock: info.expected, actualStock: parsed.amount, notes: parsed.notes || parsed.summary }); }
+          await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary });
         } else {
           throw new Error("Could not determine intent. Please try again.");
         }

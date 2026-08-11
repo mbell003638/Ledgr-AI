@@ -433,6 +433,18 @@ export class V2AppService {
     return { source, journal };
   }
 
+  async updateManualCash(sourceId: string, input: { date: string; amount: number; direction: 'in' | 'out'; notes?: string }) {
+    const source = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [sourceId]);
+    if (!source || !['manual_cash_income', 'manual_cash_expense'].includes(source.type)) throw new Error('Manual cash entry not found');
+    return this.documents.replaceSource(sourceId, source.type, 'Edit manual cash entry', () => this.recordManualCash(input));
+  }
+
+  async deleteManualCash(sourceId: string) {
+    const source = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [sourceId]);
+    if (!source || !['manual_cash_income', 'manual_cash_expense'].includes(source.type)) throw new Error('Manual cash entry not found');
+    return this.documents.reverseSource(sourceId, source.type, 'Delete manual cash entry', true);
+  }
+
   async listBills() {
     const context = await this.activeContext(); if (!context) return [];
     await this.repairPartyIdentities(context.bookId);
@@ -441,8 +453,8 @@ export class V2AppService {
   }
 
   async createSale(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postCashSale(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), reference: input.reference, metadata: { notes: input.notes } }); }
-  async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference }); }); }
-  async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations }); }); }
+  async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference, metadata: { clientPhone: input.clientPhone, dueDate: input.dueDate, lines: input.lines, notes: input.notes, terms: input.terms, taxLabel: input.taxLabel, taxRate: input.taxRate } }); }); }
+  async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations, metadata: { mode: input.mode, notes: input.notes, taxLabel: input.taxLabel, taxRate: input.taxRate } }); }); }
   async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const cash = input.paymentType === 'cash'; return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'supplier', c.bookId); return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }); }
   async createPayment(input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
@@ -482,10 +494,10 @@ export class V2AppService {
     }
     return this.repo.runInTransaction(async () => {
       const partyId = await this.party(input, 'supplier', c.bookId);
-      return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method) });
+      return postSupplierPayment(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), metadata: { notes: input.notes } });
     });
   }
-  async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method) }); }
+  async createExpense(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postExpense(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), metadata: { category: input.category, notes: input.notes } }); }
 
   /**
    * Confirmed scan write. Any missing party/role and its transaction are created
@@ -535,7 +547,7 @@ export class V2AppService {
   /**
    * [Finding A] Post a credit/debit note through the V2 ledger so it hits the
    * journal + party balance (dashboard / party detail / statements), instead of
-   * writing a legacy-only record the V2 reads never see. Role-aware: customer
+   * writing a disconnected record the V2 reads never see. Role-aware: customer
    * notes move AR, supplier notes move AP. The party is upserted (find-or-create)
    * exactly like invoices/bills so a note can be raised against a party that was
    * only referenced by name/id.
@@ -1087,67 +1099,60 @@ export class V2AppService {
   }
 }
 
-export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
+export function createAppWriteRouter(v2: V2AppService) {
   type WriteName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
-  const route = (name: WriteName) => async (payload: AnyRecord) => {
-    if (await v2.activeContext(payload.date)) return v2[name](payload);
-    return legacy[name](payload);
-  };
+  const route = (name: WriteName) => async (payload: AnyRecord) => v2[name](payload);
   return { createSale: route('createSale'), createInvoice: route('createInvoice'), createReceipt: route('createReceipt'), createBill: route('createBill'), createPayment: route('createPayment'), createExpense: route('createExpense') };
 }
 
-export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
+export function createAppMutationRouter(v2: V2AppService) {
   const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => {
     if (await v2.ownsSource(id, type)) return v2[name](id, payload);
-    return legacy[name](id, payload);
+    throw new Error(`Cannot edit unknown V2 ${type} source`);
   };
   const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => {
     if (await v2.ownsSource(id, type)) return v2[name](id);
-    return legacy[name](id);
+    throw new Error(`Cannot delete unknown V2 ${type} source`);
   };
   return {
     updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
     updateSale: async (id: string, payload: AnyRecord) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
       if (isV2) return v2.updateSale(id, payload);
-      return legacy.updateSale(id, payload);
+      throw new Error('Cannot edit unknown V2 sale source');
     },
     deleteSale: async (id: string) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
       if (isV2) return v2.deleteSale(id);
-      return legacy.deleteSale(id);
+      throw new Error('Cannot delete unknown V2 sale source');
     },
     updateBill: async (id: string, payload: AnyRecord) => {
       if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) return v2.updateBill(id, payload);
-      return legacy.updateBill(id, payload);
+      throw new Error('Cannot edit unknown V2 purchase source');
     },
     deleteBill: async (id: string) => {
       if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) return v2.deleteBill(id);
-      return legacy.deleteBill(id);
+      throw new Error('Cannot delete unknown V2 purchase source');
     },
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {
       const type = await v2.sourceType(id);
       if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') return v2.updatePayment(id, payload);
-      return legacy.updatePayment(id, payload);
+      throw new Error('Cannot edit unknown V2 payment source');
     },
     deletePayment: async (id: string) => {
       const type = await v2.sourceType(id);
       if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') return v2.deletePayment(id);
-      return legacy.deletePayment(id);
+      throw new Error('Cannot delete unknown V2 payment source');
     },
     markInvoicePaid: async (id: string, payload: AnyRecord = {}) => {
       if (await v2.ownsSource(id, 'invoice')) return v2.markInvoicePaid(id, payload);
-      return legacy.markInvoicePaid(id);
+      throw new Error('Cannot mark an unknown V2 invoice as paid');
     },
   };
 }
 
-export function createCloseBooksRouter(v2: V2AppService, legacy: (actualStock: number, notes: string, commissionPct?: number, date?: string) => Promise<any>) {
-  return async (input: V2CloseBooksAppInput) => {
-    const active = await v2.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
-    const isV2 = Boolean(active?.value && await accountingBookVersion(v2.db, active.value) === V2_BOOK_VERSION);
-    return isV2 ? v2.closeBooks(input) : legacy(input.actualStock, input.notes || '', input.commissionPct, input.date);
-  };
+export function createCloseBooksRouter(v2: V2AppService) {
+  return async (input: V2CloseBooksAppInput) => v2.closeBooks(input);
 }

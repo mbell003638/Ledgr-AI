@@ -4,27 +4,15 @@ import { buildV2Reports, type V2ReportOptions, type V2Reports } from './reports'
 import { computePeriodicCogs } from './cogs';
 import { V2_ACCOUNT_CODES } from './types';
 
-export type PersistentReportResult<TLegacy> =
-  | { source: 'v2'; report: V2Reports }
-  | { source: 'legacy'; report: TLegacy };
+export type PersistentReportResult = { source: 'v2'; report: V2Reports };
 
-/**
- * Prefer authoritative journal-derived reports when the active book exists in
- * normalized SQLite. Any unavailable/incomplete V2 path delegates to the
- * caller's legacy report loader so report screens remain usable.
- */
-export async function persistentV2ReportsOrFallback<TLegacy>(
-  db: SqlRunner | null,
+/** Load reports from the sole authoritative V2 journal. */
+export async function persistentV2Reports(
+  db: SqlRunner,
   options: V2ReportOptions,
-  legacy: () => Promise<TLegacy>,
-): Promise<PersistentReportResult<TLegacy>> {
-  if (!db) return { source: 'legacy', report: await legacy() };
-
-  // Missing V2 setup may legitimately use the compatibility report. Once a V2
-  // book exists, however, database/report failures must be visible: silently
-  // switching engines can display stale or materially different financials.
+): Promise<PersistentReportResult> {
   const book = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [options.bookId]);
-  if (!book) return { source: 'legacy', report: await legacy() };
+  if (!book) throw new Error(`V2 book ${options.bookId} was not found`);
   return { source: 'v2', report: await buildPersistentV2Reports(db, options) };
 }
 

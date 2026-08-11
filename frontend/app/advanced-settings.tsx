@@ -105,7 +105,9 @@ export default function AdvancedSettingsScreen() {
           },
         });
       }
-    } catch { /* v2 update fallback */ }
+    } catch (error: any) {
+      setStatus({ ok: false, msg: error?.message || "Could not update Accounting Style." });
+    }
   };
 
   const load = useCallback(async () => {

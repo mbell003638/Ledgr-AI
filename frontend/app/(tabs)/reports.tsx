@@ -16,7 +16,7 @@ import { printHtml } from "@/src/utils/print";
 import { showAlert } from "@/src/utils/alerts";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { round2 } from "@/src/money";
-import { v2ReportsOrFallback } from "@/src/accountingV2/runtime";
+import { v2Reports } from "@/src/accountingV2/runtime";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
@@ -70,7 +70,6 @@ export default function ReportsScreen() {
   const [customFrom, setCustomFrom] = useState(() => rangePreset("This Month").from);
   const [customTo, setCustomTo] = useState(() => rangePreset("This Month").to);
   const [rangeNotice, setRangeNotice] = useState("");
-  const [reportSource, setReportSource] = useState<"v2" | "legacy">("legacy");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
 
@@ -104,12 +103,7 @@ export default function ReportsScreen() {
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
       const [core, snapshotDash, snapshotBs, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
-        v2ReportsOrFallback({ from, to }, async () => ({
-          dash: await api.dashboard(),
-          pnl: await api.pnlRange(from, to),
-          balanceSheet: await api.balanceSheet(),
-          trialBalance: await api.trialBalance(),
-        })),
+        v2Reports({ from, to }),
         // P&L is period-based; Summary and Balance use cumulative current balances.
         api.dashboard(),
         api.balanceSheet(),
@@ -119,8 +113,7 @@ export default function ReportsScreen() {
         api.creditorsReport(from, to), api.debtorsReport(from, to),
         api.taxReport(from, to), api.salesRegister(from, to), api.receiptsRegister(from, to),
       ]);
-      setReportSource(core.source);
-      if (core.source === "v2") {
+      {
         const report = core.report;
         const current = snapshotDash;
         const currentBs: any = snapshotBs;
@@ -167,8 +160,6 @@ export default function ReportsScreen() {
           debits: report.trialBalance.accounts.filter((a) => a.debit > 0).map((a) => ({ account: a.name, amount: a.debit })),
           credits: report.trialBalance.accounts.filter((a) => a.credit > 0).map((a) => ({ account: a.name, amount: a.credit })),
         });
-      } else {
-        setDash(core.report.dash); setPnl(core.report.pnl); setBs(core.report.balanceSheet); setTb(core.report.trialBalance);
       }
       setPeriods(pd); setCap(c); setDraws(dh);
       setProfitTrend(pt); setAssetDist(ad);
@@ -196,8 +187,8 @@ export default function ReportsScreen() {
 
   const screenW = Dimensions.get("window").width;
 
-  // ------- Legacy vs Live figures for the Summary tab -------
-  const legacy = useMemo(() => {
+  // ------- Closed-period figures for the Summary tab -------
+  const closedPeriodSummary = useMemo(() => {
     const sum = (k: string) => periods.reduce((s, p) => s + (Number(p[k]) || 0), 0);
     return {
       totalProfit: +sum("netProfit").toFixed(2),
@@ -233,8 +224,8 @@ export default function ReportsScreen() {
         ``,
         ...(bizSettings?.accountingStyle === 'retail_partnership' ? [
           `— PARTNER STAKES RECONCILIATION`,
-          line("Total Profit (legacy)", legacy.totalProfit),
-          line("Total Drawings (legacy)", legacy.totalDrawings),
+          line("Closed-period Profit", closedPeriodSummary.totalProfit),
+          line("Closed-period Drawings", closedPeriodSummary.totalDrawings),
           ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
           cap ? line("Closing Capital", cap.closingCapital) : "",
         ] : []),
@@ -244,7 +235,7 @@ export default function ReportsScreen() {
         line("Revenue", pnl.revenue),
         line("COGS", pnl.cogs),
         line("Gross Profit", pnl.grossProfit),
-        ...(reportSource === "v2" ? [line("Operating Expenses", pnl.operatingExpenses || 0)] : []),
+        line("Operating Expenses", pnl.operatingExpenses || 0),
         line("Net Profit", pnl.netProfit),
       ].join("\n");
     } else if (seg === "Balance" && bs) {
@@ -438,7 +429,7 @@ export default function ReportsScreen() {
               <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }}>
                 <Text style={[styles.rTitle, { color: theme.color.brandPrimary }]}>PROFIT (LIVE)</Text>
                 <RowKV label="Sales" value={fmt(dash.totalSales)} theme={theme} styles={styles} />
-                <RowKV label={reportSource === "v2" ? "Expenses" : "Purchases"} value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
+                <RowKV label="Expenses" value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
                 <RowKV label="Gross Profit" value={fmt(dash.grossProfit)} theme={theme} styles={styles} />
                 <View style={styles.divider} />
                 <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
@@ -466,8 +457,8 @@ export default function ReportsScreen() {
               {bizSettings?.accountingStyle === 'retail_partnership' && (
                 <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }} testID="report-summary-reconciliation">
                   <Text style={[styles.rTitle, { color: theme.color.onSurface }]}>PARTNER STAKES RECONCILIATION</Text>
-                  <RowKV label="Total Profit (legacy)" value={fmt(legacy.totalProfit)} theme={theme} styles={styles} />
-                  <RowKV label="Total Drawings (legacy)" value={fmt(legacy.totalDrawings)} theme={theme} styles={styles} danger />
+                  <RowKV label="Closed-period Profit" value={fmt(closedPeriodSummary.totalProfit)} theme={theme} styles={styles} />
+                  <RowKV label="Closed-period Drawings" value={fmt(closedPeriodSummary.totalDrawings)} theme={theme} styles={styles} danger />
                   {cap && cap.partners.map((p: any) => (
                     <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
                   ))}
@@ -489,9 +480,7 @@ export default function ReportsScreen() {
                 <RowKV label="Revenue" value={fmt(pnl.revenue)} theme={theme} styles={styles} />
                 <RowKV label="Cost of Goods Sold" value={`- ${fmt(pnl.cogs)}`} theme={theme} styles={styles} />
                 <RowKV label="Gross Profit" value={fmt(pnl.grossProfit)} strong theme={theme} styles={styles} />
-                {reportSource === "v2" && (
-                  <RowKV label="Operating Expenses" value={`- ${fmt(pnl.operatingExpenses || 0)}`} theme={theme} styles={styles} />
-                )}
+                <RowKV label="Operating Expenses" value={`- ${fmt(pnl.operatingExpenses || 0)}`} theme={theme} styles={styles} />
                 {pnl.managerCommissionPct > 0 && (
                   <RowKV label={`Manager Commission (${pnl.managerCommissionPct}%)`} value={`- ${fmt(pnl.commission)}`} theme={theme} styles={styles} />
                 )}

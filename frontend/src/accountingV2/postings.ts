@@ -69,7 +69,7 @@ export async function postCashSale(repo: V2SqlRepository, input: { bookId: strin
   return { source, journal };
 }
 
-export async function postInvoice(repo: V2SqlRepository, input: { bookId: string; periodId: string; partyId: string; date: string; amount: number; reference?: string }) {
+export async function postInvoice(repo: V2SqlRepository, input: { bookId: string; periodId: string; partyId: string; date: string; amount: number; reference?: string; metadata?: Record<string, unknown> }) {
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   await customer(repo, input.bookId, input.partyId);
 
@@ -90,7 +90,7 @@ export async function postInvoice(repo: V2SqlRepository, input: { bookId: string
   }
   const appliedTotal = cents(advanceAllocations.reduce((sum, a) => sum + a.amount, 0));
   const status = appliedTotal >= amount - 0.005 ? 'paid' : appliedTotal > 0 ? 'partial' : 'unpaid';
-  const source: V2Source = { id: sourceId, bookId: input.bookId, type: 'invoice', date: input.date, reference: input.reference, metadata: { partyId: input.partyId, total: amount, status, ...(appliedTotal > 0 ? { advanceApplied: appliedTotal } : {}) } };
+  const source: V2Source = { id: sourceId, bookId: input.bookId, type: 'invoice', date: input.date, reference: input.reference, metadata: { ...(input.metadata || {}), partyId: input.partyId, total: amount, status, ...(appliedTotal > 0 ? { advanceApplied: appliedTotal } : {}) } };
   const lines: any[] = [
     { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
     { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
@@ -107,7 +107,7 @@ export async function postInvoice(repo: V2SqlRepository, input: { bookId: string
   return { source, journal, advanceApplied: appliedTotal };
 }
 
-export async function postReceipt(repo: V2SqlRepository, input: { bookId: string; periodId: string; partyId: string; date: string; amount: number; method: V2PaymentMethod; reference?: string; allocations?: { invoiceSourceId: string; amount: number }[] }) {
+export async function postReceipt(repo: V2SqlRepository, input: { bookId: string; periodId: string; partyId: string; date: string; amount: number; method: V2PaymentMethod; reference?: string; allocations?: { invoiceSourceId: string; amount: number }[]; metadata?: Record<string, unknown> }) {
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   await customer(repo, input.bookId, input.partyId);
   const requested = input.allocations || []; const pending: Record<string, number> = {}; let allocated = 0;
@@ -121,7 +121,7 @@ export async function postReceipt(repo: V2SqlRepository, input: { bookId: string
     allocated = cents(allocated + value);
   }
   if (allocated > amount + 0.005) throw new Error('Allocations exceed receipt');
-  const advance = cents(amount - allocated); const source: V2Source = { id: uid('receipt'), bookId: input.bookId, type: 'receipt', date: input.date, reference: input.reference, metadata: { partyId: input.partyId, total: amount, method: input.method, allocated, advance } };
+  const advance = cents(amount - allocated); const source: V2Source = { id: uid('receipt'), bookId: input.bookId, type: 'receipt', date: input.date, reference: input.reference, metadata: { ...(input.metadata || {}), partyId: input.partyId, total: amount, method: input.method, allocated, advance } };
   const lines: any[] = [{ accountId: `${input.bookId}:account:${paymentCode(input.method)}`, partyId: input.partyId, debit: amount, credit: 0 }];
   if (allocated) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: 0, credit: allocated });
   if (advance) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CUSTOMER_ADVANCES}`, partyId: input.partyId, debit: 0, credit: advance });
@@ -149,7 +149,7 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
   const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Purchase', lines });
   return { source, journal, supplierAdvanceApplied: cents(applied) };
 }
-export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:string;periodId:string;partyId:string;date:string;amount:number;method:V2PaymentMethod}){
+export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:string;periodId:string;partyId:string;date:string;amount:number;method:V2PaymentMethod;metadata?:Record<string, unknown>}){
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   await partyWithRole(repo, input.bookId, input.partyId, 'supplier');
   // [M2] Only settle up to the party's outstanding payable via AP; route any excess to a
@@ -161,7 +161,7 @@ export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:str
   const payable = Math.max(0, cents(Number(apRow?.balance || 0)));
   const toAP = cents(Math.min(amount, payable));
   const advance = cents(amount - toAP);
-  const source: V2Source = { id: uid('supplier_payment'), bookId: input.bookId, type: 'supplier_payment', date: input.date, metadata: { partyId: input.partyId, total: amount, method: input.method, ...(advance > 0 ? { supplierAdvance: advance } : {}) } };
+  const source: V2Source = { id: uid('supplier_payment'), bookId: input.bookId, type: 'supplier_payment', date: input.date, metadata: { ...(input.metadata || {}), partyId: input.partyId, total: amount, method: input.method, ...(advance > 0 ? { supplierAdvance: advance } : {}) } };
   const lines: any[] = [];
   if (toAP > 0.005) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: toAP, credit: 0 });
   if (advance > 0.005) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SUPPLIER_ADVANCES}`, partyId: input.partyId, debit: advance, credit: 0 });
@@ -169,7 +169,7 @@ export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:str
   const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Supplier payment', lines });
   return { source, journal, supplierAdvance: advance };
 }
-export async function postExpense(repo:V2SqlRepository,input:{bookId:string;periodId:string;date:string;amount:number;method:V2PaymentMethod}){const amount=cents(input.amount);if(!Number.isFinite(amount)||amount<=0)throw new Error('Amount must be positive');const source:V2Source={id:uid('expense'),bookId:input.bookId,type:'expense',date:input.date,metadata:{total:amount,method:input.method}};const journal=await repo.postSourceJournal(source,{bookId:input.bookId,periodId:input.periodId,date:input.date,memo:'Expense',lines:[{accountId:`${input.bookId}:account:${V2_ACCOUNT_CODES.EXPENSES}`,debit:amount,credit:0},{accountId:`${input.bookId}:account:${paymentCode(input.method)}`,debit:0,credit:amount}]});return{source,journal};}
+export async function postExpense(repo:V2SqlRepository,input:{bookId:string;periodId:string;date:string;amount:number;method:V2PaymentMethod;metadata?:Record<string, unknown>}){const amount=cents(input.amount);if(!Number.isFinite(amount)||amount<=0)throw new Error('Amount must be positive');const source:V2Source={id:uid('expense'),bookId:input.bookId,type:'expense',date:input.date,metadata:{...(input.metadata||{}),total:amount,method:input.method}};const journal=await repo.postSourceJournal(source,{bookId:input.bookId,periodId:input.periodId,date:input.date,memo:String(input.metadata?.notes||input.metadata?.category||'Expense'),lines:[{accountId:`${input.bookId}:account:${V2_ACCOUNT_CODES.EXPENSES}`,debit:amount,credit:0},{accountId:`${input.bookId}:account:${paymentCode(input.method)}`,debit:0,credit:amount}]});return{source,journal};}
 /**
  * [Finding A] Post a credit/debit note against a customer (AR) or supplier (AP).
  *

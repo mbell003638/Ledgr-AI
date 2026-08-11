@@ -65,77 +65,63 @@ describe('V2 application write integration', () => {
     } finally { close(); }
   });
 
-  it('uses one V2 write path when active and calls legacy only when no versioned V2 book is active', async () => {
+  it('uses the V2 write path and rejects when no versioned V2 book is active', async () => {
     const { runner, close, service } = await setup();
-    const legacy = { createSale: jest.fn(async (payload) => ({ legacy: payload })) };
-    const router = createAppWriteRouter(service, legacy);
+    const router = createAppWriteRouter(service);
     try {
       const result = await router.createSale({ date: '2026-07-01', amount: 9 });
       expect(result.source.type).toBe('cash_sale');
-      expect(legacy.createSale).not.toHaveBeenCalled();
       await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
-      await expect(router.createSale({ date: '2026-07-01', amount: 9 })).resolves.toEqual({ legacy: { date: '2026-07-01', amount: 9 } });
-      expect(legacy.createSale).toHaveBeenCalledTimes(1);
+      await expect(router.createSale({ date: '2026-07-01', amount: 9 })).rejects.toThrow(/active versioned V2 book/i);
     } finally { close(); }
   });
 
   it('routes receipt delete and edit through the V2 document service at the app boundary', async () => {
     const { runner, close, service } = await setup();
-    const legacy = { updateReceipt: jest.fn(), deleteReceipt: jest.fn(), markInvoicePaid: jest.fn() };
-    const router = createAppMutationRouter(service, legacy);
+    const router: any = createAppMutationRouter(service);
     try {
       const receipt = await service.createReceipt({ date: '2026-07-03', amount: 15, debtorId: 'customer', clientName: 'Customer', method: 'cash' });
       const edited = await router.updateReceipt(receipt.source.id, { date: '2026-07-04', amount: 20, debtorId: 'customer', method: 'bank' });
       expect(edited.replacement.source.metadata.method).toBe('bank');
-      expect(legacy.updateReceipt).not.toHaveBeenCalled();
       await router.deleteReceipt(edited.replacement.source.id);
-      expect(legacy.deleteReceipt).not.toHaveBeenCalled();
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.replacement.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
 
   it('routes invoice mark-paid through V2 and posts the remaining balance', async () => {
     const { close, service } = await setup();
-    const legacy = { markInvoicePaid: jest.fn() };
-    const router = createAppMutationRouter(service, legacy);
+    const router: any = createAppMutationRouter(service);
     try {
       const invoice = await service.createInvoice({ date: '2026-07-02', total: 40, clientName: 'Customer', debtorId: 'customer' });
       const result = await router.markInvoicePaid(invoice.source.id, { date: '2026-07-05', method: 'bank' });
       expect(result.source.type).toBe('receipt');
-      expect(legacy.markInvoicePaid).not.toHaveBeenCalled();
       expect(await service.repo.invoiceOpen(invoice.source.id)).toBe(0);
     } finally { close(); }
   });
 
   it('routes cash sale edit/delete through V2 reversal and repost without legacy calls', async () => {
     const { runner, close, service } = await setup();
-    const legacy = { updateSale: jest.fn(), deleteSale: jest.fn() };
-    const router = createAppMutationRouter(service, legacy);
+    const router: any = createAppMutationRouter(service);
     try {
       const sale = await service.createSale({ date: '2026-07-10', amount: 25, method: 'card', notes: 'old' });
       const edited = await router.updateSale(sale.source.id, { date: '2026-07-11', amount: 40, method: 'bank', notes: 'new' });
       expect(edited.source.type).toBe('cash_sale');
       expect(edited.source.metadata).toMatchObject({ total: 40, method: 'bank', notes: 'new' });
-      expect(legacy.updateSale).not.toHaveBeenCalled();
       expect(await runner.first("SELECT json_extract(metadata,'$.reversed') AS reversed FROM v2_sources WHERE id=?", [sale.source.id])).toEqual({ reversed: 1 });
       await router.deleteSale(edited.source.id);
-      expect(legacy.deleteSale).not.toHaveBeenCalled();
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
 
   it('routes purchase/bill edit/delete through V2 reversal and repost', async () => {
     const { runner, close, service } = await setup();
-    const legacy = { updateBill: jest.fn(), deleteBill: jest.fn() };
-    const router = createAppMutationRouter(service, legacy);
+    const router: any = createAppMutationRouter(service);
     try {
       const bill = await service.createBill({ date: '2026-07-10', amount: 25, supplierId: 'supplier-1', supplierName: 'Supply Co', paymentType: 'cash', method: 'cash', invoiceNo: 'A', notes: 'old' });
       const edited = await router.updateBill(bill.source.id, { date: '2026-07-11', amount: 40, supplierId: 'supplier-1', supplierName: 'Supply Co', paymentType: 'credit', invoiceNo: 'B', notes: 'new' });
       expect(edited.source.type).toBe('credit_purchase');
       expect(edited.source.metadata).toMatchObject({ total: 40, invoiceNo: 'B', notes: 'new' });
-      expect(legacy.updateBill).not.toHaveBeenCalled();
       await router.deleteBill(edited.source.id);
-      expect(legacy.deleteBill).not.toHaveBeenCalled();
       expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [edited.source.id])).toEqual({ deleted: 1 });
     } finally { close(); }
   });
@@ -188,8 +174,7 @@ describe('V2 application write integration', () => {
       members: [{ name: 'Alice', openingContribution: 100, profitSharePct: 100 }],
     });
     const service = new V2AppService(node.runner);
-    const legacy = { updatePayment: jest.fn(), deletePayment: jest.fn() };
-    const router = createAppMutationRouter(service, legacy);
+    const router: any = createAppMutationRouter(service);
     try {
       const drawing = await service.createPayment({ date: '2026-07-10', amount: 20, type: 'drawing', investorId: 'partnership:member:1', notes: 'First' });
       expect((await new (await import('../src/accountingV2/investorLedgerService')).V2InvestorLedgerService(node.runner).detail('partnership', 'partnership:member:1')).currentCapitalBalance).toBe(80);
@@ -198,11 +183,9 @@ describe('V2 application write integration', () => {
       const ledger = new (await import('../src/accountingV2/investorLedgerService')).V2InvestorLedgerService(node.runner);
       await expect(ledger.detail('partnership', 'partnership:member:1')).resolves.toMatchObject({ totalDrawings: 35, currentCapitalBalance: 65 });
       expect((await ledger.detail('partnership', 'partnership:member:1')).transactions.filter((item) => item.type === 'drawing')).toHaveLength(1);
-      expect(legacy.updatePayment).not.toHaveBeenCalled();
 
       await router.deletePayment(edited.source.id);
       await expect(ledger.detail('partnership', 'partnership:member:1')).resolves.toMatchObject({ totalDrawings: 0, currentCapitalBalance: 100 });
-      expect(legacy.deletePayment).not.toHaveBeenCalled();
       expect((await service.repo.reconcileBook('partnership')).balanced).toBe(true);
     } finally { node.close(); }
   });
@@ -292,6 +275,19 @@ describe('V2 application write integration', () => {
       expect(dashboard.accountsPayable).toBe(36215.42);
       expect(dashboard.otherAssets).toBe(750);
       expect(dashboard.netWorth).toBe(0);
+    } finally { close(); }
+  });
+
+  it('edits and deletes manual Cash Book rows through balanced V2 reversals', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const created = await service.recordManualCash({ date: '2026-07-01', amount: 100, direction: 'in', notes: 'Counter income' });
+      const edited = await service.updateManualCash(created.source.id, { date: '2026-07-02', amount: 80, direction: 'out', notes: 'Correction' });
+      expect(edited.source.type).toBe('manual_cash_expense');
+      await service.deleteManualCash(edited.source.id);
+      const report = await (await import('../src/accountingV2/persistentReports')).buildPersistentV2Reports(runner, { bookId: 'active-v2' });
+      expect(report.profitAndLoss).toMatchObject({ revenue: 0, expenses: 0, netProfit: 0 });
+      expect((await service.repo.reconcileBook('active-v2')).balanced).toBe(true);
     } finally { close(); }
   });
 

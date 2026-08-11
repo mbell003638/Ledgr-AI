@@ -1,7 +1,8 @@
 /**
  * SQLite schema + runner contract for the Ledgr data layer.
- * Legacy collections remain row-per-record JSON tables; V2 uses normalized
- * tables for books, parties, accounts, periods, sources, journals, and lines.
+ * Non-posting document collections remain row-per-record JSON tables; V2 uses
+ * normalized tables for books, parties, accounts, periods, sources, journals,
+ * and lines.
  */
 
 export interface SqlRunner {
@@ -25,10 +26,10 @@ export const V2_TABLES = [
 ] as const;
 
 export function schemaSql(): string {
-  const legacy = COLLECTIONS.map((c) => `
+  const documents = COLLECTIONS.map((c) => `
     CREATE TABLE IF NOT EXISTS ${c} (id TEXT PRIMARY KEY, date TEXT, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_${c}_date ON ${c}(date);`).join('\n');
-  return `${legacy}
+  return `${documents}
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 

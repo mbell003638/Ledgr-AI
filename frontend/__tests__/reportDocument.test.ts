@@ -2,19 +2,8 @@
  * Unit tests for the monthly report document builder + assembler.
  *
  * The builder is pure (no RN imports), so we can construct inputs directly and
- * assert on the produced HTML. We also drive the assembler with real seeded DB
- * figures to confirm the totals wired into the report are correct.
+ * assert on the produced HTML and pure assembled report shape.
  */
-
-const mem: Record<string, string> = {};
-jest.mock('@react-native-async-storage/async-storage', () => ({
-  __esModule: true,
-  default: {
-    getItem: jest.fn(async (k: string) => (k in mem ? mem[k] : null)),
-    setItem: jest.fn(async (k: string, v: string) => { mem[k] = v; }),
-    removeItem: jest.fn(async (k: string) => { delete mem[k]; }),
-  },
-}));
 
 import fs from 'fs';
 import path from 'path';
@@ -25,12 +14,6 @@ import {
   money,
   type MonthlyReportData,
 } from '../src/utils/reportDocument';
-import {
-  createSale, createBill, createSupplier, createPayment, updateSettings,
-  monthlySummary, dashboard, capitalStatement, getSettings,
-} from '../src/db/local';
-
-beforeEach(() => { for (const k of Object.keys(mem)) delete mem[k]; });
 
 const baseInput = (over: Partial<MonthlyReportData> = {}): MonthlyReportData => ({
   periodTitle: 'Jul 2026',
@@ -162,67 +145,22 @@ describe('money()', () => {
   });
 });
 
-describe('assembleMonthlyReport — real seeded figures', () => {
-  it('wires correct totals from monthlySummary + dashboard + capitalStatement', async () => {
-    await updateSettings({
-      managerCommissionPct: 18,
-      currency: 'USD',
-      invoiceTheme: 'navy_gold',
-      partnerNames: ['Amit', 'Rahim'],
-      investors: [
-        { id: 'amit', name: 'Amit', amount: 55124.97 },
-        { id: 'rahim', name: 'Rahim', amount: 72442.12 },
-      ],
-      openingInventory: 100000,
-      openingCash: 20000,
-    });
-    const sup = await createSupplier({ name: 'Acme' });
-    await createBill({ supplierId: sup.id, date: '2026-07-05', amount: 50000 });
-    await createSale({ date: '2026-07-10', amount: 90000 });
-
-    const [summary, dash, capital, settings] = await Promise.all([
-      monthlySummary('2026-07'), dashboard(), capitalStatement(), getSettings(),
-    ]);
-    const report = assembleMonthlyReport(summary, dash, capital, settings, {
-      periodTitle: 'Jul 2026', savedAt: 'now',
-    });
-
-    // Hero: net = gross − commission.
-    expect(report.profitBeforeCommission).toBe(summary.grossProfit);
-    expect(report.commission).toBe(summary.commission);
-    expect(report.netProfit).toBeCloseTo(summary.grossProfit - summary.commission, 2);
-    expect(report.commissionPct).toBe(18);
-
-    // Two partners, equal share of net.
+describe('assembleMonthlyReport — pure inputs', () => {
+  it('wires journal-derived totals and partner rows without reading settings balances', () => {
+    const report = assembleMonthlyReport(
+      { periodStart: '2026-07-01', grossProfit: 33684.16, commission: 6063.15, managerCommissionPct: 18 },
+      { cash: 37741.17, inventoryValue: 150527.46, assets: 197466.67, liabilities: 42278.57 },
+      { investors: [
+        { name: 'Amit', contributed: 55124.97, profitShare: 13810.51, drawings: 0, balance: 68935.48 },
+        { name: 'Rahim', contributed: 72442.12, profitShare: 13810.51, drawings: 0, balance: 86252.63 },
+      ] },
+      { currency: 'USD' },
+      { periodTitle: 'Jul 2026', savedAt: 'now' },
+    );
+    expect(report.netProfit).toBeCloseTo(27621.01, 2);
     expect(report.partnerCount).toBe(2);
-    expect(report.partnerShareEach).toBeCloseTo(report.netProfit / 2, 2);
-    expect(report.partners.map((p) => p.name)).toEqual(['Amit', 'Rahim']);
-    // Opening = each partner's contributed capital.
-    expect(report.partners[0].opening).toBeCloseTo(55124.97, 2);
-    expect(report.partners[1].opening).toBeCloseTo(72442.12, 2);
-
-    // Assets include cash + physical stock, total matches dashboard.
-    expect(report.assets.some((a) => a.label === 'Physical Stock')).toBe(true);
-    expect(report.totalAssets).toBe(dash.assets);
-
-    // Currency symbol resolved from settings.
-    expect(report.currencySymbol).toBe('$');
-  });
-
-  it('produces a solo report (no partners) that hides partner rows', async () => {
-    await updateSettings({ managerCommissionPct: 0, currency: 'USD' });
-    await createSale({ date: '2026-07-10', amount: 5000 });
-
-    const [summary, dash, capital, settings] = await Promise.all([
-      monthlySummary('2026-07'), dashboard(), capitalStatement(), getSettings(),
-    ]);
-    const report = assembleMonthlyReport(summary, dash, capital, settings, {
-      periodTitle: 'Jul 2026', savedAt: 'now',
-    });
-    expect(report.partnerCount).toBe(0);
-    expect(report.partners).toHaveLength(0);
-    const html = buildMonthlyReportHtml(report, 'navy_gold');
-    expect(html).not.toContain('Partner Stakes Reconciliation');
+    expect(report.partners.map((partner) => partner.name)).toEqual(['Amit', 'Rahim']);
+    expect(report.totalAssets).toBe(197466.67);
   });
 });
 

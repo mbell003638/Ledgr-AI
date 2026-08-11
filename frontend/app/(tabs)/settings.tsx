@@ -301,6 +301,25 @@ export default function SettingsScreen() {
 
             <Card style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
+              <AccordionRow title="Accounting Style" subtitle={accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View style={{ gap: 10 }}>
+                  <Pressable onPress={() => setAccountingStyle("standard")} style={[styles.bookRow, accountingStyle === "standard" && styles.bookRowActive]}>
+                    <Ionicons name={accountingStyle === "standard" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "standard" ? theme.color.brandPrimary : theme.color.muted} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bookName}>Standard Entity</Text>
+                      <Text style={styles.subLabel}>One owner or organization without partner profit splitting</Text>
+                    </View>
+                  </Pressable>
+                  <Pressable onPress={() => setAccountingStyle("retail_partnership")} style={[styles.bookRow, accountingStyle === "retail_partnership" && styles.bookRowActive]}>
+                    <Ionicons name={accountingStyle === "retail_partnership" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "retail_partnership" ? theme.color.brandPrimary : theme.color.muted} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bookName}>Equity Split</Text>
+                      <Text style={styles.subLabel}>Track partner capital, drawings, and profit-share percentages</Text>
+                    </View>
+                  </Pressable>
+                  <Text style={styles.hint}>This changes the active book configuration. It does not store balances or journal entries in Settings.</Text>
+                </View>
+              </AccordionRow>
               
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>

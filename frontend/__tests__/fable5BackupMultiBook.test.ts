@@ -106,21 +106,44 @@ describe('Finding B — quote→invoice conversion is visible to the V2 ledger',
 
   it('a converted quote appears in listSalesAndInvoices, dashboard totalSales and V2 revenue', async () => {
     const { api } = await bootDefault();
-    const { v2ReportsOrFallback } = require('../src/accountingV2/runtime');
+    const { v2Reports } = require('../src/accountingV2/runtime');
     await api.postV2OpeningBalances({ date: '2026-01-01', cash: 0, inventory: 0 });
     const q = await api.createQuote({ clientName: 'Bob', date: '2026-03-01', lines: [{ description: 'Job', qty: 1, rate: 400 }] });
     const conv = await api.convertQuoteToInvoice(q.id, { date: '2026-03-02' });
     expect(conv.total).toBe(400);
 
     const salesInv = await api.listSalesAndInvoices();
-    const compatibilityCopies = await api.listInvoices();
-    const rep = await v2ReportsOrFallback({ from: '2026-01-01', to: '2026-12-31' }, async () => ({}));
+    const invoiceScreenRows = await api.listInvoices();
+    const rep = await v2Reports({ from: '2026-01-01', to: '2026-12-31' });
     const dash = await api.dashboard();
-    expect(compatibilityCopies).toHaveLength(0);     // one authoritative V2 posting, no mirror
+    expect(invoiceScreenRows).toHaveLength(1);       // same authoritative V2 source, no mirror
+    expect(invoiceScreenRows[0].id).toBe(salesInv[0].id);
     expect(salesInv).toHaveLength(1);
     expect(rep.report.profitAndLoss.revenue).toBe(400);
     expect(dash.totalSales).toBe(400);
     // Converting again is idempotent-guarded.
     await expect(api.convertQuoteToInvoice(q.id, { date: '2026-03-02' })).rejects.toThrow(/already been converted/i);
+  });
+
+  it('serves transaction screens and enhanced registers from V2 source documents', async () => {
+    const { api } = await bootDefault();
+    await api.postV2OpeningBalances({ date: '2026-01-01', cash: 1000, inventory: 0 });
+    await api.updateSettings({ taxRate: 5, taxLabel: 'VAT' });
+    const supplier = await api.findOrCreateParty('Acme', 'supplier');
+    const customer = await api.findOrCreateParty('Tara', 'customer');
+    await api.createBill({ supplierId: supplier.id, date: '2026-03-01', amount: 105, paymentType: 'credit', notes: 'Stock' });
+    await api.createPayment({ supplierId: supplier.id, date: '2026-03-02', amount: 50, method: 'cash', notes: 'Part pay' });
+    await api.createExpense({ date: '2026-03-03', amount: 20, method: 'cash', category: 'Fuel', notes: 'Delivery' });
+    const invoice = await api.createInvoice({ partyId: customer.id, date: '2026-03-04', total: 105, taxRate: 5, lines: [{ description: 'Item', qty: 1, rate: 100 }] });
+    await api.createReceipt({ debtorId: customer.id, date: '2026-03-05', amount: 40, method: 'cash', mode: 'against_invoice', allocations: [{ invoiceId: invoice.source.id, amountApplied: 40 }] });
+
+    expect(await api.listBills()).toHaveLength(1);
+    expect((await api.listPayments())[0]).toMatchObject({ amount: 50, notes: 'Part pay' });
+    expect((await api.listExpenses())[0]).toMatchObject({ amount: 20, category: 'Fuel', notes: 'Delivery' });
+    expect((await api.listInvoices())[0]).toMatchObject({ total: 105, taxRate: 5, status: 'partial' });
+    expect((await api.listReceipts())[0].allocations[0]).toMatchObject({ invoiceId: invoice.source.id, amountApplied: 40 });
+    expect((await api.taxReport('2026-03-01', '2026-03-31')).outputTax).toBeCloseTo(5, 2);
+    expect((await api.salesRegister('2026-03-01', '2026-03-31')).invoiceTotal).toBe(105);
+    expect((await api.receiptsRegister('2026-03-01', '2026-03-31')).total).toBe(40);
   });
 });

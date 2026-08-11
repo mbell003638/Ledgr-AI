@@ -197,35 +197,29 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         .filter((m) => m.name);
 
       // V2 accounting keeps opening balances in the dated double-entry ledger.
-      try {
-        const openingInput = { date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, liabilityBreakdown, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" };
-        if (isPartnerMode) {
-          await api.importV2ClosingBalances({
-            ...openingInput,
-            partnerCapitals: cleanedMembers.map((member) => ({ name: member.name, amount: member.amount, profitSharePct: member.profitSharePct })),
-            createMissingPartners: false,
-            createMissingCreditors: false,
-          });
-        } else {
-          await api.updateV2OpeningBalances(openingInput);
-        }
-      } catch (e: any) {
-        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
+      const openingInput = { date: normalizedPeriodStart || undefined, cash: cashVal, inventory: invVal, otherAssets: otherAssetsVal, assetBreakdown, accountsPayable: accountsPayableVal, otherLiabilities: otherLiabilitiesVal, liabilityBreakdown, ownerCapital: ownerCapitalVal, retainedEarnings: retainedEarningsVal, memo: "Opening balances" };
+      if (isPartnerMode) {
+        await api.importV2ClosingBalances({
+          ...openingInput,
+          partnerCapitals: cleanedMembers.map((member) => ({ name: member.name, amount: member.amount, profitSharePct: member.profitSharePct })),
+          createMissingPartners: false,
+          createMissingCreditors: false,
+        });
+      } else {
+        await api.updateV2OpeningBalances(openingInput);
       }
       if (isPartnerMode) {
-        try {
-          const config = await api.getV2BookConfig();
-          if (!config) throw new Error('No active versioned V2 book');
-          await api.updateV2BookConfig({
-            style: 'retail_partnership', basis: config.basis, periodPolicy: config.periodPolicy,
-            selectedPersonas: config.selectedPersonas, activePersona: config.activePersona,
-            retailPartnership: {
-              ...config.retailPartnership,
-              enabled: true,
-              members: cleanedMembers.map((member) => ({ name: member.name, openingContribution: member.amount, profitSharePct: member.profitSharePct })),
-            },
-          });
-        } catch { /* legacy storage remains authoritative when V2 is unavailable */ }
+        const config = await api.getV2BookConfig();
+        if (!config) throw new Error('No active versioned V2 book');
+        await api.updateV2BookConfig({
+          style: 'retail_partnership', basis: config.basis, periodPolicy: config.periodPolicy,
+          selectedPersonas: config.selectedPersonas, activePersona: config.activePersona,
+          retailPartnership: {
+            ...config.retailPartnership,
+            enabled: true,
+            members: cleanedMembers.map((member) => ({ name: member.name, openingContribution: member.amount, profitSharePct: member.profitSharePct })),
+          },
+        });
       }
 
       onClose();

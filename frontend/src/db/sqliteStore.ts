@@ -10,7 +10,6 @@
  */
 
 import type { SqlRunner, CollectionName } from './schema';
-import { initSchema } from './schema';
 
 /**
  * Transaction mutex. SQLite (via expo-sqlite) uses a SINGLE connection, so two
@@ -91,7 +90,7 @@ export async function writeCollInTxn<T = any>(db: SqlRunner, coll: CollectionNam
  * via the same mutex writeColl uses so it never nests another top-level BEGIN.
  *
  * This is the atomicity primitive for backup import: the entire restore (all
- * legacy collections + settings + every V2 table) either fully applies or fully
+ * application collections + preferences + every V2 table) either fully applies or fully
  * rolls back, so a mid-restore failure can never leave a shop's books in a
  * half-imported, self-inconsistent state. [C3/H1]
  *
@@ -140,80 +139,4 @@ export async function writeSettings(db: SqlRunner, s: any): Promise<void> {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [JSON.stringify(s ?? {})],
   );
-}
-
-/**
- * One-time, NON-DESTRUCTIVE migration from the legacy AsyncStorage layout.
- *
- * Safety properties:
- *   - Reads legacy data via the injected `legacyGet` (AsyncStorage.getItem).
- *   - Only imports a collection if the SQLite table is currently EMPTY, so it
- *     can never overwrite data already living in SQLite.
- *   - Guarded by a `migrated` flag in `meta`, so it runs at most once.
- *   - Does NOT delete anything from AsyncStorage — the old data stays intact as
- *     a fallback until you're confident the SQLite path works on-device.
- *
- * Returns a report of what was imported (for logging / verification).
- */
-export async function migrateFromAsyncStorage(
-  db: SqlRunner,
-  legacyGet: (key: string) => Promise<string | null>,
-  collections: readonly CollectionName[],
-): Promise<{ migrated: boolean; imported: Record<string, number>; alreadyDone: boolean }> {
-  await initSchema(db);
-
-  const done = await db.first<{ value: string }>(`SELECT value FROM meta WHERE key = 'migrated'`);
-  if (done && done.value === 'true') {
-    return { migrated: false, imported: {}, alreadyDone: true };
-  }
-
-  const imported: Record<string, number> = {};
-
-  for (const coll of collections) {
-    // Never clobber a table that already has rows.
-    const existing = await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${coll}`);
-    if (existing && Number(existing.n) > 0) {
-      imported[coll] = 0;
-      continue;
-    }
-    const raw = await legacyGet(`ledgr:${coll}`);
-    if (!raw) {
-      imported[coll] = 0;
-      continue;
-    }
-    let arr: any[];
-    try {
-      arr = JSON.parse(raw);
-    } catch {
-      imported[coll] = 0;
-      continue;
-    }
-    if (!Array.isArray(arr) || arr.length === 0) {
-      imported[coll] = 0;
-      continue;
-    }
-    await writeColl(db, coll, arr);
-    imported[coll] = arr.length;
-  }
-
-  // Settings
-  const settingsRaw = await legacyGet('ledgr:settings');
-  if (settingsRaw) {
-    const existingSettings = await db.first<{ value: string }>(`SELECT value FROM settings WHERE key = 'main'`);
-    if (!existingSettings) {
-      try {
-        const parsed = JSON.parse(settingsRaw);
-        if (parsed && typeof parsed === 'object') await writeSettings(db, parsed);
-      } catch {
-        /* ignore malformed legacy settings */
-      }
-    }
-  }
-
-  await db.run(
-    `INSERT INTO meta(key, value) VALUES('migrated', 'true')
-     ON CONFLICT(key) DO UPDATE SET value = 'true'`,
-  );
-
-  return { migrated: true, imported, alreadyDone: false };
 }

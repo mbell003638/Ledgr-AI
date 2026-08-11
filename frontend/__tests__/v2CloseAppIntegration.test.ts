@@ -67,18 +67,15 @@ describe('V2 close-books application integration', () => {
     } finally { close(); }
   });
 
-  it('falls back to legacy only when no active versioned V2 book exists', async () => {
+  it('rejects closing when no active versioned V2 book exists', async () => {
     const { runner, close, service } = await setup();
-    const legacy = jest.fn(async (actualStock: number, notes: string) => ({ legacy: true, actualStock, notes }));
-    const closeBooks = createCloseBooksRouter(service, legacy);
+    const closeBooks = createCloseBooksRouter(service);
     try {
       await closeBooks({ actualStock: 10, openingInventory: 5, commissionPct: 0, notes: 'v2' });
-      expect(legacy).not.toHaveBeenCalled();
 
       await runner.run("DELETE FROM meta WHERE key='v2_active_book_id'");
-      await expect(closeBooks({ actualStock: 12, openingInventory: 5, commissionPct: 0, notes: 'legacy' }))
-        .resolves.toEqual({ legacy: true, actualStock: 12, notes: 'legacy' });
-      expect(legacy).toHaveBeenCalledTimes(1);
+      await expect(closeBooks({ actualStock: 12, openingInventory: 5, commissionPct: 0, notes: 'no book' }))
+        .rejects.toThrow(/active versioned V2 book/i);
     } finally { close(); }
   });
 });

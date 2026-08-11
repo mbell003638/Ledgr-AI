@@ -2,7 +2,7 @@ import { makeNodeRunner } from './helpers/nodeRunner';
 import { initSchema, type SqlRunner } from '../src/db/schema';
 import { defaultAccounts, defaultBook } from '../src/accountingV2/schema';
 import { V2SqlRepository } from '../src/accountingV2/repository';
-import { persistentV2ReportsOrFallback } from '../src/accountingV2/persistentReports';
+import { persistentV2Reports } from '../src/accountingV2/persistentReports';
 
 describe('persistent V2 reports', () => {
   it('derives trial balance, P&L and balance sheet from persisted journal lines in the requested range', async () => {
@@ -26,8 +26,7 @@ describe('persistent V2 reports', () => {
         { accountId: 'default:account:4000', debit: 0, credit: 50 },
       ] });
 
-      const fallback = jest.fn();
-      const result = await persistentV2ReportsOrFallback(runner, { bookId: book.id, from: '2026-01-01', to: '2026-02-28' }, fallback);
+      const result = await persistentV2Reports(runner, { bookId: book.id, from: '2026-01-01', to: '2026-02-28' });
 
       expect(result.source).toBe('v2');
       if (result.source !== 'v2') throw new Error('Expected V2 report');
@@ -35,7 +34,6 @@ describe('persistent V2 reports', () => {
       expect(result.report.trialBalance.totals).toEqual({ debit: 1250, credit: 1250, difference: 0 });
       expect(result.report.profitAndLoss).toEqual({ revenue: 250, expenses: 0, cogs: 0, grossProfit: 250, netProfit: 250 });
       expect(result.report.balanceSheet).toMatchObject({ assets: 1250, equity: 1000, currentEarnings: 250, balanced: true });
-      expect(fallback).not.toHaveBeenCalled();
     } finally { close(); }
   });
 
@@ -61,7 +59,7 @@ describe('persistent V2 reports', () => {
         { accountId: 'default:account:1000', debit: 0, credit: 80 },
       ] });
 
-      const result = await persistentV2ReportsOrFallback(runner, { bookId: book.id, from: '2026-01-01', to: '2026-12-31' }, jest.fn());
+      const result = await persistentV2Reports(runner, { bookId: book.id, from: '2026-01-01', to: '2026-12-31' });
       if (result.source !== 'v2') throw new Error('Expected V2 report');
       const pnl = result.report.profitAndLoss;
       // Engine returns REAL fields: gross = revenue − cogs; accrual expenses INCLUDE cogs; net = revenue − expenses.
@@ -77,17 +75,11 @@ describe('persistent V2 reports', () => {
     } finally { close(); }
   });
 
-  it('uses the legacy fallback when SQLite is unavailable or the active V2 book does not exist', async () => {
-    const legacy = { legacy: true };
-    const noSqlFallback = jest.fn(async () => legacy);
-    await expect(persistentV2ReportsOrFallback(null, { bookId: 'default' }, noSqlFallback)).resolves.toEqual({ source: 'legacy', report: legacy });
-
+  it('rejects when the requested V2 book does not exist', async () => {
     const { runner, close } = makeNodeRunner();
     try {
       await initSchema(runner);
-      const missingBookFallback = jest.fn(async () => legacy);
-      await expect(persistentV2ReportsOrFallback(runner, { bookId: 'missing' }, missingBookFallback)).resolves.toEqual({ source: 'legacy', report: legacy });
-      expect(missingBookFallback).toHaveBeenCalledTimes(1);
+      await expect(persistentV2Reports(runner, { bookId: 'missing' })).rejects.toThrow(/not found/i);
     } finally { close(); }
   });
 
@@ -98,9 +90,6 @@ describe('persistent V2 reports', () => {
       exec: async () => undefined,
       run: async () => undefined,
     } satisfies SqlRunner;
-    const fallback = jest.fn(async () => 'legacy report');
-
-    await expect(persistentV2ReportsOrFallback(broken, { bookId: 'default' }, fallback)).rejects.toThrow('database unavailable');
-    expect(fallback).not.toHaveBeenCalled();
+    await expect(persistentV2Reports(broken, { bookId: 'default' })).rejects.toThrow('database unavailable');
   });
 });

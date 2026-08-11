@@ -24,7 +24,6 @@ export default function InventoryForm() {
   const [info, setInfo] = useState<any>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [history, setHistory] = useState<any[]>([]);
-  const [usingV2, setUsingV2] = useState(false);
   const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
 
   const [openingStock, setOpeningStock] = useState(0);
@@ -34,18 +33,10 @@ export default function InventoryForm() {
   const loadData = async () => {
     try {
       const [v2, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
-      if (v2) {
-        setUsingV2(true);
-        setExpected(Number(v2.expected || 0));
-        setInfo(v2);
-        setHistory(Array.isArray(v2.history) ? v2.history : []);
-      } else {
-        setUsingV2(false);
-        const [legacyExpected, legacyHistory] = await Promise.all([api.expectedInventory(), api.listInventory()]);
-        setExpected(legacyExpected.expected);
-        setInfo(legacyExpected);
-        setHistory(Array.isArray(legacyHistory) ? legacyHistory : []);
-      }
+      if (!v2) throw new Error('No active versioned V2 book');
+      setExpected(Number(v2.expected || 0));
+      setInfo(v2);
+      setHistory(Array.isArray(v2.history) ? v2.history : []);
       setPeriodPolicy(config?.periodPolicy || { mode: "flexible" });
       setOpeningEffectiveDate(String(opening?.date || v2?.periodStart || ""));
       setOpeningStock(Number(opening?.inventory ?? v2?.openingInventory ?? 0));
@@ -65,14 +56,7 @@ export default function InventoryForm() {
     setDate(dateIso); // reflect the canonical form in the field
     setSaving(true); setError("");
     try {
-      let savedV2 = false;
-      try {
-        await api.recordV2InventoryCount({ date: dateIso, value: act, notes });
-        savedV2 = true;
-      } catch (e: any) {
-        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
-      }
-      if (!savedV2) await api.createInventory({ date: dateIso, expectedStock: expected, actualStock: act, notes });
+      await api.recordV2InventoryCount({ date: dateIso, value: act, notes });
       setActual("");
       setNotes("");
       loadData();
@@ -82,8 +66,7 @@ export default function InventoryForm() {
 
   const deleteAudit = async (id: string) => {
     try {
-      if (usingV2) await api.deleteV2InventoryCount(id);
-      else await api.deleteInventory(id);
+      await api.deleteV2InventoryCount(id);
       loadData();
     } catch (e: any) { setError(e.message); }
   };

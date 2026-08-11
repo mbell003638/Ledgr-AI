@@ -63,7 +63,7 @@ describe('V2 UI contracts', () => {
 
   it('maps the true v2 profitAndLoss fields into the P&L (no lossy expenses→cogs / netProfit→grossProfit)', () => {
     const reports = readApp('(tabs)/reports.tsx');
-    const start = reports.indexOf('if (core.source === "v2")');
+    const start = reports.indexOf('const report = core.report');
     const end = reports.indexOf('setTb(', start);
     const v2Block = reports.slice(start, end);
 
@@ -90,10 +90,11 @@ describe('V2 UI contracts', () => {
     expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?retailPartnership/);
     expect(save).toContain('openingContribution');
     expect(save).toContain('profitSharePct');
+    expect(source).toContain('Accounting Style');
+    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
   });
 
   it('keeps preferences free of accounting state and uses V2 as the single source', () => {
-    const api = readSource('src/api.ts');
     const local = readSource('src/db/local.ts');
     const opening = readSource('src/components/OpeningBalancesModal.tsx');
     const settings = readApp('(tabs)/settings.tsx');
@@ -104,9 +105,9 @@ describe('V2 UI contracts', () => {
       'openingCash', 'openingInventory', 'openingCapital', 'investors', 'partnerNames',
       'extraAssets', 'extraLiabilities', 'accountingStyle', 'accountingBasis',
       'selectedPersonas', 'activePersona',
-    ]) expect(api).toContain(`'${key}'`);
-    expect(api).toContain('db.clearAccountingSettings()');
-    expect(local).toContain('export async function clearAccountingSettings()');
+    ]) expect(local).toContain(`'${key}'`);
+    expect(local).toContain('Object.entries(partial).filter(([key]) => !ACCOUNTING_SETTING_KEYS.has(key))');
+    expect(local).not.toContain('clearAccountingSettings');
     expect(opening).not.toContain('api.updateSettings({');
 
     for (const source of [settings, advanced, onboarding]) {

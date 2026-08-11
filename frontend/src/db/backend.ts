@@ -4,18 +4,15 @@
  * local.ts funnels ALL persistence through the four primitives re-exported here
  * (readColl / writeColl / readSettings / writeSettings) plus clearColl for reset.
  *
- * Default mode is 'async' (the proven AsyncStorage layer). At startup, initStorage()
- * attempts to switch to 'sqlite':
- *   1. open the on-device SQLite db + create schema
- *   2. run the ONE-TIME, NON-DESTRUCTIVE migration (copies AsyncStorage -> SQLite,
- *      leaves AsyncStorage data intact as a fallback)
- *   3. flip the active mode to 'sqlite'
+ * Default mode is 'async'. At startup, initStorage() opens the current SQLite
+ * schema and switches the accounting runtime to it. This is a clean-install
+ * implementation; it does not import an earlier storage format.
  * If ANY step throws, we stay in 'async' mode so the app can never hard-break —
  * the SQLite path is strictly additive.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLLECTIONS, CollectionName, SqlRunner } from './schema';
+import { COLLECTIONS, CollectionName, SqlRunner, initSchema } from './schema';
 import { initializeV2Book, accountingBookVersion } from '../accountingV2/appBootstrap';
 import { deleteV2BookData } from '../accountingV2/resetBook';
 import {
@@ -23,7 +20,6 @@ import {
   writeColl as sqlWrite,
   readSettings as sqlReadSettings,
   writeSettings as sqlWriteSettings,
-  migrateFromAsyncStorage,
 } from './sqliteStore';
 
 export type StorageMode = 'async' | 'sqlite';
@@ -37,8 +33,7 @@ const SETTINGS_KEY = 'ledgr:settings';
 // ---------- Books (separate accounts) ----------
 // Each "book" is a fully isolated set of data (e.g. Shop vs Technician).
 // We namespace every storage key with the active book id. The default book
-// uses the ORIGINAL un-prefixed keys ('ledgr:sales', 'ledgr:settings', …) so
-// existing installs migrate transparently with zero data movement.
+// uses the un-prefixed keys ('ledgr:sales', 'ledgr:settings', …).
 const DEFAULT_BOOK = 'default';
 const BOOKS_INDEX_KEY = 'ledgr:books';        // [{ id, name, businessType }]
 const ACTIVE_BOOK_KEY = 'ledgr:activeBook';   // string id
@@ -112,7 +107,7 @@ export async function deleteBook(id: string): Promise<void> {
   // visible book/index intact instead of pretending financial data was deleted.
   if (runner) await deleteV2BookData(runner, id);
 
-  // Wipe this book's namespaced legacy payload and logo.
+  // Wipe this book's namespaced document payload and logo.
   for (const c of COLLECTIONS) {
     await AsyncStorage.removeItem(`ledgr:${id}:${c}`);
   }
@@ -130,10 +125,10 @@ export function storageMode(): StorageMode {
   return mode;
 }
 
-/** Active SQLite runner for authoritative V2 services. Null in AsyncStorage fallback mode. */
+/** Active SQLite runner for authoritative V2 accounting services. */
 export function activeSqlRunner(): SqlRunner | null { return runner; }
 
-// ---------- AsyncStorage implementations (default + fallback) ----------
+// ---------- AsyncStorage implementations for non-posting documents/preferences ----------
 async function asyncReadColl<T = any>(c: CollectionName): Promise<T[]> {
   const raw = await AsyncStorage.getItem(collKey(c));
   if (!raw) return [];
@@ -271,11 +266,11 @@ export async function restoreKeys(snapshot: [string, string | null][]): Promise<
 
 // ---------- Multi-book backup helpers [Finding D] ----------
 // A backup must capture EVERY book, not just the active one. Secondary books
-// store their legacy collections/settings/logo in namespaced AsyncStorage keys
+// store their document collections/preferences/logo in namespaced AsyncStorage keys
 // (`ledgr:<book>:*`); the default book stores them in the SQLite store (or the
 // un-prefixed AsyncStorage keys in async mode). The V2 double-entry ledger for
 // ALL books already lives in the shared v2_* tables (captured by v2Backup). The
-// gap these helpers close is the per-book legacy payload + the books index, so a
+// gap these helpers close is the per-book document payload + the books index, so a
 // restore makes every book selectable and intact.
 
 const rawBookCollKey = (bookId: string, c: CollectionName) => (bookId === DEFAULT_BOOK ? KEYS[c] : `ledgr:${bookId}:${c}`);
@@ -295,7 +290,7 @@ export async function writeBooksIndexRaw(books: BookMeta[]): Promise<void> {
 }
 
 /**
- * Read one SECONDARY book's legacy payload straight from its namespaced
+ * Read one SECONDARY book's document payload straight from its namespaced
  * AsyncStorage keys (never the SQLite store — that is the default book only).
  * Returns { collections, settings, logo }. Absent keys read as [] / {} / ''.
  */
@@ -315,7 +310,7 @@ export async function readSecondaryBookPayload(bookId: string): Promise<{ collec
 }
 
 /**
- * Write one SECONDARY book's legacy payload back into its namespaced keys,
+ * Write one SECONDARY book's document payload back into its namespaced keys,
  * CLEARING every collection first (so a collection absent from the payload can't
  * leak stale rows). Never touches the SQLite store.
  */
@@ -341,19 +336,21 @@ export async function clearColl(c: CollectionName): Promise<void> {
 
 /**
  * Attempt to activate SQLite. Non-fatal: on any failure the app stays on
- * AsyncStorage. Returns the mode actually in effect + the migration report.
+ * AsyncStorage for non-accounting preferences and surfaces no V2 runner.
  */
-export async function initStorage(): Promise<{ mode: StorageMode; migration?: any; error?: string }> {
+export async function initStorage(): Promise<{ mode: StorageMode; error?: string }> {
   // Restore which book (account) was last active before touching storage.
   try { await loadActiveBook(); } catch { /* stay on default */ }
   try {
     // Lazy import so a failure to load expo-sqlite can't crash module load.
     const { getExpoRunner } = await import('./expoRunner');
     const r: SqlRunner = await getExpoRunner();
-    const migration = await migrateFromAsyncStorage(r, AsyncStorage.getItem, COLLECTIONS);
+    // A clean install still needs the current schema. This creates empty tables;
+    // it does not copy, translate, or inspect data from an older storage model.
+    await initSchema(r);
     runner = r;
     mode = 'sqlite';
-    return { mode, migration };
+    return { mode };
   } catch (e: any) {
     mode = 'async';
     runner = null;
