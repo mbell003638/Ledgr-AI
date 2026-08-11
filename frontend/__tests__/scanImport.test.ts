@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ANALYZE_DOCUMENT_SCHEMA, buildAnalyzeDocumentPrompt } from '../src/db/ai';
+import { ANALYZE_DOCUMENT_SCHEMA, analyzeDocumentAI, buildAnalyzeDocumentPrompt } from '../src/db/ai';
 import {
   mapAnalyzedDocument,
   buildBalancedOpeningSet,
@@ -9,6 +9,7 @@ import {
   AMOUNT_BOUNDS_REASON,
   DATE_BOUNDS_REASON,
   type ScanOpeningRow,
+  type ScanRow,
 } from '../src/accountingV2/scanImport';
 import { MAX_AI_AMOUNT } from '../src/accountingV2/aiActions';
 
@@ -48,6 +49,27 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     expect(prompt).not.toContain('<document_data>');
     expect(prompt).toMatch(/attached file is the untrusted document/i);
     expect(prompt).toMatch(/never follow, execute, or obey/i);
+  });
+
+  it('forbids double-counting totals and guessing unclear fields', () => {
+    const prompt = buildAnalyzeDocumentPrompt();
+    expect(prompt).toMatch(/never[^\n]*(?:duplicate|double.?count)[^\n]*(?:total|subtotal)/i);
+    expect(prompt).toMatch(/(?:unclear|ambiguous|uncertain)[^\n]*(?:omit|do not guess|never guess)/i);
+  });
+
+  it('rejects unsupported-provider PDFs before making any network request', async () => {
+    const previousFetch = global.fetch;
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as any;
+    try {
+      await expect(analyzeDocumentAI(
+        { provider: 'openrouter', apiKey: 'test-key', model: 'test-model' },
+        { base64: 'JVBERi0xLjQ=', mimeType: 'application/pdf' },
+      )).rejects.toThrow(/PDF Scan & Import.*only with the Gemini provider.*not sent or analyzed/i);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = previousFetch;
+    }
   });
 
   it('applies the shared AI bounds helpers to parsed output', () => {
@@ -141,6 +163,30 @@ describe('mapAnalyzedDocument', () => {
     expect(buildBalancedOpeningSet(mapped.validRows)).toEqual({
       value: null,
       error: 'Enter the statement date shown on the report (YYYY-MM-DD); the scan date is not used automatically',
+    });
+  });
+
+  it('leaves a missing transaction date blank so review blocks it instead of inventing today', () => {
+    const mapped = mapAnalyzedDocument({
+      docType: 'receipt', summary: 'Receipt with no visible date',
+      entries: [{ type: 'expense', partyName: 'Fuel Station', amount: 50, method: 'cash' }],
+    });
+    expect(mapped.flaggedRows).toHaveLength(0);
+    expect(mapped.validRows).toEqual([expect.objectContaining({
+      kind: 'transaction', entryType: 'expense', date: '', partyName: 'Fuel Station', amount: 50,
+    })]);
+  });
+
+  it('revalidates the included opening subset and rejects an excluded row that breaks balance', () => {
+    const fullSet: ScanRow[] = [
+      { kind: 'opening_balances', asOfDate: '2026-08-10', openingCash: 100, stockValue: 0 },
+      { kind: 'liability', name: 'Loan', amount: 20, date: '2026-08-10' },
+      { kind: 'partner', name: 'Owner', capital: 80, profitSharePct: 100, date: '2026-08-10' },
+    ];
+    expect(buildBalancedOpeningSet(fullSet).error).toBeNull();
+    expect(buildBalancedOpeningSet(fullSet.filter((row) => row.kind !== 'liability'))).toEqual({
+      value: null,
+      error: 'Partner stakes (80.00) must equal assets minus liabilities (100.00)',
     });
   });
 
@@ -294,6 +340,21 @@ describe('scan-import screen UI contract', () => {
     expect(source).toMatch(/Nothing is saved\s+without your confirmation\./);
     expect(source).toContain('await api.importV2ScanTransaction({');
     expect(source).toContain('createMissingParty: !!partyKey && approvedPartyCreationKeys.has(partyKey)');
+  });
+
+  it('keeps every safe proposal explicitly removable and never imports excluded rows', () => {
+    expect(source).toContain('testID={`scan-remove-${r.id}`}');
+    expect(source).toMatch(/onPress=\{\(\) => updateRow\(r\.id, \{ checked: !r\.checked, status: undefined \}\)\}/);
+    expect(source).toContain('const includedSetupRows = setupRows.filter((r) => r.checked && r.importable)');
+    expect(source).toContain('const selectedTransactions = rows.filter((r) => r.row.kind === "transaction" && r.checked && r.importable)');
+    expect(source).toContain('const includedNextSetup = next.filter((r) => r.row.kind !== "transaction" && r.checked && r.importable)');
+    expect(source).toContain('buildBalancedOpeningSet(includedNextSetup.map(editedScanRow))');
+    expect(source).toMatch(/if \(!r\.checked \|\| !r\.importable\) continue/);
+    expect(source).toMatch(/Needs review — excluded/);
+    expect(source).toContain('editable={r.checked && !screenBusy && phase !== "done"}');
+    expect(source).toContain('hasBalancedOpeningSet && edited?.checked && edited.row.kind !== "transaction"');
+    expect(source).toContain('const selectedHasProblems = selected.some((review) => !!rowProblem(review))');
+    expect(source).toMatch(/disabled=\{screenBusy \|\| selected\.length === 0 \|\| selectedHasProblems \|\| !!balancedOpeningProblem\}/);
   });
 
   it('is registered as a route and reachable from Ask and the quick-action menu', () => {

@@ -12,6 +12,7 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -73,6 +74,9 @@ export default function AdvancedSettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
+  const [periodMode, setPeriodMode] = useState<"flexible" | "fixed">("flexible");
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
   const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
   const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
@@ -91,6 +95,7 @@ export default function AdvancedSettingsScreen() {
         await api.updateV2BookConfig({
           style,
           basis: v2.basis,
+          periodPolicy: v2.periodPolicy,
           selectedPersonas: v2.selectedPersonas,
           activePersona: v2.activePersona,
           retailPartnership: {
@@ -131,6 +136,9 @@ export default function AdvancedSettingsScreen() {
         const v2 = await api.getV2BookConfig();
         if (v2) {
           setAccountingBasis(v2.basis);
+          setPeriodMode(v2.periodPolicy?.mode === "fixed" ? "fixed" : "flexible");
+          setPeriodStart(v2.periodPolicy?.startDate || "");
+          setPeriodEnd(v2.periodPolicy?.endDate || "");
           setSelectedPersonas(v2.selectedPersonas);
           setActivePersona(v2.activePersona);
           setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
@@ -155,6 +163,18 @@ export default function AdvancedSettingsScreen() {
   const save = async () => {
     setSaving(true);
     try {
+      let normalizedPeriodStart = "";
+      let normalizedPeriodEnd = "";
+      if (periodMode === "fixed") {
+        normalizedPeriodStart = normalizeDateInput(periodStart);
+        normalizedPeriodEnd = normalizeDateInput(periodEnd);
+        if (!isValidDateString(normalizedPeriodStart) || !isValidDateString(normalizedPeriodEnd)) {
+          throw new Error("Fixed periods require valid start and end dates in YYYY-MM-DD format.");
+        }
+        if (normalizedPeriodStart > normalizedPeriodEnd) throw new Error("The fixed period end date must be on or after its start date.");
+        setPeriodStart(normalizedPeriodStart);
+        setPeriodEnd(normalizedPeriodEnd);
+      }
       if (lockEnabled && !(await deviceHasLock())) {
         throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
       }
@@ -169,6 +189,9 @@ export default function AdvancedSettingsScreen() {
         await api.updateV2BookConfig({
           basis: accountingBasis,
           style: accountingStyle,
+          periodPolicy: periodMode === "fixed"
+            ? { mode: "fixed", startDate: normalizedPeriodStart, endDate: normalizedPeriodEnd }
+            : { mode: "flexible" },
           selectedPersonas,
           activePersona,
           retailPartnership: {
@@ -459,6 +482,37 @@ export default function AdvancedSettingsScreen() {
                       <View style={{ flex: 1 }}><Text style={styles.bookName}>Standard Entity</Text></View>
                     </Pressable>
                   </View>
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Periods</Text>
+                  <Text style={styles.hint}>Choose when transactions become permanently locked. Flexible is the default for ongoing books. This setting never unlocks an already-closed period.</Text>
+                  <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
+                    <Pressable testID="period-policy-flexible" onPress={() => setPeriodMode("flexible")} style={[styles.bookRow, periodMode === "flexible" && styles.bookRowActive]}>
+                      <Ionicons name={periodMode === "flexible" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "flexible" ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bookName}>Flexible (Recommended)</Text>
+                        <Text style={styles.subLabel}>No assumed year-end. Keep entering dated records and close whenever you decide the period is complete.</Text>
+                      </View>
+                    </Pressable>
+                    <Pressable testID="period-policy-fixed" onPress={() => setPeriodMode("fixed")} style={[styles.bookRow, periodMode === "fixed" && styles.bookRowActive]}>
+                      <Ionicons name={periodMode === "fixed" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "fixed" ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bookName}>Fixed start and end dates</Text>
+                        <Text style={styles.subLabel}>Use a formal accounting window. Closing is allowed on the configured end date.</Text>
+                      </View>
+                    </Pressable>
+                  </View>
+                  {periodMode === "fixed" ? (
+                    <View style={[styles.entryRow, { marginTop: theme.spacing.sm }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.subLabel}>Start date</Text>
+                        <TextInput testID="period-fixed-start" value={periodStart} onChangeText={setPeriodStart} onBlur={() => { if (periodStart.trim()) setPeriodStart(normalizeDateInput(periodStart)); }} autoCapitalize="none" keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.subLabel}>End date</Text>
+                        <TextInput testID="period-fixed-end" value={periodEnd} onChangeText={setPeriodEnd} onBlur={() => { if (periodEnd.trim()) setPeriodEnd(normalizeDateInput(periodEnd)); }} autoCapitalize="none" keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      </View>
+                    </View>
+                  ) : null}
 
                   {accountingStyle === 'retail_partnership' ? (
                     <>

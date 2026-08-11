@@ -1319,15 +1319,28 @@ export async function debtorsReport(from?: string, to?: string) {
 export async function listPeriods() {
   return (await readColl<any>('periods')).sort((a: any, b: any) => (a.closed_at && b.closed_at ? (a.closed_at > b.closed_at ? -1 : a.closed_at < b.closed_at ? 1 : 0) : 0));
 }
-export async function closePeriod(actualStock: number, notes = '', commissionPct = 0) {
+export async function closePeriod(actualStock: number, notes = '', commissionPct = 0, date?: string) {
   return serialize(async () => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const closeDate = date || today;
+    let genuineDate = false;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(closeDate)) {
+      try { genuineDate = new Date(`${closeDate}T00:00:00.000Z`).toISOString().slice(0, 10) === closeDate; } catch { genuineDate = false; }
+    }
+    if (!genuineDate) throw new Error('Close date must use a genuine YYYY-MM-DD date');
+    const settingsBeforeClose = await getSettings();
+    const periodStart = String(settingsBeforeClose.currentPeriodStart || '1970-01-01');
+    if (closeDate < periodStart) throw new Error(`Close date ${closeDate} cannot be before the period start ${periodStart}`);
+    const datedCollections = ['bills', 'sales', 'payments', 'invoices', 'receipts', 'creditNotes', 'debitNotes', 'inventoryChecks', 'expenses', 'cashEntries'] as const;
+    const datedRows = (await Promise.all(datedCollections.map((collection) => readColl<any>(collection)))).flat();
+    const later = datedRows.map((row: any) => String(row?.date || '').slice(0, 10)).filter((entryDate) => entryDate > closeDate).sort()[0];
+    if (later) throw new Error(`Accounting period cannot close on ${closeDate} because it contains activity dated ${later}`);
     const d = await dashboard();
     const pct = Number.isFinite(Number(commissionPct)) ? Math.max(0, Math.min(100, Number(commissionPct))) : 0;
     const closeCommission = calcCommission(d.grossProfit, pct);
-    const now = new Date();
-    const nowDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const period = {
-      id: uuid(), startDate: d.periodStart, endDate: nowDate,
+      id: uuid(), startDate: d.periodStart, endDate: closeDate,
       openingInventory: d.openingInventory, openingCash: d.openingCash,
       totalSales: d.totalSales, totalPurchases: d.totalPurchases,
       grossProfit: d.grossProfit, managerCommissionPct: pct,
@@ -1339,13 +1352,14 @@ export async function closePeriod(actualStock: number, notes = '', commissionPct
     periods.push(period);
     await writeColl('periods', periods);
 
-    const inv = { id: uuid(), date: nowDate, expectedStock: d.inventoryValue, actualStock, variance: +(actualStock - d.inventoryValue).toFixed(2), notes: `Period close: ${d.periodStart} → ${nowDate}`, created_at: nowIso() };
+    const inv = { id: uuid(), date: closeDate, expectedStock: d.inventoryValue, actualStock, variance: +(actualStock - d.inventoryValue).toFixed(2), notes: `Period close: ${d.periodStart} → ${closeDate}`, created_at: nowIso() };
     const invs = await readColl<any>('inventoryChecks');
     invs.push(inv);
     await writeColl('inventoryChecks', invs);
 
-    // The new period starts TODAY, not tomorrow. dashboard() filters date >= periodStart
-    // with no upper bound, so a transaction dated today entered right after the close is
+    // The new period starts on the reviewed close date, not the following day.
+    // dashboard() filters date >= periodStart with no upper bound, so a transaction
+    // entered on that date right after the close is
     // correctly picked up by the new period. Using tomorrow created a "dead zone" where
     // same-day post-close entries were excluded from the new period AND already frozen out
     // of the archived snapshot — silently vanishing from every report.
@@ -1353,10 +1367,10 @@ export async function closePeriod(actualStock: number, notes = '', commissionPct
     let capitalCarry: Record<string, any> = {};
     if (settings.accountingStyle === 'retail_partnership' && Array.isArray(settings.investors) && settings.investors.length) {
       const details = await Promise.all(settings.investors.map((item: any) => investorLedgerDetail(String(item.id || item.name))));
-      const investors = details.map((item) => ({ id: item.id, name: item.name, amount: item.currentCapitalBalance, date: nowDate, profitSharePct: item.profitSharePct }));
+      const investors = details.map((item) => ({ id: item.id, name: item.name, amount: item.currentCapitalBalance, date: closeDate, profitSharePct: item.profitSharePct }));
       capitalCarry = { investors, partnerNames: investors.map((item) => item.name), openingCapital: +investors.reduce((sum, item) => sum + item.amount, 0).toFixed(2) };
     }
-    await updateSettings({ currentPeriodStart: nowDate, openingInventory: actualStock, openingCash: d.cash, ...capitalCarry });
+    await updateSettings({ currentPeriodStart: closeDate, openingInventory: actualStock, openingCash: d.cash, ...capitalCarry });
     return period;
   });
 }
@@ -2422,7 +2436,5 @@ export async function receiptsRegister(from: string, to: string) {
   const total = +rows.reduce((s: number, r: any) => s + r.amount, 0).toFixed(2);
   return { from, to, rows, byMethod, byMode, total, count: rows.length };
 }
-
-
 
 

@@ -92,6 +92,25 @@ describe('V2 UI contracts', () => {
     expect(save).toContain('profitSharePct');
   });
 
+  it('exposes flexible-by-default and optional fixed period controls, and passes the reviewed close date explicitly', () => {
+    const advanced = readApp('advanced-settings.tsx');
+    const inventory = readApp('inventory-form.tsx');
+
+    for (const testId of ['period-policy-flexible', 'period-policy-fixed', 'period-fixed-start', 'period-fixed-end']) {
+      expect(advanced).toContain(`testID="${testId}"`);
+    }
+    expect(advanced).toContain('Flexible (Recommended)');
+    expect(advanced).toContain('No assumed year-end');
+    expect(advanced).toMatch(/periodPolicy:\s*periodMode === "fixed"[\s\S]*?\{ mode: "flexible" \}/);
+
+    expect(inventory).toContain('testID="active-period-policy"');
+    expect(inventory).toContain('testID="input-close-date"');
+    expect(inventory).toContain('Close whenever you are ready');
+    expect(inventory).toContain('Permanent action: entries through the closing date will be locked');
+    expect(inventory).toContain('editable={periodPolicy.mode !== "fixed"}');
+    expect(inventory).toContain('await api.closePeriod(act, notes, pct, closingIso)');
+  });
+
   it('wires TransactionDetail into core production transaction screens with all action callbacks', () => {
     for (const screen of ['sales.tsx', 'invoices.tsx', 'receipts.tsx', '(tabs)/bills.tsx']) {
       const source = readApp(screen);

@@ -23,15 +23,22 @@ export type RetailPartnershipConfig = {
   inventoryCadence: 'irregular' | 'monthly' | 'quarterly' | 'annual';
 };
 
+export type AccountingPeriodPolicy = {
+  mode: 'flexible' | 'fixed';
+  startDate?: string;
+  endDate?: string;
+};
+
 export type V2BookConfig = {
   bookId: string;
   selectedPersonas: PersonaId[];
   activePersona: PersonaId;
   style: V2BookStyle;
   basis: V2Basis;
+  periodPolicy: AccountingPeriodPolicy;
   retailPartnership: RetailPartnershipConfig;
 };
 
 export function persona(id: PersonaId) { return PERSONAS.find((p) => p.id === id) || PERSONAS.find((p) => p.id === 'custom')!; }
 export function modulesFor(personas: PersonaId[]) { return [...new Set(personas.flatMap((id) => persona(id).modules))]; }
-export function defaultBookConfig(bookId: string): V2BookConfig { return { bookId, selectedPersonas: ['custom'], activePersona: 'custom', style: 'standard', basis: 'accrual', retailPartnership: { enabled: false, commissionPct: 0, members: [], inventoryCadence: 'irregular' } }; }
+export function defaultBookConfig(bookId: string): V2BookConfig { return { bookId, selectedPersonas: ['custom'], activePersona: 'custom', style: 'standard', basis: 'accrual', periodPolicy: { mode: 'flexible' }, retailPartnership: { enabled: false, commissionPct: 0, members: [], inventoryCadence: 'irregular' } }; }

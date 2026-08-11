@@ -3,6 +3,7 @@ import { V2_ACCOUNT_CODES, type V2Member } from './types';
 import { round2 } from '../money';
 import { computePeriodicCogs } from './cogs';
 
+let closeBooksSavepointSequence = 0;
 const cents = round2;
 
 export type InventoryCount = { id: string; bookId: string; periodId: string; date: string; value: number };
@@ -271,8 +272,12 @@ export class V2CloseBooksRepository {
   }
 
   private async tx<T>(work: () => Promise<T>): Promise<T> {
-    await this.db.exec('BEGIN');
-    try { const result = await work(); await this.db.exec('COMMIT'); return result; }
-    catch (error) { try { await this.db.exec('ROLLBACK'); } catch { /* preserve original failure */ } throw error; }
+    const savepoint = `v2_close_${++closeBooksSavepointSequence}`;
+    await this.db.exec(`SAVEPOINT ${savepoint}`);
+    try { const result = await work(); await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`); return result; }
+    catch (error) {
+      try { await this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`); await this.db.exec(`RELEASE SAVEPOINT ${savepoint}`); } catch { /* preserve original failure */ }
+      throw error;
+    }
   }
 }

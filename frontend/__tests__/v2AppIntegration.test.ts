@@ -57,7 +57,9 @@ describe('V2 application write integration', () => {
   it('selects the active versioned V2 book and its open period for the posting date', async () => {
     const { runner, close, service } = await setup();
     try {
-      await expect(service.createSale({ date: '2027-01-01', amount: 1 })).rejects.toThrow(/open accounting period/i);
+      await expect(service.createSale({ date: '2027-01-01', amount: 1 })).resolves.toMatchObject({ source: { type: 'cash_sale' } });
+      expect(await runner.first('SELECT end_date FROM v2_periods WHERE book_id=? AND status=?', ['active-v2', 'open']))
+        .toEqual({ end_date: '2027-01-01' });
       await runner.run("UPDATE meta SET value='1' WHERE key='v2_book_version:active-v2'");
       await expect(service.activeContext('2026-07-01')).resolves.toBeNull();
     } finally { close(); }

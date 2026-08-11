@@ -136,6 +136,7 @@ describe('V2BookConfigRepository — persistent books and persona isolation', ()
       await expect(reloaded.getBookConfig('book-a')).resolves.toEqual({
         bookId: 'book-a', basis: 'cash', style: 'retail_partnership',
         selectedPersonas: ['retail', 'wholesale'], activePersona: 'wholesale',
+        periodPolicy: { mode: 'flexible' },
         retailPartnership: {
           enabled: true, commissionPct: 7.5, inventoryCadence: 'monthly',
           members: [

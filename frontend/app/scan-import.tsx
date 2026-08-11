@@ -152,7 +152,7 @@ export default function ScanImport() {
   const scanCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { setError("Camera permission denied"); return; }
-    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
     if (res.canceled || !res.assets[0].base64) return;
     await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
   };
@@ -160,7 +160,7 @@ export default function ScanImport() {
   const pickGallery = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError("Gallery permission denied"); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
     if (res.canceled || !res.assets[0].base64) return;
     await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
   };
@@ -187,11 +187,14 @@ export default function ScanImport() {
 
   const setupRows = rows.filter((r) => r.row.kind !== "transaction");
   const hasBalancedOpeningSet = setupRows.length > 1;
+  const includedSetupRows = setupRows.filter((r) => r.checked && r.importable);
+  const willImportBalancedSet = hasBalancedOpeningSet && includedSetupRows.length > 0;
 
   const updateRow = (id: number, patch: Partial<ReviewRow>) => {
+    setError("");
     setRows((prev) => {
       const edited = prev.find((r) => r.id === id);
-      const synchronizeSetupDate = hasBalancedOpeningSet && edited?.row.kind !== "transaction" && patch.dateText !== undefined;
+      const synchronizeSetupDate = hasBalancedOpeningSet && edited?.checked && edited.row.kind !== "transaction" && patch.dateText !== undefined;
       return prev.map((r) => {
         if (synchronizeSetupDate && r.row.kind !== "transaction") return { ...r, dateText: patch.dateText! };
         return r.id === id ? { ...r, ...patch } : r;
@@ -256,14 +259,23 @@ export default function ScanImport() {
     };
   };
 
-  const balancedOpeningResult = hasBalancedOpeningSet
-    ? buildBalancedOpeningSet(setupRows.map(editedScanRow))
+  const balancedOpeningResult = willImportBalancedSet
+    ? buildBalancedOpeningSet(includedSetupRows.map(editedScanRow))
     : null;
   const balancedPartnerPlan = balancedOpeningResult?.value
     ? partnerImportPlan(balancedOpeningResult.value.partnerCapitals)
     : { problem: null, entries: [], createNames: [] };
   const balancedOpeningProblem = balancedOpeningResult?.error
     || balancedPartnerPlan.problem;
+  const openingPreview = includedSetupRows.reduce((preview, review) => {
+    const amount = Number(review.amountText) || 0;
+    if (review.row.kind === "opening_balances") preview.assets += amount + (Number(review.stockText) || 0);
+    if (review.row.kind === "asset") preview.assets += amount;
+    if (review.row.kind === "liability") preview.liabilities += amount;
+    if (review.row.kind === "partner") preview.partnerStakes += amount;
+    return preview;
+  }, { assets: 0, liabilities: 0, partnerStakes: 0 });
+  const calculatedEquity = Math.round((openingPreview.assets - openingPreview.liabilities) * 100) / 100;
 
   // Re-validate an edited row's fields at import time. Returns an error reason
   // or null when safe. All amounts go through the shared AI caps and every date
@@ -336,8 +348,9 @@ export default function ScanImport() {
 
   const selectedTransactions = rows.filter((r) => r.row.kind === "transaction" && r.checked && r.importable);
   const selected = hasBalancedOpeningSet
-    ? [...selectedTransactions, ...setupRows]
+    ? [...selectedTransactions, ...includedSetupRows]
     : rows.filter((r) => r.checked && r.importable);
+  const selectedHasProblems = selected.some((review) => !!rowProblem(review));
   const screenBusy = importing || preflighting;
 
   const partyRequests = (): MissingPartyLedger[] => {
@@ -350,7 +363,7 @@ export default function ScanImport() {
       if (review.row.entryType === "receipt_in" && name) required.push({ name, role: "customer" });
       if (review.row.entryType === "sale" && review.row.method === "credit" && name) required.push({ name, role: "customer" });
     }
-    if (hasBalancedOpeningSet && balancedOpeningResult?.value) {
+    if (willImportBalancedSet && balancedOpeningResult?.value) {
       for (const liability of balancedOpeningResult.value.liabilityBreakdown) {
         if (liability.type === "creditor" && !/^(creditors?|accounts? payable)$/i.test(liability.name.trim())) {
           required.push({ name: liability.name.trim(), role: "supplier" });
@@ -399,7 +412,7 @@ export default function ScanImport() {
       const detail = party ? ` — ${party}` : "";
       return `${rowTitle(review.row)}${detail}: ${fmt(Number(review.amountText) || 0, currencySymbol)} on ${review.dateText}`;
     });
-    if (hasBalancedOpeningSet && balancedOpeningResult?.value) {
+    if (willImportBalancedSet && balancedOpeningResult?.value) {
       lines.unshift(`Balanced opening set: ${fmt(balancedOpeningResult.value.totalAssets, currencySymbol)} assets as of ${balancedOpeningResult.value.date}`);
     }
     return lines.filter(Boolean);
@@ -411,13 +424,14 @@ export default function ScanImport() {
     const next = [...rows];
     const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
     const approvedPartyCreationKeys = new Set(approvedSupportLedgers.map((item) => `${item.role}:${normalized(item.name)}`));
-    if (hasBalancedOpeningSet) {
-      const rebuilt = buildBalancedOpeningSet(next.filter((r) => r.row.kind !== "transaction").map(editedScanRow));
+    if (willImportBalancedSet) {
+      const includedNextSetup = next.filter((r) => r.row.kind !== "transaction" && r.checked && r.importable);
+      const rebuilt = buildBalancedOpeningSet(includedNextSetup.map(editedScanRow));
       const partnerPlan = rebuilt.value ? partnerImportPlan(rebuilt.value.partnerCapitals) : { problem: null, entries: [], createNames: [] };
       const problem = rebuilt.error || partnerPlan.problem;
       if (!rebuilt.value || problem) {
         const message = problem || "The balanced opening set is incomplete.";
-        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "failed", message }; });
+        includedNextSetup.forEach((r) => { r.status = { state: "failed", message }; });
         setRows([...next]);
         setError(message);
         setDoneCounts({ created: 0, failed: 1, manual: 0 });
@@ -433,11 +447,11 @@ export default function ScanImport() {
             && rebuilt.value!.liabilityBreakdown.some((liability) => liability.type === "creditor" && normalized(liability.name) === normalized(item.name))),
           partnerCapitals: partnerPlan.entries,
         });
-        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "created", message: "Imported in balanced opening set" }; });
+        includedNextSetup.forEach((r) => { r.status = { state: "created", message: "Imported in balanced opening set" }; });
         created++;
       } catch (e: any) {
         const message = e?.message || "Balanced opening set import failed";
-        next.filter((r) => r.row.kind !== "transaction").forEach((r) => { r.status = { state: "failed", message }; });
+        includedNextSetup.forEach((r) => { r.status = { state: "failed", message }; });
         setRows([...next]);
         setError(message);
         setDoneCounts({ created: 0, failed: 1, manual: 0 });
@@ -447,7 +461,7 @@ export default function ScanImport() {
       setRows([...next]);
     }
     for (const r of next) {
-      if (hasBalancedOpeningSet && r.row.kind !== "transaction") continue;
+      if (willImportBalancedSet && r.row.kind !== "transaction") continue;
       if (!r.checked || !r.importable) continue;
       const problem = rowProblem(r);
       if (problem) { r.status = { state: "failed", message: problem }; failed++; continue; }
@@ -469,7 +483,11 @@ export default function ScanImport() {
 
   const confirmImport = async () => {
     if (selected.length === 0) return;
-    if (hasBalancedOpeningSet && balancedOpeningProblem) {
+    if (selectedHasProblems) {
+      setError("Fix or exclude the included rows highlighted below before importing.");
+      return;
+    }
+    if (willImportBalancedSet && balancedOpeningProblem) {
       setError(balancedOpeningProblem);
       return;
     }
@@ -501,7 +519,7 @@ export default function ScanImport() {
       ...(supportRecords.length ? ["", "New supporting ledgers:", ...supportRecords.map((record) => `• ${record}`)] : []),
     ].join("\n");
     const total = selected.reduce((sum, r) => sum + (Number(r.amountText) || 0) + (r.row.kind === "opening_balances" ? Number(r.stockText) || 0 : 0), 0);
-    if (hasBalancedOpeningSet) {
+    if (willImportBalancedSet) {
       Alert.alert(
         "Import balanced opening set?",
         `The complete statement will be written atomically. Assets, liabilities, and partner stakes cannot be imported separately.\n\n${recordDisclosure}`,
@@ -525,40 +543,52 @@ export default function ScanImport() {
   const transactionsRows = rows.filter((r) => r.row.kind === "transaction");
 
   const renderRow = (r: ReviewRow) => {
-    const problem = r.importable ? rowProblem(r) : null;
-    const isLockedSetupRow = hasBalancedOpeningSet && r.row.kind !== "transaction";
-    const border = !r.importable ? theme.color.muted : problem ? theme.color.error : theme.color.brandPrimary;
+    const problem = r.checked && r.importable ? rowProblem(r) : null;
+    const border = !r.checked || !r.importable ? theme.color.muted : problem ? theme.color.error : theme.color.brandPrimary;
     return (
-      <View key={r.id} style={[styles.row, { borderLeftColor: border }]} testID={`scan-row-${r.id}`}>
+      <View key={r.id} style={[styles.row, { borderLeftColor: border }, !r.checked && styles.rowExcluded]} testID={`scan-row-${r.id}`}>
         <View style={styles.rowHeader}>
           <Pressable
             testID={`scan-check-${r.id}`}
-            disabled={isLockedSetupRow || !r.importable || !!problem || screenBusy || phase === "done"}
+            disabled={screenBusy || phase === "done"}
             onPress={() => updateRow(r.id, { checked: !r.checked })}
             style={styles.checkWrap}
           >
             <Ionicons
-              name={!r.importable ? "information-circle-outline" : problem ? "close-circle" : isLockedSetupRow || r.checked ? "checkbox" : "square-outline"}
+              name={!r.checked ? "square-outline" : !r.importable ? "information-circle-outline" : problem ? "close-circle" : "checkbox"}
               size={22}
-              color={!r.importable ? theme.color.muted : problem ? theme.color.error : r.checked ? theme.color.brandPrimary : theme.color.muted}
+              color={!r.checked || !r.importable ? theme.color.muted : problem ? theme.color.error : theme.color.brandPrimary}
             />
           </Pressable>
           <Text style={styles.rowTitle}>{rowTitle(r.row)}</Text>
+          {!r.checked ? <Text style={styles.excludedText}>Excluded</Text> : null}
           {r.status ? (
             <Text style={[styles.statusText, { color: r.status.state === "created" ? theme.color.success : theme.color.error }]}>
               {r.status.state === "created" ? "✓ Created" : "✗ Failed"}
             </Text>
           ) : null}
+          {phase !== "done" ? (
+            <Pressable
+              testID={`scan-remove-${r.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={r.checked ? `Exclude ${rowTitle(r.row)}` : `Include ${rowTitle(r.row)}`}
+              disabled={screenBusy}
+              onPress={() => updateRow(r.id, { checked: !r.checked, status: undefined })}
+              style={styles.removeRowBtn}
+            >
+              <Ionicons name={r.checked ? "remove-circle-outline" : "add-circle-outline"} size={22} color={r.checked ? theme.color.error : theme.color.brandPrimary} />
+            </Pressable>
+          ) : null}
         </View>
         {r.infoReason ? <Text style={styles.infoText}>{r.infoReason}</Text> : null}
         {r.importable || r.row.kind === "partner" ? (
-          <View style={styles.fieldRow}>
+          <View style={[styles.fieldRow, !r.checked && { opacity: 0.65 }]}>
             {r.row.kind !== "opening_balances" ? (
               <View style={{ flex: 1.2 }}>
                 <Text style={styles.fieldLabel}>{r.row.kind === "transaction" ? "Party" : "Name"}</Text>
                 <TextInput
                   value={r.partyText}
-                  editable={!screenBusy && phase !== "done"}
+                  editable={r.checked && !screenBusy && phase !== "done"}
                   onChangeText={(t) => updateRow(r.id, { partyText: t })}
                   placeholder={r.row.kind === "transaction" ? "Optional" : "Name"}
                   placeholderTextColor={theme.color.muted}
@@ -570,7 +600,7 @@ export default function ScanImport() {
               <Text style={styles.fieldLabel}>{r.row.kind === "opening_balances" ? "Cash" : "Amount"}</Text>
               <TextInput
                 value={r.amountText}
-                editable={!screenBusy && phase !== "done"}
+                editable={r.checked && !screenBusy && phase !== "done"}
                 onChangeText={(t) => updateRow(r.id, { amountText: t })}
                 keyboardType="decimal-pad"
                 placeholderTextColor={theme.color.muted}
@@ -582,7 +612,7 @@ export default function ScanImport() {
                 <Text style={styles.fieldLabel}>Stock</Text>
                 <TextInput
                   value={r.stockText}
-                  editable={!screenBusy && phase !== "done"}
+                  editable={r.checked && !screenBusy && phase !== "done"}
                   onChangeText={(t) => updateRow(r.id, { stockText: t })}
                   keyboardType="decimal-pad"
                   placeholderTextColor={theme.color.muted}
@@ -595,7 +625,7 @@ export default function ScanImport() {
                 <Text style={styles.fieldLabel}>Profit share %</Text>
                 <TextInput
                   value={r.shareText}
-                  editable={!screenBusy && phase !== "done"}
+                  editable={r.checked && !screenBusy && phase !== "done"}
                   onChangeText={(t) => updateRow(r.id, { shareText: t })}
                   keyboardType="decimal-pad"
                   placeholder="Required if new"
@@ -608,7 +638,7 @@ export default function ScanImport() {
               <Text style={styles.fieldLabel}>Date</Text>
               <TextInput
                 value={r.dateText}
-                editable={!screenBusy && phase !== "done"}
+                editable={r.checked && !screenBusy && phase !== "done"}
                 onChangeText={(t) => updateRow(r.id, { dateText: t })}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={theme.color.muted}
@@ -714,9 +744,11 @@ export default function ScanImport() {
               <>
                 <Text style={styles.section}>{hasBalancedOpeningSet ? "Balanced opening set" : "Book setup"} ({setupRows.length})</Text>
                 {hasBalancedOpeningSet ? (
-                  <Text style={[styles.infoText, { marginBottom: theme.spacing.md }]} testID="scan-balanced-opening-info">
-                    All rows below form one accounting entry. They share one statement date and will be imported together; individual selection is disabled.
-                  </Text>
+                  <View style={styles.balancePreview} testID="scan-balanced-opening-info">
+                    <Text style={styles.infoText}>Include only rows that belong in the opening entry. Removing a row recalculates the balance; import stays blocked until the included set balances.</Text>
+                    <Text style={styles.balancePreviewText}>Included assets {fmt(openingPreview.assets, currencySymbol)} · Liabilities {fmt(openingPreview.liabilities, currencySymbol)} · Calculated equity {fmt(calculatedEquity, currencySymbol)}</Text>
+                    {openingPreview.partnerStakes > 0 ? <Text style={styles.balancePreviewText}>Included partner stakes {fmt(openingPreview.partnerStakes, currencySymbol)}</Text> : null}
+                  </View>
                 ) : null}
                 {setupRows.map(renderRow)}
                 {hasBalancedOpeningSet && balancedPartnerPlan.createNames.length > 0 && !balancedOpeningProblem ? (
@@ -732,7 +764,8 @@ export default function ScanImport() {
 
             {flagged.length > 0 ? (
               <>
-                <Text style={styles.section}>Flagged — cannot be imported ({flagged.length})</Text>
+                <Text style={styles.section}>Needs review — excluded ({flagged.length})</Text>
+                <Text style={[styles.infoText, { marginBottom: theme.spacing.sm }]}>AI could not map these figures safely. They are not selected or imported; check the document, correct the editable proposals above, or rescan.</Text>
                 {flagged.map((f, i) => (
                   <View key={i} style={[styles.row, { borderLeftColor: theme.color.error }]} testID={`scan-flagged-${i}`}>
                     <View style={styles.rowHeader}>
@@ -776,12 +809,12 @@ export default function ScanImport() {
               <Pressable
                 testID="btn-import-selected"
                 onPress={confirmImport}
-                disabled={screenBusy || selected.length === 0 || !!balancedOpeningProblem}
-                style={[styles.actionBtn, { marginTop: theme.spacing.lg }, (screenBusy || selected.length === 0 || !!balancedOpeningProblem) && { opacity: 0.5 }]}
+                disabled={screenBusy || selected.length === 0 || selectedHasProblems || !!balancedOpeningProblem}
+                style={[styles.actionBtn, { marginTop: theme.spacing.lg }, (screenBusy || selected.length === 0 || selectedHasProblems || !!balancedOpeningProblem) && { opacity: 0.5 }]}
               >
                 {screenBusy ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
                 <Text style={styles.actionText}>
-                  {preflighting ? "Checking ledgers…" : importing ? "Importing…" : hasBalancedOpeningSet ? "Import balanced opening set" : `Import ${selected.length} selected`}
+                  {preflighting ? "Checking ledgers…" : importing ? "Importing…" : willImportBalancedSet ? "Import included balanced set" : `Import ${selected.length} selected`}
                 </Text>
               </Pressable>
             ) : null}
@@ -815,10 +848,13 @@ function makeStyles(theme: any) {
       borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
       borderLeftWidth: 4, marginBottom: theme.spacing.sm,
     },
+    rowExcluded: { opacity: 0.78, borderStyle: "dashed" },
     rowHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
     checkWrap: { padding: 2 },
     rowTitle: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface, flex: 1 },
     statusText: { fontSize: 12, fontWeight: "700" },
+    excludedText: { fontSize: 11, fontWeight: "700", color: theme.color.muted },
+    removeRowBtn: { padding: 2 },
     infoText: { fontSize: 12, color: theme.color.muted, marginTop: 6, lineHeight: 17 },
     fieldRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.sm },
     fieldLabel: { fontSize: 11, fontWeight: "600", color: theme.color.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 },
@@ -828,5 +864,7 @@ function makeStyles(theme: any) {
       backgroundColor: theme.color.surface,
     },
     flaggedText: { color: theme.color.error, fontSize: 11, marginTop: 6, fontWeight: "600" },
+    balancePreview: { marginBottom: theme.spacing.md, padding: theme.spacing.sm, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    balancePreviewText: { marginTop: 6, color: theme.color.onSurface, fontSize: 12, fontWeight: "700" },
   });
 }

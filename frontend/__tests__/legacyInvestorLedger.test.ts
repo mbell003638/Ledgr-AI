@@ -50,6 +50,41 @@ describe('legacy partnership investor ledger fallback', () => {
     expect((await getSettings()).investors).toEqual([expect.objectContaining({ id: 'alice', name: 'Alice', amount: 230, profitSharePct: 100 })]);
   });
 
+  it('uses the reviewed close date for the archive, inventory check, capital carry, and next period start', async () => {
+    await updateSettings({
+      accountingStyle: 'retail_partnership', currentPeriodStart: '2026-01-01', openingInventory: 25, openingCash: 10,
+      investors: [{ id: 'alice', name: 'Alice', amount: 100, profitSharePct: 100 }], partnerNames: ['Alice'],
+    });
+    await writeColl('sales', [{ id: 'sale', date: '2026-08-09', amount: 50 }]);
+
+    const period = await closePeriod(30, 'Reviewed close', 0, '2026-08-10');
+
+    expect(period).toEqual(expect.objectContaining({ startDate: '2026-01-01', endDate: '2026-08-10', closingInventory: 30 }));
+    expect(await readColl<any>('inventoryChecks')).toEqual([
+      expect.objectContaining({ date: '2026-08-10', actualStock: 30, notes: 'Period close: 2026-01-01 → 2026-08-10' }),
+    ]);
+    expect(await getSettings()).toEqual(expect.objectContaining({
+      currentPeriodStart: '2026-08-10',
+      openingInventory: 30,
+      investors: [expect.objectContaining({ id: 'alice', date: '2026-08-10', profitSharePct: 100 })],
+    }));
+  });
+
+  it('rejects a reviewed close date before later legacy activity without writing close state', async () => {
+    await updateSettings({
+      accountingStyle: 'retail_partnership', currentPeriodStart: '2026-01-01', openingInventory: 25, openingCash: 10,
+      investors: [{ id: 'alice', name: 'Alice', amount: 100, profitSharePct: 100 }], partnerNames: ['Alice'],
+    });
+    await writeColl('sales', [{ id: 'future-sale', date: '2026-08-11', amount: 50 }]);
+    const settingsBefore = await getSettings();
+
+    await expect(closePeriod(30, 'Too early', 0, '2026-08-10')).rejects.toThrow(/contains activity dated 2026-08-11/i);
+
+    expect(await readColl<any>('periods')).toEqual([]);
+    expect(await readColl<any>('inventoryChecks')).toEqual([]);
+    expect(await getSettings()).toEqual(settingsBefore);
+  });
+
   it('blocks individual investor ledgers outside Partnership Mode', async () => {
     await updateSettings({ accountingStyle: 'standard', investors: [{ id: 'owner', name: 'Owner', amount: 100 }] });
     await expect(investorLedgerDetail('owner')).rejects.toThrow(/Partnership Mode/i);

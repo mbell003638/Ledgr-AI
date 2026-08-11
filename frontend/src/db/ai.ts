@@ -553,6 +553,8 @@ export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
     'so a bookkeeping app can propose ledger entries for the user to review.\n\n' +
     'Extraction rules — follow ALL of them:\n' +
     "- Extract ONLY figures and facts visibly present in the document. NEVER invent, estimate, or extrapolate values.\n" +
+    "- Never duplicate a displayed total or subtotal as a separate line item when its component rows are already extracted.\n" +
+    "- If a figure, label, or date is unclear, omit that field or flag the uncertainty in the summary; never guess it from today's date or surrounding values.\n" +
     "- docType: classify as 'receipt', 'statement', 'closing_report', 'transaction_list', or 'other'.\n" +
     "- entries[]: individual dated transactions. type is 'sale' (revenue), 'purchase_bill' (bought from a supplier), " +
     "'receipt_in' (money received), 'payment_out' (money paid out to a supplier/party), or 'expense' (operating cost). " +
@@ -596,6 +598,9 @@ export async function analyzeDocumentAI(
   const hasFile = !!input.base64;
   const hasText = typeof input.text === 'string' && input.text.trim().length > 0;
   if (!hasFile && !hasText) throw new Error('Nothing to analyze — provide a document or paste its text.');
+  if (hasFile && input.mimeType === 'application/pdf' && resolveApi(cfg) !== 'gemini') {
+    throw new Error('PDF Scan & Import is currently supported only with the Gemini provider. Switch the AI provider to Gemini, upload page images instead, or paste the PDF text. The PDF was not sent or analyzed.');
+  }
   const prompt = buildAnalyzeDocumentPrompt(hasText && !hasFile ? input.text : undefined);
   const parts = hasFile ? [{ inlineData: { mimeType: input.mimeType || 'image/jpeg', data: input.base64! } }] : [];
   const out = await call(cfg, prompt, parts, ANALYZE_DOCUMENT_SCHEMA);

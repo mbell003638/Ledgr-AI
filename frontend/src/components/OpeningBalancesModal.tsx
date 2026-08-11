@@ -212,7 +212,8 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
           const config = await api.getV2BookConfig();
           if (!config) throw new Error('No active versioned V2 book');
           await api.updateV2BookConfig({
-            style: 'retail_partnership', basis: config.basis, selectedPersonas: config.selectedPersonas, activePersona: config.activePersona,
+            style: 'retail_partnership', basis: config.basis, periodPolicy: config.periodPolicy,
+            selectedPersonas: config.selectedPersonas, activePersona: config.activePersona,
             retailPartnership: {
               ...config.retailPartnership,
               enabled: true,
@@ -326,7 +327,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={ownerCapital} onChangeText={setOwnerCapital} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   </> : null}
 
-                  <Text style={[styles.label, { marginTop: 14 }]}>Period Start Date (YYYY-MM-DD)</Text>
+                  <Text style={[styles.label, { marginTop: 14 }]}>Book / Opening Date (YYYY-MM-DD)</Text>
                   <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={periodStart}
                     onChangeText={setPeriodStart}
@@ -336,7 +337,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     placeholderTextColor={theme.color.muted}
                     style={styles.input}
                   />
-                  <Text style={styles.helper}>Format: YYYY-MM-DD. 01/06/2026 and 2026-6-1 are also accepted.</Text>
+                  <Text style={styles.helper}>This dates the opening balances; it does not force a year-end. Flexible books can accept earlier historical opening dates when no closed period overlaps.</Text>
                 </>
               ) : null}
 

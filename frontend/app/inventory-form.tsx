@@ -24,6 +24,7 @@ export default function InventoryForm() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [history, setHistory] = useState<any[]>([]);
   const [usingV2, setUsingV2] = useState(false);
+  const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
 
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
@@ -33,7 +34,7 @@ export default function InventoryForm() {
 
   const loadData = async () => {
     try {
-      const [v2, settings] = await Promise.all([api.v2InventoryOverview(), api.getSettings()]);
+      const [v2, settings, config] = await Promise.all([api.v2InventoryOverview(), api.getSettings(), api.getV2BookConfig().catch(() => null)]);
       if (v2) {
         setUsingV2(true);
         setExpected(Number(v2.expected || 0));
@@ -47,6 +48,7 @@ export default function InventoryForm() {
         setHistory(Array.isArray(legacyHistory) ? legacyHistory : []);
       }
       const op = Number(settings.openingInventory || 0);
+      setPeriodPolicy(config?.periodPolicy || { mode: "flexible" });
       setOpeningEffectiveDate(String(settings.currentPeriodStart || ""));
       setOpeningDateInput(settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : new Date().toISOString().slice(0, 10));
       setOpeningStock(op);
@@ -114,15 +116,29 @@ export default function InventoryForm() {
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [commissionPct, setCommissionPct] = useState("");
+  const [closeDate, setCloseDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const beginClose = () => {
+    setCloseDate(periodPolicy.mode === "fixed" && periodPolicy.endDate ? periodPolicy.endDate : (date || new Date().toISOString().slice(0, 10)));
+    setConfirmClose(true);
+    setError("");
+  };
 
   const closePeriod = async () => {
     const act = parseFloat(actual);
     if (isNaN(act) || act < 0) { setError("Enter actual stock first"); return; }
     const pct = commissionPct.trim() === "" ? 0 : parseFloat(commissionPct);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setError("Enter a manager commission percentage from 0 to 100"); return; }
+    const closingIso = normalizeDateInput(closeDate);
+    if (!isValidDateString(closingIso)) { setError(`Couldn't read "${closeDate.trim()}" as a closing date. Please use YYYY-MM-DD.`); return; }
+    if (periodPolicy.mode === "fixed" && periodPolicy.endDate && closingIso !== periodPolicy.endDate) {
+      setError(`This fixed period must close on ${periodPolicy.endDate}.`);
+      return;
+    }
+    setCloseDate(closingIso);
     setClosing(true); setError("");
     try {
-      await api.closePeriod(act, notes, pct);
+      await api.closePeriod(act, notes, pct, closingIso);
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setClosing(false); setConfirmClose(false); }
@@ -255,12 +271,20 @@ export default function InventoryForm() {
               <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
                 <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
                 <Text style={styles.hint}>
-                  Close the current inventory period, calculate COGS and gross profit, then record the manager commission for this period. The closing inventory carries forward into the next period.
+                  Close the current inventory period, calculate COGS and gross profit, then carry the closing inventory into the next period.
                 </Text>
+                <View style={styles.policyBox} testID="active-period-policy">
+                  <Text style={styles.policyTitle}>{periodPolicy.mode === "fixed" ? "Fixed accounting period" : "Flexible accounting period"}</Text>
+                  <Text style={styles.hint}>
+                    {periodPolicy.mode === "fixed"
+                      ? `Configured range: ${periodPolicy.startDate || info?.periodStart || "book start"} to ${periodPolicy.endDate || info?.periodEnd || "configured end"}. This period closes on its end date.`
+                      : `Active range: ${info?.periodStart || openingEffectiveDate || "book start"} onward. Close whenever you are ready; the reviewed close date becomes the permanent period end.`}
+                  </Text>
+                </View>
                 {!confirmClose ? (
                   <Pressable
                     testID="btn-close-init"
-                    onPress={() => setConfirmClose(true)}
+                    onPress={beginClose}
                     style={[styles.closeInitBtn, { marginTop: theme.spacing.md }]}
                   >
                     <Ionicons name="checkmark-done-outline" size={18} color={theme.color.brandPrimary} />
@@ -268,9 +292,18 @@ export default function InventoryForm() {
                   </Pressable>
                 ) : (
                   <View style={{ marginTop: theme.spacing.md }}>
-                    <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>
-                      This locks the current period. Previous transactions remain but are excluded from new Dashboard calculations.
+                    <Text style={[styles.hint, { color: theme.color.error, fontWeight: "700" }]}>
+                      Permanent action: entries through the closing date will be locked and this period cannot be reopened or undone. The next active period begins immediately after this close.
                     </Text>
+                    <FormField
+                      label={periodPolicy.mode === "fixed" ? "Fixed closing date" : "Close period through (YYYY-MM-DD)"}
+                      testID="input-close-date"
+                      value={closeDate}
+                      onChangeText={setCloseDate}
+                      onBlur={() => { if (closeDate.trim()) setCloseDate(normalizeDateInput(closeDate)); }}
+                      editable={periodPolicy.mode !== "fixed"}
+                      placeholder="YYYY-MM-DD"
+                    />
                     <FormField
                       label="Manager Commission % for this period"
                       testID="input-close-commission-pct"
@@ -285,7 +318,7 @@ export default function InventoryForm() {
                         <Text style={styles.closeCancelText}>Cancel</Text>
                       </Pressable>
                       <Pressable testID="btn-close-confirm" onPress={closePeriod} disabled={closing} style={styles.closeConfirmBtn}>
-                        {closing ? <ActivityIndicator color="#fff" /> : <Text style={styles.closeConfirmText}>Yes, close period</Text>}
+                        {closing ? <ActivityIndicator color="#fff" /> : <Text style={styles.closeConfirmText}>Permanently close period</Text>}
                       </Pressable>
                     </View>
                   </View>
@@ -311,11 +344,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   varLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
   varValue: { fontSize: 22, fontWeight: "700", marginTop: 4 },
   varHint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+  policyBox: { marginTop: 12, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
+  policyTitle: { fontSize: 13, fontWeight: "700", color: theme.color.onSurface },
   closeInitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary },
   closeInitText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 14 },
   closeCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
   closeCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
-  closeConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.brandPrimary },
+  closeConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
   closeConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   openingBadge: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.surfaceTertiary },
   openingValBox: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },

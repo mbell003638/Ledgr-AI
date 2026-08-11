@@ -69,6 +69,7 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
+  const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
   const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
   const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
@@ -103,6 +104,7 @@ export default function SettingsScreen() {
         const v2 = await api.getV2BookConfig();
         if (v2) {
           setAccountingBasis(v2.basis);
+          setPeriodPolicy(v2.periodPolicy || { mode: "flexible" });
           setSelectedPersonas(v2.selectedPersonas);
           setActivePersona(v2.activePersona);
           setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
@@ -161,6 +163,7 @@ export default function SettingsScreen() {
         await api.updateV2BookConfig({
           basis: accountingBasis,
           style: accountingStyle,
+          periodPolicy,
           selectedPersonas,
           activePersona,
           retailPartnership: {

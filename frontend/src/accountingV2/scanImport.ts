@@ -9,7 +9,7 @@
  * lands in flaggedRows with a human reason and can never be imported.
  */
 import { MAX_AI_AMOUNT, MIN_AI_YEAR, MAX_AI_YEAR } from './aiActions';
-import { normalizeDateInput, isValidDateString, localTodayIso } from '../utils/dateValidation';
+import { normalizeDateInput, isValidDateString } from '../utils/dateValidation';
 
 export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
 export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'];
@@ -166,8 +166,8 @@ export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResu
  *
  * Mapping rules (defense-in-depth: applied here even though the prompt also
  * instructs the model to do the same):
- * - entries[] → transaction rows; missing date defaults to today; invalid
- *   amount/date/type → flagged.
+ * - entries[] → transaction rows; missing dates stay blank for editable review;
+ *   invalid supplied amount/date/type → flagged.
  * - setup.extraAssets rows whose NAME contains "cash" are summed into opening
  *   cash; rows named stock/inventory are folded into stockValue; the rest
  *   become manual-asset rows.
@@ -182,7 +182,6 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
   const doc = asRecord(input);
   const validRows: ScanRow[] = [];
   const flaggedRows: FlaggedScanRow[] = [];
-  const today = localTodayIso();
   if (!doc) return { docType: 'other', summary: '', validRows, flaggedRows };
 
   const docType = typeof doc.docType === 'string' ? doc.docType : 'other';
@@ -204,7 +203,10 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
     }
     let date: string;
     if (entry.date === undefined || entry.date === null || String(entry.date).trim() === '') {
-      date = today;
+      // A missing transaction date is material accounting evidence, not a safe
+      // place to guess. Keep the row editable but block it at review/import
+      // until the user supplies the date shown by the source document.
+      date = '';
     } else {
       const normalized = normalizeScanDate(entry.date);
       if (!normalized) {

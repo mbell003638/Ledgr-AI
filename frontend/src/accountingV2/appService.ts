@@ -9,6 +9,7 @@ import { V2InvestorLedgerService } from './investorLedgerService';
 import { buildPersistentV2Reports } from './persistentReports';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
 import { round2 } from '../money';
+import type { AccountingPeriodPolicy } from './config';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -30,7 +31,7 @@ const stablePartyId = (role: V2PartyRole, input: AnyRecord) => {
 };
 
 export type V2ActiveContext = { bookId: string; periodId: string };
-export type V2CloseBooksAppInput = { actualStock: number; openingInventory: number; commissionPct: number; notes?: string };
+export type V2CloseBooksAppInput = { actualStock: number; openingInventory: number; commissionPct: number; notes?: string; date?: string };
 export type V2CloseBooksAppResult = { source: 'v2'; result: CloseBooksResult };
 export type V2OpeningBalancesInput = {
   date?: string;
@@ -71,6 +72,22 @@ type PeriodRow = { id: string; start_date: string; end_date: string };
 type MemberCapitalRow = { id: string; name: string; profit_share_pct: number };
 const dayAfter = (date: string) => { const d = new Date(`${date}T00:00:00.000Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
 const endOfMonth = (date: string) => { const d = new Date(`${date}T00:00:00.000Z`); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10); };
+const addDays = (date: string, days: number) => { const d = new Date(`${date}T00:00:00.000Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+const nextFixedPeriodEnd = (start: string, end: string, nextStart: string) => {
+  const startDate = new Date(`${start}T00:00:00.000Z`); const endDate = new Date(`${end}T00:00:00.000Z`);
+  const calendarAligned = startDate.getUTCDate() === 1 && end === endOfMonth(end);
+  if (calendarAligned) {
+    const months = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 + endDate.getUTCMonth() - startDate.getUTCMonth() + 1;
+    const next = new Date(`${nextStart}T00:00:00.000Z`);
+    return new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + months, 0)).toISOString().slice(0, 10);
+  }
+  const durationDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+  return addDays(nextStart, durationDays);
+};
+const validIsoDate = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  try { return new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value; } catch { return false; }
+};
 
 /** The application boundary for normal transaction writes. Legacy collections are not touched here. */
 export class V2AppService {
@@ -81,8 +98,40 @@ export class V2AppService {
   async activeContext(date?: string): Promise<V2ActiveContext | null> {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
-    const period = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' AND start_date<=COALESCE(?,start_date) AND end_date>=COALESCE(?,end_date) ORDER BY start_date DESC LIMIT 1", [active.value, date || null, date || null]);
-    return period ? { bookId: active.value, periodId: period.id } : null;
+    if (!date) {
+      const period = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
+      return period ? { bookId: active.value, periodId: period.id } : null;
+    }
+    if (!validIsoDate(date)) throw new Error('Posting date must use a genuine YYYY-MM-DD date');
+    const exact = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' AND start_date<=? AND end_date>=? ORDER BY start_date DESC LIMIT 1", [active.value, date, date]);
+    if (exact) return { bookId: active.value, periodId: exact.id };
+    const closed = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status!='open' AND start_date<=? AND end_date>=? LIMIT 1", [active.value, date, date]);
+    if (closed) throw new Error(`Posting date ${date} falls in the closed period ${closed.start_date} to ${closed.end_date}`);
+    const policy = await this.periodPolicy(active.value);
+    if (policy.mode === 'fixed') throw new Error(`Posting date ${date} is outside the fixed accounting period ${policy.startDate} to ${policy.endDate}`);
+    const periods = await this.db.all<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date", [active.value]);
+    if (!periods.length) return null;
+    const target = date < periods[0].start_date ? periods[0] : periods[periods.length - 1];
+    const start = date < target.start_date ? date : target.start_date;
+    const end = date > target.end_date ? date : target.end_date;
+    const overlap = await this.db.first<{ id: string }>('SELECT id FROM v2_periods WHERE book_id=? AND id!=? AND start_date<=? AND end_date>=? LIMIT 1', [active.value, target.id, end, start]);
+    if (overlap) throw new Error(`Posting date ${date} conflicts with another configured accounting period`);
+    await this.db.run('UPDATE v2_periods SET start_date=?,end_date=? WHERE id=? AND book_id=?', [start, end, target.id, active.value]);
+    return { bookId: active.value, periodId: target.id };
+  }
+
+  private async periodPolicy(bookId: string): Promise<AccountingPeriodPolicy> {
+    return (await new V2BookConfigRepository(this.db).getBookConfig(bookId)).periodPolicy;
+  }
+
+  private async storePeriodPolicy(bookId: string, policy: AccountingPeriodPolicy): Promise<void> {
+    const personas = await this.db.all<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND enabled=1', [bookId]);
+    for (const persona of personas) {
+      let config: AnyRecord = {};
+      try { config = JSON.parse(persona.config || '{}'); } catch { config = {}; }
+      config.periodPolicy = policy;
+      await this.db.run('UPDATE v2_personas SET config=? WHERE id=?', [JSON.stringify(config), persona.id]);
+    }
   }
 
   /**
@@ -647,6 +696,7 @@ export class V2AppService {
     if (!activeBook?.value || await accountingBookVersion(this.db, activeBook.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book with an open accounting period');
     const bookId = activeBook.value;
     return this.repo.runInTransaction(async () => {
+      if (input.date !== undefined && !validIsoDate(input.date)) throw new Error('Opening balance date must use a genuine YYYY-MM-DD date');
       const openPeriods = await this.db.all<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date", [bookId]);
       if (!openPeriods.length) throw new Error('No open accounting period is available. Create or reopen a period before setting opening balances.');
       const date = input.date || openPeriods[0].start_date;
@@ -654,6 +704,8 @@ export class V2AppService {
       if (!target) {
         const closed = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status!='open' AND start_date<=? AND end_date>=? ORDER BY start_date DESC LIMIT 1", [bookId, date, date]);
         if (closed) throw new Error(`Opening balances can't be dated ${date}: that date falls in the closed period ${closed.start_date} to ${closed.end_date}. Choose a date on or after ${openPeriods[0].start_date}.`);
+        const policy = await this.periodPolicy(bookId);
+        if (policy.mode === 'fixed') throw new Error(`Opening balance date ${date} is outside the fixed accounting period ${policy.startDate} to ${policy.endDate}`);
         const earliest = openPeriods[0];
         if (date < earliest.start_date) {
           const blocking = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND id!=? AND end_date>=? AND start_date<? ORDER BY start_date DESC LIMIT 1', [bookId, earliest.id, date, earliest.start_date]);
@@ -662,7 +714,10 @@ export class V2AppService {
           target = { ...earliest, start_date: date };
         } else {
           const latest = openPeriods[openPeriods.length - 1];
-          throw new Error(`Opening balances can't be dated ${date}: the open period ends ${latest.end_date}. Choose a date on or before ${latest.end_date}.`);
+          const blocking = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND id!=? AND start_date<=? AND end_date>? ORDER BY start_date LIMIT 1', [bookId, latest.id, date, latest.end_date]);
+          if (blocking) throw new Error(`Opening balances can't be dated ${date}: the period ${blocking.start_date} to ${blocking.end_date} already covers it.`);
+          await this.db.run('UPDATE v2_periods SET end_date=? WHERE id=?', [date, latest.id]);
+          target = { ...latest, end_date: date };
         }
       }
       // Live (non-reversed, non-deleted) opening sources, book-wide — never
@@ -830,7 +885,7 @@ export class V2AppService {
     const expected = await expectedAt(period.end_date);
     const openingInventory = await expectedAt(period.start_date);
     const lastAudit = history.length ? history[history.length - 1] : null;
-    return { expected, openingInventory, lastAudit, purchasesSince: 0, salesSince: 0, history: history.reverse() };
+    return { expected, openingInventory, lastAudit, purchasesSince: 0, salesSince: 0, history: history.reverse(), periodStart: period.start_date, periodEnd: period.end_date, periodPolicy: await this.periodPolicy(context.bookId) };
   }
 
   async deleteV2InventoryCount(id: string) {
@@ -969,20 +1024,41 @@ export class V2AppService {
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book');
     if (!Number.isFinite(input.actualStock) || input.actualStock < 0) throw new Error('Actual stock must be a finite non-negative amount');
     if (!Number.isFinite(input.openingInventory) || input.openingInventory < 0) throw new Error('Opening inventory must be a finite non-negative amount');
-    const period = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
-    if (!period) throw new Error('No open accounting period to close');
-    const closeRepo = new V2CloseBooksRepository(this.db);
-    const counts = await closeRepo.listInventoryCounts(active.value, period.id);
-    if (!counts.some((count) => count.date === period.start_date)) await closeRepo.recordInventoryCount({ id: `${period.id}:opening-inventory`, bookId: active.value, periodId: period.id, date: period.start_date, value: input.openingInventory });
-    if (!counts.some((count) => count.date === period.end_date)) await closeRepo.recordInventoryCount({ id: `${period.id}:closing-inventory`, bookId: active.value, periodId: period.id, date: period.end_date, value: input.actualStock });
-    const nextStart = dayAfter(period.end_date);
-    let next = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' AND start_date>? ORDER BY start_date LIMIT 1", [active.value, period.end_date]);
-    if (!next) {
-      next = { id: `${active.value}:period:${nextStart}`, start_date: nextStart, end_date: endOfMonth(nextStart) };
-      await this.repo.createPeriod({ id: next.id, bookId: active.value, startDate: next.start_date, endDate: next.end_date, status: 'open' });
-    }
-    const result = await closeRepo.closeBooks({ id: `${active.value}:close:${period.id}`, bookId: active.value, periodId: period.id, nextPeriodId: next.id, date: period.end_date, commissionPct: input.commissionPct });
-    return { source: 'v2', result };
+    return this.repo.runInTransaction(async () => {
+      let period = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
+      if (!period) throw new Error('No open accounting period to close');
+      const policy = await this.periodPolicy(active.value);
+      const closeDate = input.date || period.end_date;
+      if (!validIsoDate(closeDate)) throw new Error('Close date must use a genuine YYYY-MM-DD date');
+      if (closeDate < period.start_date) throw new Error(`Close date ${closeDate} cannot be before the period start ${period.start_date}`);
+      if (policy.mode === 'fixed' && closeDate !== policy.endDate) {
+        throw new Error(`Fixed accounting period must close on ${policy.endDate}`);
+      }
+      const laterJournal = await this.db.first<{ date: string }>('SELECT date FROM v2_journal_entries WHERE book_id=? AND period_id=? AND date>? ORDER BY date LIMIT 1', [active.value, period.id, closeDate]);
+      const laterCount = await this.db.first<{ date: string }>('SELECT date FROM v2_inventory_counts WHERE book_id=? AND period_id=? AND date>? ORDER BY date LIMIT 1', [active.value, period.id, closeDate]);
+      const later = laterJournal || laterCount;
+      if (later) throw new Error(`Accounting period cannot close on ${closeDate} because it contains activity dated ${later.date}`);
+      const overlap = await this.db.first<{ id: string }>('SELECT id FROM v2_periods WHERE book_id=? AND id!=? AND start_date<=? AND end_date>=? LIMIT 1', [active.value, period.id, closeDate, period.start_date]);
+      if (overlap) throw new Error('Close date conflicts with another configured accounting period');
+      if (period.end_date !== closeDate) {
+        await this.db.run('UPDATE v2_periods SET end_date=? WHERE id=? AND book_id=?', [closeDate, period.id, active.value]);
+        period = { ...period, end_date: closeDate };
+      }
+      const closeRepo = new V2CloseBooksRepository(this.db);
+      const counts = await closeRepo.listInventoryCounts(active.value, period.id);
+      if (!counts.some((count) => count.date === period.start_date)) await closeRepo.recordInventoryCount({ id: `${period.id}:opening-inventory`, bookId: active.value, periodId: period.id, date: period.start_date, value: input.openingInventory });
+      if (!counts.some((count) => count.date === closeDate)) await closeRepo.recordInventoryCount({ id: `${period.id}:closing-inventory`, bookId: active.value, periodId: period.id, date: closeDate, value: input.actualStock });
+      const nextStart = dayAfter(closeDate);
+      let next = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' AND start_date>? ORDER BY start_date LIMIT 1", [active.value, closeDate]);
+      if (!next) {
+        const nextEnd = policy.mode === 'fixed' ? nextFixedPeriodEnd(period.start_date, period.end_date, nextStart) : input.date ? '9999-12-31' : endOfMonth(nextStart);
+        next = { id: `${active.value}:period:${nextStart}`, start_date: nextStart, end_date: nextEnd };
+        await this.repo.createPeriod({ id: next.id, bookId: active.value, startDate: next.start_date, endDate: next.end_date, status: 'open' });
+      }
+      const result = await closeRepo.closeBooks({ id: `${active.value}:close:${period.id}`, bookId: active.value, periodId: period.id, nextPeriodId: next.id, date: closeDate, commissionPct: input.commissionPct });
+      if (policy.mode === 'fixed') await this.storePeriodPolicy(active.value, { mode: 'fixed', startDate: next.start_date, endDate: next.end_date });
+      return { source: 'v2' as const, result };
+    });
   }
 }
 
@@ -1073,10 +1149,10 @@ export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
   };
 }
 
-export function createCloseBooksRouter(v2: V2AppService, legacy: (actualStock: number, notes: string) => Promise<any>) {
+export function createCloseBooksRouter(v2: V2AppService, legacy: (actualStock: number, notes: string, commissionPct?: number, date?: string) => Promise<any>) {
   return async (input: V2CloseBooksAppInput) => {
     const active = await v2.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     const isV2 = Boolean(active?.value && await accountingBookVersion(v2.db, active.value) === V2_BOOK_VERSION);
-    return isV2 ? v2.closeBooks(input) : legacy(input.actualStock, input.notes || '');
+    return isV2 ? v2.closeBooks(input) : legacy(input.actualStock, input.notes || '', input.commissionPct, input.date);
   };
 }

@@ -977,16 +977,16 @@ export const api = {
     return result;
   },
   listPeriods: () => db.listPeriods(),
-  closePeriod: async (actualStock: number, notes = '', commissionPct = 0) => {
+  closePeriod: async (actualStock: number, notes = '', commissionPct = 0, date?: string) => {
     const runner = activeSqlRunner();
-    if (!runner) return db.closePeriod(actualStock, notes, commissionPct);
+    if (!runner) return db.closePeriod(actualStock, notes, commissionPct, date);
     const service = new V2AppService(runner);
     const closeBooks = createCloseBooksRouter(service, db.closePeriod);
     const settings = await db.getSettings();
     // The V2 carried inventory count is authoritative. The setting is only
     // a compatibility mirror and may still refer to the prior period.
     const overview = await service.inventoryOverview();
-    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct, notes });
+    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct, notes, date });
     if ((result as any)?.source === 'v2') {
       const next = await runner.first<{ start_date: string }>("SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [(result as any).result.bookId]);
       await db.updateSettings({ currentPeriodStart: next?.start_date || settings.currentPeriodStart, openingInventory: actualStock });

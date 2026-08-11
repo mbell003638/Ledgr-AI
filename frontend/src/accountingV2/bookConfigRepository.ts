@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../db/schema';
 import type { V2Book } from './types';
-import type { PersonaId, V2BookConfig } from './config';
+import type { AccountingPeriodPolicy, PersonaId, V2BookConfig } from './config';
 import { defaultBookConfig } from './config';
 import { round2 } from '../money';
 
@@ -18,6 +18,7 @@ type PersonaRow = { id: string; book_id: string; type: PersonaId; enabled: numbe
 type MemberRow = { id: string; name: string; opening_contribution: number; profit_share_pct: number };
 
 export type V2BookConfigUpdate = Pick<V2BookConfig, 'style' | 'basis' | 'selectedPersonas' | 'activePersona'> & {
+  periodPolicy?: AccountingPeriodPolicy;
   retailPartnership: V2BookConfig['retailPartnership'];
 };
 
@@ -88,10 +89,12 @@ export class V2BookConfigRepository {
     const active = personas.find((item) => item.active) || personas[0];
     if (!active) throw new Error('Book has no enabled persona');
     const activeConfig = active.config;
+    const periodPolicy = this.periodPolicy(activeConfig.periodPolicy);
     const members = await this.db.all<MemberRow>('SELECT id,name,opening_contribution,profit_share_pct FROM v2_members WHERE book_id = ? ORDER BY id', [bookId]);
     return {
       ...defaultBookConfig(bookId), style: book.style, basis: book.basis,
       selectedPersonas: personas.map((item) => item.type), activePersona: active.type,
+      periodPolicy,
       retailPartnership: {
         enabled: Boolean(activeConfig.retailPartnershipEnabled ?? book.style === 'retail_partnership'),
         commissionPct: Number(activeConfig.commissionPct || 0),
@@ -107,16 +110,20 @@ export class V2BookConfigRepository {
   }
 
   async updateBookConfig(bookId: string, update: V2BookConfigUpdate): Promise<V2BookConfig> {
-    this.validateUpdate(update);
+    const existingConfig = await this.getBookConfig(bookId);
+    const periodPolicy = update.periodPolicy || existingConfig.periodPolicy;
+    this.validateUpdate(update, periodPolicy);
     const selected = [...new Set(update.selectedPersonas)];
     return this.tx(async () => {
       await this.requireBook(bookId);
+      if (periodPolicy.mode === 'fixed') await this.applyFixedPeriod(bookId, periodPolicy);
       await this.db.run('UPDATE v2_books SET style = ?, basis = ? WHERE id = ?', [update.style, update.basis, bookId]);
       await this.db.run('UPDATE v2_personas SET enabled = 0, active = 0 WHERE book_id = ?', [bookId]);
       const personaConfig = JSON.stringify({
         retailPartnershipEnabled: update.retailPartnership.enabled,
         commissionPct: update.retailPartnership.commissionPct,
         inventoryCadence: update.retailPartnership.inventoryCadence,
+        periodPolicy,
         ...(update.retailPartnership.shopkeeperName ? { shopkeeperName: update.retailPartnership.shopkeeperName } : {}),
         ...(update.retailPartnership.shopkeeperSalaryExpenseAccount ? { shopkeeperSalaryExpenseAccount: update.retailPartnership.shopkeeperSalaryExpenseAccount } : {}),
       });
@@ -178,14 +185,47 @@ export class V2BookConfigRepository {
     });
   }
 
-  private validateUpdate(update: V2BookConfigUpdate): void {
+  private validateUpdate(update: V2BookConfigUpdate, periodPolicy: AccountingPeriodPolicy): void {
     if (!update.selectedPersonas.length || !update.selectedPersonas.includes(update.activePersona)) throw new Error('Active persona must be selected');
     if (!Number.isFinite(update.retailPartnership.commissionPct) || update.retailPartnership.commissionPct < 0 || update.retailPartnership.commissionPct > 100) throw new Error('Commission percentage must be between 0 and 100');
+    if (periodPolicy.mode === 'fixed') {
+      if (!this.validDate(periodPolicy.startDate) || !this.validDate(periodPolicy.endDate) || periodPolicy.startDate! > periodPolicy.endDate!) {
+        throw new Error('Fixed accounting periods require valid start and end dates with the start on or before the end');
+      }
+    }
     for (const member of update.retailPartnership.members) {
       if (!member.name.trim()) throw new Error('Member name is required');
       if (!Number.isFinite(member.openingContribution) || member.openingContribution < 0) throw new Error('Opening contribution must be a finite non-negative amount');
       if (!Number.isFinite(member.profitSharePct) || member.profitSharePct < 0 || member.profitSharePct > 100) throw new Error('Profit share must be between 0 and 100');
     }
+  }
+
+  private periodPolicy(value: unknown): AccountingPeriodPolicy {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const policy = value as Record<string, unknown>;
+      if (policy.mode === 'fixed' && this.validDate(policy.startDate) && this.validDate(policy.endDate) && String(policy.startDate) <= String(policy.endDate)) {
+        return { mode: 'fixed', startDate: String(policy.startDate), endDate: String(policy.endDate) };
+      }
+    }
+    return { mode: 'flexible' };
+  }
+
+  private validDate(value: unknown): boolean {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    try { return new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value; } catch { return false; }
+  }
+
+  private async applyFixedPeriod(bookId: string, policy: AccountingPeriodPolicy): Promise<void> {
+    const period = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [bookId]);
+    if (!period) throw new Error('No open accounting period is available to configure');
+    const start = policy.startDate!; const end = policy.endDate!;
+    const overlap = await this.db.first<{ id: string }>('SELECT id FROM v2_periods WHERE book_id=? AND id!=? AND start_date<=? AND end_date>=? LIMIT 1', [bookId, period.id, end, start]);
+    if (overlap) throw new Error('The fixed accounting period overlaps another configured period');
+    const outsideJournal = await this.db.first<{ date: string }>('SELECT date FROM v2_journal_entries WHERE book_id=? AND period_id=? AND (date<? OR date>?) ORDER BY date LIMIT 1', [bookId, period.id, start, end]);
+    const outsideCount = await this.db.first<{ date: string }>('SELECT date FROM v2_inventory_counts WHERE book_id=? AND period_id=? AND (date<? OR date>?) ORDER BY date LIMIT 1', [bookId, period.id, start, end]);
+    const outside = outsideJournal || outsideCount;
+    if (outside) throw new Error(`Fixed accounting period cannot exclude existing activity dated ${outside.date}`);
+    await this.db.run('UPDATE v2_periods SET start_date=?,end_date=? WHERE id=? AND book_id=?', [start, end, period.id, bookId]);
   }
 
   private inventoryCadence(value: unknown): V2BookConfig['retailPartnership']['inventoryCadence'] {
