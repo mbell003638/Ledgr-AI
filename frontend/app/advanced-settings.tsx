@@ -90,7 +90,6 @@ export default function AdvancedSettingsScreen() {
 
   const updateAccountingStyle = async (style: "retail_partnership" | "standard") => {
     setAccountingStyle(style);
-    await api.updateSettings({ accountingStyle: style });
     try {
       const v2 = await api.getV2BookConfig();
       if (v2) {
@@ -118,25 +117,13 @@ export default function AdvancedSettingsScreen() {
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
-      setAccountingStyle(s.accountingStyle === "retail_partnership" ? "retail_partnership" : "standard");
       const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
       setSelectedPersonas(configuredPersonas);
       setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
-      // Members: prefer the structured investors[]; fall back to legacy partnerNames[].
-      const inv = Array.isArray(s.investors) ? s.investors : [];
-      if (inv.length) {
-        setMembers(inv.map((m: any) => ({
-          name: String(m?.name ?? ""),
-          amount: m?.amount != null && m.amount !== 0 ? String(m.amount) : "",
-          profitSharePct: m?.profitSharePct != null && m.profitSharePct !== 0 ? String(m.profitSharePct) : "",
-        })));
-      } else {
-        const names = Array.isArray(s.partnerNames) ? s.partnerNames : [];
-        setMembers(names.map((n: string) => ({ name: String(n), amount: "", profitSharePct: "" })));
-      }
       try {
         const v2 = await api.getV2BookConfig();
         if (v2) {
+          setAccountingStyle(v2.style === "retail_partnership" ? "retail_partnership" : "standard");
           setAccountingBasis(v2.basis);
           setPeriodMode(v2.periodPolicy?.mode === "fixed" ? "fixed" : "flexible");
           setPeriodStart(v2.periodPolicy?.startDate || "");
@@ -145,7 +132,7 @@ export default function AdvancedSettingsScreen() {
           setActivePersona(v2.activePersona);
           setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
         }
-      } catch { /* legacy settings remain the fallback until V2 is available */ }
+      } catch { /* the V2 configuration remains unavailable until storage is ready */ }
       setLockEnabled(!!s.lockEnabled);
       // Load the list of books (accounts) + which one is active.
       try {
@@ -207,21 +194,6 @@ export default function AdvancedSettingsScreen() {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
       await api.updateSettings({
-        accountingBasis,
-        selectedPersonas,
-        activePersona,
-        accountingStyle,
-        // Members → both the structured investors[] AND legacy partnerNames[]
-        // (kept in sync so drawings attribution + older code keep working).
-        investors: members
-          .map((m) => ({
-            id: m.name.trim(),
-            name: m.name.trim(),
-            amount: m.amount.trim() ? parseFloat(m.amount) : 0,
-            profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0,
-          }))
-          .filter((m) => m.name),
-        partnerNames: members.map((m) => m.name.trim()).filter(Boolean),
         lockEnabled,
         themeMode: mode,
       });
@@ -259,15 +231,8 @@ export default function AdvancedSettingsScreen() {
     setBusy("export"); setStatus(null);
     try {
       const full: any = await api.exportBackup();
-      // [Vault C2] If the legacy mirror diverged from the authoritative V2 ledger,
-      // show the discrepancies once before sharing. Export still proceeds after.
-      const { warnings, ...data } = full; // warnings are for the UI, not the file
-      const warns: string[] = Array.isArray(warnings) ? warnings : [];
-      if (warns.length) {
-        Alert.alert("Heads up before exporting", warns.join("\n\n"));
-      }
       const stamp = new Date().toISOString().slice(0, 10);
-      await shareJsonFile(`ledgr-backup-${stamp}.json`, data);
+      await shareJsonFile(`ledgr-backup-${stamp}.json`, full);
       setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Export failed" });

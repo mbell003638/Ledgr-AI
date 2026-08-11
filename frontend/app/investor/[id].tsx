@@ -44,8 +44,8 @@ export default function InvestorDetailScreen() {
     if (!id) return;
     setError('');
     try {
-      const settings = await api.getSettings();
-      if (settings.accountingStyle !== 'retail_partnership') {
+      const [settings, config] = await Promise.all([api.getSettings(), api.getV2BookConfig()]);
+      if (config?.style !== 'retail_partnership') {
         router.replace('/(tabs)/suppliers' as any);
         return;
       }

@@ -1,11 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { storage } from '@/src/utils/storage';
 import { bumpDataVersion } from '@/src/utils/dataVersion';
-import { dedupeLegacyMirrors } from '@/src/utils/ledgerDisplay';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, recordMirrorError, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
@@ -227,6 +226,36 @@ async function buildAiSnapshot(from: string, to: string) {
     openInvoices: (invoices as any[]).filter((i) => i.status === 'unpaid').sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 20).map((i) => ({ number: i.invoiceNumber, client: i.clientName, amount: i.total })),
   };
 }
+
+const ACCOUNTING_SETTING_KEYS = new Set([
+  'managerCommissionPct', 'currentPeriodStart', 'openingInventory', 'openingCash',
+  'openingCapital', 'investors', 'partnerNames', 'extraAssets', 'extraLiabilities',
+  'accountingStyle', 'accountingBasis', 'selectedPersonas', 'activePersona',
+]);
+
+const withoutAccountingSettings = (value: Record<string, any>) => Object.fromEntries(
+  Object.entries(value || {}).filter(([key]) => !ACCOUNTING_SETTING_KEYS.has(key)),
+);
+
+/** Settings store preferences only. Accounting state and configuration live in V2. */
+async function preferenceSettings() {
+  const settings = await db.getSettings();
+  await db.clearAccountingSettings();
+  const preferences = withoutAccountingSettings(settings);
+  const runner = activeSqlRunner();
+  if (!runner) return preferences;
+  const service = new V2AppService(runner);
+  const context = await service.activeContext();
+  if (!context) return preferences;
+  const config = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
+  return {
+    ...preferences,
+    accountingStyle: config.style,
+    accountingBasis: config.basis,
+    selectedPersonas: config.selectedPersonas,
+    activePersona: config.activePersona,
+  };
+}
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
 const legacyCreateTransactions: Record<AppCreateName, (value: any) => Promise<any>> = {
   createSale: db.createSale,
@@ -300,9 +329,8 @@ const legacyCreateNotes = {
  * [Finding A] Create a credit/debit note. The customer screen sends {customerId}
  * and the supplier screen sends {supplierId}; db.createNote requires {debtorId}.
  * We map those fields to a canonical shape, route the note through the V2 write
- * path (so it hits the journal + party balance and is visible on party detail /
- * statements), and keep a legacy mirror consistent with the other documents.
- * Off the V2 path (no runner) we fall back to the legacy record alone.
+ * path so it hits the journal + party balance and is visible on party detail /
+ * statements. Active V2 books have one write path and no compatibility mirror.
  */
 async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) {
   const isSupplier = raw.supplierId != null || raw.role === 'supplier';
@@ -320,9 +348,6 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
   if (runner && await new V2AppService(runner).activeContext(mapped.date)) {
     const v2 = new V2AppService(runner);
     const v2Res = await (name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
-    // Legacy mirror (best-effort, keyed by debtorId like the other documents).
-    try { await legacyCreateNotes[name]({ ...mapped, invoiceId: mapped.invoiceId || mapped.invoiceSourceId || null }); }
-    catch (error) { recordMirrorError(name, error); }
     bumpDataVersion();
     const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
     return { ...v2Res, id: v2Res.source?.id, noteNumber: v2Res.source?.reference || v2Res.source?.id, amount: total };
@@ -333,71 +358,18 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
 }
 
 /**
- * [Vault C2] Build human-readable warnings comparing the legacy collections to
- * their authoritative V2 source counterparts. Returns [] when there is no V2
- * context (nothing to diverge from) or the counts match. Best-effort: any error
- * yields no warning rather than blocking the export.
- */
-async function exportDivergenceWarnings(): Promise<string[]> {
-  const runner = activeSqlRunner();
-  if (!runner) return [];
-  const warnings: string[] = [];
-  try {
-    const service = new V2AppService(runner);
-    const ctx = await service.activeContext();
-    if (!ctx) return [];
-    const bookId = ctx.bookId;
-    const v2Count = async (type: string): Promise<number> => {
-      const row = await runner.first<{ n: number }>(
-        'SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=? AND type=?', [bookId, type]);
-      return Number(row?.n || 0);
-    };
-    // (legacyCount, v2 source type, human label)
-    const checks: [Promise<any[]>, string, string][] = [
-      [db.listInvoices(), 'invoice', 'invoices'],
-      [db.listBills(), 'bill', 'bills'],
-      [db.listReceipts(), 'receipt', 'receipts'],
-      [db.listPayments(), 'payment', 'payments'],
-    ];
-    for (const [legacyPromise, v2Type, label] of checks) {
-      const [legacyRows, v2n] = await Promise.all([legacyPromise, v2Count(v2Type)]);
-      const legacyN = Array.isArray(legacyRows) ? legacyRows.length : 0;
-      if (legacyN !== v2n) {
-        warnings.push(`${label}: legacy backup has ${legacyN} record(s) but the V2 ledger has ${v2n}. The V2 ledger is authoritative and will be restored intact.`);
-      }
-    }
-  } catch { /* divergence check is advisory only */ }
-  return warnings;
-}
-
-/**
  * The ONE computation of an investor's live ledger detail: the V2
- * journal-derived detail merged with any legacy-only capital movements that
- * predate V2. Both the investor detail screen (api.getInvestorLedger) and the
+ * journal-derived detail. Both the investor detail screen (api.getInvestorLedger) and the
  * Parties list tile (api.listInvestors) MUST read the balance from here so the
  * two surfaces can never disagree after a deposit/draw.
  */
 async function mergedInvestorLedgerDetail(id: string): Promise<InvestorLedgerDetail> {
   const runner = activeSqlRunner();
-  if (!runner) return db.investorLedgerDetail(id);
+  if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const app = new V2AppService(runner);
   const context = await app.activeContext();
-  if (!context) return db.investorLedgerDetail(id);
-  const v2 = await new V2InvestorLedgerService(runner).detail(context.bookId, id);
-  let legacy: db.InvestorLedgerDetail | null = null;
-  try { legacy = await db.investorLedgerDetail(v2.name); } catch { /* no legacy member mirror */ }
-  if (!legacy) return v2;
-  const known = new Set(v2.transactions.map((item) => item.id));
-  const extras = legacy.transactions.filter((item) => !known.has(item.id) && (item.type === 'capital_injection' || item.type === 'drawing'));
-  const extraInjected = extras.filter((item) => item.type === 'capital_injection').reduce((sum, item) => sum + item.amount, 0);
-  const extraDrawings = extras.filter((item) => item.type === 'drawing').reduce((sum, item) => sum + item.amount, 0);
-  return {
-    ...v2,
-    totalInjected: Math.round((v2.totalInjected + extraInjected) * 100) / 100,
-    totalDrawings: Math.round((v2.totalDrawings + extraDrawings) * 100) / 100,
-    currentCapitalBalance: Math.round((v2.currentCapitalBalance + extraInjected - extraDrawings) * 100) / 100,
-    transactions: [...v2.transactions, ...extras].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)),
-  };
+  if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+  return new V2InvestorLedgerService(runner).detail(context.bookId, id);
 }
 
 export const api = {
@@ -412,7 +384,9 @@ export const api = {
     if (!runner) {
       return { bookId: options.book.id, periodId: options.period.id || `${options.book.id}:period`, version: 1 };
     }
-    return initializeV2Book(runner, options);
+    const result = await initializeV2Book(runner, options);
+    await preferenceSettings();
+    return result;
   },
   v2BookVersion: async (bookId: string) => {
     const runner = activeSqlRunner();
@@ -446,6 +420,11 @@ export const api = {
     const runner = activeSqlRunner();
     if (!runner) return null;
     return new V2AppService(runner).getOpeningBalances();
+  },
+  getV2ActivePeriod: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return null;
+    return new V2AppService(runner).getActivePeriod();
   },
   postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
@@ -520,8 +499,13 @@ export const api = {
     bumpDataVersion();
     return r;
   },
-  getSettings: () => db.getSettings(),
-  updateSettings: async (s: any) => { const r = await db.updateSettings(s); bumpDataVersion(); return r; },
+  getSettings: () => preferenceSettings(),
+  updateSettings: async (s: any) => {
+    const r = await db.updateSettings(withoutAccountingSettings(s));
+    const preferences = await preferenceSettings();
+    bumpDataVersion();
+    return { ...withoutAccountingSettings(r), ...preferences };
+  },
   testKey: async () => ai.testKey(await getAIConfig()),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
@@ -673,8 +657,6 @@ export const api = {
     return [];
   },
   listInvestors: async (): Promise<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }[]> => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') return [];
     const runner = activeSqlRunner();
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext();
@@ -694,7 +676,7 @@ export const api = {
         }
       }
     }
-    return (settings.investors || []).map((item: any) => ({ id: String(item.id || item.name), name: String(item.name), openingCapital: Number(item.amount || 0), currentCapital: Number(item.amount || 0), profitSharePct: Number(item.profitSharePct || 0) }));
+    return [];
   },
   listSalesAndInvoices: async () => {
     const runner=activeSqlRunner(); if(!runner)return db.listSales();
@@ -778,20 +760,10 @@ export const api = {
           origin: 'v2',
           editable: false,
         }));
-        const legacyEntries = (await db.listCashEntries()).map((entry: any) => ({ ...entry, origin: 'manual', editable: true }));
-        // Legacy rows that merely MIRROR a V2-journaled movement (investor
-        // capital mirrors, receipt bridge rows) carry different ids than their
-        // journal-derived twins, so the id-keyed merge below can't collapse
-        // them — dedupe on source linkage FIRST so screens list (and total)
-        // each movement exactly once.
-        const merged = dedupeLegacyMirrors([...legacyEntries, ...v2Entries] as any);
-        const all = [...new Map(merged.map((entry: any) => [entry.id, entry])).values()].sort((a: any, b: any) =>
-          (a.date && b.date ? (a.date > b.date ? -1 : a.date < b.date ? 1 : 0) : 0)
-        );
-        return all;
+        return v2Entries;
       }
     }
-    return db.listCashEntries();
+    return [];
   },
   createCashEntry: async (e: any) => {
     const runner = activeSqlRunner();
@@ -803,82 +775,59 @@ export const api = {
         return result;
       }
     }
-    const result = await db.createCashEntry(e); bumpDataVersion(); return result;
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
   updateCashEntry: async (id: string, e: any) => { const r = await db.updateCashEntry(id, e); bumpDataVersion(); return r; },
   deleteCashEntry: async (id: string) => { const r = await db.deleteCashEntry(id); bumpDataVersion(); return r; },
 
   getInvestorLedger: async (id: string): Promise<InvestorLedgerDetail> => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
-    return mergedInvestorLedgerDetail(id);
+    const runner = activeSqlRunner();
+    if (runner && await new V2AppService(runner).activeContext()) return mergedInvestorLedgerDetail(id);
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
   depositInvestorCapital: async (id: string, input: { amount: number; date: string; notes?: string }) => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
     const runner = activeSqlRunner();
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);
       if (context) {
         const result = await new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id });
-        // Legacy mirror for backup/export continuity. It carries the V2 source
-        // id BOTH as its own id and as explicit v2SourceId linkage so the Cash
-        // Book merge (dedupeLegacyMirrors) can always identify it as the same
-        // movement as the journal-derived row.
-        try { await db.createCashEntry({ id: result.source.id, v2SourceId: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' }); } catch {}
         bumpDataVersion();
         return result;
       }
     }
-    const r = await db.recordInvestorCapital(id, input);
-    bumpDataVersion();
-    return r;
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
   updateInvestorCapital: async (id: string, sourceId: string, input: { amount: number; date: string; notes?: string }) => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Editing posted capital requires SQLite storage');
     const app = new V2AppService(runner);
     const context = await app.activeContext(input.date);
     if (!context) throw new Error('Posting date is outside the open accounting period');
     const result = await new V2InvestorLedgerService(runner).updateDeposit(sourceId, { ...input, bookId: context.bookId, memberId: id });
-    try {
-      await db.deleteCashEntry(sourceId);
-      await db.createCashEntry({ id: result.source.id, v2SourceId: result.source.id, ...input, direction: 'in', type: 'capital_injection', investorId: id, notes: input.notes || 'Capital injection' });
-    } catch { /* V2 remains authoritative */ }
     bumpDataVersion();
     return result;
   },
   deleteInvestorCapital: async (id: string, sourceId: string) => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Reversing posted capital requires SQLite storage');
     const app = new V2AppService(runner);
     const context = await app.activeContext();
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     const result = await new V2InvestorLedgerService(runner).deleteDeposit(sourceId, context.bookId, id);
-    try { await db.deleteCashEntry(sourceId); } catch { /* V2 remains authoritative */ }
     bumpDataVersion();
     return result;
   },
   drawInvestorFunds: async (id: string, input: { amount: number; date: string; notes?: string }) => {
-    const settings = await db.getSettings();
-    if (settings.accountingStyle !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
     const runner = activeSqlRunner();
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);
       if (context) {
         const result = await new V2InvestorLedgerService(runner).draw({ ...input, bookId: context.bookId, memberId: id });
-        try { await db.createPayment({ id: result.source.id, ...input, type: 'drawing', partnerName: String(result.source.metadata?.memberName || id), investorId: id, method: 'cash' }); } catch {}
         bumpDataVersion();
         return result;
       }
     }
-    const r = await db.recordInvestorDrawing(id, input);
-    bumpDataVersion();
-    return r;
+    throw new Error('No active versioned V2 book with an open accounting period');
   },
 
   // Dashboard & reports
@@ -888,15 +837,7 @@ export const api = {
       const service = new V2AppService(runner);
       const ctx = await service.activeContext();
       if (ctx) {
-        // One-time migration for values entered before V2 was enabled. Never
-        // duplicate or overwrite an existing authoritative opening source.
-        const opening = await runner.first<{ id: string }>("SELECT id FROM v2_sources WHERE book_id=? AND type='opening_balance' LIMIT 1", [ctx.bookId]);
-        if (!opening) {
-          const settings = await db.getSettings();
-          const cash = Number(settings.openingCash || 0);
-          const inventory = Number(settings.openingInventory || 0);
-          if (cash > 0 || inventory > 0) await service.postOpeningBalances({ cash, inventory, memo: 'Opening balances (migrated)' });
-        }
+        await preferenceSettings();
         return getV2Dashboard(runner, ctx.bookId);
       }
     }
@@ -995,12 +936,6 @@ export const api = {
     const data: any = await db.exportBackup();
     // Include model name so it carries over to other devices
     data.geminiModel = await getGeminiModel();
-    // [Vault C2] Export-time divergence warning: when a V2 ledger is active,
-    // compare legacy collection counts to their V2 source counterparts. A
-    // mismatch means the legacy mirror drifted from the authoritative ledger;
-    // surface it so the user knows before sharing (export still proceeds).
-    const warnings: string[] = await exportDivergenceWarnings();
-    data.warnings = warnings;
     return data;
   },
   importBackup: async (payload: any) => {
@@ -1018,15 +953,8 @@ export const api = {
     if (!runner) return db.closePeriod(actualStock, notes, commissionPct, date);
     const service = new V2AppService(runner);
     const closeBooks = createCloseBooksRouter(service, db.closePeriod);
-    const settings = await db.getSettings();
-    // The V2 carried inventory count is authoritative. The setting is only
-    // a compatibility mirror and may still refer to the prior period.
     const overview = await service.inventoryOverview();
-    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory ?? settings.openingInventory ?? 0), commissionPct, notes, date });
-    if ((result as any)?.source === 'v2') {
-      const next = await runner.first<{ start_date: string }>("SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [(result as any).result.bookId]);
-      await db.updateSettings({ currentPeriodStart: next?.start_date || settings.currentPeriodStart, openingInventory: actualStock });
-    }
+    const result = await closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory || 0), commissionPct, notes, date });
     bumpDataVersion();
     return result;
   },

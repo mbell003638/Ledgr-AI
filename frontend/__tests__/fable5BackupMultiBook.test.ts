@@ -113,11 +113,11 @@ describe('Finding B — quote→invoice conversion is visible to the V2 ledger',
     expect(conv.total).toBe(400);
 
     const salesInv = await api.listSalesAndInvoices();
-    const legacyInv = await api.listInvoices();
+    const compatibilityCopies = await api.listInvoices();
     const rep = await v2ReportsOrFallback({ from: '2026-01-01', to: '2026-12-31' }, async () => ({}));
     const dash = await api.dashboard();
-    expect(legacyInv.length).toBe(1);
-    expect(salesInv.length).toBe(1);                 // was 0 pre-fix (V2 bypassed)
+    expect(compatibilityCopies).toHaveLength(0);     // one authoritative V2 posting, no mirror
+    expect(salesInv).toHaveLength(1);
     expect(rep.report.profitAndLoss.revenue).toBe(400);
     expect(dash.totalSales).toBe(400);
     // Converting again is idempotent-guarded.

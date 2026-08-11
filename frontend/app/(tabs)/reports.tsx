@@ -99,8 +99,8 @@ export default function ReportsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const s = await api.getSettings();
-      setBizSettings(s);
+      const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
+      setBizSettings({ ...s, accountingStyle: config?.style || 'standard' });
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
       const [core, snapshotDash, snapshotBs, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([

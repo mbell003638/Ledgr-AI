@@ -49,23 +49,15 @@ export default function CashBookScreen() {
   const [loadingInvestors, setLoadingInvestors] = useState(false);
 
   const [openingCash, setOpeningCash] = useState(0);
-  const [openingDate, setOpeningDate] = useState("");
-  const [editingOpening, setEditingOpening] = useState(false);
-  const [openingInput, setOpeningInput] = useState("");
-  const [hasV2Opening, setHasV2Opening] = useState(false);
   const [openingVisible, setOpeningVisible] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [list, settings, opening] = await Promise.all([api.listCashEntries(), api.getSettings(), api.getV2OpeningBalances()]);
+      const [list, settings, opening, config] = await Promise.all([api.listCashEntries(), api.getSettings(), api.getV2OpeningBalances(), api.getV2BookConfig().catch(() => null)]);
       setEntries(list);
-      const op = Number(opening?.cash ?? settings.openingCash ?? 0);
-      setHasV2Opening(Boolean(opening));
-      setOpeningCash(op);
-      setOpeningInput(String(op));
-      setOpeningDate(opening?.date || (settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : todayStr()));
+      setOpeningCash(Number(opening?.cash || 0));
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
-      setPartnerMode(settings.accountingStyle === "retail_partnership");
+      setPartnerMode(config?.style === "retail_partnership");
       setInvestors(null); // refetched on demand so new investors show up
       loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
@@ -89,28 +81,6 @@ export default function CashBookScreen() {
     const net = openingCash + ins - outs;
     return { ins, outs, net, opening: openingCash };
   }, [collapsed, openingCash]);
-
-  const saveOpeningCash = async () => {
-    const val = parseFloat(openingInput);
-    if (isNaN(val) || val < 0) { Alert.alert("Invalid", "Enter a valid opening cash balance."); return; }
-    const openingIso = normalizeDateInput(openingDate);
-    if (!isValidDateString(openingIso)) { Alert.alert("Invalid", `Couldn't read "${openingDate.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
-    setOpeningDate(openingIso); // reflect the canonical form in the field
-    try {
-      // Post to the authoritative V2 journal before mirroring the value into legacy settings.
-      // This prevents the display setting from changing if the accounting period is locked.
-      const settings = await api.getSettings();
-      try {
-        await api.updateV2OpeningBalances({ date: openingIso, cash: val, inventory: Number(settings.openingInventory || 0), memo: "Opening balances" });
-      } catch (e: any) {
-        if (!/requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
-      }
-      await api.updateSettings({ openingCash: val, currentPeriodStart: openingIso });
-      setOpeningCash(val);
-      setEditingOpening(false);
-      load();
-    } catch (e: any) { Alert.alert("Couldn't save opening balance", e.message || "Check the amount and date, then try again."); }
-  };
 
   const resetForm = () => {
     setEditId(null); setDirection("in"); setAmount(""); setDate(todayStr()); setNotes(""); setFormOpen(false);
@@ -151,7 +121,7 @@ export default function CashBookScreen() {
           ]
         );
       } else {
-        setEditingOpening(true);
+        router.push('/daybook' as any);
       }
       return;
     }
@@ -224,20 +194,10 @@ export default function CashBookScreen() {
             <Text style={styles.openingSub}>Initial cash on hand at start of period</Text>
           </View>
         </View>
-        {!editingOpening ? (
-          <Pressable onPress={() => hasV2Opening ? setOpeningVisible(true) : setEditingOpening(true)} style={styles.openingValBox}>
-            <Text style={styles.openingValText}>{fmt(openingCash, currSym)}</Text>
-            <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
-          </Pressable>
-        ) : (
-          <View style={{ gap: 6, alignItems: "flex-end" }}>
-            <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
-            <View style={{ flexDirection: "row", gap: 6 }}>
-              <TextInput value={openingDate} onChangeText={setOpeningDate} onBlur={() => { if (openingDate.trim()) setOpeningDate(normalizeDateInput(openingDate)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
-              <Pressable onPress={saveOpeningCash} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
-            </View>
-          </View>
-        )}
+        <Pressable onPress={() => setOpeningVisible(true)} style={styles.openingValBox}>
+          <Text style={styles.openingValText}>{fmt(openingCash, currSym)}</Text>
+          <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
+        </Pressable>
       </View>
 
       {formOpen && (

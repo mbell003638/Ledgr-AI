@@ -77,9 +77,6 @@ export default function Onboarding() {
         lockEnabled,
         hasOnboarded: true,
         businessType: finalBizType,
-        selectedPersonas: v2Personas,
-        activePersona: v2Personas[0],
-        accountingStyle: v2Personas.includes('retail') ? 'retail_partnership' : 'standard',
       });
       markOnboarded();
       router.replace("/(tabs)");

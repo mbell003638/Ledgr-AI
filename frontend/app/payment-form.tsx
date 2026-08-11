@@ -36,9 +36,9 @@ export default function PaymentForm() {
       try {
         const s = await api.listSuppliers();
         if (s.length && !editId) setSupplierId(s[0].id);
-        const st = await api.getSettings();
-        setIsPartnerMode(st.accountingStyle === 'retail_partnership');
-        setPartnerOptions(Array.isArray(st.partnerNames) ? st.partnerNames : []);
+        const [config, investors] = await Promise.all([api.getV2BookConfig(), api.listInvestors()]);
+        setIsPartnerMode(config?.style === 'retail_partnership');
+        setPartnerOptions(investors.map((investor) => investor.name));
         if (editId) {
           const list = await api.listPayments();
           const it = list.find((x: any) => x.id === editId);

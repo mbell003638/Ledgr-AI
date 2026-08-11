@@ -195,6 +195,29 @@ export async function updateSettings(partial: Record<string, any>) {
   return next;
 }
 
+/** Keep the preference document free of accounting state and configuration. */
+export async function clearAccountingSettings() {
+  const current = await readSettings();
+  const {
+    managerCommissionPct: _managerCommissionPct,
+    currentPeriodStart: _currentPeriodStart,
+    openingInventory: _openingInventory,
+    openingCash: _openingCash,
+    openingCapital: _openingCapital,
+    investors: _investors,
+    partnerNames: _partnerNames,
+    extraAssets: _extraAssets,
+    extraLiabilities: _extraLiabilities,
+    accountingStyle: _accountingStyle,
+    accountingBasis: _accountingBasis,
+    selectedPersonas: _selectedPersonas,
+    activePersona: _activePersona,
+    ...preferences
+  } = current;
+  if (Object.keys(preferences).length !== Object.keys(current).length) await writeSettings(preferences);
+  return preferences;
+}
+
 // ---------- Suppliers ----------
 export async function listSuppliers() {
   const [suppliers, bills, payments] = await Promise.all([
@@ -2436,5 +2459,3 @@ export async function receiptsRegister(from: string, to: string) {
   const total = +rows.reduce((s: number, r: any) => s + r.amount, 0).toFixed(2);
   return { from, to, rows, byMethod, byMode, total, count: rows.length };
 }
-
-

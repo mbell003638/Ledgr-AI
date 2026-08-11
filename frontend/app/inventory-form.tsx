@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -29,15 +29,11 @@ export default function InventoryForm() {
 
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
-  const [openingDateInput, setOpeningDateInput] = useState("");
-  const [editingOpening, setEditingOpening] = useState(false);
-  const [openingInput, setOpeningInput] = useState("");
-  const [hasV2Opening, setHasV2Opening] = useState(false);
   const [openingVisible, setOpeningVisible] = useState(false);
 
   const loadData = async () => {
     try {
-      const [v2, settings, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getSettings(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
+      const [v2, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
       if (v2) {
         setUsingV2(true);
         setExpected(Number(v2.expected || 0));
@@ -50,13 +46,9 @@ export default function InventoryForm() {
         setInfo(legacyExpected);
         setHistory(Array.isArray(legacyHistory) ? legacyHistory : []);
       }
-      const op = Number(opening?.inventory ?? settings.openingInventory ?? 0);
-      setHasV2Opening(Boolean(opening));
       setPeriodPolicy(config?.periodPolicy || { mode: "flexible" });
-      setOpeningEffectiveDate(String(opening?.date || settings.currentPeriodStart || ""));
-      setOpeningDateInput(opening?.date || (settings.currentPeriodStart && settings.currentPeriodStart !== "1970-01-01" ? String(settings.currentPeriodStart) : new Date().toISOString().slice(0, 10)));
-      setOpeningStock(op);
-      setOpeningInput(String(op));
+      setOpeningEffectiveDate(String(opening?.date || v2?.periodStart || ""));
+      setOpeningStock(Number(opening?.inventory ?? v2?.openingInventory ?? 0));
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
   };
@@ -64,27 +56,6 @@ export default function InventoryForm() {
   useEffect(() => {
     loadData();
   }, []);
-
-  const saveOpeningStock = async () => {
-    const val = parseFloat(openingInput);
-    if (isNaN(val) || val < 0) { setError("Enter a valid opening stock value"); return; }
-    const openingIso = normalizeDateInput(openingDateInput);
-    if (!isValidDateString(openingIso)) { setError(`Couldn't read "${openingDateInput.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
-    setOpeningDateInput(openingIso); // reflect the canonical form in the field
-    try {
-      // Journal first; settings remain a legacy compatibility mirror for the V2 opening source.
-      const settings = await api.getSettings();
-      try {
-        await api.updateV2OpeningBalances({ date: openingIso, cash: Number(settings.openingCash || 0), inventory: val, memo: "Opening balances" });
-      } catch (e: any) {
-        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
-      }
-      await api.updateSettings({ openingInventory: val, currentPeriodStart: openingIso });
-      setOpeningStock(val);
-      setEditingOpening(false);
-      loadData();
-    } catch (e: any) { setError(e.message); }
-  };
 
   const save = async () => {
     const act = parseFloat(actual);
@@ -174,20 +145,10 @@ export default function InventoryForm() {
                       <Text style={styles.hint}>Initial inventory value at start of period{openingEffectiveDate ? ` · Effective ${openingEffectiveDate}` : ""}</Text>
                     </View>
                   </View>
-                  {!editingOpening ? (
-                    <Pressable onPress={() => hasV2Opening ? setOpeningVisible(true) : setEditingOpening(true)} style={styles.openingValBox}>
-                      <Text style={styles.openingValText}>{fmt(openingStock)}</Text>
-                      <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
-                    </Pressable>
-                  ) : (
-                    <View style={{ gap: 6, alignItems: "flex-end" }}>
-                      <TextInput value={openingInput} onChangeText={setOpeningInput} keyboardType="decimal-pad" style={styles.openingInput} autoFocus />
-                      <View style={{ flexDirection: "row", gap: 6 }}>
-                        <TextInput value={openingDateInput} onChangeText={setOpeningDateInput} onBlur={() => { if (openingDateInput.trim()) setOpeningDateInput(normalizeDateInput(openingDateInput)); }} autoCapitalize="none" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.openingDateInput} />
-                        <Pressable onPress={saveOpeningStock} style={styles.openingSaveBtn}><Ionicons name="checkmark" size={16} color="#fff" /></Pressable>
-                      </View>
-                    </View>
-                  )}
+                  <Pressable onPress={() => setOpeningVisible(true)} style={styles.openingValBox}>
+                    <Text style={styles.openingValText}>{fmt(openingStock)}</Text>
+                    <Ionicons name="pencil" size={14} color={theme.color.brandPrimary} />
+                  </Pressable>
                 </View>
               </Card>
 

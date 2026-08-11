@@ -24,8 +24,8 @@ export default function PartiesScreen() {
   const [investorModalVisible, setInvestorModalVisible] = useState(false);
 
   const loader = useCallback(async (): Promise<{ items: PartyRow[]; isPartnerMode: boolean }> => {
-    const settings: any = await api.getSettings().catch(() => ({}));
-    const partnerActive = settings?.accountingStyle === "retail_partnership";
+    const config: any = await api.getV2BookConfig().catch(() => null);
+    const partnerActive = config?.style === "retail_partnership";
 
     const [v2, investors] = await Promise.all([api.listParties().catch(() => []), api.listInvestors().catch(() => [])]);
     if (v2.length) {

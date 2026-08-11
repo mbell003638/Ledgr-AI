@@ -92,6 +92,31 @@ describe('V2 UI contracts', () => {
     expect(save).toContain('profitSharePct');
   });
 
+  it('keeps preferences free of accounting state and uses V2 as the single source', () => {
+    const api = readSource('src/api.ts');
+    const local = readSource('src/db/local.ts');
+    const opening = readSource('src/components/OpeningBalancesModal.tsx');
+    const settings = readApp('(tabs)/settings.tsx');
+    const advanced = readApp('advanced-settings.tsx');
+    const onboarding = readApp('onboarding.tsx');
+
+    for (const key of [
+      'openingCash', 'openingInventory', 'openingCapital', 'investors', 'partnerNames',
+      'extraAssets', 'extraLiabilities', 'accountingStyle', 'accountingBasis',
+      'selectedPersonas', 'activePersona',
+    ]) expect(api).toContain(`'${key}'`);
+    expect(api).toContain('db.clearAccountingSettings()');
+    expect(local).toContain('export async function clearAccountingSettings()');
+    expect(opening).not.toContain('api.updateSettings({');
+
+    for (const source of [settings, advanced, onboarding]) {
+      const preferenceWrites = source.match(/api\.updateSettings\(\{[\s\S]*?\}\)/g) || [];
+      for (const write of preferenceWrites) {
+        expect(write).not.toMatch(/\b(?:openingCash|openingInventory|openingCapital|investors|partnerNames|accountingStyle|accountingBasis|selectedPersonas|activePersona)\s*:/);
+      }
+    }
+  });
+
   it('exposes flexible-by-default and optional fixed period controls, and passes the reviewed close date explicitly', () => {
     const advanced = readApp('advanced-settings.tsx');
     const inventory = readApp('inventory-form.tsx');
@@ -152,11 +177,11 @@ describe('V2 UI contracts', () => {
     }
   );
 
-  it('onboarding wires the persona selection into the settings fields featureFlags reads', () => {
+  it('onboarding writes persona selection to the authoritative V2 book configuration', () => {
     const source = readApp('onboarding.tsx');
-    // The persona choice must land in fields getEnabledFeatures actually reads.
-    expect(source).toMatch(/selectedPersonas:\s*v2Personas/);
-    expect(source).toMatch(/activePersona:\s*v2Personas\[0\]/);
+    expect(source).toMatch(/initializeV2Book\([\s\S]*?personas:\s*v2Personas/);
+    const preferences = source.slice(source.indexOf('await api.updateSettings({'), source.indexOf('markOnboarded();'));
+    expect(preferences).not.toMatch(/selectedPersonas|activePersona/);
   });
 
   it('the dashboard filters its tile grid through getEnabledFeatures', () => {
@@ -246,8 +271,10 @@ describe('V2 UI contracts', () => {
     expect(assets).toContain('updateManualBalanceTransaction');
     expect(investor).toContain('updateInvestorCapital');
     expect(investor).toContain('deleteInvestorCapital');
-    expect(cashbook).toContain('opening?.cash ?? settings.openingCash');
-    expect(inventory).toContain('opening?.inventory ?? settings.openingInventory');
+    expect(cashbook).toContain('Number(opening?.cash || 0)');
+    expect(cashbook).not.toContain('settings.openingCash');
+    expect(inventory).toContain('opening?.inventory ?? v2?.openingInventory');
+    expect(inventory).not.toContain('settings.openingInventory');
     expect(reports).toContain('const [customFrom');
     expect(reports).toContain('The From date must be on or before the To date');
     expect(reports).toContain('Applying custom range');

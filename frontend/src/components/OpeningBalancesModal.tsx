@@ -75,10 +75,14 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       setLoading(true);
       setError("");
       try {
-        const [s, opening]: [any, any] = await Promise.all([api.getSettings().catch(() => ({})), api.getV2OpeningBalances().catch(() => null)]);
+        const [opening, config, activePeriod]: [any, any, any] = await Promise.all([
+          api.getV2OpeningBalances().catch(() => null),
+          api.getV2BookConfig().catch(() => null),
+          api.getV2ActivePeriod().catch(() => null),
+        ]);
         const openingData: any = opening || {};
-        setOpeningCash(openingData.cash != null ? String(openingData.cash) : (s.openingCash ? String(s.openingCash) : "0"));
-        setOpeningInventory(openingData.inventory != null ? String(openingData.inventory) : (s.openingInventory ? String(s.openingInventory) : "0"));
+        setOpeningCash(openingData.cash != null ? String(openingData.cash) : "0");
+        setOpeningInventory(openingData.inventory != null ? String(openingData.inventory) : "0");
         const savedAssets = Array.isArray(openingData.assetBreakdown) ? openingData.assetBreakdown : [];
         setOtherAssets(savedAssets.length
           ? savedAssets.map((asset: any) => ({ name: String(asset?.name || ""), amount: String(asset?.amount || "") }))
@@ -97,22 +101,19 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         setRetainedEarnings(openingData.retainedEarnings != null ? String(openingData.retainedEarnings) : "0");
         setOwnerCapital(openingData.ownerCapital != null ? String(openingData.ownerCapital) : "0");
 
-        setPeriodStart(openingData.date || (s.currentPeriodStart && s.currentPeriodStart !== "1970-01-01" ? s.currentPeriodStart : ""));
-        const partnerActive = s.accountingStyle === "retail_partnership";
+        setPeriodStart(openingData.date || activePeriod?.startDate || "");
+        const partnerActive = config?.style === "retail_partnership";
         setIsPartnerMode(partnerActive);
 
         const scannedPartners = Array.isArray(openingData.partnerCapitals) ? openingData.partnerCapitals : [];
-        const inv = scannedPartners.length ? scannedPartners : (Array.isArray(s.investors) ? s.investors : []);
+        const inv = scannedPartners.length ? scannedPartners : (Array.isArray(config?.retailPartnership?.members) ? config.retailPartnership.members : []);
         if (inv.length) {
           setMembers(inv.map((m: any) => ({
             name: String(m?.name ?? ""),
             amount: m?.amount != null && m.amount !== 0 ? String(m.amount) : (m?.openingContribution != null ? String(m.openingContribution) : ""),
             profitSharePct: m?.profitSharePct != null && m.profitSharePct !== 0 ? String(m.profitSharePct) : "",
           })));
-        } else {
-          const names = Array.isArray(s.partnerNames) ? s.partnerNames : [];
-          setMembers(names.map((n: string) => ({ name: String(n), amount: "", profitSharePct: "" })));
-        }
+        } else setMembers([]);
       } catch (e: any) {
         setError(e.message || "Failed to load opening balances");
       } finally {
@@ -211,13 +212,6 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
       } catch (e: any) {
         if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
       }
-      await api.updateSettings({
-        openingCash: cashVal,
-        openingInventory: invVal,
-        currentPeriodStart: normalizedPeriodStart || periodStart || "",
-        investors: cleanedMembers,
-        partnerNames: cleanedMembers.map((m) => m.name),
-      });
       if (isPartnerMode) {
         try {
           const config = await api.getV2BookConfig();

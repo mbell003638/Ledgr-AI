@@ -89,8 +89,8 @@ export default function QuickActionMenu() {
   const fabPressed = useSharedValue(0);
 
   React.useEffect(() => {
-    api.getSettings().then((settings: any) => {
-      setIsPartnerMode(settings.accountingStyle === "retail_partnership");
+    api.getV2BookConfig().then((config: any) => {
+      setIsPartnerMode(config?.style === "retail_partnership");
     }).catch(() => {});
   }, [isOpen]);
 

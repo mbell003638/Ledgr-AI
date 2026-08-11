@@ -37,14 +37,14 @@ export default function PaymentsScreen() {
   const [moreModalVisible, setMoreModalVisible] = useState(false);
 
   const loader = useCallback(async () => {
-    const [pl, sl, s] = await Promise.all([api.listPayments(), api.listSuppliers(), api.getSettings()]);
+    const [pl, sl, s, config] = await Promise.all([api.listPayments(), api.listSuppliers(), api.getSettings(), api.getV2BookConfig().catch(() => null)]);
     const smap: Record<string, string> = {};
     (sl as any[]).forEach(sup => { smap[sup.id] = sup.name; });
     return {
       payments: pl as Payment[],
       supplierMap: smap,
       currSym: getCurrencySymbol(s.currency || "USD"),
-      isPartnerMode: s.accountingStyle === 'retail_partnership',
+      isPartnerMode: config?.style === 'retail_partnership',
     };
   }, []);
 

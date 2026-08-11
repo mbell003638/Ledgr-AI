@@ -120,6 +120,13 @@ export class V2AppService {
     return { bookId: active.value, periodId: target.id };
   }
 
+  async getActivePeriod() {
+    const context = await this.activeContext();
+    if (!context) return null;
+    const period = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE id=? AND book_id=?', [context.periodId, context.bookId]);
+    return period ? { id: period.id, bookId: context.bookId, startDate: period.start_date, endDate: period.end_date } : null;
+  }
+
   private async periodPolicy(bookId: string): Promise<AccountingPeriodPolicy> {
     return (await new V2BookConfigRepository(this.db).getBookConfig(bookId)).periodPolicy;
   }
@@ -1080,32 +1087,10 @@ export class V2AppService {
   }
 }
 
-/**
- * [Vault C2 / Gauge H3] The V2-first write path deliberately treats the legacy mirror
- * write as best-effort, but the failure must not be silent. Each mirror failure is logged
- * and captured here (capped) so a failed legacy mirror is diagnosable instead of vanishing.
- * V2-first ordering is unchanged: V2 remains authoritative; only observability improves.
- */
-export type MirrorError = { operation: string; message: string; at: string };
-const MIRROR_ERROR_CAP = 50;
-export const lastMirrorErrors: MirrorError[] = [];
-export function recordMirrorError(operation: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-
-  console.warn(`[V2] legacy mirror write failed for ${operation}: ${message}`);
-  lastMirrorErrors.push({ operation, message, at: new Date().toISOString() });
-  if (lastMirrorErrors.length > MIRROR_ERROR_CAP) lastMirrorErrors.splice(0, lastMirrorErrors.length - MIRROR_ERROR_CAP);
-}
-
 export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
   type WriteName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
   const route = (name: WriteName) => async (payload: AnyRecord) => {
-    if (await v2.activeContext(payload.date)) {
-      const v2Res = await v2[name](payload);
-      const injectedPayload = { ...payload, id: v2Res.source?.id };
-      try { await legacy[name](injectedPayload); } catch (error) { recordMirrorError(name, error); }
-      return v2Res;
-    }
+    if (await v2.activeContext(payload.date)) return v2[name](payload);
     return legacy[name](payload);
   };
   return { createSale: route('createSale'), createInvoice: route('createInvoice'), createReceipt: route('createReceipt'), createBill: route('createBill'), createPayment: route('createPayment'), createExpense: route('createExpense') };
@@ -1113,55 +1098,47 @@ export function createAppWriteRouter(v2: V2AppService, legacy: AnyRecord) {
 
 export function createAppMutationRouter(v2: V2AppService, legacy: AnyRecord) {
   const update = (name: 'updateReceipt'|'updateInvoice'|'updateExpense'|'updatePayment', type: string) => async (id: string, payload: AnyRecord) => {
-    if (await v2.ownsSource(id, type)) {
-      const v2Res = await v2[name](id, payload);
-      try { await legacy[name](id, payload); } catch (error) { recordMirrorError(name, error); }
-      return v2Res;
-    }
+    if (await v2.ownsSource(id, type)) return v2[name](id, payload);
     return legacy[name](id, payload);
   };
   const remove = (name: 'deleteReceipt'|'deleteInvoice'|'deleteExpense'|'deletePayment', type: string) => async (id: string) => {
-    if (await v2.ownsSource(id, type)) {
-      const v2Res = await v2[name](id);
-      try { await legacy[name](id); } catch (error) { recordMirrorError(name, error); }
-      return v2Res;
-    }
+    if (await v2.ownsSource(id, type)) return v2[name](id);
     return legacy[name](id);
   };
   return {
     updateReceipt: update('updateReceipt', 'receipt'), deleteReceipt: remove('deleteReceipt', 'receipt'),
     updateSale: async (id: string, payload: AnyRecord) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      if (isV2) { const res = await v2.updateSale(id, payload); try { await legacy.updateSale(id, payload); } catch (error) { recordMirrorError('updateSale', error); } return res; }
+      if (isV2) return v2.updateSale(id, payload);
       return legacy.updateSale(id, payload);
     },
     deleteSale: async (id: string) => {
       const isV2 = (await v2.ownsSource(id, 'cash_sale')) || (await v2.ownsSource(id, 'credit_sale')) || (await v2.ownsSource(id, 'invoice'));
-      if (isV2) { const res = await v2.deleteSale(id); try { await legacy.deleteSale(id); } catch (error) { recordMirrorError('deleteSale', error); } return res; }
+      if (isV2) return v2.deleteSale(id);
       return legacy.deleteSale(id);
     },
     updateBill: async (id: string, payload: AnyRecord) => {
-      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.updateBill(id, payload); try { await legacy.updateBill(id, payload); } catch (error) { recordMirrorError('updateBill', error); } return res; }
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) return v2.updateBill(id, payload);
       return legacy.updateBill(id, payload);
     },
     deleteBill: async (id: string) => {
-      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) { const res = await v2.deleteBill(id); try { await legacy.deleteBill(id); } catch (error) { recordMirrorError('deleteBill', error); } return res; }
+      if (await v2.ownsSource(id, 'cash_purchase') || await v2.ownsSource(id, 'credit_purchase')) return v2.deleteBill(id);
       return legacy.deleteBill(id);
     },
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') { const res = await v2.updatePayment(id, payload); try { await legacy.updatePayment(id, payload); } catch (error) { recordMirrorError('updatePayment', error); } return res; }
+      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') return v2.updatePayment(id, payload);
       return legacy.updatePayment(id, payload);
     },
     deletePayment: async (id: string) => {
       const type = await v2.sourceType(id);
-      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') { const res = await v2.deletePayment(id); try { await legacy.deletePayment(id); } catch (error) { recordMirrorError('deletePayment', error); } return res; }
+      if (type === 'supplier_payment' || type === 'drawing' || type === 'commission_payment') return v2.deletePayment(id);
       return legacy.deletePayment(id);
     },
     markInvoicePaid: async (id: string, payload: AnyRecord = {}) => {
-      if (await v2.ownsSource(id, 'invoice')) { const res = await v2.markInvoicePaid(id, payload); try { await legacy.markInvoicePaid(id); } catch (error) { recordMirrorError('markInvoicePaid', error); } return res; }
+      if (await v2.ownsSource(id, 'invoice')) return v2.markInvoicePaid(id, payload);
       return legacy.markInvoicePaid(id);
     },
   };

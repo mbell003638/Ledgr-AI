@@ -104,9 +104,9 @@ export default function ScanImport() {
     }
     setError(""); setPhase("busy");
     try {
-      const [raw, settings] = await Promise.all([api.analyzeDocument(input), api.getSettings().catch(() => ({}))]);
+      const [raw, config] = await Promise.all([api.analyzeDocument(input), api.getV2BookConfig().catch(() => null)]);
       const mapped = mapAnalyzedDocument(raw);
-      const partnership = (settings as any)?.accountingStyle === "retail_partnership";
+      const partnership = config?.style === "retail_partnership";
       let investors: { id: string; name: string; profitSharePct: number }[] = [];
       const [investorResult] = await Promise.allSettled([
         partnership ? api.listInvestors() : Promise.resolve([]),
