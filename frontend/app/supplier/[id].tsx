@@ -278,6 +278,23 @@ export default function SupplierDetail() {
     } finally { setNoteBusy(false); }
   };
 
+  const reverseNote = (row: any) => {
+    const label = row.kind === "credit_note" ? "Credit Note" : "Debit Note";
+    confirmAction(
+      `Reverse ${label}?`,
+      "This removes the note from the active statement and restores the supplier balance. The reversal remains in the accounting audit trail.",
+      async () => {
+        try {
+          await api.deleteNote(row.id);
+          await load();
+        } catch (e: any) {
+          showAlert(`Cannot Reverse ${label}`, e?.message || "Could not reverse this note.");
+        }
+      },
+      "Reverse Note",
+    );
+  };
+
   if (loading) {
     return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /></SafeAreaView>;
   }
@@ -425,6 +442,9 @@ export default function SupplierDetail() {
               >
                 <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
               </Pressable>
+              {isNote ? <Pressable accessibilityLabel={`Reverse ${label}`} hitSlop={8} onPress={() => reverseNote(t)}>
+                <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+              </Pressable> : null}
             </View>
           </View>
           );

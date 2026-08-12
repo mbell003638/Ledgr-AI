@@ -30,6 +30,7 @@ const scanNote = (base?: string) => `${SCAN_TAG} ${base || "Imported from docume
 const MAX_BASE64_CHARS = 8 * 1024 * 1024;
 
 type RowStatus = { state: "created" | "failed"; message: string };
+type AnalysisInput = { base64?: string; mimeType?: string; text?: string };
 type MissingPartyLedger = { name: string; role: "customer" | "supplier" };
 type PartyPreflightItem = MissingPartyLedger & {
   status: "existing" | "missing" | "role_missing" | "ignored_generic_ap";
@@ -85,6 +86,7 @@ export default function ScanImport() {
   const [configuredInvestors, setConfiguredInvestors] = useState<{ id: string; name: string; profitSharePct: number }[]>([]);
   const [partyPreflightItems, setPartyPreflightItems] = useState<PartyPreflightItem[]>([]);
   const [partyLookupReady, setPartyLookupReady] = useState(false);
+  const lastAnalysisInput = React.useRef<AnalysisInput | null>(null);
 
   React.useEffect(() => {
     api.getSettings().then((s: any) => setCurrencySymbol(getCurrencySymbol(s.currency || "USD"))).catch(() => {});
@@ -97,11 +99,12 @@ export default function ScanImport() {
     return message;
   };
 
-  const analyze = async (input: { base64?: string; mimeType?: string; text?: string }) => {
+  const analyze = async (input: AnalysisInput) => {
     if (input.base64 && input.base64.length > MAX_BASE64_CHARS) {
       setError("That file is too large (over ~8MB). Try a smaller photo, a lower-resolution scan, or paste the text instead.");
       return;
     }
+    lastAnalysisInput.current = input;
     setError(""); setPhase("busy");
     try {
       const [raw, config] = await Promise.all([api.analyzeDocument(input), api.getV2BookConfig().catch(() => null)]);
@@ -152,7 +155,7 @@ export default function ScanImport() {
   const scanCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { setError("Camera permission denied"); return; }
-    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
     if (res.canceled || !res.assets[0].base64) return;
     await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
   };
@@ -160,7 +163,7 @@ export default function ScanImport() {
   const pickGallery = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError("Gallery permission denied"); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.8, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
     if (res.canceled || !res.assets[0].base64) return;
     await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
   };
@@ -710,10 +713,21 @@ export default function ScanImport() {
           <View style={{ alignItems: "center", padding: theme.spacing.xl }}>
             <ActivityIndicator color={theme.color.brandPrimary} size="large" />
             <Text style={styles.hint}>AI is analyzing the document…</Text>
+            <Text style={[styles.hint, { textAlign: "center" }]}>Temporary provider or network failures retry automatically. A retry can take up to about two minutes.</Text>
           </View>
         )}
 
         {error ? <Text style={styles.error} testID="scan-error">{error}</Text> : null}
+        {error && phase === "pick" && lastAnalysisInput.current ? (
+          <Pressable
+            testID="btn-retry-analysis"
+            onPress={() => lastAnalysisInput.current && analyze(lastAnalysisInput.current)}
+            style={[styles.actionBtn, { marginTop: theme.spacing.md }]}
+          >
+            <Ionicons name="refresh-outline" size={18} color="#fff" />
+            <Text style={styles.actionText}>Retry same document</Text>
+          </Pressable>
+        ) : null}
 
         {(phase === "review" || phase === "done") && (
           <>

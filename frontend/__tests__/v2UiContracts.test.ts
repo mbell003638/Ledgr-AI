@@ -351,7 +351,28 @@ describe('V2 UI contracts', () => {
     expect(source).toContain(`${screen.startsWith('customer') ? 'r' : 't'}.kind === "credit_note"`);
     expect(source).toContain('debit_note');
     expect(source).toContain('api.updateNote');
+    expect(source).toContain('api.deleteNote');
+    expect(source).toContain('trash-outline');
     expect(source).toContain('onRequestClose={closeNote}');
+  });
+  it('keeps Ask AI history per business book, exposes clear history, and avoids the stuck Android keyboard layout', () => {
+    const source = readApp('ask.tsx');
+    expect(source).toContain('AsyncStorage.getItem(historyKey)');
+    expect(source).toContain('askHistoryStorageKey(api.activeBookId())');
+    expect(source).toContain('Clear Ask AI history');
+    expect(source).toContain('enabled={Platform.OS === "ios"}');
+    expect(source).toContain('keyboardDismissMode="on-drag"');
+    expect(source).not.toContain('Platform.OS === "ios" ? "padding" : "height"');
+  });
+  it('offers scan retry controls and explains automatic transient retries', () => {
+    const source = readApp('scan-import.tsx');
+    const ai = readSource('src/db/ai.ts');
+    expect(source).toContain('testID="btn-retry-analysis"');
+    expect(source).toContain('Retry same document');
+    expect(source).toContain('quality: 0.7');
+    expect(ai).toContain('TRANSIENT_AI_STATUSES');
+    expect(ai).toContain('AI_REQUEST_TIMEOUT_MS = 60_000');
+    expect(ai).toContain('The prior extraction response was not valid JSON');
   });
   it('quick sales persist standardized units and optional fixed discounts', () => {
     const sale = readApp('sale-form.tsx');

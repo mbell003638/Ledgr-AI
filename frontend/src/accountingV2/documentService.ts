@@ -38,7 +38,10 @@ export class V2DocumentService {
   async archiveParty(id: string) {
     const party = await this.repo.db.first<any>('SELECT * FROM v2_parties WHERE id=?', [id]);
     if (!party) throw new Error('Business account not found');
-    const used = await this.repo.db.first('SELECT id FROM v2_sources WHERE book_id=? AND (json_extract(metadata,\'$.partyId\')=? OR json_extract(metadata,\'$.customerId\')=?) LIMIT 1', [party.book_id, id, id]);
+    const used = await this.repo.db.first(
+      "SELECT id FROM v2_sources WHERE book_id=? AND (json_extract(metadata,'$.partyId')=? OR json_extract(metadata,'$.customerId')=?) AND COALESCE(json_extract(metadata,'$.reversed'),0) != 1 AND COALESCE(json_extract(metadata,'$.deleted'),0) != 1 LIMIT 1",
+      [party.book_id, id, id],
+    );
     if (used) throw new Error('Cannot archive party with accounting sources');
     await this.repo.db.run('UPDATE v2_parties SET archived=1 WHERE id=?', [id]);
     return { ...party, archived: true };

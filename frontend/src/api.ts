@@ -233,7 +233,7 @@ async function createTransaction(name: AppCreateName, payload: any) {
   return result;
 }
 
-type AppMutationName = 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill'|'updateNote';
+type AppMutationName = 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'updateInvoice'|'deleteInvoice'|'updateExpense'|'deleteExpense'|'updatePayment'|'deletePayment'|'updateSale'|'deleteSale'|'updateBill'|'deleteBill'|'updateNote'|'deleteNote';
 async function mutateTransaction(name: AppMutationName, ...args: any[]) {
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1026,6 +1026,7 @@ export const api = {
   createCreditNote: async (n: any) => createNote('createCreditNote', n),
   createDebitNote: async (n: any) => createNote('createDebitNote', n),
   updateNote: async (id: string, n: any) => mutateTransaction('updateNote', id, n),
+  deleteNote: async (id: string) => mutateTransaction('deleteNote', id),
 
   // Delivery Notes / Challans (goods movement, no ledger posting)
   listDeliveryNotes: () => db.listDeliveryNotes(),

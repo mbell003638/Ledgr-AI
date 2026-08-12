@@ -114,6 +114,33 @@ describe('Finding A — credit/debit notes route through the V2 ledger', () => {
       expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
     } finally { close(); }
   });
+
+  it('reverses a note, restores the balance, and lets an otherwise-empty account be deleted', async () => {
+    const { runner, close, service } = await boot();
+    try {
+      const note = await service.createDebitNote({ clientName: 'Note Only', date: '2026-02-09', amount: 45, role: 'customer' });
+      const partyId = String((note.source.metadata as any).partyId);
+      expect((await service.getPartyDetail(partyId, 'customer') as any).balance).toBe(45);
+
+      await service.deleteNote(note.source.id);
+      const after: any = await service.getPartyDetail(partyId, 'customer');
+      expect(after.balance).toBe(0);
+      expect(after.statement.ledger.filter((row: any) => row.kind === 'credit_note' || row.kind === 'debit_note')).toHaveLength(0);
+      await service.archiveParty(partyId);
+
+      expect(await runner.first('SELECT archived FROM v2_parties WHERE id=?', [partyId])).toEqual({ archived: 1 });
+      expect(await runner.first("SELECT json_extract(metadata,'$.deleted') AS deleted FROM v2_sources WHERE id=?", [note.source.id])).toEqual({ deleted: 1 });
+
+      const supplierNote = await service.createCreditNote({ supplierName: 'Supplier Note Only', date: '2026-02-10', amount: 30, role: 'supplier' });
+      const supplierId = String((supplierNote.source.metadata as any).partyId);
+      await service.deleteNote(supplierNote.source.id);
+      expect((await service.getPartyDetail(supplierId, 'supplier') as any).balance).toBe(0);
+      await service.archiveParty(supplierId);
+      expect(await runner.first('SELECT archived FROM v2_parties WHERE id=?', [supplierId])).toEqual({ archived: 1 });
+
+      expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
+    } finally { close(); }
+  });
 });
 
 describe('standardized sale and invoice lines', () => {

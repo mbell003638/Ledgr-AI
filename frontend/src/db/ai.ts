@@ -169,8 +169,9 @@ async function call(
   return callOpenAI(cfg, prompt, parts, jsonSchema);
 }
 
-const AI_REQUEST_TIMEOUT_MS = 30_000;
-const AI_RATE_LIMIT_RETRY_MS = 2_000;
+const AI_REQUEST_TIMEOUT_MS = 60_000;
+const AI_TRANSIENT_RETRY_MS = 1_500;
+const TRANSIENT_AI_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,16 +191,19 @@ async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
 }
 
 /**
- * Fetch with a 30s timeout and ONE automatic retry on HTTP 429 (rate limit)
- * after ~2s. All other statuses are returned to the caller to interpret.
+ * Fetch with a 60s timeout and one automatic retry for temporary provider,
+ * rate-limit, network, or timeout failures. Permanent failures are returned
+ * immediately so callers can show the provider's actionable error.
  */
 async function fetchAI(url: string, init: RequestInit): Promise<Response> {
-  const res = await fetchOnce(url, init);
-  if (res.status === 429) {
-    await delay(AI_RATE_LIMIT_RETRY_MS);
-    return fetchOnce(url, init);
+  try {
+    const res = await fetchOnce(url, init);
+    if (!TRANSIENT_AI_STATUSES.has(res.status)) return res;
+  } catch {
+    // A second attempt below covers brief connectivity and timeout failures.
   }
-  return res;
+  await delay(AI_TRANSIENT_RETRY_MS);
+  return fetchOnce(url, init);
 }
 
 /**
@@ -604,7 +608,18 @@ export async function analyzeDocumentAI(
   const prompt = buildAnalyzeDocumentPrompt(hasText && !hasFile ? input.text : undefined);
   const parts = hasFile ? [{ inlineData: { mimeType: input.mimeType || 'image/jpeg', data: input.base64! } }] : [];
   const out = await call(cfg, prompt, parts, ANALYZE_DOCUMENT_SCHEMA);
-  return parseJson(out);
+  try {
+    return parseJson(out);
+  } catch {
+    const repairPrompt = prompt +
+      '\n\nThe prior extraction response was not valid JSON. Analyze the same document again and return one complete JSON object only, exactly matching the requested schema. Do not use Markdown fences or commentary.';
+    const repaired = await call(cfg, repairPrompt, parts, ANALYZE_DOCUMENT_SCHEMA);
+    try {
+      return parseJson(repaired);
+    } catch {
+      throw new Error('AI returned an unreadable document result. Try a clearer image, a smaller document, or paste the text instead.');
+    }
+  }
 }
 
 // Knowledge about the app itself, so the assistant can explain how to use it.

@@ -72,6 +72,26 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     }
   });
 
+  it('retries document extraction once when the provider returns malformed JSON', async () => {
+    const previousFetch = global.fetch;
+    const valid = JSON.stringify({ docType: 'statement', summary: 'One row', entries: [] });
+    const fetchSpy = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ choices: [{ message: { content: 'not json' } }] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ choices: [{ message: { content: valid } }] }) });
+    global.fetch = fetchSpy as any;
+    try {
+      await expect(analyzeDocumentAI(
+        { provider: 'custom', apiKey: 'test-key', model: 'test-model', baseUrl: 'https://example.com/v1' },
+        { text: '2026-08-01 opening balance 100' },
+      )).resolves.toMatchObject({ docType: 'statement', summary: 'One row', entries: [] });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const secondBody = JSON.parse(fetchSpy.mock.calls[1][1].body);
+      expect(secondBody.messages[0].content[0].text).toMatch(/prior extraction response was not valid JSON/i);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+
   it('applies the shared AI bounds helpers to parsed output', () => {
     expect(isValidScanAmount(MAX_AI_AMOUNT)).toBe(true);
     expect(isValidScanAmount(MAX_AI_AMOUNT + 1)).toBe(false);

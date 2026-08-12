@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter } from "expo-router";
@@ -11,6 +12,8 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
 import { executeAssistantProposal, validateAssistantProposal } from "@/src/accountingV2/aiActions";
 import * as ImagePicker from "expo-image-picker";
+import { confirmAction, showAlert } from "@/src/utils/alerts";
+import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
 
 type Msg = { role: "user" | "assistant"; text: string };
 
@@ -129,10 +132,47 @@ export default function AskBooks() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const historyKey = useMemo(() => askHistoryStorageKey(api.activeBookId()), []);
+  const historyLoaded = useRef(false);
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(historyKey)
+      .then((raw) => {
+        if (!active) return;
+        if (raw) setMessages(normalizeAskHistory(JSON.parse(raw)));
+      })
+      .catch(() => {})
+      .finally(() => { if (active) historyLoaded.current = true; });
+    return () => { active = false; };
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyLoaded.current) return;
+    AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(messages))).catch(() => {});
+  }, [historyKey, messages]);
+
+  const clearHistory = () => {
+    confirmAction(
+      "Clear Ask AI history?",
+      "This clears the saved conversation for this business book only. It does not change any accounting entries.",
+      async () => {
+        try {
+          await AsyncStorage.removeItem(historyKey);
+          setMessages([]);
+          setInput("");
+          Keyboard.dismiss();
+        } catch (e: any) {
+          showAlert("Could Not Clear History", e?.message || "Please try again.");
+        }
+      },
+      "Clear History",
+    );
+  };
 
   const buildContext = async (): Promise<string> => {
     const today = new Date();
@@ -200,15 +240,27 @@ export default function AskBooks() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable accessibilityLabel="Back" onPress={() => { Keyboard.dismiss(); router.back(); }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>Ask about your books</Text>
-        <View style={{ width: 26 }} />
+        {messages.length > 0 ? (
+          <Pressable accessibilityLabel="Clear Ask AI history" hitSlop={8} onPress={clearHistory}>
+            <Ionicons name="trash-outline" size={23} color={theme.color.error} />
+          </Pressable>
+        ) : <View style={{ width: 26 }} />}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }} keyboardVerticalOffset={80}>
-        <ScrollView ref={scrollRef} contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView enabled={Platform.OS === "ios"} behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={80}>
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.messageContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          onContentSizeChange={() => messages.length > 0 && scrollRef.current?.scrollToEnd({ animated: false })}
+        >
           {messages.length === 0 && (
             <View>
               <View style={styles.welcome}>
@@ -322,6 +374,7 @@ function makeStyles(theme: any) {
     container: { flex: 1, backgroundColor: theme.color.surface },
     headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
+    messageContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md, flexGrow: 1 },
     welcome: { alignItems: "center", padding: theme.spacing.xl, gap: 12 },
     welcomeText: { textAlign: "center", color: theme.color.muted, fontSize: 14, lineHeight: 20 },
     suggestLabel: { fontSize: 12, fontWeight: "700", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },

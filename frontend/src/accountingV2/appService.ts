@@ -996,6 +996,11 @@ export class V2AppService {
     return this.documents.reverseSource(id, 'cash_sale', 'Delete cash sale', true);
   }
   async deleteBill(id: string) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); return this.documents.reverseSource(id, row.type, 'Delete bill', true); }
+  async deleteNote(id: string) {
+    const type = await this.sourceType(id);
+    if (type !== 'credit_note' && type !== 'debit_note') throw new Error('Debit / credit note not found');
+    return this.documents.reverseSource(id, type, 'Reverse debit / credit note', true);
+  }
   /**
    * [Finding C] Rebuild the edit payload so the replacement posts into an OPEN
    * period. When the original date is in a closed period the correction is dated
@@ -1193,6 +1198,11 @@ export function createAppMutationRouter(v2: V2AppService) {
       const type = await v2.sourceType(id);
       if (type === 'credit_note' || type === 'debit_note') return v2.updateNote(id, payload);
       throw new Error('Cannot edit unknown V2 debit / credit note');
+    },
+    deleteNote: async (id: string) => {
+      const type = await v2.sourceType(id);
+      if (type === 'credit_note' || type === 'debit_note') return v2.deleteNote(id);
+      throw new Error('Cannot reverse unknown V2 debit / credit note');
     },
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {

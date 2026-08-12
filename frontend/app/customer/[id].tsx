@@ -254,6 +254,23 @@ export default function CustomerDetailScreen() {
     } finally { setNoteBusy(false); }
   };
 
+  const reverseNote = (row: any) => {
+    const label = row.kind === "credit_note" ? "Credit Note" : "Debit Note";
+    confirmAction(
+      `Reverse ${label}?`,
+      "This removes the note from the active statement and restores the customer balance. The reversal remains in the accounting audit trail.",
+      async () => {
+        try {
+          await api.deleteNote(row.id);
+          await load();
+        } catch (e: any) {
+          showAlert(`Cannot Reverse ${label}`, e?.message || "Could not reverse this note.");
+        }
+      },
+      "Reverse Note",
+    );
+  };
+
   if (loading) {
     return <SafeAreaView style={styles.container}><ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /></SafeAreaView>;
   }
@@ -393,7 +410,10 @@ export default function CustomerDetailScreen() {
                   <Text style={{ fontSize: 14, fontWeight: "800", color: isCredit ? theme.color.success : theme.color.error }}>
                     {isCredit ? "-" : "+"}{currency}{amt.toFixed(2)}
                   </Text>
-                  {isNote ? <Pressable accessibilityLabel={`Edit ${label}`} hitSlop={8} onPress={() => openEditNote(r, amt)}><Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} /></Pressable> : null}
+                  {isNote ? <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginLeft: 8 }}>
+                    <Pressable accessibilityLabel={`Edit ${label}`} hitSlop={8} onPress={() => openEditNote(r, amt)}><Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} /></Pressable>
+                    <Pressable accessibilityLabel={`Reverse ${label}`} hitSlop={8} onPress={() => reverseNote(r)}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                  </View> : null}
                 </View>
               </Card>
             );
