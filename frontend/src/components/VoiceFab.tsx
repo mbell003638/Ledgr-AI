@@ -14,7 +14,7 @@ type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 export default function VoiceFab() {
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
+  const { motionEnabled } = useAnimations();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -27,7 +27,7 @@ export default function VoiceFab() {
 
   useEffect(() => {
     if (phase === "recording") {
-      if (!animationsEnabled) { pulseScale.value = 1; return; }
+      if (!motionEnabled) { pulseScale.value = 1; return; }
       pulseScale.value = withRepeat(
         withSequence(
           withTiming(1.1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
@@ -39,7 +39,7 @@ export default function VoiceFab() {
     } else {
       pulseScale.value = withTiming(1);
     }
-  }, [animationsEnabled, phase, pulseScale]);
+  }, [motionEnabled, phase, pulseScale]);
 
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);

@@ -55,8 +55,8 @@ type GlowPressableProps = {
  * workspace grid so this component remains useful for ordinary controls too.
  */
 export function GlowPressable(props: GlowPressableProps) {
-  const { animationsEnabled } = useAnimations();
-  if (!animationsEnabled) {
+  const { motionEnabled } = useAnimations();
+  if (!motionEnabled) {
     const { children, style, testID, disabled, accessibilityRole, accessibilityLabel, accessibilityState, onPress, onLongPress, onPressIn, onPressOut } = props;
     return (
       <Pressable

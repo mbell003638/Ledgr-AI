@@ -32,8 +32,8 @@ type QuickActionRowProps = {
 
 function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: QuickActionRowProps) {
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
-  const reduceMotion = useReducedMotion() || !animationsEnabled;
+  const { motionEnabled, hapticsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !motionEnabled;
   const hover = useSharedValue(0);
   const pressed = useSharedValue(0);
 
@@ -58,7 +58,7 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
       onHoverOut={() => setHover(0)}
       onPressIn={() => {
         setPressed(1);
-        if (Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
+        if (hapticsEnabled && Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
       }}
       onPressOut={() => setPressed(0)}
       onPress={onPress}
@@ -82,21 +82,24 @@ export default function QuickActionMenu() {
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
-  const reduceMotion = useReducedMotion() || !animationsEnabled;
+  const { motionEnabled, hapticsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !motionEnabled;
   const progress = useSharedValue(0);
   const fabHover = useSharedValue(0);
   const fabPressed = useSharedValue(0);
 
   React.useEffect(() => {
-    api.getV2BookConfig().then((config: any) => {
-      setIsPartnerMode(config?.style === "retail_partnership");
+    Promise.all([
+      api.getV2BookConfig().catch(() => null),
+      api.listInvestors().catch(() => []),
+    ]).then(([config, investors]: any[]) => {
+      setIsPartnerMode(config?.style === "retail_partnership" || investors.length > 0);
     }).catch(() => {});
   }, [isOpen]);
 
   const openMenu = () => {
     setIsOpen(true);
-    if (Platform.OS !== "web") {
+    if (hapticsEnabled && Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
     progress.value = reduceMotion ? 1 : withSpring(1, theme.motion.sheetSpring);

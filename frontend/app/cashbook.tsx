@@ -256,7 +256,7 @@ export default function CashBookScreen() {
           </View>
         </KeyboardAvoidingView>
       )}
-      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
+      <OpeningBalancesModal visible={openingVisible} mode="cash" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />

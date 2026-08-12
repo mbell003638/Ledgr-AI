@@ -25,15 +25,16 @@ export default function PartiesScreen() {
 
   const loader = useCallback(async (): Promise<{ items: PartyRow[]; isPartnerMode: boolean }> => {
     const config: any = await api.getV2BookConfig().catch(() => null);
-    const partnerActive = config?.style === "retail_partnership";
+    const partnerConfigured = config?.style === "retail_partnership";
 
     const [v2, investors] = await Promise.all([api.listParties().catch(() => []), api.listInvestors().catch(() => [])]);
+    const partnerActive = partnerConfigured || investors.length > 0;
     if (v2.length) {
       const mapped: PartyRow[] = v2.map((p: any) => ({
         id: p.id,
         name: p.name,
         phone: p.phone,
-        role: (p.roles.includes('partner') ? 'partner' : (p.roles.includes('customer') && p.roles.includes('supplier') ? 'both' : p.roles.includes('customer') ? 'customer' : 'supplier')) as PartyRow['role'],
+        role: ((Array.isArray(p.roles) ? p.roles : []).includes('partner') ? 'partner' : ((Array.isArray(p.roles) ? p.roles : []).includes('customer') && (Array.isArray(p.roles) ? p.roles : []).includes('supplier') ? 'both' : (Array.isArray(p.roles) ? p.roles : []).includes('customer') ? 'customer' : 'supplier')) as PartyRow['role'],
         receivable: p.receivable,
         payable: p.payable,
       })).sort((a: any, b: any) => a.name.localeCompare(b.name));

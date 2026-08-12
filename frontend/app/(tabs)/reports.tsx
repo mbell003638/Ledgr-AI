@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Dimensions, TextInput, Share, Platform , Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -19,11 +19,24 @@ import { round2 } from "@/src/money";
 import { v2Reports } from "@/src/accountingV2/runtime";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { getDataVersion } from "@/src/utils/dataVersion";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
 type Seg = typeof SEGMENTS[number];
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
+
+function normalizeCapitalStatement(value: any) {
+  const partners = Array.isArray(value?.partners)
+    ? value.partners
+    : Array.isArray(value?.investors)
+      ? value.investors
+      : [];
+  const openingCapital = Number(value?.openingCapital ?? partners.reduce((sum: number, partner: any) => sum + Number(partner.contributed || 0), 0));
+  const totalDrawings = Number(value?.totalDrawings ?? partners.reduce((sum: number, partner: any) => sum + Number(partner.drawings || 0), 0));
+  const closingCapital = Number(value?.closingCapital ?? partners.reduce((sum: number, partner: any) => sum + Number(partner.balance || 0), 0));
+  return { ...value, partners, openingCapital, totalDrawings, closingCapital, otherDrawings: Number(value?.otherDrawings || 0) };
+}
 
 function rangePreset(preset: string): { from: string; to: string } {
   const now = new Date();
@@ -63,6 +76,8 @@ export default function ReportsScreen() {
   const [bizName, setBizName] = useState("");
   const [bizSettings, setBizSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [sectionLoading, setSectionLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [rangePresetSel, setRangePresetSel] = useState("This Month");
   const [from, setFrom] = useState(() => rangePreset("This Month").from);
@@ -72,6 +87,11 @@ export default function ReportsScreen() {
   const [rangeNotice, setRangeNotice] = useState("");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
+  const loadRequest = useRef(0);
+  const sectionRequest = useRef(0);
+  const loadedVersion = useRef(-1);
+  const hasLoaded = useRef(false);
+  const loadedSections = useRef(new Set<string>());
 
   const updateRailEdges = useCallback((event: any, setter: React.Dispatch<React.SetStateAction<{ left: boolean; right: boolean }>>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -97,26 +117,25 @@ export default function ReportsScreen() {
   };
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequest.current;
+    sectionRequest.current += 1;
+    setSectionLoading(false);
+    setLoading(true);
+    setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
+      const [core, snapshotDash, pd] = await Promise.all([
+        v2Reports({ from, to }),
+        api.dashboard(),
+        api.listPeriods(),
+      ]);
+      if (requestId !== loadRequest.current) return;
       setBizSettings({ ...s, accountingStyle: config?.style || 'standard' });
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
-      const [core, snapshotDash, snapshotBs, pd, c, dh, pt, ad, cr, dr, tx, sr, rr] = await Promise.all([
-        v2Reports({ from, to }),
-        // P&L is period-based; Summary and Balance use cumulative current balances.
-        api.dashboard(),
-        api.balanceSheet(),
-        api.listPeriods(),
-        api.capitalStatement(), api.drawingsHistory(),
-        api.monthlyProfitTrend(6), api.assetDistribution(),
-        api.creditorsReport(from, to), api.debtorsReport(from, to),
-        api.taxReport(from, to), api.salesRegister(from, to), api.receiptsRegister(from, to),
-      ]);
       {
         const report = core.report;
         const current = snapshotDash;
-        const currentBs: any = snapshotBs;
         setDash({
           totalSales: report.profitAndLoss.revenue,
           totalPurchases: report.profitAndLoss.expenses,
@@ -125,6 +144,13 @@ export default function ReportsScreen() {
           cash: current.cash,
           inventoryValue: current.inventoryValue,
           accountsReceivable: current.accountsReceivable,
+          supplierAdvances: current.supplierAdvances,
+          otherAssets: current.otherAssets,
+          accountsPayable: current.accountsPayable,
+          customerAdvances: current.customerAdvances,
+          commissionPayable: current.commissionPayable,
+          otherLiabilities: current.otherLiabilities,
+          assets: current.assets,
           netWorth: current.netWorth,
           liabilities: current.liabilities,
           suppliers: current.suppliers,
@@ -144,33 +170,93 @@ export default function ReportsScreen() {
           netProfit: report.profitAndLoss.netProfit,
         });
         setBs({
-          assets: { cash: currentBs.assets.cash, inventory: currentBs.assets.inventory, extra: [
-            { label: "Debtors", amount: (currentBs.assets.accountsReceivable || 0) },
-            { label: "Supplier Advances", amount: (currentBs.assets.supplierAdvances || 0) },
-            { label: "Other Assets", amount: (currentBs.assets.other || 0) },
-          ].filter((a) => a.amount), total: currentBs.assets.total },
-          liabilities: { suppliersPayable: currentBs.liabilities.suppliersPayable, extra: [
-            { label: "Commission Payable", amount: (currentBs.liabilities.commissionPayable || 0) },
-            { label: "Customer Advances", amount: (currentBs.liabilities.customerAdvances || 0) },
-            { label: "Other Liabilities", amount: (currentBs.liabilities.other || 0) },
-          ].filter((l) => l.amount), total: currentBs.liabilities.total },
-          equity: currentBs.equity,
+          assets: { cash: current.cash, inventory: current.inventoryValue, extra: [
+            { name: "Debtors", amount: Number(current.accountsReceivable || 0) },
+            { name: "Supplier Advances", amount: Number(current.supplierAdvances || 0) },
+            { name: "Other Assets", amount: Number(current.otherAssets || 0) },
+          ].filter((a) => a.amount), total: Number(current.assets || 0) },
+          liabilities: { suppliersPayable: Number(current.accountsPayable || 0), extra: [
+            { name: "Commission Payable", amount: Number(current.commissionPayable || 0) },
+            { name: "Customer Advances", amount: Number(current.customerAdvances || 0) },
+            { name: "Other Liabilities", amount: Number(current.otherLiabilities || 0) },
+          ].filter((l) => l.amount), total: Number(current.liabilities || 0) },
+          equity: Number(current.netWorth || 0),
         });
         setTb({
           debits: report.trialBalance.accounts.filter((a) => a.debit > 0).map((a) => ({ account: a.name, amount: a.debit })),
           credits: report.trialBalance.accounts.filter((a) => a.credit > 0).map((a) => ({ account: a.name, amount: a.credit })),
         });
+        setAssetDist([
+          { label: "Cash", value: Number(current.cash || 0) },
+          { label: "Inventory", value: Number(current.inventoryValue || 0) },
+          { label: "Receivables", value: Number(current.accountsReceivable || 0) },
+          { label: "Other Assets", value: Number(current.otherAssets || 0) },
+        ].filter((item) => item.value !== 0));
       }
-      setPeriods(pd); setCap(c); setDraws(dh);
-      setProfitTrend(pt); setAssetDist(ad);
-      setCreditors(cr); setDebtors(dr);
-      setTaxRep(tx); setSalesReg(sr); setReceiptsReg(rr);
+      setPeriods(Array.isArray(pd) ? pd : []);
+      loadedSections.current.clear();
+      loadedVersion.current = getDataVersion();
+      hasLoaded.current = true;
       setRangeNotice(`Showing ${from} to ${to}`);
-    } catch (e) { console.warn(e); }
-    finally { setLoading(false); setRefreshing(false); }
+    } catch (e: any) {
+      if (requestId === loadRequest.current) setLoadError(e?.message || "Reports could not be loaded.");
+    } finally {
+      if (requestId === loadRequest.current) { setLoading(false); setRefreshing(false); }
+    }
   }, [from, to]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadSection = useCallback(async (section: Seg) => {
+    const key = `${from}|${to}|${section}|${bizSettings?.accountingStyle || 'standard'}`;
+    if (loadedSections.current.has(key)) return;
+    const requestId = ++sectionRequest.current;
+    setSectionLoading(true);
+    try {
+      if (section === "Summary" && bizSettings?.accountingStyle === "retail_partnership") {
+        const value = await api.capitalStatement(); if (requestId !== sectionRequest.current) return;
+        setCap(normalizeCapitalStatement(value));
+      } else if (section === "P&L") {
+        const trend: any = await api.monthlyProfitTrend(6);
+        if (requestId !== sectionRequest.current) return;
+        setProfitTrend((Array.isArray(trend) ? trend : []).map((item: any) => ({
+          label: item.label || String(item.month || "").slice(5),
+          profit: Number(item.profit ?? item.netProfit ?? 0),
+        })));
+      } else if (section === "Capital") {
+        const value = await api.capitalStatement(); if (requestId !== sectionRequest.current) return;
+        setCap(normalizeCapitalStatement(value));
+      } else if (section === "Drawings") {
+        const value = await api.drawingsHistory(); if (requestId !== sectionRequest.current) return; setDraws(Array.isArray(value) ? value : []);
+      } else if (section === "Creditors") {
+        const value = await api.creditorsReport(from, to); if (requestId !== sectionRequest.current) return; setCreditors(Array.isArray(value) ? value : []);
+      } else if (section === "Debtors") {
+        const value = await api.debtorsReport(from, to); if (requestId !== sectionRequest.current) return; setDebtors(Array.isArray(value) ? value : []);
+      } else if (section === "Tax") {
+        const value = await api.taxReport(from, to); if (requestId !== sectionRequest.current) return; setTaxRep(value);
+      } else if (section === "Sales Reg") {
+        const value: any = await api.salesRegister(from, to);
+        if (requestId !== sectionRequest.current) return;
+        setSalesReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [] });
+      } else if (section === "Receipts") {
+        const value: any = await api.receiptsRegister(from, to);
+        if (requestId !== sectionRequest.current) return;
+        setReceiptsReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [], byMethod: value?.byMethod || {} });
+      }
+      loadedSections.current.add(key);
+    } catch (e: any) {
+      setLoadError(e?.message || `The ${section} report could not be loaded.`);
+    } finally {
+      if (requestId === sectionRequest.current) setSectionLoading(false);
+    }
+  }, [bizSettings?.accountingStyle, from, to]);
+
+  useFocusEffect(useCallback(() => {
+    if (hasLoaded.current && loadedVersion.current === getDataVersion()) return;
+    load();
+  }, [load]));
+
+  useEffect(() => {
+    if (!loading && hasLoaded.current) loadSection(seg);
+  }, [loadSection, loading, seg]);
 
   // Custom fields are drafts. Reports change only when Apply succeeds, so
   // typing a partial date cannot silently issue a different report query.
@@ -215,10 +301,11 @@ export default function ReportsScreen() {
         line("Cash", dash.cash),
         line("Inventory", dash.inventoryValue),
         line("Outstanding Debtors", dash.accountsReceivable || 0),
-        line("Total Assets", dash.cash + dash.inventoryValue + (dash.accountsReceivable || 0)),
+        line("Total Assets", dash.assets),
         ``,
         `— LIABILITIES`,
-        line("Creditors", dash.liabilities),
+        line("Creditors", dash.accountsPayable || 0),
+        line("Total Liabilities", dash.liabilities),
         `Registered Suppliers: ${dash.suppliers}`,
         line("Net Worth (Equity)", dash.netWorth),
         ``,
@@ -422,8 +509,17 @@ export default function ReportsScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { loadedSections.current.clear(); setRefreshing(true); load(); }} />}
         >
+          {loadError ? (
+            <Card style={{ marginBottom: theme.spacing.md, borderColor: theme.color.error, borderWidth: 1 }}>
+              <Text style={[styles.hint, { color: theme.color.error }]}>{loadError}</Text>
+              <Pressable onPress={() => { setLoadError(""); loadedSections.current.clear(); load(); }} style={{ paddingTop: 10 }}>
+                <Text style={{ color: theme.color.brandPrimary, fontWeight: "700" }}>Try again</Text>
+              </Pressable>
+            </Card>
+          ) : null}
+          {sectionLoading ? <ActivityIndicator style={{ marginBottom: theme.spacing.md }} color={theme.color.brandPrimary} /> : null}
           {seg === "Summary" && dash && (
             <>
               <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }}>
@@ -442,11 +538,13 @@ export default function ReportsScreen() {
                   <RowKV label="Inventory" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
                   <RowKV label="Debtors" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
                   <View style={styles.divider} />
-                  <RowKV label="Total Assets" value={fmt(dash.cash + dash.inventoryValue + (dash.accountsReceivable || 0))} strong theme={theme} styles={styles} />
+                  <RowKV label="Other assets" value={fmt((dash.supplierAdvances || 0) + (dash.otherAssets || 0))} theme={theme} styles={styles} />
+                  <RowKV label="Total Assets" value={fmt(dash.assets)} strong theme={theme} styles={styles} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>LIABILITIES</Text>
-                  <RowKV label="Creditors" value={fmt(dash.liabilities)} theme={theme} styles={styles} />
+                  <RowKV label="Creditors" value={fmt(dash.accountsPayable || 0)} theme={theme} styles={styles} />
+                  <RowKV label="Other liabilities" value={fmt((dash.customerAdvances || 0) + (dash.commissionPayable || 0) + (dash.otherLiabilities || 0))} theme={theme} styles={styles} />
                   <RowKV label="Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
                   <RowKV label="Net Worth" value={fmt(dash.netWorth)} theme={theme} styles={styles} />
                   <View style={styles.divider} />

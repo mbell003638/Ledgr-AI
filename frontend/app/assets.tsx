@@ -15,7 +15,7 @@ import { parseMoneyInput } from "@/src/money";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 type EntryMode = "asset" | "liability";
-type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string };
+type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string; origin?: "manual" | "opening" };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const assetFunding = [
@@ -33,6 +33,8 @@ export default function AssetsScreen() {
   const [mode, setMode] = useState<EntryMode>("asset");
   const [entries, setEntries] = useState<BalanceEntry[]>([]);
   const [creditorsTotal, setCreditorsTotal] = useState(0);
+  const [otherAssetsTotal, setOtherAssetsTotal] = useState(0);
+  const [otherLiabilitiesTotal, setOtherLiabilitiesTotal] = useState(0);
   const [currSym, setCurrSym] = useState("$");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,8 +55,10 @@ export default function AssetsScreen() {
       setError("");
       const [settings, rows, dashboard, openingBalances] = await Promise.all([api.getSettings(), api.listManualBalanceTransactions(), api.dashboard(), api.getV2OpeningBalances()]);
       setCurrSym(getCurrencySymbol(settings.currency || "USD"));
-      setEntries(rows as BalanceEntry[]);
+      setEntries((rows as BalanceEntry[]).map((row) => ({ ...row, origin: "manual" })));
       setCreditorsTotal(Number((dashboard as any)?.accountsPayable || 0));
+      setOtherAssetsTotal(Number((dashboard as any)?.otherAssets || 0));
+      setOtherLiabilitiesTotal(Number((dashboard as any)?.otherLiabilities || 0));
       setOpening(openingBalances);
       loadedVersion.current = getDataVersion();
     } catch (e: any) {
@@ -74,6 +78,7 @@ export default function AssetsScreen() {
   };
 
   const edit = (entry: BalanceEntry) => {
+    if (entry.origin === "opening") { setOpeningVisible(true); return; }
     setEditId(entry.id); setMode(entry.type); setDate(entry.date); setName(entry.name); setCategory(entry.category || "");
     setAmount(String(entry.amount)); setNotes(entry.notes || ""); setError("");
     if (entry.type === "asset" && assetFunding.some((option) => option.id === entry.counterparty)) setFunding(entry.counterparty as typeof funding);
@@ -104,6 +109,13 @@ export default function AssetsScreen() {
   };
 
   const remove = (entry: BalanceEntry) => {
+    if (entry.origin === "opening") {
+      Alert.alert("Opening balance item", "Opening items are removed from the balanced opening set so the matching accounting side can be reviewed too.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Review opening set", onPress: () => setOpeningVisible(true) },
+      ]);
+      return;
+    }
     Alert.alert("Reverse this transaction?", "It will be reversed with an equal and opposite journal entry, preserving the audit trail.", [
       { text: "Cancel", style: "cancel" },
       { text: "Reverse", style: "destructive", onPress: async () => {
@@ -113,10 +125,21 @@ export default function AssetsScreen() {
     ]);
   };
 
-  const assetEntries = entries.filter((entry) => entry.type === "asset");
-  const liabilityEntries = entries.filter((entry) => entry.type === "liability");
-  const totalAssets = assetEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const totalLiabilities = liabilityEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const openingAssetEntries: BalanceEntry[] = (Array.isArray(opening?.assetBreakdown) ? opening.assetBreakdown : []).map((item: any, index: number) => ({
+    id: `opening-asset-${index}`, type: "asset", date: opening?.date || "Opening date", name: item?.name || "Other asset",
+    category: "Opening balance", amount: Number(item?.amount || 0), counterparty: "capital", notes: "", origin: "opening",
+  }));
+  const openingCreditorEntries: BalanceEntry[] = (Array.isArray(opening?.liabilityBreakdown) ? opening.liabilityBreakdown : []).filter((item: any) => item?.type === "creditor").map((item: any, index: number) => ({
+    id: `opening-creditor-${index}`, type: "liability", date: opening?.date || "Opening date", name: item?.name || "Supplier payable",
+    category: "Opening balance", amount: Number(item?.amount || 0), counterparty: "creditor", notes: "", origin: "opening",
+  }));
+  const openingLiabilityEntries: BalanceEntry[] = (Array.isArray(opening?.liabilityBreakdown) ? opening.liabilityBreakdown : []).filter((item: any) => item?.type !== "creditor").map((item: any, index: number) => ({
+    id: `opening-liability-${index}`, type: "liability", date: opening?.date || "Opening date", name: item?.name || "Other liability",
+    category: "Opening balance", amount: Number(item?.amount || 0), counterparty: "expense", notes: "", origin: "opening",
+  }));
+  const assetEntries = [...openingAssetEntries, ...entries.filter((entry) => entry.type === "asset")];
+  const creditorEntries = [...openingCreditorEntries, ...entries.filter((entry) => entry.type === "liability" && entry.counterparty === "creditor")];
+  const liabilityEntries = [...openingLiabilityEntries, ...entries.filter((entry) => entry.type === "liability" && entry.counterparty !== "creditor")];
   const isAsset = mode === "asset";
 
   return (
@@ -130,15 +153,10 @@ export default function AssetsScreen() {
 
         {opening ? <Card style={styles.openingCard}>
           <View style={styles.openingHeader}>
-            <View style={{ flex: 1 }}><Text style={styles.cardTitle}>Scanned / Opening Balances</Text><Text style={styles.hint}>One balanced opening journal · {opening.date || "opening date"}</Text></View>
-            <Pressable testID="edit-opening-balance-set" onPress={() => setOpeningVisible(true)} style={styles.editOpeningBtn}><Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} /><Text style={styles.editOpeningText}>Edit set</Text></Pressable>
+            <View style={{ flex: 1 }}><Text style={styles.cardTitle}>Opening Assets & Liabilities</Text><Text style={styles.hint}>One balanced opening journal · {opening.date || "opening date"}</Text></View>
+            <Pressable testID="edit-opening-balance-set" onPress={() => setOpeningVisible(true)} style={styles.editOpeningBtn}><Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} /><Text style={styles.editOpeningText}>Edit</Text></Pressable>
           </View>
-          <OpeningLine label="Opening cash" amount={Number(opening.cash || 0)} currSym={currSym} styles={styles} />
-          <OpeningLine label="Opening stock" amount={Number(opening.inventory || 0)} currSym={currSym} styles={styles} />
-          {(opening.assetBreakdown || []).map((item: any, index: number) => <OpeningLine key={`asset-${index}`} label={item.name || "Other asset"} amount={Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
-          {(opening.liabilityBreakdown || []).map((item: any, index: number) => <OpeningLine key={`liability-${index}`} label={item.name || "Opening liability"} amount={-Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
-          {(opening.partnerCapitals || []).map((item: any, index: number) => <OpeningLine key={`partner-${index}`} label={`${item.name || "Partner"} capital`} amount={-Number(item.amount || 0)} currSym={currSym} styles={styles} />)}
-          <Text style={styles.openingHelp}>Edit or remove individual components from Edit set. Ledgr will require the complete set to remain balanced before saving.</Text>
+          <Text style={styles.openingHelp}>{openingAssetEntries.length} opening asset{openingAssetEntries.length === 1 ? "" : "s"} · {openingCreditorEntries.length + openingLiabilityEntries.length} opening liabilit{openingCreditorEntries.length + openingLiabilityEntries.length === 1 ? "y" : "ies"}. They are listed below with their current balances.</Text>
         </Card> : null}
 
         <View style={styles.modeRow}>
@@ -167,30 +185,20 @@ export default function AssetsScreen() {
           {editId ? <Pressable onPress={resetForm} style={{ alignItems: "center", paddingTop: 12 }}><Text style={{ color: theme.color.muted, fontWeight: "600" }}>Cancel editing</Text></Pressable> : null}
         </Card>
 
-        <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={totalAssets} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
-        <BalanceSummary title="Creditors / Supplier Payable" amount={creditorsTotal} currSym={currSym} styles={styles} theme={theme} />
-        <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={totalLiabilities} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
+        <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={otherAssetsTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
+        <BalanceList title="Creditors / Supplier Payable" icon="people-outline" entries={creditorEntries} total={creditorsTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} emptyText="No opening creditor breakdown. Vendor bills remain available from Suppliers." />
+        <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={otherLiabilitiesTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
         <View style={{ height: 120 }} />
       </ScrollView>
-      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
+      <OpeningBalancesModal visible={openingVisible} mode="assets_liabilities" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
     </SafeAreaView>
   );
 }
 
-function BalanceSummary({ title, amount, currSym, styles, theme }: { title: string; amount: number; currSym: string; styles: any; theme: any }) {
-  return <Card style={styles.listCard}>
-    <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name="people-outline" size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>
-    <Text style={styles.entryMeta}>Vendor bills and creditor entries still owed</Text>
-    <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{fmt(amount, currSym)}</Text></View>
-  </Card>;
-}
-function OpeningLine({ label, amount, currSym, styles }: { label: string; amount: number; currSym: string; styles: any }) {
-  return <View style={styles.openingLine}><Text style={styles.entryName}>{label}</Text><Text style={[styles.entryAmount, amount < 0 && styles.openingCredit]}>{amount < 0 ? '−' : ''}{fmt(Math.abs(amount), currSym)}</Text></View>;
-}
-function BalanceList({ title, icon, entries, total, currSym, styles, onEdit, onDelete, theme }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onEdit: (entry: BalanceEntry) => void; onDelete: (entry: BalanceEntry) => void; theme: any }) {
+function BalanceList({ title, icon, entries, total, currSym, styles, onEdit, onDelete, theme, emptyText = "No posted transactions yet." }: { title: string; icon: any; entries: BalanceEntry[]; total: number; currSym: string; styles: any; onEdit: (entry: BalanceEntry) => void; onDelete: (entry: BalanceEntry) => void; theme: any; emptyText?: string }) {
   return <Card style={styles.listCard}>
     <View style={styles.listTitleRow}><View style={styles.listIcon}><Ionicons name={icon} size={17} color={theme.color.brandPrimary} /></View><Text style={styles.cardTitle}>{title}</Text></View>
-    {!entries.length ? <Text style={styles.empty}>No posted transactions yet.</Text> : entries.map((entry) => <View key={entry.id} style={styles.entry}>
+    {!entries.length ? <Text style={styles.empty}>{emptyText}</Text> : entries.map((entry) => <View key={entry.id} style={styles.entry}>
       <View style={{ flex: 1 }}><Text style={styles.entryName}>{entry.name}</Text><Text style={styles.entryMeta}>{entry.date}{entry.category ? ` · ${entry.category}` : ""}{entry.notes ? ` · ${entry.notes}` : ""}</Text></View>
       <View style={styles.entryRight}><Text style={styles.entryAmount}>{fmt(entry.amount, currSym)}</Text><View style={{ flexDirection: "row", gap: 12 }}><Pressable onPress={() => onEdit(entry)} hitSlop={10}><Ionicons name="pencil-outline" size={16} color={theme.color.brandPrimary} /></Pressable><Pressable onPress={() => onDelete(entry)} hitSlop={10}><Ionicons name="trash-outline" size={16} color={theme.color.muted} /></Pressable></View></View>
     </View>)}

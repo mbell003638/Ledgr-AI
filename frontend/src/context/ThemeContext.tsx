@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useColorScheme } from 'react-native';
+import { AccessibilityInfo, useColorScheme } from 'react-native';
 import { darkColors, lightColors, navyGoldColors, amoledBlueColors, spacing, radius, font, effects, motion, ThemeType } from '@/src/theme';
 
 type Mode = 'light' | 'dark' | 'navy_gold' | 'amoled_blue' | 'system';
@@ -16,6 +16,9 @@ type Ctx = {
   effective: 'light' | 'dark' | 'navy_gold' | 'amoled_blue';
   setMode: (m: Mode) => void;
   animationsEnabled: boolean;
+  deviceReduceMotion: boolean;
+  motionEnabled: boolean;
+  hapticsEnabled: boolean;
   setAnimationsEnabled: (enabled: boolean) => void;
 };
 
@@ -25,6 +28,9 @@ const defaultCtx: Ctx = {
   effective: 'light',
   setMode: () => {},
   animationsEnabled: false,
+  deviceReduceMotion: false,
+  motionEnabled: false,
+  hapticsEnabled: false,
   setAnimationsEnabled: () => {},
 };
 
@@ -35,6 +41,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<Mode>('system');
   const [hydrated, setHydrated] = useState(false);
   const [animationsEnabled, setAnimationsEnabledState] = useState(false);
+  const [deviceReduceMotion, setDeviceReduceMotion] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -50,6 +57,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setDeviceReduceMotion).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setDeviceReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
   const setMode = (m: Mode) => {
     setModeState(m);
     AsyncStorage.setItem(STORAGE_KEY, m).catch(() => {});
@@ -61,14 +74,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const effective: 'light' | 'dark' | 'navy_gold' | 'amoled_blue' = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
+  const motionEnabled = animationsEnabled && !deviceReduceMotion;
+  const hapticsEnabled = motionEnabled;
 
   const value = useMemo<Ctx>(() => ({
     theme: {
       color: COLOR_MAP[effective],
       spacing, radius, font, effects, motion,
     },
-    mode, effective, setMode, animationsEnabled, setAnimationsEnabled,
-  }), [effective, mode, animationsEnabled]);
+    mode, effective, setMode, animationsEnabled, deviceReduceMotion, motionEnabled, hapticsEnabled, setAnimationsEnabled,
+  }), [effective, mode, animationsEnabled, deviceReduceMotion, motionEnabled, hapticsEnabled]);
 
   if (!hydrated) return null;
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -79,8 +94,8 @@ export function useTheme(): ThemeType {
 }
 
 export function useAnimations() {
-  const { animationsEnabled, setAnimationsEnabled } = useContext(ThemeContext);
-  return { animationsEnabled, setAnimationsEnabled };
+  const { animationsEnabled, deviceReduceMotion, motionEnabled, hapticsEnabled, setAnimationsEnabled } = useContext(ThemeContext);
+  return { animationsEnabled, deviceReduceMotion, motionEnabled, hapticsEnabled, setAnimationsEnabled };
 }
 
 export function useThemeMode() {

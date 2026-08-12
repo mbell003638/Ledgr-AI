@@ -276,7 +276,7 @@ export default function InventoryForm() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); loadData(); }} />
+      <OpeningBalancesModal visible={openingVisible} mode="inventory" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); loadData(); }} />
     </SafeAreaView>
   );
 }

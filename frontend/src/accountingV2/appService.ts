@@ -254,6 +254,12 @@ export class V2AppService {
   }
 
   private async repairPartyIdentities(bookId: string) {
+    const suspect = await this.db.first<{ id: string }>(`SELECT id FROM v2_parties
+      WHERE book_id=? AND (
+        id LIKE 'v2:customer:v2:%' OR id LIKE 'v2:supplier:v2:%'
+        OR name LIKE 'v2:customer:%' OR name LIKE 'v2:supplier:%'
+      ) LIMIT 1`, [bookId]);
+    if (!suspect) return;
     const savepoint = `v2_party_repair_${++partyRepairSequence}`;
     await this.db.exec(`SAVEPOINT ${savepoint}`);
     try {
@@ -304,14 +310,21 @@ export class V2AppService {
   async listParties() {
     const context = await this.activeContext(); if (!context) return [];
     await this.repairPartyIdentities(context.bookId);
-    const rows = await this.db.all<any>('SELECT id,name,phone,email,roles,archived FROM v2_parties WHERE book_id=? AND archived=0 ORDER BY name', [context.bookId]);
-    const result = [];
-    for (const row of rows) {
-      const ar = await this.db.first<{ balance:number }>(`SELECT COALESCE(SUM(l.debit-l.credit),0) balance FROM v2_journal_lines l JOIN v2_journal_entries j ON j.id=l.journal_id JOIN v2_accounts a ON a.id=l.account_id WHERE j.book_id=? AND l.party_id=? AND a.code='1100'`, [context.bookId,row.id]);
-      const ap = await this.db.first<{ balance:number }>(`SELECT COALESCE(SUM(l.credit-l.debit),0) balance FROM v2_journal_lines l JOIN v2_journal_entries j ON j.id=l.journal_id JOIN v2_accounts a ON a.id=l.account_id WHERE j.book_id=? AND l.party_id=? AND a.code='2000'`, [context.bookId,row.id]);
-      result.push({ id:row.id,name:row.name,phone:row.phone,email:row.email,roles:JSON.parse(row.roles),receivable:Number(ar?.balance||0),payable:Number(ap?.balance||0),net:Number(ar?.balance||0)-Number(ap?.balance||0) });
-    }
-    return result;
+    const rows = await this.db.all<any>(`SELECT p.id,p.name,p.phone,p.email,p.roles,
+      COALESCE(SUM(CASE WHEN a.code='1100' THEN l.debit-l.credit ELSE 0 END),0) AS receivable,
+      COALESCE(SUM(CASE WHEN a.code='2000' THEN l.credit-l.debit ELSE 0 END),0) AS payable
+      FROM v2_parties p
+      LEFT JOIN v2_journal_lines l ON l.party_id=p.id
+      LEFT JOIN v2_journal_entries j ON j.id=l.journal_id AND j.book_id=p.book_id
+      LEFT JOIN v2_accounts a ON a.id=l.account_id
+      WHERE p.book_id=? AND p.archived=0
+      GROUP BY p.id,p.name,p.phone,p.email,p.roles
+      ORDER BY p.name`, [context.bookId]);
+    return rows.map((row) => {
+      let roles: string[] = []; try { roles = JSON.parse(row.roles || '[]'); } catch { roles = []; }
+      const receivable = Number(row.receivable || 0); const payable = Number(row.payable || 0);
+      return { id: row.id, name: row.name, phone: row.phone, email: row.email, roles, receivable, payable, net: receivable - payable };
+    });
   }
 
   /** Resolve a party detail view directly from the authoritative V2 ledger. */

@@ -50,7 +50,7 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
-  const { animationsEnabled, setAnimationsEnabled } = useAnimations();
+  const { animationsEnabled, deviceReduceMotion, setAnimationsEnabled } = useAnimations();
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
@@ -340,7 +340,7 @@ export default function SettingsScreen() {
                   ))}
                 </View>
               </AccordionRow>
-              <AccordionRow title="Animations" subtitle={animationsEnabled ? "Enabled - glow, hover and motion" : "Off - static interface for stability testing"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Animations & haptics" subtitle={deviceReduceMotion ? "Off - follows device Reduce Motion" : animationsEnabled ? "Enabled - glow, motion and haptics" : "Off - static and silent interface"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 }}>
                   <View style={{ flex: 1, paddingRight: 16 }}>
                     <Text style={{ color: theme.color.onSurface, fontSize: 14, fontWeight: "600" }}>Enable interface animations</Text>

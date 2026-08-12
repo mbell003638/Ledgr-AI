@@ -186,7 +186,7 @@ export default function InvestorDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-      <OpeningBalancesModal visible={openingVisible} mode="all" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
+      <OpeningBalancesModal visible={openingVisible} mode="investor" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); load(); }} />
     </SafeAreaView>
   );
 }

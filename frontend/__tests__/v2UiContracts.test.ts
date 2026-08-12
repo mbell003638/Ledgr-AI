@@ -267,7 +267,7 @@ describe('V2 UI contracts', () => {
     const inventory = readApp('inventory-form.tsx');
     const reports = readApp('(tabs)/reports.tsx');
 
-    expect(assets).toContain('Scanned / Opening Balances');
+    expect(assets).toContain('Opening Assets & Liabilities');
     expect(assets).toContain('edit-opening-balance-set');
     expect(assets).toContain('updateManualBalanceTransaction');
     expect(investor).toContain('updateInvestorCapital');
@@ -279,6 +279,62 @@ describe('V2 UI contracts', () => {
     expect(reports).toContain('const [customFrom');
     expect(reports).toContain('The From date must be on or before the To date');
     expect(reports).toContain('Applying custom range');
+  });
+  it('loads the report core first, normalizes capital data, and lazy-loads secondary segments', () => {
+    const reports = readApp('(tabs)/reports.tsx');
+    const coreLoad = reports.slice(reports.indexOf('const load = useCallback'), reports.indexOf('const loadSection'));
+
+    expect(coreLoad).toContain('v2Reports({ from, to })');
+    expect(coreLoad).toContain('api.dashboard()');
+    expect(coreLoad).not.toContain('api.balanceSheet()');
+    expect(coreLoad).not.toContain('api.monthlyProfitTrend');
+    expect(coreLoad).not.toContain('api.creditorsReport');
+    expect(reports).toContain('normalizeCapitalStatement');
+    expect(reports).toContain('Array.isArray(value?.investors)');
+    expect(reports).toContain('Array.isArray(value?.rows) ? value.rows : []');
+    expect(reports).toContain('loadedVersion.current === getDataVersion()');
+  });
+  it('opens each balance editor in its owning context and keeps full review explicit', () => {
+    const modal = readSource('src/components/OpeningBalancesModal.tsx');
+    expect(readApp('cashbook.tsx')).toContain('mode="cash"');
+    expect(readApp('inventory-form.tsx')).toContain('mode="inventory"');
+    expect(readApp('assets.tsx')).toContain('mode="assets_liabilities"');
+    expect(readApp('investor/[id].tsx')).toContain('mode="investor"');
+    expect(modal).toContain('Review complete opening set');
+    expect(modal).toContain('const showCash =');
+    expect(modal).toContain('const showInventory =');
+    expect(modal).toContain('const showAssetsLiabilities =');
+    expect(modal).toContain('if (Math.abs(openingAssets - openingCredits) > 0.005)');
+  });
+  it('lists named opening assets and liabilities in their corresponding current-balance cards', () => {
+    const assets = readApp('assets.tsx');
+    expect(assets).toContain('openingAssetEntries');
+    expect(assets).toContain('openingCreditorEntries');
+    expect(assets).toContain('openingLiabilityEntries');
+    expect(assets).toContain('total={otherAssetsTotal}');
+    expect(assets).toContain('total={creditorsTotal}');
+    expect(assets).toContain('total={otherLiabilitiesTotal}');
+    expect(assets).toContain('entry.origin === "opening"');
+  });
+  it('shows investor actions when Equity Split is configured or investor ledgers already exist', () => {
+    const parties = readApp('(tabs)/suppliers.tsx');
+    const quick = readSource('src/components/QuickActionMenu.tsx');
+    expect(parties).toContain('partnerConfigured || investors.length > 0');
+    expect(parties).toContain("['all', 'customer', 'supplier', 'partner']");
+    expect(quick).toContain('config?.style === "retail_partnership" || investors.length > 0');
+    expect(quick).toContain('Add Party / Investor');
+  });
+  it('disables motion and haptics together and follows the device Reduce Motion setting', () => {
+    const context = readSource('src/context/ThemeContext.tsx');
+    const glow = readSource('src/components/GlowPressable.tsx');
+    const quick = readSource('src/components/QuickActionMenu.tsx');
+    const tabs = readApp('(tabs)/_layout.tsx');
+    expect(context).toContain('AccessibilityInfo.isReduceMotionEnabled()');
+    expect(context).toContain("addEventListener('reduceMotionChanged'");
+    expect(context).toContain('const hapticsEnabled = motionEnabled');
+    expect(glow).toContain('if (!motionEnabled)');
+    expect(quick).toContain('if (hapticsEnabled && Platform.OS !== "web")');
+    expect(tabs).toContain('if (hapticsEnabled && Platform.OS !== "web")');
   });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');

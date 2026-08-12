@@ -10,7 +10,7 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  mode?: "all" | "investor";
+  mode?: "all" | "cash" | "inventory" | "assets_liabilities" | "investor";
 }
 
 /**
@@ -68,9 +68,11 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showFullReview, setShowFullReview] = useState(mode === "all");
 
   useEffect(() => {
     if (!visible) return;
+    setShowFullReview(mode === "all");
     (async () => {
       setLoading(true);
       setError("");
@@ -120,7 +122,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         setLoading(false);
       }
     })();
-  }, [visible]);
+  }, [mode, visible]);
 
   const addMember = () => setMembers((prev) => [...prev, { name: "", amount: "", profitSharePct: "" }]);
   const removeMember = (index: number) => setMembers((prev) => prev.filter((_, i) => i !== index));
@@ -143,7 +145,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
     // single-digit month/day, DD/MM/YYYY) before validating so a correct date
     // in a different shape is no longer wrongly rejected.
     let normalizedPeriodStart = "";
-    if (mode === "all" && periodStart.trim()) {
+    if (periodStart.trim()) {
       normalizedPeriodStart = normalizeDateInput(periodStart);
       if (!isValidDateString(normalizedPeriodStart)) {
         setError(`Couldn't read "${periodStart.trim()}" as a date. Please use YYYY-MM-DD (e.g. 2026-01-01).`);
@@ -167,21 +169,21 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
     const ownerCapitalVal = isPartnerMode ? cleanedPreviewMembers.reduce((sum, value) => sum + value, 0) : (parseFloat(ownerCapital) || 0);
     const openingAssets = cashVal + invVal + otherAssetsVal;
     const openingCredits = accountsPayableVal + otherLiabilitiesVal + ownerCapitalVal + retainedEarningsVal;
-    if (mode === "all" && assetBreakdown.some((asset) => asset.amount > 0 && !asset.name)) {
+    if (assetBreakdown.some((asset) => asset.amount > 0 && !asset.name)) {
       setError("Give each other opening asset a name.");
       return;
     }
-    if (mode === "all" && liabilityBreakdown.some((liability) => liability.amount > 0 && !liability.name)) {
+    if (liabilityBreakdown.some((liability) => liability.amount > 0 && !liability.name)) {
       setError("Give each opening liability a name.");
       return;
     }
-    if (mode === "all" && [cashVal, invVal, ...assetBreakdown.map((asset) => asset.amount), ...liabilityBreakdown.map((liability) => liability.amount), retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
+    if ([cashVal, invVal, ...assetBreakdown.map((asset) => asset.amount), ...liabilityBreakdown.map((liability) => liability.amount), retainedEarningsVal, ownerCapitalVal].some((value) => value < 0)) {
       setError("Opening amounts cannot be negative.");
       return;
     }
 
-    if (mode === "all" && Math.abs(openingAssets - openingCredits) > 0.005) {
-      setError(`Opening balances do not balance. Assets: $${openingAssets.toFixed(2)}; liabilities and equity: $${openingCredits.toFixed(2)}.`);
+    if (Math.abs(openingAssets - openingCredits) > 0.005) {
+      setError(`Opening balances do not balance. Assets: $${openingAssets.toFixed(2)}; liabilities and equity: $${openingCredits.toFixed(2)}. Review the complete opening set to adjust the matching side.`);
       return;
     }
 
@@ -231,7 +233,22 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
     }
   };
 
-  const isInvestorOnly = mode === "investor";
+  const displayMode = showFullReview ? "all" : mode;
+  const isFocused = displayMode !== "all";
+  const showCash = displayMode === "all" || displayMode === "cash";
+  const showInventory = displayMode === "all" || displayMode === "inventory";
+  const showAssetsLiabilities = displayMode === "all" || displayMode === "assets_liabilities";
+  const showInvestors = isPartnerMode && (displayMode === "all" || displayMode === "investor");
+  const modalTitle = displayMode === "cash" ? "Opening Cash Balance"
+    : displayMode === "inventory" ? "Opening Inventory"
+      : displayMode === "assets_liabilities" ? "Opening Assets & Liabilities"
+        : displayMode === "investor" ? "Investor Capital & Equity Setup"
+          : "Opening Balances Setup";
+  const modalSubtitle = displayMode === "cash" ? "Edit the cash brought into this book"
+    : displayMode === "inventory" ? "Edit stock held when this book began"
+      : displayMode === "assets_liabilities" ? "Edit opening deposits, assets, creditors and liabilities"
+        : displayMode === "investor" ? "Add or edit investor names, capital contributions & profit share"
+          : "Enter only the balances your business already has";
 
   return (
     <Modal visible={visible} transparent animationType={Platform.OS === "web" ? "fade" : "slide"} onRequestClose={onClose}>
@@ -240,10 +257,8 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
         <View style={styles.modalBox}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>{isInvestorOnly ? "Investor Capital & Equity Setup" : "Opening Balances Setup"}</Text>
-              <Text style={styles.subtitle}>
-                {isInvestorOnly ? "Add or edit investor names, capital contributions & profit share" : "Enter only the balances your business already has"}
-              </Text>
+              <Text style={styles.title}>{modalTitle}</Text>
+              <Text style={styles.subtitle}>{modalSubtitle}</Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={22} color={theme.color.onSurface} />
@@ -254,8 +269,8 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
             <ActivityIndicator style={{ marginVertical: 30 }} color={theme.color.brandPrimary} />
           ) : (
             <ScrollView style={{ maxHeight: 560 }} contentContainerStyle={{ paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
-              {!isInvestorOnly ? (
-                <>
+              <>
+                {showCash ? <>
                   <Text style={styles.label}>Opening Cash Balance (Optional) ($)</Text>
                   <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingCash}
@@ -265,7 +280,9 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     placeholderTextColor={theme.color.muted}
                     style={styles.input}
                   />
+                </> : null}
 
+                {showInventory ? <>
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Stock / Inventory (Optional) ($)</Text>
                   <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                     value={openingInventory}
@@ -276,7 +293,9 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     style={styles.input}
                   />
                   <Text style={styles.helper}>Leave stock at zero if your business does not hold inventory.</Text>
+                </> : null}
 
+                {showAssetsLiabilities ? <>
                   <View style={{ marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border }}>
                     <Text style={styles.sectionHeader}>Other Opening Assets (Optional)</Text>
                     <Text style={styles.helper}>Add deposits, equipment, property or any other asset you already own. Leave empty if none.</Text>
@@ -316,7 +335,9 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                       <Text style={styles.addMemberText}>Add Liability</Text>
                     </GlowPressable>
                   </View>
+                </> : null}
 
+                {displayMode === "all" ? <>
                   <Text style={[styles.label, { marginTop: 14 }]}>Opening Retained Earnings / Other Equity ($)</Text>
                   <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent" value={retainedEarnings} onChangeText={setRetainedEarnings} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
                   <Text style={styles.helper}>Use this for profit or equity carried forward from before the app period. It is not current-period profit.</Text>
@@ -337,11 +358,13 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                     style={styles.input}
                   />
                   <Text style={styles.helper}>This dates the opening balances; it does not force a year-end. Flexible books can accept earlier historical opening dates when no closed period overlaps.</Text>
-                </>
-              ) : null}
+                </> : (
+                  <Text style={[styles.helper, { marginTop: 12 }]}>Opening date: {periodStart || "not set"}. This focused editor preserves the date and all other opening components.</Text>
+                )}
+              </>
 
-              {isPartnerMode ? <View style={!isInvestorOnly ? { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border } : { marginTop: 4 }}>
-                {!isInvestorOnly ? <Text style={styles.sectionHeader}>Investor Capital & Equity Setup</Text> : null}
+              {showInvestors ? <View style={displayMode === "all" ? { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border } : { marginTop: 4 }}>
+                {displayMode === "all" ? <Text style={styles.sectionHeader}>Investor Capital & Equity Setup</Text> : null}
                 {members.length === 0 ? (
                   <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 12 }}>No investors added yet. Tap &quot;+ Add Investor&quot; below.</Text>
                 ) : null}
@@ -391,7 +414,14 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 </GlowPressable>
               </View> : null}
 
-              {!isInvestorOnly ? <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0) - (openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0)).toFixed(2)}  |  Liabilities + equity: ${(openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View> : null}
+              <View style={{ marginTop: 14, padding: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: Math.abs((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0) - (openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0))) < 0.005 ? theme.color.brandPrimary : theme.color.error }}><Text style={styles.helper}>Complete opening set — Assets: ${((parseFloat(openingCash) || 0) + (parseFloat(openingInventory) || 0) + otherAssets.reduce((sum, asset) => sum + (parseFloat(asset.amount) || 0), 0)).toFixed(2)}  |  Liabilities + equity: ${(openingLiabilities.reduce((sum, liability) => sum + (parseFloat(liability.amount) || 0), 0) + (isPartnerMode ? members.reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0) : (parseFloat(ownerCapital) || 0)) + (parseFloat(retainedEarnings) || 0)).toFixed(2)}</Text></View>
+
+              {isFocused ? (
+                <Pressable onPress={() => { setShowFullReview(true); setError(""); }} style={styles.fullReviewBtn}>
+                  <Ionicons name="albums-outline" size={16} color={theme.color.brandPrimary} />
+                  <Text style={styles.fullReviewText}>Review complete opening set</Text>
+                </Pressable>
+              ) : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </ScrollView>
@@ -433,6 +463,8 @@ function makeStyles(theme: any) {
     removeBtn: { padding: 6 },
     addMemberBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", backgroundColor: theme.color.brandPrimary + "10", marginTop: 4 },
     addMemberText: { fontSize: 13, fontWeight: "700", color: theme.color.brandPrimary },
+    fullReviewBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 10, paddingVertical: 9 },
+    fullReviewText: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "700" },
     error: { color: theme.color.error, textAlign: "center", marginTop: 10, fontSize: 12 },
     footer: { flexDirection: "row", gap: 10, marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.color.border },
     cancelBtn: { flex: 1, paddingVertical: 10, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, alignItems: "center" },

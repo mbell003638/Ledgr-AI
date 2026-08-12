@@ -119,7 +119,7 @@ function WebTabMotion({ brandColor, enabled }: { brandColor: string; enabled: bo
 
 export default function TabsLayout() {
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
+  const { motionEnabled, hapticsEnabled } = useAnimations();
   const insets = useSafeAreaInsets();
   // The prototype is 80px tall. A 64px content area plus the real bottom
   // inset keeps that proportion while clearing gesture and three-button bars.
@@ -127,11 +127,11 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
-      <WebTabMotion brandColor={theme.color.brandPrimary} enabled={animationsEnabled} />
+      <WebTabMotion brandColor={theme.color.brandPrimary} enabled={motionEnabled} />
       <Tabs
         screenListeners={{
           tabPress: () => {
-            if (Platform.OS !== "web") {
+            if (hapticsEnabled && Platform.OS !== "web") {
               Haptics.selectionAsync().catch(() => {});
             }
           },

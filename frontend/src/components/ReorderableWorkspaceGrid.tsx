@@ -65,6 +65,7 @@ export function ReorderableWorkspaceGrid({
   onTilePress,
 }: ReorderableWorkspaceGridProps) {
   const theme = useTheme();
+  const { motionEnabled, hapticsEnabled } = useAnimations();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [gridWidth, setGridWidth] = useState(Math.max(0, Math.min(windowWidth, 440) - 36));
   const tileWidth = (gridWidth - GAP) / COLUMNS;
@@ -77,13 +78,13 @@ export function ReorderableWorkspaceGrid({
 
   const hapticDragStart = (index: number) => {
     onEditingChange(true);
-    if (Platform.OS !== "web") {
+    if (hapticsEnabled && Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
   };
 
   const hapticSlotChange = () => {
-    if (Platform.OS !== "web") {
+    if (hapticsEnabled && Platform.OS !== "web") {
       Haptics.selectionAsync().catch(() => {});
     }
   };
@@ -92,7 +93,7 @@ export function ReorderableWorkspaceGrid({
     const settleMs = theme.motion.fast;
     setTimeout(() => {
       onOrderChange(fromIndex, toIndex);
-      if (Platform.OS !== "web") {
+      if (hapticsEnabled && Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       }
       requestAnimationFrame(() => {
@@ -101,7 +102,7 @@ export function ReorderableWorkspaceGrid({
         dragX.value = 0;
         dragY.value = 0;
       });
-    }, settleMs);
+    }, motionEnabled ? settleMs : 0);
   };
 
   const cancelDrag = () => {
@@ -188,8 +189,8 @@ function ReorderableWorkspaceTile({
   onPress,
 }: ReorderableWorkspaceTileProps) {
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
-  const reduceMotion = useReducedMotion() || !animationsEnabled;
+  const { motionEnabled, hapticsEnabled } = useAnimations();
+  const reduceMotion = useReducedMotion() || !motionEnabled;
   const isBrand = tile.usesBrandIcon === true;
   const solidBrand = tile.solidBrand === true;
   const isWeb = Platform.OS === "web";
@@ -200,7 +201,7 @@ function ReorderableWorkspaceTile({
   const pressed = useSharedValue(0);
 
   const animateHover = (value: number) => {
-    if (!animationsEnabled) {
+    if (!motionEnabled) {
       hover.value = 0;
       surfaceHover.value = 0;
       iconHover.value = 0;
@@ -264,7 +265,7 @@ function ReorderableWorkspaceTile({
 
 
   const gesture = useMemo(() => Gesture.Pan()
-    .activateAfterLongPress(animationsEnabled ? theme.motion.longPress : 999999)
+    .activateAfterLongPress(motionEnabled ? theme.motion.longPress : 999999)
     .onStart(() => {
       activeIndex.value = index;
       targetIndex.value = index;
@@ -318,7 +319,7 @@ function ReorderableWorkspaceTile({
         runOnJS(onCancel)();
       }
     }), [
-      animationsEnabled,
+      motionEnabled,
       activeIndex,
       dragStartScrollY,
       dragX,
@@ -392,7 +393,7 @@ function ReorderableWorkspaceTile({
           onHoverOut={() => animateHover(0)}
           onPressIn={() => {
             animatePress(1);
-            if (animationsEnabled && !editing && Platform.OS !== "web") {
+            if (hapticsEnabled && !editing && Platform.OS !== "web") {
               Haptics.selectionAsync().catch(() => {});
             }
           }}

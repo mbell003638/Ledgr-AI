@@ -34,8 +34,8 @@ type AnimatedGlassSurfaceProps = Omit<ViewProps, "style"> & {
  */
 export function AnimatedGlassSurface(props: AnimatedGlassSurfaceProps) {
   const theme = useTheme();
-  const { animationsEnabled } = useAnimations();
-  if (!animationsEnabled) {
+  const { motionEnabled } = useAnimations();
+  if (!motionEnabled) {
     const { children, style, surfaceColor, restingBorderColor } = props;
     const { topHighlight: _topHighlight, hoverSurfaceColor: _hoverSurfaceColor, prominent: _prominent, shadowEnabled: _shadowEnabled, ...rest } = props;
     return (
