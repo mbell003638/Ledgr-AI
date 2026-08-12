@@ -69,7 +69,11 @@ export function GlowPressable(props: GlowPressableProps) {
         onLongPress={onLongPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
-        style={[{ position: "relative", borderWidth: 1, borderColor: props.restingBorderColor ?? "transparent" }, style]}
+        style={[
+          { position: "relative", borderWidth: 1, borderColor: props.restingBorderColor ?? "transparent" },
+          style,
+          { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
+        ]}
       >
         {children}
       </Pressable>

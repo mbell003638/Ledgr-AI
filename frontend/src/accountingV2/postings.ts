@@ -185,7 +185,7 @@ export async function postExpense(repo:V2SqlRepository,input:{bookId:string;peri
  *   - credit note  → DR AP, CR COGS            (we owe the supplier LESS)
  *   - debit note   → DR COGS, CR AP            (we owe the supplier MORE)
  */
-async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier' }, kind: 'credit_note'|'debit_note') {
+async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string }, kind: 'credit_note'|'debit_note') {
   const amount = cents(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const role = input.role === 'supplier' ? 'supplier' : 'customer';
@@ -196,7 +196,13 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
     const meta = inv ? JSON.parse(inv.metadata) : {};
     if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
   }
-  const source: V2Source = { id: uid(kind), bookId: input.bookId, type: kind, date: input.date, metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount } };
+  const reference = String(input.reference || '').trim() || undefined;
+  const reason = String(input.reason || '').trim();
+  const notes = String(input.notes || '').trim();
+  const source: V2Source = {
+    id: uid(kind), bookId: input.bookId, type: kind, date: input.date, reference,
+    metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount, reason, notes },
+  };
   const credit = kind === 'credit_note';
   const lines = role === 'supplier'
     ? (credit ? [
@@ -214,7 +220,9 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
       ]);
   const journal = await repo.postSourceJournal(source, {
-    bookId: input.bookId, periodId: input.periodId, date: input.date, memo: kind, lines,
+    bookId: input.bookId, periodId: input.periodId, date: input.date,
+    memo: [kind === 'credit_note' ? 'Credit note' : 'Debit note', reason || notes].filter(Boolean).join(': '),
+    lines,
   });
   return { source, journal };
 }

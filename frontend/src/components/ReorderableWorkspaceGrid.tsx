@@ -228,6 +228,10 @@ function ReorderableWorkspaceTile({
   };
 
   const animatePress = (value: number) => {
+    if (!motionEnabled) {
+      pressed.value = 0;
+      return;
+    }
     pressed.value = reduceMotion ? value : withSpring(value, theme.motion.spring);
   };
 
@@ -384,7 +388,7 @@ function ReorderableWorkspaceTile({
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
-        layout={Platform.OS === "android" ? undefined : LinearTransition.springify().damping(18).stiffness(220)}
+        layout={!motionEnabled || Platform.OS === "android" ? undefined : LinearTransition.springify().damping(18).stiffness(220)}
         style={[{ width: tileWidth, height: TILE_HEIGHT }, dragStyle]}
       >
         <AnimatedPressable
@@ -401,9 +405,21 @@ function ReorderableWorkspaceTile({
           onPress={() => {
             if (!editing && activeIndex.value < 0) onPress();
           }}
-          style={[styles.tile, editing && styles.tileEditing, tileSurfaceStyle]}
+          style={[
+            styles.tile,
+            editing && styles.tileEditing,
+            tileSurfaceStyle,
+            !motionEnabled && {
+              backgroundColor: solidBrand ? theme.color.brandPrimary : theme.color.glassSurface,
+              borderColor: solidBrand ? theme.color.brandPrimary : theme.color.glassBorder,
+              shadowOpacity: 0,
+              shadowRadius: 0,
+              elevation: 0,
+              ...(Platform.OS === "web" ? { boxShadow: "none" } : {}),
+            },
+          ]}
         >
-          {isWeb ? <LinearGradient
+          {isWeb && motionEnabled ? <LinearGradient
             pointerEvents="none"
             colors={["transparent", solidBrand ? theme.color.onBrandPrimary : theme.color.brandPrimary, "transparent"]}
             start={{ x: 0, y: 0 }}

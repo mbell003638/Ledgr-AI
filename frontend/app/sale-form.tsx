@@ -7,6 +7,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
@@ -27,33 +28,42 @@ export default function SaleForm() {
   const [saleType, setSaleType] = useState<"cash" | "party">("cash");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [discount, setDiscount] = useState("");
+  type LineItem = { description: string; qty: string; unit: string; rate: string };
+  const [lines, setLines] = useState<LineItem[]>([]);
   useEffect(() => {
     (async () => {
       if (editId) {
         const list = await api.listSalesAndInvoices();
         const it = list.find((x: any) => x.id === editId);
         if (it) {
-          setAmount(String(it.amount));
+          setAmount(String(it.subtotal ?? it.amount));
           setNotes(it.notes || "");
+          setDiscount(it.discount ? String(it.discount) : "");
+          if (Array.isArray(it.lines) && it.lines.length) setLines(it.lines.map((line: any) => ({ description: line.description || "", qty: String(line.qty ?? 1), unit: line.unit || "", rate: String(line.rate ?? line.price ?? "") })));
           if (it.date) setDate(it.date);
           if (it.type === "invoice" || it.clientName || it.partyId || (it.notes && it.notes.toLowerCase().includes("credit sale"))) {
             setSaleType("party");
             setCustomerName(it.clientName || it.partyId || "");
+            setCustomerPhone(it.clientPhone || "");
           }
         }
       }
     })();
   }, [editId]);
 
-  type LineItem = { description: string; qty: string; rate: string };
-  const [lines, setLines] = useState<LineItem[]>([]);
-
-  const addLine = () => setLines((prev) => [...prev, { description: "", qty: "1", rate: "" }]);
+  const addLine = () => {
+    setLines((prev) => {
+      const subtotal = prev.reduce((sum, line) => sum + (parseFloat(line.qty) || 0) * (parseFloat(line.rate) || 0), 0);
+      setAmount(subtotal.toFixed(2));
+      return [...prev, { description: "", qty: "1", unit: "", rate: "" }];
+    });
+  };
   const removeLine = (idx: number) => {
     setLines((prev) => {
       const next = prev.filter((_, i) => i !== idx);
       const totalAmt = next.reduce((sum, l) => sum + (parseFloat(l.qty) || 0) * (parseFloat(l.rate) || 0), 0);
-      if (totalAmt > 0) setAmount(totalAmt.toFixed(2));
+      setAmount(next.length ? totalAmt.toFixed(2) : "");
       return next;
     });
   };
@@ -61,14 +71,15 @@ export default function SaleForm() {
     setLines((prev) => {
       const next = prev.map((l, i) => (i === idx ? { ...l, [field]: val } : l));
       const totalAmt = next.reduce((sum, l) => sum + (parseFloat(l.qty) || 0) * (parseFloat(l.rate) || 0), 0);
-      if (totalAmt > 0) setAmount(totalAmt.toFixed(2));
+      setAmount(totalAmt.toFixed(2));
       return next;
     });
   };
 
   const save = async () => {
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
+    const lineSubtotal = lines.reduce((sum, line) => sum + (parseFloat(line.qty) || 0) * (parseFloat(line.rate) || 0), 0);
+    const amt = lines.length ? lineSubtotal : parseFloat(amount);
+    if (!amt || amt <= 0) { setError("Enter a valid subtotal"); return; }
     if (saleType === "party" && !customerName.trim()) {
       setError("Enter the customer / party name for a credit sale");
       return;
@@ -84,40 +95,32 @@ export default function SaleForm() {
 
       const formattedLines = lines.length > 0 ? lines.map((l) => ({
         description: l.description.trim() || "Item",
-        qty: parseFloat(l.qty) || 1,
+        qty: parseFloat(l.qty) || 0,
+        unit: l.unit.trim(),
         rate: parseFloat(l.rate) || 0,
-      })) : [{ description: notes.trim() || "Sale", qty: 1, rate: amt }];
+      })) : [{ description: notes.trim() || "Sale", qty: 1, unit: "", rate: amt }];
+      const totals = calculateInvoiceTotals(formattedLines, discount, 0);
+      if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
 
-      const itemSummaryText = lines.length > 0
-        ? lines.map((l) => `${l.description || 'Item'} (${l.qty} x $${l.rate})`).join(", ")
-        : "";
-      const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
+      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined };
 
       if (editId) {
         if (saleType === "party" || customerName.trim()) {
           await api.updateInvoice(editId, {
             clientName: customerName.trim(),
             clientPhone: customerPhone.trim(),
-            date: dateIso,
-            lines: formattedLines,
-            total: amt,
-            taxRate: 0,
-            notes: finalNotes || undefined,
+            ...common,
           });
         } else {
-          await api.updateSale(editId, { date: dateIso, amount: amt, currency, notes: finalNotes });
+          await api.updateSale(editId, { ...common, currency });
         }
       } else if (saleType === "cash") {
-        await api.createSale({ date: dateIso, amount: amt, currency, notes: finalNotes });
+        await api.createSale({ ...common, currency });
       } else {
         await api.createInvoice({
           clientName: customerName.trim(),
           clientPhone: customerPhone.trim(),
-          date: dateIso,
-          lines: formattedLines,
-          total: amt,
-          taxRate: 0,
-          notes: finalNotes || undefined,
+          ...common,
         });
       }
       router.back();
@@ -171,7 +174,7 @@ export default function SaleForm() {
           )}
 
           {/* Customer picker — placed immediately under Sale Type */}
-          {!editId && saleType === "party" && (
+          {saleType === "party" && (
             <Card style={{ marginBottom: theme.spacing.md }}>
               <PartyAutocompleteInput
                 testID="input-customer-name"
@@ -200,7 +203,7 @@ export default function SaleForm() {
 
             {/* Line Items / Products (Optional) */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>
-              <Text style={styles.label}>Itemized Items & Prices (Optional)</Text>
+              <Text style={styles.label}>Itemized Items (Optional)</Text>
               <Pressable onPress={addLine} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Ionicons name="add-circle-outline" size={16} color={theme.color.brandPrimary} />
                 <Text style={{ fontSize: 13, fontWeight: "700", color: theme.color.brandPrimary }}>+ Add Item</Text>
@@ -208,20 +211,28 @@ export default function SaleForm() {
             </View>
 
             {lines.map((item, idx) => (
-              <View key={idx} style={{ flexDirection: "row", gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <View key={idx} style={{ marginBottom: 10 }}>
                 <TextInput
-                  placeholder="Item Name"
+                  placeholder="Description"
                   placeholderTextColor={theme.color.muted}
                   value={item.description}
                   onChangeText={(val) => updateLine(idx, "description", val)}
-                  style={[styles.input, { flex: 2, marginTop: 0 }]}
+                  style={[styles.input, { marginTop: 0 }]}
                 />
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 6, alignItems: "center" }}>
                 <TextInput
                   placeholder="Qty"
                   placeholderTextColor={theme.color.muted}
                   value={item.qty}
                   keyboardType="numeric"
                   onChangeText={(val) => updateLine(idx, "qty", val)}
+                  style={[styles.input, { flex: 0.8, marginTop: 0 }]}
+                />
+                <TextInput
+                  placeholder="Unit"
+                  placeholderTextColor={theme.color.muted}
+                  value={item.unit}
+                  onChangeText={(val) => updateLine(idx, "unit", val)}
                   style={[styles.input, { flex: 1, marginTop: 0 }]}
                 />
                 <TextInput
@@ -235,11 +246,18 @@ export default function SaleForm() {
                 <Pressable onPress={() => removeLine(idx)} style={{ padding: 4 }}>
                   <Ionicons name="trash-outline" size={18} color={theme.color.error} />
                 </Pressable>
+                </View>
               </View>
             ))}
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Total Amount ($)</Text>
-            <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Subtotal Amount ($)</Text>
+            <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} editable={lines.length === 0} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, lines.length > 0 && { opacity: 0.72 }]} />
+            <Text style={[styles.label, { marginTop: 12 }]}>Discount ($, optional)</Text>
+            <TextInput testID="input-sale-discount" value={discount} onChangeText={setDiscount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input]} />
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
+              <Text style={styles.label}>Total after discount</Text>
+              <Text style={{ color: theme.color.brandPrimary, fontWeight: "700" }}>${Math.max(0, (parseFloat(amount) || 0) - (parseFloat(discount) || 0)).toFixed(2)}</Text>
+            </View>
             <Text style={[styles.label, { marginTop: 12 }]}>Details / Notes (Payment For / Information)</Text>
             <TextInput testID="input-sale-notes" value={notes} onChangeText={setNotes} placeholder="e.g. Sale of products, July invoice" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
           </Card>

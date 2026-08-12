@@ -22,6 +22,7 @@ import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput"
 import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
+import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -29,7 +30,7 @@ type Invoice = {
   clientName: string; clientPhone?: string;
   date: string; dueDate?: string;
   lines: InvoiceLine[];
-  notes?: string; taxLabel?: string; taxRate?: number;
+  notes?: string; taxLabel?: string; taxRate?: number; discount?: number; subtotal?: number; tax?: number;
   total: number; paidAt?: string;
   terms?: string;
 };
@@ -49,9 +50,9 @@ const invTotal = (inv: any): number => {
   return +(sub + sub * rate / 100).toFixed(2);
 };
 
-function calcTotal(lines: InvoiceLine[], taxRate = 0) {
-  const sub = lines.reduce((s, l) => s + lineAmt(l), 0);
-  return +(sub + sub * taxRate / 100).toFixed(2);
+function calcTotal(lines: InvoiceLine[], taxRate = 0, discount = 0) {
+  try { return calculateInvoiceTotals(lines, discount, taxRate).total; }
+  catch { return 0; }
 }
 
 function escapeHtml(v: any): string {
@@ -61,8 +62,10 @@ function escapeHtml(v: any): string {
 }
 
 function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeColors?: any, currencyCode: string = 'USD') {
-  const sub = inv.lines.reduce((s, l) => s + lineAmt(l), 0);
-  const tax = inv.taxRate ? +(sub * inv.taxRate / 100).toFixed(2) : 0;
+  const totals = calculateInvoiceTotals(inv.lines, inv.discount || 0, inv.taxRate || 0);
+  const sub = totals.subtotal;
+  const discount = totals.discount;
+  const tax = totals.tax;
   const invT = invTotal(inv);
   const paidOnThis = inv.status === "paid" ? invT : 0;
   const carry = +(prevBalance || 0).toFixed(2);
@@ -202,6 +205,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
     </div>
     <table class="totals-table">
       <tr><td>Subtotal</td><td>${money(sub)}</td></tr>
+      ${discount > 0 ? `<tr><td>Discount</td><td>-${money(discount)}</td></tr>` : ''}
       ${tax > 0 ? `<tr><td>${escapeHtml(inv.taxLabel || "Tax")} ${inv.taxRate}%</td><td>${money(tax)}</td></tr>` : ''}
       ${carry !== 0 ? `<tr><td>Previous Balance</td><td>${money(carry)}</td></tr>` : ''}
       ${paidOnThis > 0 ? `<tr><td>Amount Paid</td><td>-${money(paidOnThis)}</td></tr>` : ''}
@@ -674,6 +678,7 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
 
     <div class="totals">
       <div><span>Sub Total</span><span>${money(sub)}</span></div>
+      ${discount > 0 ? `<div><span>Discount</span><span>(-) ${money(discount)}</span></div>` : ''}
       ${tax > 0 ? `<div><span>${escapeHtml(inv.taxLabel || "Vat")} ${inv.taxRate}%</span><span>${money(tax)}</span></div>` : ''}
       ${carry !== 0 ? `<div><span>Previous Balance</span><span>${money(carry)}</span></div>` : ''}
       ${paidOnThis > 0 ? `<div><span>Payment Made</span><span>(-) ${money(paidOnThis)}</span></div>` : ''}
@@ -737,6 +742,7 @@ export default function InvoicesScreen() {
   const [terms, setTerms] = useState("");
   const [taxLabelInput, setTaxLabelInput] = useState("");
   const [taxRateInput, setTaxRateInput] = useState("");
+  const [discountInput, setDiscountInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -765,7 +771,7 @@ export default function InvoicesScreen() {
   const openNew = () => {
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(localTodayIso());
-    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setFormError("");
+    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setFormError("");
     // Pre-fill tax from global settings; user can override per-invoice.
     const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
     setTaxLabelInput(defLabel);
@@ -781,6 +787,7 @@ export default function InvoicesScreen() {
     setNotes(inv.notes || ""); setTerms(inv.terms || ""); setFormError("");
     setTaxLabelInput(inv.taxLabel || "");
     setTaxRateInput(inv.taxRate ? String(inv.taxRate) : "");
+    setDiscountInput(inv.discount ? String(inv.discount) : "");
     setShowForm(true); setSelected(null);
   };
 
@@ -798,7 +805,10 @@ export default function InvoicesScreen() {
       await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       const validLines = lines.filter((l) => l.description.trim());
       const rate = parseFloat(taxRateInput) || 0;
+      const discount = parseFloat(discountInput) || 0;
       const label = taxLabelInput.trim();
+      const totals = calculateInvoiceTotals(validLines, discount, rate);
+      if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
       const payload = {
         clientName: clientName.trim(), clientPhone: clientPhone.trim(),
         date: dateIso, dueDate: dueDateIso || undefined,
@@ -807,7 +817,10 @@ export default function InvoicesScreen() {
         terms: terms.trim() || undefined,
         taxLabel: rate > 0 && label ? label : (rate > 0 ? "Tax" : undefined),
         taxRate: rate,
-        total: calcTotal(validLines, rate),
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        tax: totals.tax,
+        total: totals.total,
       };
       if (editId) await api.updateInvoice(editId, payload);
       else await api.createInvoice(payload);
@@ -968,8 +981,8 @@ export default function InvoicesScreen() {
 
   // Detail view
   if (selected) {
-    const sub = selected.lines.reduce((s, l) => s + lineAmt(l), 0);
-    const tax = selected.taxRate ? +(sub * selected.taxRate / 100).toFixed(2) : 0;
+    const selectedTotals = calculateInvoiceTotals(selected.lines, selected.discount || 0, selected.taxRate || 0);
+    const tax = selectedTotals.tax;
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerBar}>
@@ -1008,10 +1021,11 @@ export default function InvoicesScreen() {
             {selected.lines.map((l, i) => (
               <View key={i} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: theme.color.divider }}>
                 <Text style={{ flex: 1, fontSize: 13, color: theme.color.onSurface }}>{l.description}</Text>
-                <Text style={{ fontSize: 13, color: theme.color.muted, marginHorizontal: 8 }}>{lineQty(l)} × {currSym}{lineRate(l).toFixed(2)}</Text>
+                <Text style={{ fontSize: 13, color: theme.color.muted, marginHorizontal: 8 }}>{lineQty(l)}{l.unit ? ` ${l.unit}` : ""} × {currSym}{lineRate(l).toFixed(2)}</Text>
                 <Text style={{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }}>{currSym}{lineAmt(l).toFixed(2)}</Text>
               </View>
             ))}
+            {selectedTotals.discount > 0 && <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}><Text style={styles.sub}>Discount</Text><Text style={styles.sub}>-{currSym}{selectedTotals.discount.toFixed(2)}</Text></View>}
             {tax > 0 && <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 }}><Text style={styles.sub}>{selected.taxLabel} ({selected.taxRate}%)</Text><Text style={styles.sub}>{currSym}{tax.toFixed(2)}</Text></View>}
             <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8, borderTopWidth: 2, borderTopColor: theme.color.brandPrimary, marginTop: 4 }}>
               <Text style={{ fontWeight: "700", fontSize: 15, color: theme.color.onSurface }}>Total</Text>
@@ -1207,9 +1221,13 @@ export default function InvoicesScreen() {
                       <TextInput value={taxRateInput} onChangeText={setTaxRateInput} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.color.muted} style={styles.input} />
                     </View>
                   </View>
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.label}>Discount ({currSym}, optional)</Text>
+                    <TextInput testID="input-invoice-discount" value={discountInput} onChangeText={setDiscountInput} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
+                  </View>
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.color.divider }}>
                     <Text style={{ fontWeight: "700", color: theme.color.onSurface }}>Total</Text>
-                    <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), parseFloat(taxRateInput) || 0).toFixed(2)}</Text>
+                    <Text style={{ fontWeight: "700", fontSize: 16, color: theme.color.brandPrimary }}>{currSym}{calcTotal(lines.filter((l) => l.description.trim()), parseFloat(taxRateInput) || 0, parseFloat(discountInput) || 0).toFixed(2)}</Text>
                   </View>
                 </Card>
 

@@ -9,6 +9,7 @@ import { V2InvestorLedgerService } from './investorLedgerService';
 import { buildPersistentV2Reports } from './persistentReports';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2PartyRole } from './types';
 import { round2 } from '../money';
+import { calculateInvoiceTotals } from '../utils/invoiceTotals';
 import type { AccountingPeriodPolicy } from './config';
 
 type AnyRecord = Record<string, any>;
@@ -350,7 +351,7 @@ export class V2AppService {
     const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
     if (role === 'customer') {
       let running = 0;
-      const ledger = active.map((row) => { const debit = cents(row.debit); const credit = cents(row.credit); running = cents(running + debit - credit); return { id: row.id, kind: row.type, date: row.date, ref: row.reference, notes: row.metadata.notes || '', debit, credit, balance: running }; });
+      const ledger = active.map((row) => { const debit = cents(row.debit); const credit = cents(row.credit); running = cents(running + debit - credit); return { id: row.id, kind: row.type, date: row.date, ref: row.reference, reason: row.metadata.reason || '', notes: row.metadata.notes || '', amount: Number(row.metadata.total || debit || credit || 0), debit, credit, balance: running }; });
       const totalInvoiced = cents(active.filter((row) => row.type === 'invoice').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       const totalPaid = cents(active.filter((row) => row.type === 'receipt').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles,
@@ -360,11 +361,11 @@ export class V2AppService {
     const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
     // [Finding A] Supplier credit/debit notes appear in the statement timeline
     // alongside payments (they, like a payment, adjust what we owe the supplier).
-    const notes = active.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
-    const payments = [...active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' })), ...notes];
+    const notes = active.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), reason: row.metadata.reason || '', notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
+    const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
     const billsTotal = cents(bills.reduce((sum, row) => sum + row.amount, 0)); const paymentsTotal = cents(payments.reduce((sum, row) => sum + row.amount, 0));
     const balance = cents(active.reduce((sum, row) => sum + Number(row.credit) - Number(row.debit), 0));
-    return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), billsTotal, paymentsTotal, balance };
+    return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), notes: notes.reverse(), billsTotal, paymentsTotal, balance };
   }
 
   async updateParty(id: string, patch: AnyRecord) { return this.documents.updateParty(id, patch); }
@@ -374,7 +375,7 @@ export class V2AppService {
     await this.repairPartyIdentities(context.bookId);
     const rows=await this.db.all<any>("SELECT s.id,s.type,s.date,s.reference,s.metadata,p.name AS party_name FROM v2_sources s LEFT JOIN v2_parties p ON p.id=json_extract(s.metadata,'$.partyId') WHERE s.book_id=? AND s.type IN ('cash_sale','invoice') ORDER BY s.date DESC,s.id DESC",[context.bookId]);
     const result=[];
-    for(const row of rows){const meta=JSON.parse(row.metadata||'{}');if(meta.deleted||meta.reversed)continue;const open=row.type==='invoice'?await this.repo.invoiceOpen(row.id):0;result.push({id:row.id,type:row.type,date:row.date,reference:row.reference,amount:Number(meta.total||0),partyId:meta.partyId,partyName:row.party_name,clientName:row.party_name,status:row.type==='cash_sale'?'paid':open<=0?'paid':open<Number(meta.total||0)?'partial':'unpaid',openAmount:open,notes:meta.notes,method:meta.method});}
+    for(const row of rows){const meta=JSON.parse(row.metadata||'{}');if(meta.deleted||meta.reversed)continue;const open=row.type==='invoice'?await this.repo.invoiceOpen(row.id):0;result.push({id:row.id,type:row.type,date:row.date,reference:row.reference,amount:Number(meta.total||0),total:Number(meta.total||0),partyId:meta.partyId,partyName:row.party_name,clientName:row.party_name,clientPhone:meta.clientPhone||'',status:row.type==='cash_sale'?'paid':open<=0?'paid':open<Number(meta.total||0)?'partial':'unpaid',openAmount:open,notes:meta.notes,method:meta.method,lines:Array.isArray(meta.lines)?meta.lines:[],discount:Number(meta.discount||0),subtotal:Number(meta.subtotal??meta.total??0),tax: Number(meta.tax||0),taxLabel:meta.taxLabel,taxRate:Number(meta.taxRate||0),dueDate:meta.dueDate,terms:meta.terms});}
     return result;
   }
 
@@ -465,8 +466,20 @@ export class V2AppService {
     return rows.flatMap((row) => { const meta = JSON.parse(row.metadata || '{}'); return meta.deleted || meta.reversed ? [] : [{ id: row.id, sourceType: row.type, date: row.date, amount: Number(meta.total || 0), supplierId: meta.partyId, supplierName: row.party_name, partyName: row.party_name, paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit', method: meta.method, invoiceNo: meta.invoiceNo || '', notes: meta.notes || '', photo: meta.photo || '' }]; });
   }
 
-  async createSale(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return postCashSale(this.repo, { ...c, date: input.date, amount: amount(input.amount), method: method(input.method), reference: input.reference, metadata: { notes: input.notes } }); }
-  async createInvoice(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: amount(input.total ?? input.amount), reference: input.invoiceNumber || input.reference, metadata: { clientPhone: input.clientPhone, dueDate: input.dueDate, lines: input.lines, notes: input.notes, terms: input.terms, taxLabel: input.taxLabel, taxRate: input.taxRate } }); }); }
+  async createSale(input: AnyRecord) {
+    const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    const lines = Array.isArray(input.lines) ? input.lines : [];
+    const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
+    const net = totals?.total ?? amount(input.total ?? input.amount);
+    return postCashSale(this.repo, { ...c, date: input.date, amount: net, method: method(input.method), reference: input.reference, metadata: { notes: input.notes, lines, discount: totals?.discount ?? Number(input.discount || 0), subtotal: totals?.subtotal ?? Number(input.subtotal ?? input.amount ?? net), tax: totals?.tax ?? 0, taxRate: Number(input.taxRate || 0) } });
+  }
+  async createInvoice(input: AnyRecord) {
+    const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    const lines = Array.isArray(input.lines) ? input.lines : [];
+    const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
+    const net = totals?.total ?? amount(input.total ?? input.amount);
+    return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postInvoice(this.repo, { ...c, date: input.date, partyId, amount: net, reference: input.invoiceNumber || input.reference, metadata: { clientPhone: input.clientPhone, dueDate: input.dueDate, lines, notes: input.notes, terms: input.terms, taxLabel: input.taxLabel, taxRate: Number(input.taxRate || 0), discount: totals?.discount ?? Number(input.discount || 0), subtotal: totals?.subtotal ?? Number(input.subtotal ?? net), tax: totals?.tax ?? 0 } }); });
+  }
   async createReceipt(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const allocations = (input.allocations || []).map((a: AnyRecord) => ({ invoiceSourceId: a.invoiceSourceId || a.invoiceId, amount: amount(a.amount ?? a.amountApplied) })); return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'customer', c.bookId); return postReceipt(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount), method: method(input.method), reference: input.reference, allocations, metadata: { mode: input.mode, notes: input.notes, taxLabel: input.taxLabel, taxRate: input.taxRate } }); }); }
   async createBill(input: AnyRecord) { const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period'); const cash = input.paymentType === 'cash'; return this.repo.runInTransaction(async () => { const partyId = await this.party(input, 'supplier', c.bookId); return postPurchase(this.repo, { ...c, date: input.date, partyId, amount: amount(input.amount ?? input.total), method: cash ? method(input.method) : undefined, metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo } }); }); }
   async createPayment(input: AnyRecord) {
@@ -574,7 +587,7 @@ export class V2AppService {
       // party the invoice/bill created.
       const partyId = await this.party(input, role, c.bookId);
       const post = kind === 'credit_note' ? postCreditNote : postDebitNote;
-      return post(this.repo, { ...c, date: input.date, partyId, invoiceSourceId: input.invoiceId || input.invoiceSourceId || null, amount: amount(input.amount), role });
+      return post(this.repo, { ...c, date: input.date, partyId, invoiceSourceId: input.invoiceId || input.invoiceSourceId || null, amount: amount(input.amount), role, reference: input.reference, reason: input.reason, notes: input.notes });
     });
   }
   async createCreditNote(input: AnyRecord) { return this.createNoteV2(input, 'credit_note'); }
@@ -1046,6 +1059,34 @@ export class V2AppService {
     const next = await this.editInput(input);
     return this.documents.replaceSource(id, sourceType, 'Edit sale', () => this.createSale(next));
   }
+  async updateNote(id: string, input: AnyRecord) {
+    const row = await this.db.first<{ type: string; date: string; reference: string | null; metadata: string }>(
+      "SELECT type,date,reference,metadata FROM v2_sources WHERE id=? AND type IN ('credit_note','debit_note')",
+      [id],
+    );
+    if (!row) throw new Error('Debit / credit note not found');
+    let prior: AnyRecord = {};
+    try { prior = JSON.parse(row.metadata || '{}'); } catch { prior = {}; }
+    const originalPartyId = String(prior.partyId || '');
+    const originalRole: 'customer' | 'supplier' = prior.role === 'supplier' ? 'supplier' : 'customer';
+    if (!originalPartyId) throw new Error('Debit / credit note has no party');
+    const next = await this.editInput({
+      date: input.date ?? row.date,
+      amount: input.amount ?? prior.total,
+      reference: input.reference ?? row.reference ?? '',
+      reason: input.reason ?? prior.reason ?? '',
+      notes: input.notes ?? prior.notes ?? '',
+    });
+    const create = row.type === 'credit_note' ? this.createCreditNote.bind(this) : this.createDebitNote.bind(this);
+    return this.documents.replaceSource(id, row.type, 'Edit debit / credit note', () => create({
+      ...next,
+      role: originalRole,
+      partyId: originalPartyId,
+      debtorId: originalRole === 'customer' ? originalPartyId : undefined,
+      supplierId: originalRole === 'supplier' ? originalPartyId : undefined,
+      invoiceSourceId: prior.invoiceSourceId || null,
+    }));
+  }
   async updateBill(id: string, input: AnyRecord) { const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]); if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found'); const next = await this.editInput(input); return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(next)); }
   async updateReceipt(id: string, input: AnyRecord) {
     const c = await this.activeContext(input.date); if (!c) throw new Error('No active versioned V2 book with an open accounting period');
@@ -1148,6 +1189,11 @@ export function createAppMutationRouter(v2: V2AppService) {
       throw new Error('Cannot delete unknown V2 purchase source');
     },
     updateInvoice: update('updateInvoice', 'invoice'), deleteInvoice: remove('deleteInvoice', 'invoice'),
+    updateNote: async (id: string, payload: AnyRecord) => {
+      const type = await v2.sourceType(id);
+      if (type === 'credit_note' || type === 'debit_note') return v2.updateNote(id, payload);
+      throw new Error('Cannot edit unknown V2 debit / credit note');
+    },
     updateExpense: update('updateExpense', 'expense'), deleteExpense: remove('deleteExpense', 'expense'),
     updatePayment: async (id: string, payload: AnyRecord) => {
       const type = await v2.sourceType(id);

@@ -335,6 +335,31 @@ describe('V2 UI contracts', () => {
     expect(glow).toContain('if (!motionEnabled)');
     expect(quick).toContain('if (hapticsEnabled && Platform.OS !== "web")');
     expect(tabs).toContain('if (hapticsEnabled && Platform.OS !== "web")');
+    const workspace = readSource('src/components/ReorderableWorkspaceGrid.tsx');
+    const glass = readSource('src/components/AnimatedGlassSurface.tsx');
+    const voiceFab = readSource('src/components/VoiceFab.tsx');
+    expect(workspace).toContain('!motionEnabled && {');
+    expect(workspace).toContain('boxShadow: "none"');
+    expect(workspace).toContain('isWeb && motionEnabled');
+    expect(glow).toContain('boxShadow: "none"');
+    expect(glass).toContain('boxShadow: "none"');
+    expect(voiceFab).toContain('backgroundColor: theme.color.brandPrimary');
+    expect(voiceFab).toContain('color={theme.color.onBrandPrimary}');
+  });
+  it.each(['customer/[id].tsx', 'supplier/[id].tsx'])('%s renders and edits debit / credit notes', (screen) => {
+    const source = readApp(screen);
+    expect(source).toContain(`${screen.startsWith('customer') ? 'r' : 't'}.kind === "credit_note"`);
+    expect(source).toContain('debit_note');
+    expect(source).toContain('api.updateNote');
+    expect(source).toContain('onRequestClose={closeNote}');
+  });
+  it('quick sales persist standardized units and optional fixed discounts', () => {
+    const sale = readApp('sale-form.tsx');
+    expect(sale).toContain('placeholder="Unit"');
+    expect(sale).toContain('unit: l.unit.trim()');
+    expect(sale).toContain('input-sale-discount');
+    expect(sale).toContain('discount: totals.discount');
+    expect(sale).toContain('editable={lines.length === 0}');
   });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');

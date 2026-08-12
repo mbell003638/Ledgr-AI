@@ -12,6 +12,7 @@ import { Card } from "@/src/components/UI";
 import { getCurrencySymbol } from "@/src/db/local";
 import { printHtml } from "@/src/utils/print";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 
 export default function SupplierDetail() {
   const theme = useTheme();
@@ -29,8 +30,38 @@ export default function SupplierDetail() {
   const [noteAmount, setNoteAmount] = useState("");
   const [noteReason, setNoteReason] = useState("");
   const [noteNotes, setNoteNotes] = useState("");
+  const [noteDate, setNoteDate] = useState(localTodayIso());
+  const [noteReference, setNoteReference] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState("");
+
+  const closeNote = () => {
+    setNoteKind(null);
+    setEditingNoteId(null);
+    setNoteAmount("");
+    setNoteDate(localTodayIso());
+    setNoteReference("");
+    setNoteReason("");
+    setNoteNotes("");
+    setNoteError("");
+  };
+
+  const openNewNote = () => {
+    closeNote();
+    setNoteKind("credit");
+  };
+
+  const openEditNote = (row: any) => {
+    closeNote();
+    setEditingNoteId(row.id);
+    setNoteKind(row.kind === "credit_note" ? "credit" : "debit");
+    setNoteAmount(String(row.amount));
+    setNoteDate(row.date || localTodayIso());
+    setNoteReference(row.reference || "");
+    setNoteReason(row.reason || "");
+    setNoteNotes(row.notes || "");
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -56,19 +87,22 @@ export default function SupplierDetail() {
     const timeline = [
       ...(supplier.bills || []).map((b: any) => ({ ...b, kind: "bill" })),
       ...(supplier.payments || []).map((p: any) => ({ ...p, kind: "payment" })),
+      ...(supplier.notes || []).map((n: any) => ({ ...n })),
     ].sort((a, b) => (a.date < b.date ? -1 : 1));
 
     let runningBalance = 0;
     const tableRows = timeline.map((item, i) => {
-      if (item.kind === 'bill') runningBalance += Number(item.amount) || 0;
+      const increasesPayable = item.kind === 'bill' || item.kind === 'debit_note';
+      if (increasesPayable) runningBalance += Number(item.amount) || 0;
       else runningBalance -= Number(item.amount) || 0;
+      const label = item.kind === 'credit_note' ? 'Credit Note' : item.kind === 'debit_note' ? 'Debit Note' : item.kind === 'bill' ? `Bill #${item.invoiceNo || item.id}` : 'Payment';
       
       return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
         <td>${esc(shortDate(item.date))}</td>
-        <td>${esc(item.kind === 'bill' ? 'Bill #' + (item.invoiceNo || item.id) : 'Payment')}</td>
-        <td>${esc(item.notes || item.reference || '—')}</td>
-        <td style="text-align:right">${item.kind === 'bill' ? fmtBase(item.amount, currency) : '—'}</td>
-        <td style="text-align:right">${item.kind === 'payment' ? fmtBase(item.amount, currency) : '—'}</td>
+        <td>${esc(label)}${item.reference ? ` #${esc(item.reference)}` : ''}</td>
+        <td>${esc([item.reason, item.notes].filter(Boolean).join(' — ') || '—')}</td>
+        <td style="text-align:right">${increasesPayable ? fmtBase(item.amount, currency) : '—'}</td>
+        <td style="text-align:right">${!increasesPayable ? fmtBase(item.amount, currency) : '—'}</td>
         <td style="text-align:right;font-weight:700">${fmtBase(runningBalance, currency)}</td>
       </tr>`;
     }).join('');
@@ -229,12 +263,15 @@ export default function SupplierDetail() {
     if (!data || !noteKind) return;
     const amt = parseFloat(noteAmount);
     if (!amt || amt <= 0) { setNoteError("Enter a valid amount."); return; }
+    const dateIso = normalizeDateInput(noteDate);
+    if (!isValidDateString(dateIso)) { setNoteError("Enter a valid date using YYYY-MM-DD."); return; }
     setNoteBusy(true); setNoteError("");
     try {
-      const payload = { supplierId: data.id, supplierName: data.name, date: new Date().toISOString().slice(0, 10), amount: amt, reason: noteReason, notes: noteNotes.trim() };
-      if (noteKind === "credit") await api.createCreditNote(payload);
+      const payload = { supplierId: data.id, supplierName: data.name, role: "supplier", date: dateIso, amount: amt, reference: noteReference.trim(), reason: noteReason.trim(), notes: noteNotes.trim() };
+      if (editingNoteId) await api.updateNote(editingNoteId, payload);
+      else if (noteKind === "credit") await api.createCreditNote(payload);
       else await api.createDebitNote(payload);
-      setNoteKind(null); setNoteAmount(""); setNoteNotes(""); setNoteReason("");
+      closeNote();
       await load();
     } catch (e: any) {
       setNoteError(e?.message || "Failed to save note.");
@@ -254,6 +291,7 @@ export default function SupplierDetail() {
   const timeline = [
     ...(data.bills || []).map((b: any) => ({ ...b, kind: "bill" })),
     ...(data.payments || []).map((p: any) => ({ ...p, kind: "payment" })),
+    ...(data.notes || []).map((n: any) => ({ ...n })),
   ].sort((a, b) => (a.date < b.date ? 1 : -1));
 
   return (
@@ -326,7 +364,7 @@ export default function SupplierDetail() {
 
             <Pressable
               testID="btn-debit-credit"
-              onPress={() => setNoteKind("credit")}
+              onPress={openNewNote}
               style={styles.btnOutline}
             >
               <Ionicons name="pricetag-outline" size={15} color={theme.color.onSurface} />
@@ -359,42 +397,56 @@ export default function SupplierDetail() {
         <Text style={styles.section}>Statement Timeline</Text>
         {timeline.length === 0 ? (
           <Text style={styles.empty}>No transactions recorded for this vendor.</Text>
-        ) : timeline.map((t) => (
+        ) : timeline.map((t) => {
+          const isCreditNote = t.kind === "credit_note";
+          const isDebitNote = t.kind === "debit_note";
+          const isNote = isCreditNote || isDebitNote;
+          const increasesPayable = t.kind === "bill" || isDebitNote;
+          const label = isCreditNote ? "Credit Note" : isDebitNote ? "Debit Note" : t.kind === "bill" ? "Bill" : "Payment";
+          return (
           <View
             key={`${t.kind}-${t.id}`}
             testID={`tl-${t.kind}-${t.id}`}
             style={styles.timelineRow}
           >
-            <View style={[styles.timelineDot, { backgroundColor: t.kind === "bill" ? theme.color.error : theme.color.success }]} />
+            <View style={[styles.timelineDot, { backgroundColor: increasesPayable ? theme.color.error : theme.color.success }]} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.tlTitle}>{t.kind === "bill" ? "Bill" : "Payment"} • {shortDate(t.date)}</Text>
-              <Text style={styles.tlSub}>{t.notes || t.reference || t.invoiceNo || "—"}</Text>
+              <Text style={styles.tlTitle}>{label}{t.reference ? ` #${t.reference}` : ""} • {shortDate(t.date)}</Text>
+              <Text style={styles.tlSub}>{[t.reason, t.notes].filter(Boolean).join(" — ") || t.invoiceNo || "—"}</Text>
             </View>
-            <Text style={[styles.tlAmount, { color: t.kind === "bill" ? theme.color.error : theme.color.success }]}>
-              {t.kind === "bill" ? "+" : "-"}{fmt(t.amount)}
+            <Text style={[styles.tlAmount, { color: increasesPayable ? theme.color.error : theme.color.success }]}>
+              {increasesPayable ? "+" : "-"}{fmt(t.amount)}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginLeft: 8 }}>
               <Pressable
                 accessibilityLabel="Edit"
                 hitSlop={8}
-                onPress={() => router.push({ pathname: t.kind === "bill" ? "/bill-form" : "/payment-form", params: { id: t.id } })}
+                onPress={() => { if (isNote) openEditNote(t); else router.push({ pathname: t.kind === "bill" ? "/bill-form" : "/payment-form", params: { id: t.id } }); }}
               >
                 <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
               </Pressable>
             </View>
           </View>
-        ))}
+          );
+        })}
         <View style={{ height: 60 }} />
       </ScrollView>
 
       {/* Note Modal */}
       {noteKind ? (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
+        <Modal visible transparent animationType="fade" onRequestClose={closeNote}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <View style={styles.modalBg}>
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>{noteKind === "credit" ? "Credit" : "Debit"} Note for {data.name}</Text>
+              <Text style={styles.modalTitle}>{editingNoteId ? "Edit" : "Issue"} {noteKind === "credit" ? "Credit" : "Debit"} Note for {data.name}</Text>
+              {!editingNoteId ? <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                {(["credit", "debit"] as const).map((kind) => <Pressable key={kind} onPress={() => setNoteKind(kind)} style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: noteKind === kind ? theme.color.brandPrimary : theme.color.border, backgroundColor: noteKind === kind ? `${theme.color.brandPrimary}20` : theme.color.surfaceSecondary }}><Text style={{ color: noteKind === kind ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "700" }}>{kind === "credit" ? "Credit Note" : "Debit Note"}</Text></Pressable>)}
+              </View> : null}
               {noteError ? <Text style={styles.modalErr}>{noteError}</Text> : null}
+              <Text style={styles.modalLabel}>Date</Text>
+              <TextInput value={noteDate} onChangeText={setNoteDate} placeholder="YYYY-MM-DD" style={styles.modalInput} />
+              <Text style={styles.modalLabel}>Reference (optional)</Text>
+              <TextInput value={noteReference} onChangeText={setNoteReference} placeholder="CN-001 / DN-001" style={styles.modalInput} />
               <Text style={styles.modalLabel}>Amount ({currency})</Text>
               <TextInput
                 value={noteAmount}
@@ -418,7 +470,7 @@ export default function SupplierDetail() {
                 style={styles.modalInput}
               />
               <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-                <Pressable onPress={() => setNoteKind(null)} style={[styles.modalBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                <Pressable onPress={closeNote} style={[styles.modalBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                   <Text style={{ color: theme.color.onSurface }}>Cancel</Text>
                 </Pressable>
                 <Pressable onPress={saveNote} disabled={noteBusy} style={[styles.modalBtn, { backgroundColor: theme.color.brandPrimary, flex: 1 }]}>

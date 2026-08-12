@@ -75,7 +75,8 @@ describe('Finding A — credit/debit notes route through the V2 ledger', () => {
       await service.createDebitNote({ supplierId, supplierName: 'VendorCo', partyId: supplierId, date: '2026-02-07', amount: 40, role: 'supplier' });
       const after: any = await service.getPartyDetail(supplierId, 'supplier');
       expect(after.balance).toBe(240);                        // debit note increases AP
-      expect(after.payments.some((p: any) => p.kind === 'debit_note')).toBe(true);
+      expect(after.notes.some((p: any) => p.kind === 'debit_note')).toBe(true);
+      expect(after.paymentsTotal).toBe(0);                    // notes are not cash payments
       expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
     } finally { close(); }
   });
@@ -88,6 +89,50 @@ describe('Finding A — credit/debit notes route through the V2 ledger', () => {
       await service.createCreditNote({ supplierId, supplierName: 'VendorCo', partyId: supplierId, date: '2026-02-08', amount: 30, role: 'supplier' });
       const after: any = await service.getPartyDetail(supplierId, 'supplier');
       expect(after.balance).toBe(170);                        // 200 − 30 credited back
+      expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
+    } finally { close(); }
+  });
+
+  it('edits a note by reversal/repost and preserves its visible details', async () => {
+    const { runner, close, service } = await boot();
+    try {
+      const inv = await service.createInvoice({ date: '2026-02-01', total: 300, clientName: 'Edit Note' });
+      const partyId = String((inv.source.metadata as any).partyId);
+      const other = await service.createBill({ date: '2026-02-02', amount: 10, supplierName: 'Other Party', paymentType: 'credit' });
+      const otherPartyId = String((other.source.metadata as any).partyId);
+      const note = await service.createCreditNote({ debtorId: partyId, clientName: 'Edit Note', date: '2026-02-05', amount: 25, role: 'customer', reference: 'CN-1', reason: 'Return', notes: 'One unit' });
+      await service.updateNote(note.source.id, { date: '2026-02-06', amount: 40, reference: '', reason: 'Damaged return', notes: 'Two units', partyId: otherPartyId, supplierId: otherPartyId, role: 'supplier' });
+      const detail: any = await service.getPartyDetail(partyId, 'customer');
+      const visible = detail.statement.ledger.find((row: any) => row.kind === 'credit_note');
+      expect(detail.balance).toBe(260);
+      expect(visible).toMatchObject({ ref: null, reason: 'Damaged return', notes: 'Two units', amount: 40 });
+      const otherDetail: any = await service.getPartyDetail(otherPartyId, 'supplier');
+      expect(otherDetail.notes).toHaveLength(0);              // caller cannot migrate note across party/role
+      expect(otherDetail.balance).toBe(10);
+      const original: any = await runner.first('SELECT metadata FROM v2_sources WHERE id=?', [note.source.id]);
+      expect(Boolean(JSON.parse(original.metadata).reversed)).toBe(true);
+      expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
+    } finally { close(); }
+  });
+});
+
+describe('standardized sale and invoice lines', () => {
+  it('persists units and discounts while posting the discounted total', async () => {
+    const { close, service } = await boot();
+    try {
+      const invoice = await service.createInvoice({
+        date: '2026-03-01', clientName: 'Unit Buyer', discount: 20, taxRate: 10,
+        lines: [{ description: 'Cases', qty: 2, unit: 'dzn', rate: 100 }],
+      });
+      expect((invoice.source.metadata as any)).toMatchObject({ subtotal: 200, discount: 20, tax: 18, total: 198 });
+      const listed: any = (await service.listSalesAndInvoices()).find((row: any) => row.id === invoice.source.id);
+      expect(listed.lines).toEqual([{ description: 'Cases', qty: 2, unit: 'dzn', rate: 100 }]);
+      expect(listed.discount).toBe(20);
+      const party = await service.getPartyDetail(String((invoice.source.metadata as any).partyId), 'customer');
+      expect(party?.balance).toBe(198);
+
+      const cash = await service.createSale({ date: '2026-03-02', discount: 5, lines: [{ description: 'Set', qty: 2, unit: 'sets', rate: 25 }] });
+      expect((cash.source.metadata as any)).toMatchObject({ subtotal: 50, discount: 5, total: 45 });
       expect((await service.repo.reconcileBook('book1')).balanced).toBe(true);
     } finally { close(); }
   });

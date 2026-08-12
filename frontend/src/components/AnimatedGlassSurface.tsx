@@ -41,7 +41,11 @@ export function AnimatedGlassSurface(props: AnimatedGlassSurfaceProps) {
     return (
       <View
         {...rest}
-        style={[{ position: "relative", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder }, style]}
+        style={[
+          { position: "relative", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder },
+          style,
+          { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
+        ]}
       >
         {children}
       </View>

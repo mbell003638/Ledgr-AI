@@ -201,11 +201,11 @@ export default function VoiceFab() {
         onPress={start}
         style={({ pressed }) => [
           styles.fab,
-          { backgroundColor: theme.color.brandSecondary },
+          { backgroundColor: theme.color.brandPrimary },
           pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
         ]}
       >
-        <Ionicons name="mic" size={26} color="#000" />
+        <Ionicons name="mic" size={26} color={theme.color.onBrandPrimary} />
       </Pressable>
 
       <Modal transparent visible={isModalOpen} animationType="fade" onRequestClose={reset}>

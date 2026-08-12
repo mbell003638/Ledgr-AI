@@ -16,6 +16,7 @@ import { amountToWords } from "@/src/utils/numberToWords";
 import { getCurrencySymbol } from "@/src/db/local";
 import { printHtml } from "@/src/utils/print";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 
 type Debtor = {
   id: string;
@@ -139,8 +140,38 @@ export default function CustomerDetailScreen() {
   const [noteAmount, setNoteAmount] = useState("");
   const [noteReason, setNoteReason] = useState("");
   const [noteNotes, setNoteNotes] = useState("");
+  const [noteDate, setNoteDate] = useState(localTodayIso());
+  const [noteReference, setNoteReference] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState("");
+
+  const closeNote = () => {
+    setNoteKind(null);
+    setEditingNoteId(null);
+    setNoteAmount("");
+    setNoteDate(localTodayIso());
+    setNoteReference("");
+    setNoteReason("");
+    setNoteNotes("");
+    setNoteError("");
+  };
+
+  const openNewNote = () => {
+    closeNote();
+    setNoteKind("credit");
+  };
+
+  const openEditNote = (row: any, amount: number) => {
+    closeNote();
+    setEditingNoteId(row.id);
+    setNoteKind(row.kind === "credit_note" ? "credit" : "debit");
+    setNoteAmount(String(row.amount || amount));
+    setNoteDate(row.date || localTodayIso());
+    setNoteReference(row.ref || "");
+    setNoteReason(row.reason || "");
+    setNoteNotes(row.notes || "");
+  };
 
   const load = useCallback(async () => {
     try {
@@ -208,12 +239,15 @@ export default function CustomerDetailScreen() {
     if (!selected || !noteKind) return;
     const amt = parseFloat(noteAmount);
     if (!amt || amt <= 0) { setNoteError("Enter a valid amount."); return; }
+    const dateIso = normalizeDateInput(noteDate);
+    if (!isValidDateString(dateIso)) { setNoteError("Enter a valid date using YYYY-MM-DD."); return; }
     setNoteBusy(true); setNoteError("");
     try {
-      const payload = { customerId: selected.id, customerName: selected.name, date: new Date().toISOString().slice(0, 10), amount: amt, reason: noteReason, notes: noteNotes.trim() };
-      if (noteKind === "credit") await api.createCreditNote(payload);
+      const payload = { customerId: selected.id, customerName: selected.name, date: dateIso, amount: amt, reference: noteReference.trim(), reason: noteReason.trim(), notes: noteNotes.trim() };
+      if (editingNoteId) await api.updateNote(editingNoteId, payload);
+      else if (noteKind === "credit") await api.createCreditNote(payload);
       else await api.createDebitNote(payload);
-      setNoteKind(null); setNoteAmount(""); setNoteNotes(""); setNoteReason("");
+      closeNote();
       await load();
     } catch (e: any) {
       setNoteError(e?.message || "Failed to save note.");
@@ -303,7 +337,7 @@ export default function CustomerDetailScreen() {
 
             <Pressable
               testID="btn-debit-credit"
-              onPress={() => setNoteKind("credit")}
+              onPress={openNewNote}
               style={styles.btnOutline}
             >
               <Ionicons name="pricetag-outline" size={15} color={theme.color.onSurface} />
@@ -340,22 +374,26 @@ export default function CustomerDetailScreen() {
         ) : (
           (statement?.ledger || []).map((r: any, idx: number) => {
             const isInv = r.kind === "invoice";
+            const isCredit = r.kind === "credit_note" || r.kind === "receipt" || r.kind === "payment";
+            const isNote = r.kind === "credit_note" || r.kind === "debit_note";
+            const label = r.kind === "credit_note" ? "Credit Note" : r.kind === "debit_note" ? "Debit Note" : isInv ? "Invoice" : "Payment";
             const amt = r.debit || r.credit || 0;
             return (
               <Card key={idx} style={{ marginBottom: 8, padding: 12 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: isInv ? theme.color.error : theme.color.success }} />
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: isCredit ? theme.color.success : theme.color.error }} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }}>
-                        {r.ref || (isInv ? "Invoice" : "Payment")} • {shortDate(r.date)}
+                        {label}{r.ref ? ` #${r.ref}` : ""} • {shortDate(r.date)}
                       </Text>
-                      <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 2 }}>{r.notes || "—"}</Text>
+                      <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 2 }}>{[r.reason, r.notes].filter(Boolean).join(" — ") || "—"}</Text>
                     </View>
                   </View>
-                  <Text style={{ fontSize: 14, fontWeight: "800", color: isInv ? theme.color.error : theme.color.success }}>
-                    {isInv ? `+${currency}${amt.toFixed(2)}` : `-${currency}${amt.toFixed(2)}`}
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: isCredit ? theme.color.success : theme.color.error }}>
+                    {isCredit ? "-" : "+"}{currency}{amt.toFixed(2)}
                   </Text>
+                  {isNote ? <Pressable accessibilityLabel={`Edit ${label}`} hitSlop={8} onPress={() => openEditNote(r, amt)}><Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} /></Pressable> : null}
                 </View>
               </Card>
             );
@@ -365,13 +403,18 @@ export default function CustomerDetailScreen() {
 
       {/* Note Modal */}
       {noteKind ? (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setNoteKind(null)}>
+        <Modal visible transparent animationType="fade" onRequestClose={closeNote}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 }}>
             <View style={{ backgroundColor: theme.color.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: theme.color.border }}>
               <Text style={{ fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: 12 }}>
-                Issue Debit / Credit Note for {selected.name}
+                {editingNoteId ? "Edit" : "Issue"} {noteKind === "credit" ? "Credit" : "Debit"} Note for {selected.name}
               </Text>
+              {!editingNoteId ? <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                {(["credit", "debit"] as const).map((kind) => <Pressable key={kind} onPress={() => setNoteKind(kind)} style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: noteKind === kind ? theme.color.brandPrimary : theme.color.border, backgroundColor: noteKind === kind ? `${theme.color.brandPrimary}20` : theme.color.surfaceSecondary }}><Text style={{ color: noteKind === kind ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "700" }}>{kind === "credit" ? "Credit Note" : "Debit Note"}</Text></Pressable>)}
+              </View> : null}
+              <TextInput placeholder="Date (YYYY-MM-DD)" placeholderTextColor={theme.color.muted} value={noteDate} onChangeText={setNoteDate} style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 10 }} />
+              <TextInput placeholder="Reference (optional)" placeholderTextColor={theme.color.muted} value={noteReference} onChangeText={setNoteReference} style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 10 }} />
               <TextInput
                 placeholder="Amount"
                 placeholderTextColor={theme.color.muted}
@@ -381,15 +424,16 @@ export default function CustomerDetailScreen() {
                 style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 10 }}
               />
               <TextInput
-                placeholder="Reason / Notes"
+                placeholder="Reason"
                 placeholderTextColor={theme.color.muted}
-                value={noteNotes}
-                onChangeText={setNoteNotes}
+                value={noteReason}
+                onChangeText={setNoteReason}
                 style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 16 }}
               />
+              <TextInput placeholder="Notes (optional)" placeholderTextColor={theme.color.muted} value={noteNotes} onChangeText={setNoteNotes} style={{ backgroundColor: theme.color.surfaceSecondary, color: theme.color.onSurface, padding: 10, borderRadius: 8, marginBottom: 16 }} />
               {noteError ? <Text style={{ color: theme.color.error, fontSize: 12, marginBottom: 10 }}>{noteError}</Text> : null}
               <View style={{ flexDirection: "row", gap: 10, justifyContent: "flex-end" }}>
-                <Pressable onPress={() => setNoteKind(null)} style={{ padding: 10 }}>
+                <Pressable onPress={closeNote} style={{ padding: 10 }}>
                   <Text style={{ color: theme.color.muted, fontWeight: "600" }}>Cancel</Text>
                 </Pressable>
                 <Pressable onPress={saveNote} disabled={noteBusy} style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }}>
