@@ -222,7 +222,7 @@ export default function CashBookScreen() {
                     <Text style={[styles.chipText, inKind === "general" && styles.chipTextOn]}>General</Text>
                   </Pressable>
                   <Pressable testID="chip-cashin-capital" onPress={selectCapitalKind} style={[styles.chip, inKind === "capital" && styles.chipOn]}>
-                    <Text style={[styles.chipText, inKind === "capital" && styles.chipTextOn]}>Investor capital</Text>
+                    <Text style={[styles.chipText, inKind === "capital" && styles.chipTextOn]}>Add Capital</Text>
                   </Pressable>
                 </View>
                 {inKind === "capital" ? (
@@ -235,7 +235,7 @@ export default function CashBookScreen() {
                         </Pressable>
                       ))}
                     </View>
-                  ) : <Text style={styles.chipHint}>No investors yet — add one in Parties first.</Text>
+                  ) : <Text style={styles.chipHint}>No capital accounts yet — add one in Accounts first.</Text>
                 ) : null}
               </View>
             ) : null}

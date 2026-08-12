@@ -142,7 +142,7 @@ export default function Reconcile() {
     const partyName = supplier?.name || (party === "customer" ? "Customer" : "Supplier");
     const preview =
       `Type: ${entryLabel(e)}\n` +
-      `Party: ${partyName}\n` +
+      `Business account: ${partyName}\n` +
       `Date: ${e.date}\n` +
       `Amount: ${fmt(e.amount, currencySymbol)}`;
     Alert.alert(

@@ -73,7 +73,7 @@ describe('Source contracts — tile balance and entry points', () => {
     expect(apiSource).toMatch(/getInvestorLedger:[\s\S]*?return mergedInvestorLedgerDetail\(id\)/);
   });
 
-  it('Parties tile renders the computed balance (investor.currentCapital), never opening_contribution', () => {
+  it('Capital Accounts tile renders the computed balance (investor.currentCapital), never opening_contribution', () => {
     expect(partiesSource).toContain('Number(investor.currentCapital || 0)');
     expect(partiesSource).not.toContain('openingCapital');
     expect(partiesSource).toContain('Capital {fmt(item.capitalBalance || 0)}');
@@ -92,14 +92,14 @@ describe('Source contracts — tile balance and entry points', () => {
     expect(deposit).not.toContain('v2SourceId');
   });
 
-  it('Cash Book "Investor capital" path posts through api.depositInvestorCapital, not a plain cash entry', () => {
-    expect(cashbookSource).toContain('Investor capital');
+  it('Cash Book "Add Capital" path posts through api.depositInvestorCapital, not a plain cash entry', () => {
+    expect(cashbookSource).toContain('Add Capital');
     expect(cashbookSource).toContain('api.depositInvestorCapital(investorId, payload)');
     expect(cashbookSource).toContain('api.listInvestors()');
-    expect(cashbookSource).toContain('No investors yet — add one in Parties first.');
+    expect(cashbookSource).toContain('No capital accounts yet — add one in Accounts first.');
   });
 
-  it('Parties "+ Capital" quick action opens the existing deposit flow on the investor detail screen', () => {
+  it('Accounts "Add Capital" quick action opens the existing capital flow', () => {
     expect(partiesSource).toContain("params: { id: item.id, action: 'deposit' }");
     expect(investorSource).toMatch(/requestedAction === 'deposit'[\s\S]*?setAction\(requestedAction\)/);
   });

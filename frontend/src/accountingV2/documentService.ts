@@ -29,7 +29,7 @@ export class V2DocumentService {
 
   async updateParty(id: string, patch: Partial<Pick<V2Party, 'name'|'phone'|'email'|'roles'>>) {
     const old = await this.repo.db.first<any>('SELECT * FROM v2_parties WHERE id=?', [id]);
-    if (!old) throw new Error('Party not found');
+    if (!old) throw new Error('Business account not found');
     const roles = patch.roles ? JSON.stringify([...new Set(patch.roles)]) : old.roles;
     await this.repo.db.run('UPDATE v2_parties SET name=?, phone=?, email=?, roles=? WHERE id=?', [patch.name ?? old.name, patch.phone ?? old.phone, patch.email ?? old.email, roles, id]);
     return { ...old, name: patch.name ?? old.name, phone: patch.phone ?? old.phone, email: patch.email ?? old.email, roles: JSON.parse(roles) };
@@ -37,7 +37,7 @@ export class V2DocumentService {
 
   async archiveParty(id: string) {
     const party = await this.repo.db.first<any>('SELECT * FROM v2_parties WHERE id=?', [id]);
-    if (!party) throw new Error('Party not found');
+    if (!party) throw new Error('Business account not found');
     const used = await this.repo.db.first('SELECT id FROM v2_sources WHERE book_id=? AND (json_extract(metadata,\'$.partyId\')=? OR json_extract(metadata,\'$.customerId\')=?) LIMIT 1', [party.book_id, id, id]);
     if (used) throw new Error('Cannot archive party with accounting sources');
     await this.repo.db.run('UPDATE v2_parties SET archived=1 WHERE id=?', [id]);

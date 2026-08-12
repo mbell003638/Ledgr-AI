@@ -322,7 +322,7 @@ describe('V2 UI contracts', () => {
     expect(parties).toContain('partnerConfigured || investors.length > 0');
     expect(parties).toContain("['all', 'customer', 'supplier', 'partner']");
     expect(quick).toContain('config?.style === "retail_partnership" || investors.length > 0');
-    expect(quick).toContain('Add Party / Investor');
+    expect(quick).toContain('Add Business Account');
   });
   it('disables motion and haptics together and follows the device Reduce Motion setting', () => {
     const context = readSource('src/context/ThemeContext.tsx');

@@ -57,14 +57,14 @@ describe('buildMonthlyReportHtml — structure', () => {
     expect(html).toContain('Net Profit');
     expect(html).toContain('Profit Before Commission');
     expect(html).toContain('Commission (18%)');
-    expect(html).toContain("Each Partner's Share (50/50)");
+    expect(html).toContain("Profit Share (50/50)");
     // Sections
     expect(html).toContain('>ASSETS<');
     expect(html).toContain('>LIABILITIES<');
-    expect(html).toContain('DRAWINGS THIS PERIOD');
+    expect(html).toContain('CAPITAL WITHDRAWALS THIS PERIOD');
     expect(html).toContain('Total Assets');
     // Reconciliation
-    expect(html).toContain('Partner Stakes Reconciliation');
+    expect(html).toContain('Capital Accounts Reconciliation');
     expect(html).toContain('Amit Opening');
     expect(html).toContain('Amit Ending Stake');
     expect(html).toContain('Rahim Ending Stake');
@@ -95,9 +95,9 @@ describe('buildMonthlyReportHtml — solo / empty handling', () => {
     const html = buildMonthlyReportHtml(baseInput({
       partnerCount: 0, partners: [], drawings: [], partnerShareEach: 0, splitLabel: '',
     }), 'navy_gold');
-    expect(html).not.toContain("Each Partner's Share");
-    expect(html).not.toContain('Partner Stakes Reconciliation');
-    expect(html).not.toContain('DRAWINGS THIS PERIOD');
+    expect(html).not.toContain("Profit Share");
+    expect(html).not.toContain('Capital Accounts Reconciliation');
+    expect(html).not.toContain('CAPITAL WITHDRAWALS THIS PERIOD');
     // Solo still shows the core hero rows.
     expect(html).toContain('Net Profit');
     expect(html).toContain('Profit Before Commission');

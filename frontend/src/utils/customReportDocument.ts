@@ -24,7 +24,7 @@
  * trivially unit-testable in a plain Node/jest environment.
  */
 
-import type { CustomReportOutput, CustomReportRow, CustomReportSection } from '../accountingV2/customReports';
+import { customReportBreakdownRows, type CustomReportBreakdown, type CustomReportOutput, type CustomReportRow, type CustomReportSection } from '../accountingV2/customReports';
 import { escapeHtml, money, resolveReportPalette } from './reportDocument';
 
 // ---------- Shared row derivation (used by BOTH the PDF and the native preview) ----------
@@ -105,6 +105,15 @@ export type CustomReportShareOptions = { pnl?: CustomReportPnl; summary?: string
 export function customReportShareText(output: CustomReportOutput, opts: CustomReportShareOptions = {}): string {
   const sym = opts.currencySymbol || '$';
   const lines = ['Ledgr Custom Report', `Period: ${output.from || 'All time'} to ${output.to || 'All time'}`];
+  const addBreakdown = (groups: CustomReportBreakdown[], useDrCr = false) => {
+    for (const group of groups) {
+      for (const row of customReportBreakdownRows(group, output.detailLevel)) {
+        const indent = row.kind === 'detail' ? '  ' : '';
+        const code = row.accountCode && row.kind !== 'detail' ? ` (${row.accountCode})` : '';
+        lines.push(`${indent}${row.label}${code}: ${useDrCr ? drCrLabel(row, sym) : money(row.amount, sym)}`);
+      }
+    }
+  };
   for (const section of output.sections) {
     lines.push('', section.title.toUpperCase());
     if (section.id === 'profit') {
@@ -116,14 +125,22 @@ export function customReportShareText(output: CustomReportOutput, opts: CustomRe
       lines.push(`Liabilities: ${money(num(row.liabilities), sym)}`);
       lines.push(`Equity: ${money(num(row.equity), sym)}`);
       lines.push(`Liabilities + Equity: ${money(round2(num(row.liabilities) + num(row.equity)), sym)}`);
+      if (output.detailLevel !== 'consolidated' && section.breakdown?.length) {
+        lines.push('Account breakdown'); addBreakdown(section.breakdown);
+      }
     } else if (section.id === 'trialBalance') {
       if (!section.rows.length) { lines.push('No entries'); continue; }
       for (const row of section.rows) {
+        const breakdown = section.breakdown?.find((group) => group.accountCode === String(row.accountCode));
+        if (breakdown && output.detailLevel !== 'consolidated' && breakdown.items.length) { addBreakdown([breakdown], true); continue; }
         const code = row.accountCode !== undefined ? ` (${row.accountCode})` : '';
         lines.push(`${row.accountName || 'Account'}${code}: ${drCrLabel(row, sym)}`);
       }
       const totals = trialBalanceTotals(section.rows);
       lines.push(`Totals: Dr ${money(totals.debit, sym)} · Cr ${money(totals.credit, sym)}`);
+    } else if ((section.id === 'debtors' || section.id === 'creditors' || section.id === 'members') && section.breakdown) {
+      if (!section.breakdown.length) lines.push('No entries');
+      else addBreakdown(section.breakdown);
     } else {
       const groups = section.groups || [{ key: '', rows: section.rows, total: section.total || 0 }];
       if (!section.rows.length) { lines.push('No entries'); continue; }
@@ -181,6 +198,13 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
 
   const sectionLabel = (title: string) => `<div class="section-label">${escapeHtml(title.toUpperCase())}</div>`;
 
+  const breakdownHtml = (groups: CustomReportBreakdown[], useDrCr = false) => groups.map((group) => customReportBreakdownRows(group, input.output.detailLevel).map((row) => {
+    const code = row.accountCode && row.kind !== 'detail' ? ` <span class="tb-code">(${escapeHtml(row.accountCode)})</span>` : '';
+    const classes = `line-row breakdown-${row.kind}${row.kind === 'subtotal' ? ' total-row' : ''}`;
+    const value = useDrCr ? drCrLabel(row, sym) : money(row.amount, sym);
+    return `<div class="${classes}"><span class="line-label${row.kind === 'subtotal' ? ' total-label' : ''}">${escapeHtml(row.label)}${code}</span><span class="num${row.kind === 'subtotal' ? ' total-num' : ''}">${escapeHtml(value)}</span></div>`;
+  }).join('')).join('');
+
   const renderProfit = (section: CustomReportSection): string => {
     const rows = buildPnlRows(input.pnl || section.rows[0] || {});
     const body = rows.map((r) => r.net ? `
@@ -198,6 +222,8 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
   const renderTrialBalance = (section: CustomReportSection): string => {
     if (!section.rows.length) return `<section class="report-section">${sectionLabel(section.title)}<div class="empty">No entries</div></section>`;
     const body = section.rows.map((row) => {
+      const breakdown = section.breakdown?.find((group) => group.accountCode === String(row.accountCode));
+      if (breakdown && input.output.detailLevel !== 'consolidated' && breakdown.items.length) return `<tr><td colspan="3" class="tb-breakdown">${breakdownHtml([breakdown], true)}</td></tr>`;
       const zero = num(row.debit) === 0 && num(row.credit) === 0;
       const code = row.accountCode !== undefined ? ` <span class="tb-code">(${escapeHtml(row.accountCode)})</span>` : '';
       return `
@@ -237,6 +263,7 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
           <span class="line-label total-label">Liabilities + Equity</span>
           <span class="num total-num">${escapeHtml(money(round2(liabilities + equity), sym))}</span>
         </div>
+        ${input.output.detailLevel !== 'consolidated' && section.breakdown?.length ? `<div class="reg-group-label">ACCOUNT BREAKDOWN</div>${breakdownHtml(section.breakdown)}` : ''}
       </div>
     </section>`;
   };
@@ -265,10 +292,16 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
     return `<section class="report-section">${sectionLabel(section.title)}<div class="lines">${body}${total}</div></section>`;
   };
 
+  const renderBreakdownSection = (section: CustomReportSection): string => {
+    const groups = section.breakdown || [];
+    return `<section class="report-section">${sectionLabel(section.title)}${groups.length ? `<div class="lines">${breakdownHtml(groups)}</div>` : '<div class="empty">No entries</div>'}</section>`;
+  };
+
   const sectionsHtml = input.output.sections.map((section) => {
     if (section.id === 'profit') return renderProfit(section);
     if (section.id === 'trialBalance') return renderTrialBalance(section);
     if (section.id === 'balanceSheet') return renderBalanceSheet(section);
+    if (section.id === 'debtors' || section.id === 'creditors' || section.id === 'members') return renderBreakdownSection(section);
     return renderRegister(section);
   }).join('\n');
 
@@ -334,6 +367,8 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
     .line-label { color: var(--ink); flex: 1; min-width: 0; }
     .reg-date { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .reg-group-label { color: ${p.heading}; font-weight: 700; font-size: 11px; margin: 12px 0 2px; }
+    .breakdown-detail .line-label { padding-left: 18px; color: var(--muted); }
+    .tb-breakdown { padding: 0 !important; }
     .reg-group-total .line-label, .reg-group-total .num { font-weight: 700; color: var(--muted); }
     .total-row { border-bottom: none; border-top: 2px solid var(--ink); margin-top: 2px; }
     .total-label { font-weight: 800; }

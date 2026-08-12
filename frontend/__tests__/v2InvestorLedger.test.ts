@@ -95,8 +95,8 @@ describe('V2 partnership investor ledger', () => {
   it('rejects investor details and postings for a standard entity book', async () => {
     const { book, ledger, close } = await setup('standard');
     try {
-      await expect(ledger.detail(book.id, 'owner')).rejects.toThrow(/Partnership Mode/i);
-      await expect(ledger.deposit({ bookId: book.id, memberId: 'owner', date: '2026-07-10', amount: 10 })).rejects.toThrow(/Partnership Mode/i);
+      await expect(ledger.detail(book.id, 'owner')).rejects.toThrow(/Equity Split/i);
+      await expect(ledger.deposit({ bookId: book.id, memberId: 'owner', date: '2026-07-10', amount: 10 })).rejects.toThrow(/Equity Split/i);
     } finally { close(); }
   });
 });

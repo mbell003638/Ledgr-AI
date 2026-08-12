@@ -474,7 +474,7 @@ export const api = {
   createParty: async (p: any) => {
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const name = (p.name || '').trim();
-    if (!name) throw new Error('Party name is required');
+    if (!name) throw new Error('Business account name is required');
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);

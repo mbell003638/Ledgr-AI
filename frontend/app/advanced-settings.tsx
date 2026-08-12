@@ -432,7 +432,7 @@ export default function AdvancedSettingsScreen() {
                   </View>
                 </View>
               </AccordionRow>
-              <AccordionRow title="Accounting & Workflow" subtitle={accountingStyle === 'retail_partnership' ? "Basis, Style, Investors" : "Basis, Style"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Accounting & Workflow" subtitle={accountingStyle === 'retail_partnership' ? "Basis, Style, Capital Accounts" : "Basis, Style"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.label}>Accounting Basis</Text>
                   <View style={styles.modeRow}>
@@ -488,7 +488,7 @@ export default function AdvancedSettingsScreen() {
 
                   {accountingStyle === 'retail_partnership' ? (
                     <>
-                      <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Investors</Text>
+                      <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Capital Accounts</Text>
                       {members.map((m, i) => (
                         <View key={`member-${i}`} style={styles.memberCard}>
                           <View style={styles.entryRow}>
@@ -568,7 +568,7 @@ export default function AdvancedSettingsScreen() {
               <AccordionRow title="Danger Zone"
                 subtitle="Clear accounting data or reset this device" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <Text style={styles.hint}>Clear accounting data removes books, transactions, parties, inventory and periods while preserving preferences and AI configuration. Factory reset also removes business settings and AI credentials.</Text>
+                  <Text style={styles.hint}>Clear accounting data removes books, transactions, business accounts, inventory and periods while preserving preferences and AI configuration. Factory reset also removes business settings and AI credentials.</Text>
                   {!confirmReset ? (
                     <Pressable onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}><Ionicons name="trash-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Clear Accounting Data…</Text></Pressable>
                   ) : (

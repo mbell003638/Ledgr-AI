@@ -107,7 +107,7 @@ export class V2SqlRepository {
     }
     for (const line of input.lines) {
       if (!(await this.db.first('SELECT id FROM v2_accounts WHERE id = ? AND book_id = ?', [line.accountId, input.bookId]))) throw new Error(`Account does not belong to book: ${line.accountId}`);
-      if (line.partyId && !(await this.db.first('SELECT id FROM v2_parties WHERE id = ? AND book_id = ?', [line.partyId, input.bookId]))) throw new Error(`Party does not belong to book: ${line.partyId}`);
+      if (line.partyId && !(await this.db.first('SELECT id FROM v2_parties WHERE id = ? AND book_id = ?', [line.partyId, input.bookId]))) throw new Error(`Business account does not belong to this book: ${line.partyId}`);
     }
   }
 

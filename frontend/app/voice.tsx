@@ -151,7 +151,7 @@ export default function VoiceModal() {
       } else if (parsed.intent === "drawing") {
         await api.createPayment({
           date, amount: parsed.amount, currency,
-          type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Partner",
+          type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Capital Account",
           method: "cash", notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "inventory") {
@@ -225,7 +225,7 @@ export default function VoiceModal() {
                 {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, parsed.currency || "USD")} theme={theme} />}
                 {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
                 {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
-                {parsed.partnerName && <DKV k="Partner" v={parsed.partnerName} theme={theme} />}
+                {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
                 {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
               </View>
               {isDestructive ? (

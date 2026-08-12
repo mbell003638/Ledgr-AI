@@ -203,7 +203,7 @@ const NAV_MAP: Record<string, { label: string; form?: string; list: string }> = 
   invoice: { label: "Invoice", list: "/invoices" },
   receipt: { label: "Receipt", form: "/receipt-form", list: "/receipts" },
   supplier_payment: { label: "Payment", form: "/payment-form", list: "/payments" },
-  drawing: { label: "Drawing", form: "/payment-form", list: "/payments" },
+  drawing: { label: "Capital Withdrawal", form: "/payment-form", list: "/payments" },
   cash_purchase: { label: "Purchase", form: "/bill-form", list: "/(tabs)/bills" },
   credit_purchase: { label: "Purchase", form: "/bill-form", list: "/(tabs)/bills" },
   expense: { label: "Expense", list: "/expenses" },

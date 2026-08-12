@@ -20,6 +20,7 @@ export async function persistentV2Reports(
 export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportOptions) {
   const books = await db.all<any>('SELECT id,name,style,basis,created_at FROM v2_books WHERE id=?', [options.bookId]);
   const accounts = await db.all<any>('SELECT id,book_id,code,name,type,payment_method,active FROM v2_accounts WHERE book_id=?', [options.bookId]);
+  const parties = await db.all<any>('SELECT id,book_id,name,phone,email,roles,archived FROM v2_parties WHERE book_id=?', [options.bookId]);
   const entries = await db.all<any>('SELECT id,book_id,period_id,source_id,date,memo,reversal_of FROM v2_journal_entries WHERE book_id=? ORDER BY date,id', [options.bookId]);
   const lineRows = await db.all<any>(
     'SELECT l.journal_id,l.account_id,l.party_id,l.debit,l.credit,l.memo FROM v2_journal_lines l ' +
@@ -39,7 +40,10 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
   const store: V2MemoryStore = {
     books: books.map(b=>({id:b.id,name:b.name,style:b.style,basis:b.basis,createdAt:b.created_at})),
     accounts: accounts.map(a=>({id:a.id,bookId:a.book_id,code:a.code,name:a.name,type:a.type,paymentMethod:a.payment_method||undefined,active:!!a.active})),
-    journals, parties:[],
+    journals, parties: parties.map((party) => {
+      let roles: any[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
+      return { id: party.id, bookId: party.book_id, name: party.name, phone: party.phone || undefined, email: party.email || undefined, roles, archived: Boolean(party.archived) };
+    }),
     sources: sourceRows.map((s) => { let metadata: any = {}; try { metadata = JSON.parse(s.metadata || '{}'); } catch { metadata = {}; } return { id: s.id, bookId: s.book_id, type: s.type, date: s.date, reference: s.reference || undefined, metadata }; }),
     allocations: allocationRows.map((a) => ({ id: a.id, bookId: a.book_id, invoiceSourceId: a.invoice_source_id, receiptSourceId: a.receipt_source_id, amount: Number(a.amount), allocatedAt: a.allocated_at })),
   };

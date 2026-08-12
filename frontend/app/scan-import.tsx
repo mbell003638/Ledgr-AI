@@ -61,7 +61,7 @@ function rowTitle(row: ScanRow): string {
     case "opening_balances": return "Opening balances (cash + stock)";
     case "asset": return "Asset";
     case "liability": return "Liability";
-    case "partner": return "Partner capital";
+    case "partner": return "Capital account";
   }
 }
 
@@ -118,7 +118,7 @@ export default function ScanImport() {
         if (row.kind === "partner") {
           const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
           if (!match && !partnership) {
-            infoReason = `Partner stakes require Partnership Mode and matching investors before this report can be imported.`;
+            infoReason = `Capital accounts require Equity Split and matching capital accounts before this report can be imported.`;
           }
         }
         return {
@@ -224,25 +224,25 @@ export default function ScanImport() {
   } => {
     const empty = (problem: string) => ({ problem, entries: [], createNames: [] });
     if (partners.length > 0 && !partnershipMode) {
-      return empty("This report contains partner stakes. Enable Partnership Mode before importing or creating partner ledgers.");
+      return empty("This report contains capital accounts. Enable Equity Split before importing or creating capital accounts.");
     }
     const investorByName = new Map(investors.map((investor) => [investor.name.trim().toLowerCase(), investor]));
     const reportNames = new Set(partners.map((partner) => partner.name.trim().toLowerCase()));
     const missing = investors.filter((investor) => !reportNames.has(investor.name.trim().toLowerCase()));
     if (missing.length > 0) {
-      return empty(`The report is missing configured investor${missing.length === 1 ? "" : "s"}: ${missing.map((investor) => investor.name).join(", ")}. Every configured investor must be represented.`);
+      return empty(`The report is missing configured capital account${missing.length === 1 ? "" : "s"}: ${missing.map((investor) => investor.name).join(", ")}. Every configured capital account must be represented.`);
     }
-    if (reportNames.size !== partners.length) return empty("Each partner must appear exactly once in the report.");
+    if (reportNames.size !== partners.length) return empty("Each capital account must appear exactly once in the report.");
 
     const newPartners = partners.filter((partner) => !investorByName.has(partner.name.trim().toLowerCase()));
     const invalidNewShares = newPartners.filter((partner) => !Number.isFinite(partner.profitSharePct) || Number(partner.profitSharePct) <= 0 || Number(partner.profitSharePct) > 100);
     if (invalidNewShares.length > 0) {
-      return empty(`Set a valid profit share for new partner${invalidNewShares.length === 1 ? "" : "s"}: ${invalidNewShares.map((partner) => partner.name).join(", ")}. Create them manually in Investors if the report does not show the shares.`);
+      return empty(`Set a valid profit share for new capital account${invalidNewShares.length === 1 ? "" : "s"}: ${invalidNewShares.map((partner) => partner.name).join(", ")}. Create them manually in Accounts if the report does not show the shares.`);
     }
     const resultingShare = investors.reduce((sum, investor) => sum + Number(investor.profitSharePct || 0), 0)
       + newPartners.reduce((sum, partner) => sum + Number(partner.profitSharePct), 0);
     if (newPartners.length > 0 && Math.abs(resultingShare - 100) > 0.005) {
-      return empty(`Configured and new partner profit shares must total 100% (currently ${resultingShare.toFixed(2)}%). Correct the shares or create the ledgers manually.`);
+      return empty(`Configured and new capital-account profit shares must total 100% (currently ${resultingShare.toFixed(2)}%). Correct the shares or create the accounts manually.`);
     }
     return {
       problem: null,
@@ -340,7 +340,7 @@ export default function ScanImport() {
     if (row.kind === "partner") {
       const investors = await api.listInvestors();
       const match = investors.find((inv) => inv.name.trim().toLowerCase() === party.toLowerCase());
-      if (!match) throw new Error(`No investor named "${party}" — add them on the Investors screen first`);
+      if (!match) throw new Error(`No capital account named "${party}" — add it on the Accounts screen first`);
       await api.depositInvestorCapital(match.id, { amount, date, notes: scanNote(`Capital stake for ${match.name}`) });
       return;
     }
@@ -402,7 +402,7 @@ export default function ScanImport() {
     ...missingPartyLedgers.map((item) => `${item.role === "customer" ? "Customer" : "Supplier"} ledger — ${item.name}`),
     ...balancedPartnerPlan.entries
       .filter((entry) => !entry.memberId)
-      .map((entry) => `Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)`),
+      .map((entry) => `Capital account — ${entry.name} (${entry.profitSharePct}% profit share)`),
   ];
 
   const selectedRecordLines = () => {
@@ -511,7 +511,7 @@ export default function ScanImport() {
       ...freshMissingLedgers.map((item) => `${item.role === "customer" ? "Customer" : "Supplier"} ledger — ${item.name}`),
       ...balancedPartnerPlan.entries
         .filter((entry) => !entry.memberId)
-        .map((entry) => `Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)`),
+        .map((entry) => `Capital account — ${entry.name} (${entry.profitSharePct}% profit share)`),
     ];
     const recordDisclosure = [
       "Records to create:",
@@ -522,7 +522,7 @@ export default function ScanImport() {
     if (willImportBalancedSet) {
       Alert.alert(
         "Import balanced opening set?",
-        `The complete statement will be written atomically. Assets, liabilities, and partner stakes cannot be imported separately.\n\n${recordDisclosure}`,
+        `The complete statement will be written atomically. Assets, liabilities, and capital accounts cannot be imported separately.\n\n${recordDisclosure}`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Import balanced opening set", isPreferred: true, onPress: () => runImport(freshMissingLedgers) },
@@ -585,7 +585,7 @@ export default function ScanImport() {
           <View style={[styles.fieldRow, !r.checked && { opacity: 0.65 }]}>
             {r.row.kind !== "opening_balances" ? (
               <View style={{ flex: 1.2 }}>
-                <Text style={styles.fieldLabel}>{r.row.kind === "transaction" ? "Party" : "Name"}</Text>
+                <Text style={styles.fieldLabel}>{r.row.kind === "transaction" ? "Business Account" : "Name"}</Text>
                 <TextInput
                   value={r.partyText}
                   editable={r.checked && !screenBusy && phase !== "done"}
@@ -747,13 +747,13 @@ export default function ScanImport() {
                   <View style={styles.balancePreview} testID="scan-balanced-opening-info">
                     <Text style={styles.infoText}>Include only rows that belong in the opening entry. Removing a row recalculates the balance; import stays blocked until the included set balances.</Text>
                     <Text style={styles.balancePreviewText}>Included assets {fmt(openingPreview.assets, currencySymbol)} · Liabilities {fmt(openingPreview.liabilities, currencySymbol)} · Calculated equity {fmt(calculatedEquity, currencySymbol)}</Text>
-                    {openingPreview.partnerStakes > 0 ? <Text style={styles.balancePreviewText}>Included partner stakes {fmt(openingPreview.partnerStakes, currencySymbol)}</Text> : null}
+                    {openingPreview.partnerStakes > 0 ? <Text style={styles.balancePreviewText}>Included capital accounts {fmt(openingPreview.partnerStakes, currencySymbol)}</Text> : null}
                   </View>
                 ) : null}
                 {setupRows.map(renderRow)}
                 {hasBalancedOpeningSet && balancedPartnerPlan.createNames.length > 0 && !balancedOpeningProblem ? (
                   <Text style={styles.infoText} testID="scan-partners-to-create">
-                    New investor ledgers will be created after confirmation: {balancedPartnerPlan.createNames.join(", ")}. Review their profit shares above.
+                    New capital accounts will be created after confirmation: {balancedPartnerPlan.createNames.join(", ")}. Review their profit shares above.
                   </Text>
                 ) : null}
                 {hasBalancedOpeningSet && balancedOpeningProblem ? (
@@ -782,7 +782,7 @@ export default function ScanImport() {
               <Card style={{ marginTop: theme.spacing.lg }} testID="scan-support-records">
                 <Text style={styles.section2}>Records created after confirmation</Text>
                 <Text style={styles.hint}>
-                  Your selected entries are listed above. The app also checks whether those entries need customer, supplier, or investor ledgers; no ledger is created during this review.
+                  Your selected entries are listed above. The app also checks whether those entries need customer, supplier, or capital accounts; no account is created during this review.
                 </Text>
                 {!partyLookupReady ? (
                   <Text style={styles.infoText}>Customer and supplier ledgers will be checked again before the confirmation appears.</Text>

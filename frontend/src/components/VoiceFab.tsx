@@ -168,7 +168,7 @@ export default function VoiceFab() {
         } else if (parsed.intent === "drawing") {
           await api.createPayment({
             date, amount: parsed.amount, currency,
-            type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Partner",
+            type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Capital Account",
             method: "cash", notes: parsed.notes || parsed.summary,
           });
         } else if (parsed.intent === "inventory") {

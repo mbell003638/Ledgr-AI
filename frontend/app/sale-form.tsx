@@ -165,7 +165,7 @@ export default function SaleForm() {
               <Text style={styles.hint}>
                 {saleType === "cash"
                   ? "Money received now — added straight to your cash sales."
-                  : "Customer owes you — this creates an invoice and adds them to Debtors."}
+                  : "Customer owes you — this creates an invoice and adds the balance to their customer account."}
               </Text>
             </Card>
           )}
@@ -175,7 +175,7 @@ export default function SaleForm() {
             <Card style={{ marginBottom: theme.spacing.md }}>
               <PartyAutocompleteInput
                 testID="input-customer-name"
-                label="Customer / Party name *"
+                label="Customer account name *"
                 value={customerName}
                 onChangeText={setCustomerName}
                 placeholder="e.g. Sharma Traders"

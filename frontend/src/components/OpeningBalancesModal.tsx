@@ -242,12 +242,12 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
   const modalTitle = displayMode === "cash" ? "Opening Cash Balance"
     : displayMode === "inventory" ? "Opening Inventory"
       : displayMode === "assets_liabilities" ? "Opening Assets & Liabilities"
-        : displayMode === "investor" ? "Investor Capital & Equity Setup"
+        : displayMode === "investor" ? "Capital Accounts Setup"
           : "Opening Balances Setup";
   const modalSubtitle = displayMode === "cash" ? "Edit the cash brought into this book"
     : displayMode === "inventory" ? "Edit stock held when this book began"
       : displayMode === "assets_liabilities" ? "Edit opening deposits, assets, creditors and liabilities"
-        : displayMode === "investor" ? "Add or edit investor names, capital contributions & profit share"
+        : displayMode === "investor" ? "Add or edit capital account names, opening capital & profit share"
           : "Enter only the balances your business already has";
 
   return (
@@ -364,9 +364,9 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
               </>
 
               {showInvestors ? <View style={displayMode === "all" ? { marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.color.border } : { marginTop: 4 }}>
-                {displayMode === "all" ? <Text style={styles.sectionHeader}>Investor Capital & Equity Setup</Text> : null}
+                {displayMode === "all" ? <Text style={styles.sectionHeader}>Capital Accounts Setup</Text> : null}
                 {members.length === 0 ? (
-                  <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 12 }}>No investors added yet. Tap &quot;+ Add Investor&quot; below.</Text>
+                  <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 12 }}>No capital accounts added yet. Tap &quot;+ Add Capital Account&quot; below.</Text>
                 ) : null}
                 {members.map((m, i) => (
                   <View key={i} style={styles.memberCard}>
@@ -374,7 +374,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                       <OpeningTextInput selectionColor={theme.color.brandPrimary} cursorColor={theme.color.brandPrimary} underlineColorAndroid="transparent"
                         value={m.name}
                         onChangeText={(v) => updateMember(i, "name", v)}
-                        placeholder="Investor Name"
+                        placeholder="Capital account name"
                         placeholderTextColor={theme.color.muted}
                         style={[styles.input, { flex: 1, marginTop: 0 }]}
                       />
@@ -410,7 +410,7 @@ export function OpeningBalancesModal({ visible, onClose, onSuccess, mode = "all"
                 ))}
                 <GlowPressable topHighlight={false} haptic hoverLift={0} hoverScale={1} onPress={addMember} style={styles.addMemberBtn}>
                   <Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} />
-                  <Text style={styles.addMemberText}>Add Investor</Text>
+                  <Text style={styles.addMemberText}>Add Capital Account</Text>
                 </GlowPressable>
               </View> : null}
 

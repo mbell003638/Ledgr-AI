@@ -21,7 +21,7 @@ import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
 
-const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital", "Drawings", "Creditors", "Debtors", "Tax", "Sales Reg", "Receipts"] as const;
+const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital Statement", "Capital Withdrawals", "Suppliers", "Customers", "Tax", "Sales Reg", "Receipts"] as const;
 type Seg = typeof SEGMENTS[number];
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
@@ -171,7 +171,7 @@ export default function ReportsScreen() {
         });
         setBs({
           assets: { cash: current.cash, inventory: current.inventoryValue, extra: [
-            { name: "Debtors", amount: Number(current.accountsReceivable || 0) },
+            { name: "Customers", amount: Number(current.accountsReceivable || 0) },
             { name: "Supplier Advances", amount: Number(current.supplierAdvances || 0) },
             { name: "Other Assets", amount: Number(current.otherAssets || 0) },
           ].filter((a) => a.amount), total: Number(current.assets || 0) },
@@ -221,14 +221,14 @@ export default function ReportsScreen() {
           label: item.label || String(item.month || "").slice(5),
           profit: Number(item.profit ?? item.netProfit ?? 0),
         })));
-      } else if (section === "Capital") {
+      } else if (section === "Capital Statement") {
         const value = await api.capitalStatement(); if (requestId !== sectionRequest.current) return;
         setCap(normalizeCapitalStatement(value));
-      } else if (section === "Drawings") {
+      } else if (section === "Capital Withdrawals") {
         const value = await api.drawingsHistory(); if (requestId !== sectionRequest.current) return; setDraws(Array.isArray(value) ? value : []);
-      } else if (section === "Creditors") {
+      } else if (section === "Suppliers") {
         const value = await api.creditorsReport(from, to); if (requestId !== sectionRequest.current) return; setCreditors(Array.isArray(value) ? value : []);
-      } else if (section === "Debtors") {
+      } else if (section === "Customers") {
         const value = await api.debtorsReport(from, to); if (requestId !== sectionRequest.current) return; setDebtors(Array.isArray(value) ? value : []);
       } else if (section === "Tax") {
         const value = await api.taxReport(from, to); if (requestId !== sectionRequest.current) return; setTaxRep(value);
@@ -300,20 +300,20 @@ export default function ReportsScreen() {
         `— ASSETS`,
         line("Cash", dash.cash),
         line("Inventory", dash.inventoryValue),
-        line("Outstanding Debtors", dash.accountsReceivable || 0),
+        line("Customer Receivables", dash.accountsReceivable || 0),
         line("Total Assets", dash.assets),
         ``,
         `— LIABILITIES`,
-        line("Creditors", dash.accountsPayable || 0),
+        line("Supplier Payables", dash.accountsPayable || 0),
         line("Total Liabilities", dash.liabilities),
         `Registered Suppliers: ${dash.suppliers}`,
         line("Net Worth (Equity)", dash.netWorth),
         ``,
         ...(bizSettings?.accountingStyle === 'retail_partnership' ? [
-          `— PARTNER STAKES RECONCILIATION`,
+          `— CAPITAL ACCOUNTS RECONCILIATION`,
           line("Closed-period Profit", closedPeriodSummary.totalProfit),
-          line("Closed-period Drawings", closedPeriodSummary.totalDrawings),
-          ...(cap ? cap.partners.map((p: any) => line(`${p.name} drawings`, p.drawings)) : []),
+          line("Closed-period Capital Withdrawals", closedPeriodSummary.totalDrawings),
+          ...(cap ? cap.partners.map((p: any) => line(`${p.name} capital withdrawn`, p.drawings)) : []),
           cap ? line("Closing Capital", cap.closingCapital) : "",
         ] : []),
       ].join("\n");
@@ -327,14 +327,14 @@ export default function ReportsScreen() {
       ].join("\n");
     } else if (seg === "Balance" && bs) {
       body = [line("Total Assets", bs.assets.total), line("Total Liabilities", bs.liabilities.total), line("Equity", bs.equity)].join("\n");
-    } else if (seg === "Capital" && cap) {
-      body = [line("Opening Capital", cap.openingCapital), line("Net Profit", cap.netProfit), line("Drawings", cap.totalDrawings), line("Closing Capital", cap.closingCapital)].join("\n");
-    } else if (seg === "Creditors") {
-      body = creditors.map((c) => `${c.name}: ${fmt(c.balance)}`).join("\n") || "No creditors.";
-    } else if (seg === "Debtors") {
-      body = debtors.map((d) => `${d.name}: ${fmt(d.balance)}`).join("\n") || "No debtors.";
-    } else if (seg === "Drawings") {
-      body = draws.map((d) => `${d.partnerName} ${shortDate(d.date)}: ${fmt(d.amount)}`).join("\n") || "No drawings.";
+    } else if (seg === "Capital Statement" && cap) {
+      body = [line("Opening Capital", cap.openingCapital), line("Net Profit", cap.netProfit), line("Capital Withdrawn", cap.totalDrawings), line("Closing Capital", cap.closingCapital)].join("\n");
+    } else if (seg === "Suppliers") {
+      body = creditors.map((c) => `${c.name}: ${fmt(c.balance)}`).join("\n") || "No supplier balances.";
+    } else if (seg === "Customers") {
+      body = debtors.map((d) => `${d.name}: ${fmt(d.balance)}`).join("\n") || "No customer balances.";
+    } else if (seg === "Capital Withdrawals") {
+      body = draws.map((d) => `${d.partnerName} ${shortDate(d.date)}: ${fmt(d.amount)}`).join("\n") || "No capital withdrawals.";
     } else if (seg === "Trial" && tb) {
       body = ["Debits", ...tb.debits.map((d: any) => `  ${d.account}: ${fmt(d.amount)}`), "Credits", ...tb.credits.map((c: any) => `  ${c.account}: ${fmt(c.amount)}`)].join("\n");
     } else if (seg === "Tax" && taxRep) {
@@ -431,7 +431,7 @@ export default function ReportsScreen() {
       <View style={styles.filterRail}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}
           scrollEventThrottle={16} onScroll={(event) => updateRailEdges(event, setSegmentEdges)}>
-          {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital" && s !== "Drawings")).map((s) => (
+          {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital Statement" && s !== "Capital Withdrawals")).map((s) => (
             <GlowPressable
               key={s}
               testID={`report-seg-${s}`}
@@ -536,14 +536,14 @@ export default function ReportsScreen() {
                   <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>ASSETS</Text>
                   <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
                   <RowKV label="Inventory" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
-                  <RowKV label="Debtors" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
+                  <RowKV label="Customers" value={fmt(dash.accountsReceivable || 0)} theme={theme} styles={styles} />
                   <View style={styles.divider} />
                   <RowKV label="Other assets" value={fmt((dash.supplierAdvances || 0) + (dash.otherAssets || 0))} theme={theme} styles={styles} />
                   <RowKV label="Total Assets" value={fmt(dash.assets)} strong theme={theme} styles={styles} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>LIABILITIES</Text>
-                  <RowKV label="Creditors" value={fmt(dash.accountsPayable || 0)} theme={theme} styles={styles} />
+                  <RowKV label="Supplier Payables" value={fmt(dash.accountsPayable || 0)} theme={theme} styles={styles} />
                   <RowKV label="Other liabilities" value={fmt((dash.customerAdvances || 0) + (dash.commissionPayable || 0) + (dash.otherLiabilities || 0))} theme={theme} styles={styles} />
                   <RowKV label="Suppliers" value={String(dash.suppliers)} theme={theme} styles={styles} />
                   <RowKV label="Net Worth" value={fmt(dash.netWorth)} theme={theme} styles={styles} />
@@ -554,11 +554,11 @@ export default function ReportsScreen() {
 
               {bizSettings?.accountingStyle === 'retail_partnership' && (
                 <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }} testID="report-summary-reconciliation">
-                  <Text style={[styles.rTitle, { color: theme.color.onSurface }]}>PARTNER STAKES RECONCILIATION</Text>
+                  <Text style={[styles.rTitle, { color: theme.color.onSurface }]}>CAPITAL ACCOUNTS RECONCILIATION</Text>
                   <RowKV label="Closed-period Profit" value={fmt(closedPeriodSummary.totalProfit)} theme={theme} styles={styles} />
-                  <RowKV label="Closed-period Drawings" value={fmt(closedPeriodSummary.totalDrawings)} theme={theme} styles={styles} danger />
+                  <RowKV label="Closed-period Capital Withdrawals" value={fmt(closedPeriodSummary.totalDrawings)} theme={theme} styles={styles} danger />
                   {cap && cap.partners.map((p: any) => (
-                    <RowKV key={p.name} label={`${p.name} — drawings`} value={fmt(p.drawings)} theme={theme} styles={styles} />
+                    <RowKV key={p.name} label={`${p.name} — capital withdrawn`} value={fmt(p.drawings)} theme={theme} styles={styles} />
                   ))}
                   {cap && (
                     <>
@@ -582,7 +582,6 @@ export default function ReportsScreen() {
                 {pnl.managerCommissionPct > 0 && (
                   <RowKV label={`Manager Commission (${pnl.managerCommissionPct}%)`} value={`- ${fmt(pnl.commission)}`} theme={theme} styles={styles} />
                 )}
-                <RowKV label="Drawings" value={`- ${fmt(pnl.drawings)}`} theme={theme} styles={styles} />
                 <View style={styles.divider} />
                 <RowKV label="Net Profit" value={fmt(pnl.netProfit)} strong big theme={theme} styles={styles} />
               </Card>
@@ -672,16 +671,16 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Capital" && cap && (
+          {seg === "Capital Statement" && cap && (
             <Card testID="report-capital">
-              <Text style={styles.rTitle}>Partner Capital Statement</Text>
+              <Text style={styles.rTitle}>Capital Statement</Text>
               <RowKV label="Opening Capital (combined)" value={fmt(cap.openingCapital)} theme={theme} styles={styles} />
               <RowKV label="Net Profit" value={`+ ${fmt(cap.netProfit)}`} theme={theme} styles={styles} />
-              <RowKV label="Total Drawings" value={`- ${fmt(cap.totalDrawings)}`} theme={theme} styles={styles} />
+              <RowKV label="Capital Withdrawn" value={`- ${fmt(cap.totalDrawings)}`} theme={theme} styles={styles} />
               <View style={styles.divider} />
               <RowKV label="Closing Capital" value={fmt(cap.closingCapital)} strong big theme={theme} styles={styles} />
 
-              <Text style={styles.groupHeader}>Drawings by Partner</Text>
+              <Text style={styles.groupHeader}>Withdrawals by Capital Account</Text>
               {cap.partners.map((p: any) => (
                 <RowKV key={p.name} label={p.name} value={fmt(p.drawings)} theme={theme} styles={styles} />
               ))}
@@ -691,11 +690,11 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Drawings" && (
+          {seg === "Capital Withdrawals" && (
             <Card testID="report-drawings">
-              <Text style={styles.rTitle}>Drawings History</Text>
+              <Text style={styles.rTitle}>Capital Withdrawals</Text>
               {draws.length === 0 ? (
-                <Text style={styles.empty}>No drawings recorded yet.</Text>
+                <Text style={styles.empty}>No capital withdrawals recorded yet.</Text>
               ) : (
                 draws.map((d) => (
                   <View key={d.id} style={styles.drawRow}>
@@ -710,9 +709,9 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Creditors" && (
+          {seg === "Suppliers" && (
             <Card testID="report-creditors">
-              <Text style={styles.rTitle}>Creditors Ledger</Text>
+              <Text style={styles.rTitle}>Supplier Balances</Text>
               <Text style={styles.hint}>{from} → {to}</Text>
               {creditors.length === 0 ? (
                 <Text style={styles.empty}>No creditors found for this period.</Text>
@@ -742,12 +741,12 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Debtors" && (
+          {seg === "Customers" && (
             <Card testID="report-debtors">
-              <Text style={styles.rTitle}>Debtors Ledger</Text>
+              <Text style={styles.rTitle}>Customer Balances</Text>
               <Text style={styles.hint}>{from} → {to}</Text>
               {debtors.length === 0 ? (
-                <Text style={styles.empty}>No debtors found. Add debtors from the Debtors screen.</Text>
+                <Text style={styles.empty}>No customer balances found. Add customers from Accounts.</Text>
               ) : debtors.map((d: any) => (
                 <View key={d.id} style={{ marginBottom: theme.spacing.md }}>
                   <View style={styles.kv}>

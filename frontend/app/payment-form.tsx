@@ -73,7 +73,7 @@ export default function PaymentForm() {
       }
       if (!finalSupplierId) { setError("Select or enter a supplier"); return; }
     }
-    if (type === "drawing" && isPartnerMode && !partnerName.trim()) { setError("Select a partner"); return; }
+    if (type === "drawing" && isPartnerMode && !partnerName.trim()) { setError("Select a capital account"); return; }
     setSaving(true); setError("");
     try {
       const payload = {
@@ -109,7 +109,7 @@ export default function PaymentForm() {
           <Card>
             <Text style={styles.label}>Payment Type</Text>
             <View style={styles.segRowFull}>
-              {([["supplier_payment", "Supplier"], ["drawing", isPartnerMode ? "Drawing" : "Owner Draw"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
+              {([["supplier_payment", "Supplier"], ["drawing", isPartnerMode ? "Withdraw Capital" : "Owner Withdrawal"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
                 <Pressable key={v} testID={`ptype-${v}`} onPress={() => setType(v)} style={[styles.segBtnFull, type === v && styles.segBtnActive]}>
                   <Text style={[styles.segText, type === v && styles.segTextActive]}>{lbl}</Text>
                 </Pressable>
@@ -132,7 +132,7 @@ export default function PaymentForm() {
               </View>
             ) : type === "drawing" && isPartnerMode ? (
               <>
-                <Text style={[styles.label, { marginTop: 12 }]}>Partner Name</Text>
+                <Text style={[styles.label, { marginTop: 12 }]}>Capital Account</Text>
                 {partnerOptions.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
                     {partnerOptions.map((p) => (
@@ -142,7 +142,7 @@ export default function PaymentForm() {
                     ))}
                   </ScrollView>
                 )}
-                <TextInput testID="input-partner-name" value={partnerName} onChangeText={setPartnerName} placeholder="Select a partner" placeholderTextColor={theme.color.muted} style={styles.input} />
+                <TextInput testID="input-partner-name" value={partnerName} onChangeText={setPartnerName} placeholder="Select a capital account" placeholderTextColor={theme.color.muted} style={styles.input} />
               </>
             ) : type === "drawing" ? (
               <Text style={[styles.label, { marginTop: 12, color: theme.color.muted }]}>This withdrawal posts to the global Owner&apos;s Equity drawing account.</Text>

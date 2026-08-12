@@ -56,6 +56,23 @@ const baseInput = (withJournals = true) => {
   return { output, pnl, summary, businessName: 'Acme Traders', currencySymbol: '$', generatedAt: '8/3/2026, 9:00:00 AM' };
 };
 
+function detailedOpeningInput() {
+  const store = emptyV2Store();
+  store.books.push(defaultBook('b', 'Test'));
+  store.accounts.push(...defaultAccounts('b'));
+  store.sources.push({ id: 'opening', bookId: 'b', type: 'opening_balance', date: '2026-07-16', metadata: {
+    assetBreakdown: [{ name: 'Shop Deposit', amount: 7500 }, { name: 'House Deposit', amount: 750 }],
+    partnerCapitals: [{ name: 'Amit', amount: 4000 }, { name: 'Rahim', amount: 4250 }],
+  } });
+  store.journals.push({ id: 'opening-journal', bookId: 'b', periodId: 'p', date: '2026-07-16', memo: 'Opening balances', sourceId: 'opening', lines: [
+    { accountId: 'b:account:1500', debit: 8250, credit: 0 },
+    { accountId: 'b:account:3000', debit: 0, credit: 8250 },
+  ] });
+  const reports = buildV2Reports(store, { bookId: 'b' });
+  const output = buildCustomReport(reports, { sections: ['trialBalance', 'balanceSheet', 'members'], fields: [...CUSTOM_REPORT_FIELDS], groupBy: 'none', detailLevel: 'both' });
+  return { output, businessName: 'Acme Traders', currencySymbol: '$' };
+}
+
 describe('buildCustomReportHtml — trial balance table', () => {
   const html = buildCustomReportHtml(baseInput(), 'navy_gold');
 
@@ -162,6 +179,15 @@ describe('buildCustomReportHtml — balance sheet, registers, summary, header', 
   it('supports landscape A4', () => {
     const html2 = buildCustomReportHtml({ ...baseInput(), landscape: true }, 'navy_gold');
     expect(html2).toContain('A4 landscape');
+  });
+
+  it('renders individual opening balances and their reconciled account subtotal in Both mode', () => {
+    const html = buildCustomReportHtml(detailedOpeningInput(), 'navy_gold');
+    expect(html).toContain('Other Assets &amp; Deposits');
+    expect(html).toContain('Shop Deposit');
+    expect(html).toContain('House Deposit');
+    expect(html).toContain('Reconciled subtotal');
+    expect(html).toContain('$8,250.00');
   });
 });
 

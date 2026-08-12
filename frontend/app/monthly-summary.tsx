@@ -76,7 +76,7 @@ export default function MonthlySummary() {
       `Revenue: ${fmt(data.revenue)}`,
       `Purchases: ${fmt(data.purchases)}`,
       `Gross Profit: ${fmt(data.grossProfit)}`,
-      `Drawings: ${fmt(data.drawings)}`,
+      `Capital withdrawn: ${fmt(data.drawings)}`,
       `Net Profit: ${fmt(data.netProfit)}`,
       `Cash Flow: ${fmt(data.cashFlow)}`,
       ``,
@@ -203,7 +203,7 @@ function ReportPreview({ report, theme, styles, label }: { report: MonthlyReport
         </View>
         {hasPartners && report.partnerCount > 0 ? (
           <View style={styles.heroRow}>
-            <Text style={styles.heroLabel}>Each Partner’s Share{report.splitLabel ? ` (${report.splitLabel})` : ""}</Text>
+            <Text style={styles.heroLabel}>Profit Share{report.splitLabel ? ` (${report.splitLabel})` : ""}</Text>
             <Text style={styles.heroValue}>{money(report.partnerShareEach, sym)}</Text>
           </View>
         ) : null}
@@ -246,7 +246,7 @@ function ReportPreview({ report, theme, styles, label }: { report: MonthlyReport
       {/* Drawings this period */}
       {report.drawings.length ? (
         <>
-          <Text style={[styles.sectionLabel, { marginTop: theme.spacing.lg }]}>DRAWINGS THIS PERIOD</Text>
+          <Text style={[styles.sectionLabel, { marginTop: theme.spacing.lg }]}>CAPITAL WITHDRAWALS THIS PERIOD</Text>
           {report.drawings.map((d, i) => (
             <View key={`d${i}`} style={styles.lineRow}>
               <Text style={styles.lineLabel}>{d.label}</Text>
@@ -259,7 +259,7 @@ function ReportPreview({ report, theme, styles, label }: { report: MonthlyReport
       {/* Reconciliation */}
       {hasPartners ? (
         <View style={styles.reconCard} testID="report-reconciliation">
-          <Text style={styles.reconHeading}>Partner Stakes Reconciliation</Text>
+          <Text style={styles.reconHeading}>Capital Accounts Reconciliation</Text>
           {report.partners.map((pt, i) => (
             <View key={`p${i}`} style={[styles.reconPartner, i > 0 && styles.reconSep]}>
               <View style={styles.reconRow}>
@@ -271,7 +271,7 @@ function ReportPreview({ report, theme, styles, label }: { report: MonthlyReport
                 <Text style={[styles.num, { color: theme.color.success }]}>+{money(pt.profitShare, sym)}</Text>
               </View>
               <View style={styles.reconRow}>
-                <Text style={[styles.lineLabel, styles.indent]}>− Drawings</Text>
+                <Text style={[styles.lineLabel, styles.indent]}>− Capital Withdrawn</Text>
                 <Text style={[styles.num, { color: theme.color.error }]}>−{money(pt.drawings, sym)}</Text>
               </View>
               <View style={[styles.reconRow, styles.reconRowLast]}>

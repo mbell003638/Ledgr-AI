@@ -1,4 +1,4 @@
-import { buildCustomReport, summarizeCustomReport, type CustomReportOptions } from '../src/accountingV2/customReports';
+import { buildCustomReport, customReportBreakdownRows, summarizeCustomReport, type CustomReportOptions } from '../src/accountingV2/customReports';
 import { buildV2Reports } from '../src/accountingV2/reports';
 import { defaultAccounts, defaultBook, emptyV2Store } from '../src/accountingV2/schema';
 
@@ -17,6 +17,23 @@ function report() {
     ] },
   );
   return buildV2Reports(store, { bookId: 'b', from: '2026-02-01', to: '2026-02-28' });
+}
+
+function openingBreakdownReport() {
+  const store = emptyV2Store();
+  store.books.push(defaultBook('b', 'Test'));
+  store.accounts.push(...defaultAccounts('b'));
+  store.sources.push({
+    id: 'opening', bookId: 'b', type: 'opening_balance', date: '2026-07-16', metadata: {
+      assetBreakdown: [{ name: 'Shop Deposit', amount: 7500 }, { name: 'House Deposit', amount: 750 }],
+      partnerCapitals: [{ name: 'Amit', amount: 4000 }, { name: 'Rahim', amount: 4250 }],
+    },
+  });
+  store.journals.push({ id: 'opening-journal', bookId: 'b', periodId: 'p', date: '2026-07-16', memo: 'Opening balances', sourceId: 'opening', lines: [
+    { accountId: 'b:account:1500', debit: 8250, credit: 0 },
+    { accountId: 'b:account:3000', debit: 0, credit: 8250 },
+  ] });
+  return buildV2Reports(store, { bookId: 'b' });
 }
 
 describe('V2 custom reports', () => {
@@ -48,5 +65,25 @@ describe('V2 custom reports', () => {
     expect(first).toContain('net profit was 100.00');
     expect(first).toContain('Sales: 1 item totaling 125.00');
     expect(first).toBe(summarizeCustomReport(JSON.parse(JSON.stringify(output))));
+  });
+
+  it('supports consolidated, detailed, and both views whose detail rows exactly reconcile', () => {
+    const reports = openingBreakdownReport();
+    for (const detailLevel of ['consolidated', 'detailed', 'both'] as const) {
+      const output = buildCustomReport(reports, { sections: ['trialBalance', 'balanceSheet', 'members'], fields: ['accountCode', 'accountName', 'debit', 'credit'], groupBy: 'none', detailLevel });
+      expect(output.detailLevel).toBe(detailLevel);
+      const breakdown = output.sections[0].breakdown || [];
+      const deposits = breakdown.find((group) => group.accountCode === '1500')!;
+      expect(deposits.items).toEqual([
+        expect.objectContaining({ label: 'House Deposit', amount: 750 }),
+        expect.objectContaining({ label: 'Shop Deposit', amount: 7500 }),
+      ]);
+      expect(deposits.total).toBe(8250);
+      expect(deposits.difference).toBe(0);
+      expect(deposits.reconciled).toBe(true);
+      expect(deposits.items.reduce((sum, item) => sum + item.amount, 0)).toBe(deposits.total);
+      const rows = customReportBreakdownRows(deposits, detailLevel);
+      expect(rows.map((row) => row.kind)).toEqual(detailLevel === 'consolidated' ? ['account'] : detailLevel === 'detailed' ? ['detail', 'detail', 'subtotal'] : ['account', 'detail', 'detail', 'subtotal']);
+    }
   });
 });

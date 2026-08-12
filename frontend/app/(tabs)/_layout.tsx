@@ -174,7 +174,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="suppliers"
           options={{
-            title: "Parties",
+            title: "Accounts",
             tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Users} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-suppliers",
           }}

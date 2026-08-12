@@ -35,7 +35,7 @@ export default function DayBook() {
       const all: Entry[] = [
         ...(bills as any[]).map((b) => ({ id: b.id, date: b.date, type: "bill", amount: b.amount, label: `Purchase`, sub: b.notes || "", color: TYPE_COLOR.bill })),
         ...(sales as any[]).map((s) => ({ id: s.id, date: s.date, type: "sale", amount: s.amount, label: "Sale", sub: s.notes || "", color: TYPE_COLOR.sale })),
-        ...(payments as any[]).map((p) => ({ id: p.id, date: p.date, type: p.type === "drawing" ? "drawing" : "payment", amount: p.amount, label: p.type === "drawing" ? `Drawing${p.partnerName ? ` — ${p.partnerName}` : ""}` : "Payment", sub: p.notes || "", color: p.type === "drawing" ? TYPE_COLOR.drawing : TYPE_COLOR.payment })),
+        ...(payments as any[]).map((p) => ({ id: p.id, date: p.date, type: p.type === "drawing" ? "drawing" : "payment", amount: p.amount, label: p.type === "drawing" ? `Capital Withdrawal${p.partnerName ? ` — ${p.partnerName}` : ""}` : "Payment", sub: p.notes || "", color: p.type === "drawing" ? TYPE_COLOR.drawing : TYPE_COLOR.payment })),
         ...(expenses as any[]).map((e) => ({ id: e.id, date: e.date, type: "expense", amount: e.amount, label: `Expense — ${e.category}`, sub: e.notes || "", color: TYPE_COLOR.expense })),
         ...(invoices as any[]).map((i) => ({ id: i.id, date: i.date, type: "invoice", amount: i.total, label: `Invoice ${i.invoiceNumber} — ${i.clientName}`, sub: i.status, color: TYPE_COLOR.invoice })),
       ];

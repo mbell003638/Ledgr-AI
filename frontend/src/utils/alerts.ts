@@ -37,7 +37,7 @@ export const promptPartyType = (onCustomer: () => void, onSupplier: () => void) 
       else onSupplier();
     }
   } else {
-    Alert.alert("Create Party", "Create Customer or Supplier?", [
+    Alert.alert("Add Business Account", "Add a Customer or Supplier?", [
       { text: "Cancel", style: "cancel" },
       { text: "Customer", onPress: onCustomer },
       { text: "Supplier", onPress: onSupplier },

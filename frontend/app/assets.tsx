@@ -23,7 +23,7 @@ const assetFunding = [
   { id: "capital", label: "Owner Capital" }, { id: "liability", label: "Credit / Loan" },
 ] as const;
 const liabilityRecognition = [
-  { id: "expense", label: "Due / accrued expense" }, { id: "creditor", label: "Creditor / supplier due" },
+  { id: "expense", label: "Due / accrued expense" }, { id: "creditor", label: "Supplier payable" },
   { id: "asset", label: "Asset acquired on credit" }, { id: "cash", label: "Cash received (loan)" }, { id: "bank", label: "Bank received (loan)" },
 ] as const;
 
@@ -186,7 +186,7 @@ export default function AssetsScreen() {
         </Card>
 
         <BalanceList title="Other Assets & Deposits" icon="business-outline" entries={assetEntries} total={otherAssetsTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
-        <BalanceList title="Creditors / Supplier Payable" icon="people-outline" entries={creditorEntries} total={creditorsTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} emptyText="No opening creditor breakdown. Vendor bills remain available from Suppliers." />
+        <BalanceList title="Supplier Payables" icon="people-outline" entries={creditorEntries} total={creditorsTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} emptyText="No opening supplier breakdown. Supplier bills remain available from Accounts." />
         <BalanceList title="Other Liabilities" icon="document-text-outline" entries={liabilityEntries} total={otherLiabilitiesTotal} currSym={currSym} styles={styles} onEdit={edit} onDelete={remove} theme={theme} />
         <View style={{ height: 120 }} />
       </ScrollView>

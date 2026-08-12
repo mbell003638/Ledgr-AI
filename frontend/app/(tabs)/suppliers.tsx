@@ -135,7 +135,7 @@ export default function PartiesScreen() {
   if (isPartnerMode) {
     createActions.push({
       id: "partner",
-      label: "Add Investor",
+      label: "Add Capital Account",
       icon: "people-outline",
       onPress: () => setInvestorModalVisible(true),
     });
@@ -148,8 +148,8 @@ export default function PartiesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader
-        title="Parties"
-        subtitle={`${items.length} contact${items.length === 1 ? '' : 's'}`}
+        title="Business Accounts"
+        subtitle={`${items.length} account${items.length === 1 ? '' : 's'}`}
         rightAction={
           <Pressable
             testID="btn-add-party"
@@ -179,7 +179,7 @@ export default function PartiesScreen() {
             style={[styles.filter, filter === x && styles.filterOn]}
           >
             <Text style={[styles.filterText, filter === x && { color: '#fff' }]}>
-              {x === 'all' ? 'All' : x === 'customer' ? 'Customers' : x === 'supplier' ? 'Suppliers' : 'Investors'}
+              {x === 'all' ? 'All' : x === 'customer' ? 'Customers' : x === 'supplier' ? 'Suppliers' : 'Capital Accounts'}
             </Text>
           </GlowPressable>
         ))}
@@ -199,8 +199,8 @@ export default function PartiesScreen() {
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="people-outline" size={40} color={theme.color.muted} />}
-              title="No parties found"
-              hint="Create a customer, add a supplier, or setup partners."
+              title="No business accounts found"
+              hint="Add a customer, supplier, or capital account."
             />
           }
           renderItem={({ item }) => (
@@ -218,18 +218,18 @@ export default function PartiesScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.sub}>{item.phone || 'No phone'} • {item.role === 'both' ? 'Customer & Supplier' : item.role}</Text>
+                <Text style={styles.sub}>{item.phone || 'No phone'} • {item.role === 'both' ? 'Customer & Supplier' : item.role === 'partner' ? 'Capital Account' : item.role === 'customer' ? 'Customer' : 'Supplier'}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}
                 {item.payable !== 0 ? <Text style={[styles.balance, { color: theme.color.error }]}>Pay {fmt(item.payable)}</Text> : null}
                 {item.role === 'partner' ? <>
                   <Text style={[styles.balance, { color: theme.color.brandPrimary }]}>Capital {fmt(item.capitalBalance || 0)}</Text>
-                  <Text style={styles.sub}>View capital ledger</Text>
+                  <Text style={styles.sub}>View Capital Statement</Text>
                   {isPartnerMode ? (
                     <Pressable
                       testID={`btn-quick-capital-${item.id}`}
-                      accessibilityLabel={`Deposit capital for ${item.name}`}
+                      accessibilityLabel={`Add capital for ${item.name}`}
                       // Same flow as the investor detail screen's Deposit Capital
                       // button: route there with action=deposit so the sheet
                       // auto-opens and posts via api.depositInvestorCapital.
@@ -237,7 +237,7 @@ export default function PartiesScreen() {
                       style={styles.capitalBtn}
                     >
                       <Ionicons name="add" size={12} color={theme.color.brandPrimary} />
-                      <Text style={styles.capitalBtnText}>Capital</Text>
+                      <Text style={styles.capitalBtnText}>Add Capital</Text>
                     </Pressable>
                   ) : null}
                 </> : item.receivable === 0 && item.payable === 0 ? <Text style={styles.sub}>Settled</Text> : null}
@@ -250,8 +250,8 @@ export default function PartiesScreen() {
       <ActionSheetModal
         visible={partyPromptVisible}
         onClose={() => setPartyPromptVisible(false)}
-        title="Create Party"
-        subtitle="Select the type of contact you want to add"
+        title="Add Business Account"
+        subtitle="Choose the account type to add"
         actions={createActions}
         animatedActions
       />

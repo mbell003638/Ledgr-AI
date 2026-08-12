@@ -135,7 +135,7 @@ describe('V2 opening balances — self-correcting engine', () => {
           { name: 'Amit', amount: 50 },
           { name: 'Rahim', amount: 49.99 },
         ],
-      })).rejects.toThrow('Partner stakes (99.99) must equal owner capital (100.00)');
+      })).rejects.toThrow('Capital accounts (99.99) must equal total equity (100.00)');
 
       expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
       expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(0);
@@ -155,7 +155,7 @@ describe('V2 opening balances — self-correcting engine', () => {
     [
       'new partner shares do not total 100%',
       [{ name: 'Amit', amount: 50, profitSharePct: 60 }, { name: 'Rahim', amount: 50, profitSharePct: 50 }],
-      /partner profit shares must total 100%/i,
+      /capital-account profit shares must total 100%/i,
     ],
   ])('creates no member or journal when %s', async (_label, partnerCapitals, error) => {
     const { runner, close, service } = await setup('2026-01-01', '2026-12-31', [], 'retail_partnership');
@@ -178,7 +178,7 @@ describe('V2 opening balances — self-correcting engine', () => {
         date: '2026-08-10', cash: 100, inventory: 0, ownerCapital: 100,
         createMissingPartners: true,
         partnerCapitals: [{ name: 'Owner', amount: 100, profitSharePct: 100 }],
-      })).rejects.toThrow('Closing reports with partner stakes can only be imported in Partnership Mode');
+      })).rejects.toThrow('Closing reports with capital accounts can only be imported with Equity Split enabled');
       expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_members WHERE book_id=?', [BOOK]))?.n)).toBe(0);
       expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_sources WHERE book_id=?', [BOOK]))?.n)).toBe(0);
       expect(Number((await runner.first('SELECT COUNT(*) AS n FROM v2_journal_entries WHERE book_id=?', [BOOK]))?.n)).toBe(0);

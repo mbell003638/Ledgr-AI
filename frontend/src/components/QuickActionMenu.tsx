@@ -223,8 +223,8 @@ export default function QuickActionMenu() {
             <QuickActionRow
               icon="👥"
               iconBackground="rgba(168,85,247,0.15)"
-              title={isPartnerMode ? "Add Party / Investor" : "Add Party"}
-              subtitle={isPartnerMode ? "Customer, supplier or investor" : "Customer or supplier"}
+              title="Add Business Account"
+              subtitle={isPartnerMode ? "Customer, supplier or capital account" : "Customer or supplier"}
               onPress={() => navigate("/suppliers?action=create")}
             />
             <QuickActionRow

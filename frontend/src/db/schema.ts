@@ -119,6 +119,8 @@ export async function initSchema(db: SqlRunner): Promise<void> {
     await db.exec('ALTER TABLE v2_members ADD COLUMN current_capital REAL NOT NULL DEFAULT 0;');
     await db.exec('UPDATE v2_members SET current_capital = opening_contribution;');
   }
+  await db.run("UPDATE v2_accounts SET name='Capital Accounts' WHERE code='3000' AND name='Member Capital'");
+  await db.run("UPDATE v2_accounts SET name='Capital Withdrawals' WHERE code='3100' AND name='Member Drawings'");
   await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_persona_book_type ON v2_personas(book_id, type);');
   const booksWithoutActivePersona = await db.all<{ book_id: string }>(`SELECT book_id FROM v2_personas
     GROUP BY book_id HAVING SUM(CASE WHEN enabled = 1 AND active = 1 THEN 1 ELSE 0 END) = 0

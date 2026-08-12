@@ -186,7 +186,7 @@ describe('mapAnalyzedDocument', () => {
     expect(buildBalancedOpeningSet(fullSet).error).toBeNull();
     expect(buildBalancedOpeningSet(fullSet.filter((row) => row.kind !== 'liability'))).toEqual({
       value: null,
-      error: 'Partner stakes (80.00) must equal assets minus liabilities (100.00)',
+      error: 'Capital accounts (80.00) must equal assets minus liabilities (100.00)',
     });
   });
 
@@ -315,7 +315,7 @@ describe('scan-import screen UI contract', () => {
     expect(source).toContain('liability.type === "creditor" && !/^(creditors?|accounts? payable)$/i.test(liability.name.trim())');
     expect(source).toContain('api.preflightV2ScanParties(requestedPartyLedgers)');
     expect(source).toContain('Customer" : "Supplier"} ledger');
-    expect(source).toContain('Investor ledger — ${entry.name} (${entry.profitSharePct}% profit share)');
+    expect(source).toContain('Capital account — ${entry.name} (${entry.profitSharePct}% profit share)');
     expect(source).toContain('"New supporting ledgers:"');
     expect(source).toContain('testID="scan-support-records"');
     expect(source).toMatch(/balancedPartnerPlan\.entries\s*\n\s*\.filter\(\(entry\) => !entry\.memberId\)/);

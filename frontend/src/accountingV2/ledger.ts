@@ -17,9 +17,9 @@ export class V2Ledger {
 
   createParty(input: Omit<V2Party, 'id'> & { id?: string }): V2Party {
     if (!this.store.books.some((b) => b.id === input.bookId)) throw new Error('Book not found');
-    if (!input.name.trim()) throw new Error('Party name is required');
+    if (!input.name.trim()) throw new Error('Business account name is required');
     const roles: V2PartyRole[] = [...new Set(input.roles)];
-    if (!roles.length) throw new Error('Party must be a customer, supplier, or both');
+    if (!roles.length) throw new Error('Business account must be a customer, supplier, or both');
     const party: V2Party = { ...input, id: input.id || uid('party'), name: input.name.trim(), roles };
     this.store.parties.push(party); return party;
   }
@@ -31,7 +31,7 @@ export class V2Ledger {
     const partyIds = new Set(this.store.parties.filter((p) => p.bookId === input.bookId).map((p) => p.id));
     for (const l of input.lines) {
       if (!accountIds.has(l.accountId)) throw new Error(`Account does not belong to book: ${l.accountId}`);
-      if (l.partyId && !partyIds.has(l.partyId)) throw new Error(`Party does not belong to book: ${l.partyId}`);
+      if (l.partyId && !partyIds.has(l.partyId)) throw new Error(`Business account does not belong to this book: ${l.partyId}`);
     }
     const entry: V2JournalEntry = { ...input, id: input.id || uid('je'), lines: input.lines.map((l) => ({ ...l, debit: cents(l.debit), credit: cents(l.credit) })) };
     this.store.journals.push(entry); return entry;

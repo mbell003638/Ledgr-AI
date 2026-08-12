@@ -77,11 +77,11 @@ export const ALL_FEATURES: FeatureMeta[] = [
   },
   {
     key: "payments",
-    label: "Supplier Payments & Drawings",
+    label: "Supplier Payments & Capital Withdrawals",
     category: "purchases",
     icon: "cash-outline",
     color: "#E8DAD0",
-    description: "Pay vendors, track owner drawings, and partner payouts.",
+    description: "Pay suppliers and track capital withdrawals consistently.",
   },
   {
     key: "expenses",

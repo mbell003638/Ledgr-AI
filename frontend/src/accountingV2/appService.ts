@@ -606,7 +606,7 @@ export class V2AppService {
       const members = await this.db.all<MemberCapitalRow>('SELECT id,name,profit_share_pct FROM v2_members WHERE book_id=? ORDER BY id', [bookId]);
       const hasPartnerScope = (input.partnerCapitals || []).length > 0 || Boolean(input.createMissingPartners) || members.length > 0;
       if (hasPartnerScope && book?.style !== 'retail_partnership') {
-        throw new Error('Closing reports with partner stakes can only be imported in Partnership Mode');
+        throw new Error('Closing reports with capital accounts can only be imported with Equity Split enabled');
       }
       const memberById = new Map(members.map((member) => [member.id, member]));
       const membersByName = new Map<string, MemberCapitalRow[]>();
@@ -655,12 +655,12 @@ export class V2AppService {
       if (missing.length) throw new Error(`Closing report is missing configured partner${missing.length === 1 ? '' : 's'}: ${missing.map((member) => member.name).join(', ')}`);
       const profitShareTotal = cents(partnerCapitals.reduce((sum, partner) => sum + partner.profitSharePct, 0));
       if (partnerCapitals.length && Math.abs(profitShareTotal - 100) > 0.005) {
-        throw new Error(`Partner profit shares must total 100% (currently ${profitShareTotal}%)`);
+        throw new Error(`Capital-account profit shares must total 100% (currently ${profitShareTotal}%)`);
       }
       const ownerCapital = cents(Number(input.ownerCapital));
       const partnerTotal = cents(partnerCapitals.reduce((sum, partner) => sum + partner.amount, 0));
       if (hasPartnerScope && (!Number.isFinite(ownerCapital) || Math.abs(partnerTotal - ownerCapital) > 0.005)) {
-        throw new Error(`Partner stakes (${partnerTotal.toFixed(2)}) must equal owner capital (${Number.isFinite(ownerCapital) ? ownerCapital.toFixed(2) : 'invalid'})`);
+        throw new Error(`Capital accounts (${partnerTotal.toFixed(2)}) must equal total equity (${Number.isFinite(ownerCapital) ? ownerCapital.toFixed(2) : 'invalid'})`);
       }
 
       const namedCreditors = (input.liabilityBreakdown || [])

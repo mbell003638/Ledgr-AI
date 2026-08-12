@@ -32,7 +32,7 @@ export type V2AccountTotal = Pick<V2Account, 'id' | 'bookId' | 'code' | 'name' |
 export type V2ReportDetail = {
   journalId: string; sourceId?: string; date: string; memo: string;
   accountId: string; accountCode: string; accountName: string; accountType: V2AccountType;
-  partyId?: string; debit: number; credit: number;
+  partyId?: string; partyName?: string; sourceType?: string; sourceMetadata?: Record<string, unknown>; debit: number; credit: number;
 };
 
 export type V2ReconciliationError = {
@@ -160,6 +160,8 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   // earnings balances, but they are transfers rather than operating activity and
   // must not erase a historical income statement.
   const pnlTotalsById = new Map(accounts.map((account) => [account.id, { debit: 0, credit: 0 }]));
+  const sourcesById = new Map(store.sources.map((source) => [source.id, source]));
+  const partiesById = new Map(store.parties.map((party) => [party.id, party]));
   const journals = store.journals.filter(
     (entry) => entry.bookId === options.bookId && isInRange(entry, options),
   );
@@ -205,9 +207,12 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
           pnlTotal.credit += credit;
         }
         const account = accountsById.get(line.accountId)!;
+        const source = journal.sourceId ? sourcesById.get(journal.sourceId) : undefined;
         details.push({ journalId: journal.id, sourceId: journal.sourceId, date: journal.date,
           memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
-          accountName: account.name, accountType: account.type, partyId: line.partyId, debit, credit });
+          accountName: account.name, accountType: account.type, partyId: line.partyId,
+          partyName: line.partyId ? partiesById.get(line.partyId)?.name : undefined,
+          sourceType: source?.type, sourceMetadata: source?.metadata, debit, credit });
       }
     }
     const difference = cents(journalDebit - journalCredit);

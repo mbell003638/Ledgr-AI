@@ -147,7 +147,7 @@ export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResu
   if (partnerCapitals.length && Math.abs(partnerTotal - ownerCapital) > 0.005) {
     return {
       value: null,
-      error: `Partner stakes (${partnerTotal.toFixed(2)}) must equal assets minus liabilities (${ownerCapital.toFixed(2)})`,
+      error: `Capital accounts (${partnerTotal.toFixed(2)}) must equal assets minus liabilities (${ownerCapital.toFixed(2)})`,
     };
   }
 
@@ -294,12 +294,12 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       const partner = asRecord(raw);
       if (!partner) continue;
       const name = typeof partner.name === 'string' ? partner.name.trim() : '';
-      const label = `Partner ${name || '?'} ${partner.capital ?? '?'}`;
-      if (!name) { flaggedRows.push({ label, reason: 'Partner name is missing' }); continue; }
+      const label = `Capital account ${name || '?'} ${partner.capital ?? '?'}`;
+      if (!name) { flaggedRows.push({ label, reason: 'Capital account name is missing' }); continue; }
       if (!isValidScanAmount(partner.capital)) { flaggedRows.push({ label, reason: AMOUNT_BOUNDS_REASON }); continue; }
       const profitSharePct = partner.profitSharePct === undefined ? undefined : Number(partner.profitSharePct);
       if (profitSharePct !== undefined && (!Number.isFinite(profitSharePct) || profitSharePct < 0 || profitSharePct > 100)) {
-        flaggedRows.push({ label, reason: 'Partner profit share must be between 0 and 100 percent' });
+        flaggedRows.push({ label, reason: 'Capital-account profit share must be between 0 and 100 percent' });
         continue;
       }
       validRows.push({ kind: 'partner', name, capital: partner.capital, ...(profitSharePct === undefined ? {} : { profitSharePct }), date: asOfDate });

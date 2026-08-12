@@ -143,7 +143,7 @@ export class V2InvestorLedgerService {
   private async requirePartnership(bookId: string) {
     const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [bookId]);
     if (!book) throw new Error('Book not found');
-    if (book.style !== 'retail_partnership') throw new Error('Investor ledgers are available only in Partnership Mode');
+    if (book.style !== 'retail_partnership') throw new Error('Capital Statements are available only when Equity Split is enabled');
   }
 
   private async requireOwnedMovement(sourceId: string, bookId: string, memberId: string, type: 'capital_injection' | 'drawing') {
@@ -153,10 +153,10 @@ export class V2InvestorLedgerService {
       'SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type=?',
       [sourceId, bookId, type],
     );
-    if (!row) throw new Error(type === 'capital_injection' ? 'Capital deposit not found' : 'Drawing not found');
+    if (!row) throw new Error(type === 'capital_injection' ? 'Added capital entry not found' : 'Capital withdrawal not found');
     const metadata = this.metadata(row.metadata);
     if (metadata.reversed || metadata.deleted || !this.matchesMember(metadata, member)) {
-      throw new Error(type === 'capital_injection' ? 'Capital deposit not found for this investor' : 'Drawing not found for this investor');
+      throw new Error(type === 'capital_injection' ? 'Added capital entry not found for this capital account' : 'Capital withdrawal not found for this capital account');
     }
   }
 
@@ -166,7 +166,7 @@ export class V2InvestorLedgerService {
       'SELECT id,name,opening_contribution,current_capital,profit_share_pct FROM v2_members WHERE book_id=? AND (id=? OR lower(name)=lower(?))',
       [bookId, decoded, decoded],
     );
-    if (!row) throw new Error('Investor not found');
+    if (!row) throw new Error('Capital account not found');
     return row;
   }
 

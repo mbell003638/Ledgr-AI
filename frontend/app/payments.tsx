@@ -24,7 +24,7 @@ type Payment = {
 
 const TYPE_LABEL: Record<PayType, string> = {
   supplier_payment: "Supplier Payment",
-  drawing: "Drawing",
+  drawing: "Capital Withdrawal",
   commission_payment: "Commission",
 };
 
@@ -78,7 +78,7 @@ export default function PaymentsScreen() {
 
   const getRecipientName = (p: Payment) => {
     if (p.type === "supplier_payment" && p.supplierId) return supplierMap[p.supplierId] || "Unknown Supplier";
-    if (p.type === "drawing") return isPartnerMode ? (p.partnerName || "Unknown Partner") : "Owner's Equity";
+    if (p.type === "drawing") return isPartnerMode ? (p.partnerName || "Unknown Capital Account") : "Owner's Equity";
     if (p.type === "commission_payment") return "Commission";
     return "Unknown";
   };

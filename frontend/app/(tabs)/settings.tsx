@@ -307,14 +307,14 @@ export default function SettingsScreen() {
                     <Ionicons name={accountingStyle === "standard" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "standard" ? theme.color.brandPrimary : theme.color.muted} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.bookName}>Standard Entity</Text>
-                      <Text style={styles.subLabel}>One owner or organization without partner profit splitting</Text>
+                      <Text style={styles.subLabel}>One capital account or organization without profit splitting</Text>
                     </View>
                   </Pressable>
                   <Pressable onPress={() => setAccountingStyle("retail_partnership")} style={[styles.bookRow, accountingStyle === "retail_partnership" && styles.bookRowActive]}>
                     <Ionicons name={accountingStyle === "retail_partnership" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "retail_partnership" ? theme.color.brandPrimary : theme.color.muted} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.bookName}>Equity Split</Text>
-                      <Text style={styles.subLabel}>Track partner capital, drawings, and profit-share percentages</Text>
+                      <Text style={styles.subLabel}>Track capital accounts, withdrawals, and profit-share percentages</Text>
                     </View>
                   </Pressable>
                   <Text style={styles.hint}>This changes the active book configuration. It does not store balances or journal entries in Settings.</Text>

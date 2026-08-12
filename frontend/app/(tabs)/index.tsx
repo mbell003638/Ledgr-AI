@@ -247,7 +247,7 @@ export default function Dashboard() {
       `Gross Profit: ${fmt(daily.grossProfit)}`,
       `Net Cash: ${fmt(daily.netCash)}`,
     ];
-    if (daily.drawings > 0) lines.push(`Drawings: ${fmt(daily.drawings)}`);
+    if (daily.drawings > 0) lines.push(`Capital withdrawn: ${fmt(daily.drawings)}`);
     lines.push(``, `— Sent from Ledgr`);
     await sharePlainText(lines.join("\n"), `Ledgr — ${dLabel}`);
   };
@@ -445,7 +445,7 @@ export default function Dashboard() {
                 ) : null}
                 {displayDrawings > 0 ? (
                   <View style={styles.pfRow}>
-                    <Text style={styles.pfLabel}>Drawings</Text>
+                    <Text style={styles.pfLabel}>Capital Withdrawals</Text>
                     <Text numberOfLines={1} style={[styles.pfVal, { color: theme.color.warning }]}>− {fmt(displayDrawings)}</Text>
                   </View>
                 ) : null}

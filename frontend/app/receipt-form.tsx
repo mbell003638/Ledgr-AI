@@ -119,7 +119,7 @@ export default function ReceiptFormScreen() {
     if (dateIso !== date) setDate(dateIso);
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter a valid amount."); return; }
-    if (!clientName.trim()) { setErr("Customer / Party name is required."); return; }
+    if (!clientName.trim()) { setErr("Customer account name is required."); return; }
     if (mode === "against_invoice" && !invoiceId) { setErr("Pick an invoice to settle."); return; }
     setSaving(true);
     try {
@@ -181,7 +181,7 @@ export default function ReceiptFormScreen() {
 
             <View style={{ marginTop: 12 }}>
               <PartyAutocompleteInput
-                label="Customer / Party name *"
+                label="Customer account name *"
                 value={clientName}
                 onChangeText={(val) => {
                   setClientName(val);

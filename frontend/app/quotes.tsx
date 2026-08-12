@@ -179,7 +179,7 @@ export default function QuotesScreen() {
   const convert = (q: Quote) => {
     confirmAction(
       "Convert to Invoice",
-      `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds them to Debtors.`,
+      `Create an invoice from ${q.quoteNumber}? This bills ${q.clientName} ${currSym}${q.total.toFixed(2)} and adds the balance to their customer account.`,
       async () => {
         try {
           await api.convertQuoteToInvoice(q.id, { date: localTodayIso() });

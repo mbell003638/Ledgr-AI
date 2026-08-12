@@ -216,7 +216,7 @@ export function assembleMonthlyReport(
   const outstandingCommission = num(dash?.outstandingCommission);
   const creditors = round2(num(dash?.liabilities) - outstandingCommission);
   const liabilities: ReportLineItem[] = [];
-  if (creditors !== 0) liabilities.push({ label: 'Creditors', amount: creditors });
+  if (creditors !== 0) liabilities.push({ label: 'Supplier Payables', amount: creditors });
   if (outstandingCommission !== 0) liabilities.push({ label: 'Commission Payable', amount: outstandingCommission });
   for (const l of (Array.isArray(dash?.extraLiabilities) ? dash.extraLiabilities : [])) {
     liabilities.push({ label: String(l?.name || 'Other Liability'), amount: num(l?.amount) });
@@ -224,13 +224,13 @@ export function assembleMonthlyReport(
 
   // DRAWINGS THIS PERIOD: per-partner from the capital statement.
   const drawings: ReportLineItem[] = investors.map((inv) => ({
-    label: `${String(inv?.name || 'Partner')} Drawings`,
+    label: `${String(inv?.name || 'Capital Account')} Capital Withdrawn`,
     amount: num(inv?.drawings),
   }));
 
   // Partner-stakes reconciliation: opening (contributed) → +share → −drawings → ending.
   const partners: ReportPartner[] = investors.map((inv) => ({
-    name: String(inv?.name || 'Partner'),
+    name: String(inv?.name || 'Capital Account'),
     opening: num(inv?.contributed),
     profitShare: num(inv?.profitShare),
     drawings: num(inv?.drawings),
@@ -314,7 +314,7 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
     const split = input.splitLabel ? ` (${escapeHtml(input.splitLabel)})` : '';
     heroRows.push(`
     <div class="hero-row">
-      <span class="hero-label">Each Partner's Share${split}</span>
+      <span class="hero-label">Profit Share${split}</span>
       <span class="num">${escapeHtml(money(input.partnerShareEach, sym))}</span>
     </div>`);
   }
@@ -363,13 +363,13 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
     <div class="section-label">LIABILITIES</div>
     <div class="lines">${liabRows || `<div class="line-row"><span class="line-label muted">None</span></div>`}</div>
     ${input.drawings.length ? `
-    <div class="section-label" style="margin-top:20px">DRAWINGS THIS PERIOD</div>
+    <div class="section-label" style="margin-top:20px">CAPITAL WITHDRAWALS THIS PERIOD</div>
     <div class="lines">${drawingRows}</div>` : ''}`;
 
   // --- Reconciliation card ---
   const reconBlock = hasPartners ? `
     <div class="recon-card">
-      <div class="recon-heading">Partner Stakes Reconciliation</div>
+      <div class="recon-heading">Capital Accounts Reconciliation</div>
       ${input.partners.map((pt, i) => `
         <div class="recon-partner${i > 0 ? ' recon-sep' : ''}">
           <div class="line-row">
@@ -381,7 +381,7 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
             <span class="num" style="color:${p.positive}">+${escapeHtml(money(pt.profitShare, sym))}</span>
           </div>
           <div class="line-row indent">
-            <span class="line-label">&minus; Drawings</span>
+            <span class="line-label">&minus; Capital Withdrawn</span>
             <span class="num" style="color:${p.negative}">&minus;${escapeHtml(money(pt.drawings, sym))}</span>
           </div>
           <div class="line-row">

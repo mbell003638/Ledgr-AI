@@ -16,8 +16,8 @@ import { OpeningBalancesModal } from '@/src/components/OpeningBalancesModal';
 
 type Action = 'deposit' | 'draw';
 const actionMeta = {
-  deposit: { title: 'Deposit Capital', subtitle: 'Debit Cash · Credit Partner Capital', icon: 'arrow-down-circle-outline' as const },
-  draw: { title: 'Draw Funds', subtitle: 'Debit Partner Drawings · Credit Cash', icon: 'arrow-up-circle-outline' as const },
+  deposit: { title: 'Add Capital', subtitle: 'Debit Cash · Credit Capital Accounts', icon: 'arrow-down-circle-outline' as const },
+  draw: { title: 'Withdraw Capital', subtitle: 'Debit Capital Withdrawals · Credit Cash', icon: 'arrow-up-circle-outline' as const },
 };
 
 export default function InvestorDetailScreen() {
@@ -53,7 +53,7 @@ export default function InvestorDetailScreen() {
       setData(detail);
       setCurrency(getCurrencySymbol(settings.currency || 'USD'));
     } catch (e: any) {
-      setError(e?.message || 'Could not load this investor ledger.');
+      setError(e?.message || 'Could not load this capital statement.');
     } finally { setLoading(false); }
   }, [id, router]);
 
@@ -80,7 +80,7 @@ export default function InvestorDetailScreen() {
   };
   const deleteCapital = (item: InvestorLedgerTransaction) => {
     if (!id || item.type !== 'capital_injection') return;
-    Alert.alert('Reverse capital deposit?', 'The deposit will be removed from cash and partner capital with an equal reversal. The audit trail is retained.', [
+    Alert.alert('Reverse added capital?', 'The amount will be removed from cash and the capital account with an equal reversal. The audit trail is retained.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reverse', style: 'destructive', onPress: async () => {
         try { await api.deleteInvestorCapital(id, item.id); setLoading(true); await load(); }
@@ -113,37 +113,37 @@ export default function InvestorDetailScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable accessibilityLabel="Back to Parties" onPress={() => router.back()} style={styles.backButton}>
+        <Pressable accessibilityLabel="Back to Accounts" onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="chevron-back" size={24} color={theme.color.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{data?.name || 'Investor Ledger'}</Text>
+          <Text style={styles.headerTitle}>{data?.name || 'Capital Statement'}</Text>
           {data ? <Text style={styles.headerSub}>{data.profitSharePct}% profit share · Active period</Text> : null}
         </View>
       </View>
 
       {error || !data ? (
-        <Empty icon={<Ionicons name="alert-circle-outline" size={40} color={theme.color.error} />} title="Investor ledger unavailable" hint={error || 'Investor not found.'} />
+        <Empty icon={<Ionicons name="alert-circle-outline" size={40} color={theme.color.error} />} title="Capital statement unavailable" hint={error || 'Capital account not found.'} />
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.hero}>
             <Text style={styles.heroLabel}>CURRENT CAPITAL BALANCE</Text>
             <Text style={styles.heroValue}>{fmt(data.currentCapitalBalance, currency)}</Text>
-            <Text style={styles.heroHint}>Opening + injections + profit share − drawings</Text>
+            <Text style={styles.heroHint}>Opening + capital added + profit share − capital withdrawn</Text>
           </View>
 
           <View style={styles.statsRow}>
-            <Summary label="Total Injected" value={fmt(data.totalInjected, currency)} color={theme.color.success} icon="arrow-down" styles={styles} />
-            <Summary label="Total Drawings" value={fmt(data.totalDrawings, currency)} color={theme.color.warning} icon="arrow-up" styles={styles} />
+            <Summary label="Capital Added" value={fmt(data.totalInjected, currency)} color={theme.color.success} icon="arrow-down" styles={styles} />
+            <Summary label="Capital Withdrawn" value={fmt(data.totalDrawings, currency)} color={theme.color.warning} icon="arrow-up" styles={styles} />
             <Summary label="Profit Share" value={fmt(data.profitShare, currency)} color={data.profitShare < 0 ? theme.color.error : theme.color.brandPrimary} icon="pie-chart-outline" styles={styles} />
           </View>
 
           <View style={styles.actionsRow}>
             <GlowPressable testID="investor-deposit-capital" haptic prominent onPress={() => setAction('deposit')} style={[styles.actionButton, { backgroundColor: theme.color.success }]}>
-              <Ionicons name="add-circle-outline" size={20} color="#fff" /><Text style={styles.actionText}>Deposit Capital</Text>
+              <Ionicons name="add-circle-outline" size={20} color="#fff" /><Text style={styles.actionText}>Add Capital</Text>
             </GlowPressable>
             <GlowPressable testID="investor-draw-funds" haptic onPress={() => setAction('draw')} style={[styles.actionButton, styles.drawButton]}>
-              <Ionicons name="remove-circle-outline" size={20} color={theme.color.warning} /><Text style={[styles.actionText, { color: theme.color.warning }]}>Draw Funds</Text>
+              <Ionicons name="remove-circle-outline" size={20} color={theme.color.warning} /><Text style={[styles.actionText, { color: theme.color.warning }]}>Withdraw Capital</Text>
             </GlowPressable>
           </View>
 
@@ -154,7 +154,7 @@ export default function InvestorDetailScreen() {
             </View>
             {data.transactions.length ? data.transactions.map((item, index) => (
               <TransactionRow key={item.id} item={item} currency={currency} isLast={index === data.transactions.length - 1} theme={theme} styles={styles} onEdit={editTransaction} onDelete={deleteCapital} />
-            )) : <Empty title="No capital activity yet" hint="Deposits, drawings, and period-close allocations will appear here." />}
+            )) : <Empty title="No capital activity yet" hint="Capital added, capital withdrawn, and profit share will appear here." />}
           </Card>
           <View style={{ height: 48 }} />
         </ScrollView>
@@ -168,7 +168,7 @@ export default function InvestorDetailScreen() {
               {action ? <>
               <View style={styles.sheetTitleRow}>
                 <View style={styles.sheetIcon}><Ionicons name={actionMeta[action].icon} size={22} color={theme.color.brandPrimary} /></View>
-                <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{editSourceId ? 'Edit Capital Deposit' : actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
+                <View style={{ flex: 1 }}><Text style={styles.sheetTitle}>{editSourceId ? 'Edit Added Capital' : actionMeta[action].title}</Text><Text style={styles.sheetSub}>{actionMeta[action].subtitle}</Text></View>
                 <Pressable onPress={closeForm}><Ionicons name="close" size={24} color={theme.color.muted} /></Pressable>
               </View>
               <FormField label="Amount" first testID="investor-action-amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
@@ -197,8 +197,8 @@ function Summary({ label, value, color, icon, styles }: any) {
 
 function TransactionRow({ item, currency, isLast, theme, styles, onEdit, onDelete }: { item: InvestorLedgerTransaction; currency: string; isLast: boolean; theme: any; styles: any; onEdit: (item: InvestorLedgerTransaction) => void; onDelete: (item: InvestorLedgerTransaction) => void }) {
   const drawing = item.type === 'drawing';
-  const meta = item.type === 'capital_injection' ? { label: 'Capital Deposit', icon: 'arrow-down' as const, color: theme.color.success }
-    : drawing ? { label: 'Drawing', icon: 'arrow-up' as const, color: theme.color.warning }
+  const meta = item.type === 'capital_injection' ? { label: 'Capital Added', icon: 'arrow-down' as const, color: theme.color.success }
+    : drawing ? { label: 'Capital Withdrawal', icon: 'arrow-up' as const, color: theme.color.warning }
     : item.type === 'profit_allocation' ? { label: 'Profit Allocation', icon: 'pie-chart-outline' as const, color: theme.color.brandPrimary }
     : { label: 'Opening Capital', icon: 'flag-outline' as const, color: theme.color.info };
   const correctable = item.type === 'capital_injection' || item.type === 'opening_capital';
