@@ -26,6 +26,7 @@ export class InvoiceDomainService {
     const lines = Array.isArray(input.lines) ? input.lines : [];
     const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
     const net = totals?.total ?? amount(input.total ?? input.amount);
+    const productLines = Array.isArray(input.productLines) ? input.productLines : [];
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'customer', c.bookId);
       const result = await postInvoice(this.repo, {
@@ -45,9 +46,9 @@ export class InvoiceDomainService {
           discount: totals?.discount ?? Number(input.discount || 0),
           subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
           tax: totals?.tax ?? Number(input.tax || 0),
+          ...(productLines.length ? { productLines } : {}),
         },
       });
-      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
       if (productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
           .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
@@ -72,6 +73,7 @@ export class InvoiceDomainService {
     if (!row) throw new Error('Invoice not found');
     let priorMeta: AnyRecord = {}; try { priorMeta = JSON.parse(row.metadata || '{}'); } catch { priorMeta = {}; }
     const next = await this.editInput(input);
+    const payload = Array.isArray(next.productLines) ? next : { ...next, productLines: priorMeta.productLines };
     const allocated = await this.db.first<{ id: string }>('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [id]);
     if (allocated) {
       const c = await this.getActiveContext(next.date || row.date);
@@ -81,10 +83,10 @@ export class InvoiceDomainService {
       if ((nextPartyId && priorMeta.partyId && nextPartyId !== priorMeta.partyId) || unresolvedNewName) {
         throw new Error('Cannot change customer on an invoice that has active receipt allocations. Remove receipt allocations first.');
       }
-      const newTotal = amount(next.total ?? next.amount);
-      return this.documents.replaceInvoicePreservingAllocations(id, 'Edit invoice', newTotal, () => this.createInvoice(next));
+      const newTotal = amount(payload.total ?? payload.amount);
+      return this.documents.replaceInvoicePreservingAllocations(id, 'Edit invoice', newTotal, () => this.createInvoice(payload));
     }
-    return this.documents.replaceSource(id, 'invoice', 'Edit invoice', () => this.createInvoice(next));
+    return this.documents.replaceSource(id, 'invoice', 'Edit invoice', () => this.createInvoice(payload));
   }
 
   /** Lookup only. Never createParty / ensureParty / party() — those insert before the allocation guard can throw. */

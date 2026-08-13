@@ -14,10 +14,6 @@ import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { confirmAction } from "@/src/utils/alerts";
 
-// Payroll endpoints are added by the parent in api.ts. Cast so this screen
-// type-checks and still calls the agreed method names if they are missing.
-const payrollApi = api as any;
-
 type PayMethod = "cash" | "bank";
 
 type Employee = {
@@ -171,8 +167,8 @@ export default function PayrollScreen() {
         return;
       }
       const [empRows, runRows] = await Promise.all([
-        payrollApi.listEmployees(),
-        payrollApi.listPayRuns(),
+        api.listEmployees(),
+        api.listPayRuns(),
       ]);
       setEmployees(asList(empRows).map(mapEmployee).filter((row) => row.id && !row.archived));
       setPayRuns(asList(runRows).map(mapPayRun).filter((row) => row.id));
@@ -202,7 +198,7 @@ export default function PayrollScreen() {
     setSavingEmp(true);
     setEmpError("");
     try {
-      await payrollApi.upsertEmployee({
+      await api.upsertEmployee({
         name,
         role: empRole.trim(),
         payRate: rate,
@@ -225,7 +221,7 @@ export default function PayrollScreen() {
       `${employee.name} will be hidden from the next pay run. Past payslips stay on file.`,
       async () => {
         try {
-          await payrollApi.archiveEmployee(employee.id);
+          await api.archiveEmployee(employee.id);
           await load();
         } catch (e: any) {
           setEmpError(e?.message || "Could not archive this employee.");
@@ -242,7 +238,7 @@ export default function PayrollScreen() {
     setRunningPay(true);
     setPayError("");
     try {
-      await payrollApi.runPayroll({ date: dateIso, method: payMethod, notes: payNotes.trim() });
+      await api.runPayroll({ date: dateIso, method: payMethod, notes: payNotes.trim() });
       setPayNotes("");
       setSelectedRunId(null);
       setPayslips([]);
@@ -264,7 +260,7 @@ export default function PayrollScreen() {
     setSelectedRunId(run.id);
     setPayslipError("");
     try {
-      const rows = await payrollApi.listPayslips(run.id);
+      const rows = await api.listPayslips(run.id);
       setPayslips(asList(rows).map((row) => mapPayslip(row, employees)));
     } catch (e: any) {
       setPayslips([]);
@@ -273,21 +269,21 @@ export default function PayrollScreen() {
   };
 
   const loadYearEnd = async () => {
-    const parsed = parseInt(String(year).trim(), 10);
-    if (!Number.isFinite(parsed) || parsed < 1900 || parsed > 2100) {
+    const yearKey = String(year).trim();
+    if (!/^\d{4}$/.test(yearKey)) {
       setYearError("Enter a four-digit year.");
       return;
     }
-    setYear(String(parsed));
+    setYear(yearKey);
     setYearBusy(true);
     setYearError("");
     try {
-      const summary = await payrollApi.yearEndPayrollSummary(parsed);
+      const summary = await api.yearEndPayrollSummary(yearKey);
       const rows = mapYearEndRows(summary);
       setYearRows(rows);
-      const gross = num(summary?.totals?.gross ?? summary?.totalGross ?? rows.reduce((sum, row) => sum + row.gross, 0));
-      const tax = num(summary?.totals?.tax ?? summary?.totals?.taxWithheld ?? summary?.totalTax ?? rows.reduce((sum, row) => sum + row.tax, 0));
-      const net = num(summary?.grandTotal ?? summary?.totalNet ?? summary?.totals?.net ?? rows.reduce((sum, row) => sum + row.net, 0));
+      const gross = num(summary?.totals?.gross ?? rows.reduce((sum, row) => sum + row.gross, 0));
+      const tax = num(summary?.totals?.taxWithheld ?? rows.reduce((sum, row) => sum + row.tax, 0));
+      const net = num(summary?.totals?.net ?? rows.reduce((sum, row) => sum + row.net, 0));
       setYearGross(gross);
       setYearTax(tax);
       setYearGrand(net);

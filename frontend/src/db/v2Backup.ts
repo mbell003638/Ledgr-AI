@@ -49,7 +49,7 @@ export type V2ImportResult = {
  * is already gone). journal_entries.reversal_of is a self-reference, so those
  * links are nulled before the journal rows are deleted.
  */
-const DELETE_ORDER: readonly string[] = [
+export const DELETE_ORDER: readonly string[] = [
   'v2_payslips',
   'v2_pay_runs',
   'v2_employees',
@@ -75,7 +75,7 @@ const DELETE_ORDER: readonly string[] = [
  * FK-safe INSERT order (parents before children). Mirrors DELETE_ORDER
  * reversed, with journal_entries inserted before its dependents.
  */
-const INSERT_ORDER: readonly string[] = [
+export const INSERT_ORDER: readonly string[] = [
   'v2_books',
   'v2_periods',
   'v2_personas',
@@ -136,8 +136,19 @@ export function hasV2Payload(payload: any): payload is V2BackupPayload {
   return !!payload && typeof payload === 'object' && payload.tables && typeof payload.tables === 'object';
 }
 
+/** Throw if a new V2_TABLES entry was added without updating wipe/restore order. */
+function assertOrdersCoverSchema(): void {
+  const deleteCovered = new Set(DELETE_ORDER);
+  const insertCovered = new Set(INSERT_ORDER);
+  const missingDelete = (V2_TABLES as readonly string[]).filter((t) => !deleteCovered.has(t));
+  const missingInsert = (V2_TABLES as readonly string[]).filter((t) => !insertCovered.has(t));
+  if (missingDelete.length) throw new Error(`v2Backup DELETE_ORDER is missing table(s): ${missingDelete.join(', ')}`);
+  if (missingInsert.length) throw new Error(`v2Backup INSERT_ORDER is missing table(s): ${missingInsert.join(', ')}`);
+}
+
 /** Wipe every v2 table in FK-safe order. Assumes an open transaction. */
 async function wipeV2Tables(db: SqlRunner): Promise<void> {
+  assertOrdersCoverSchema();
   for (const table of DELETE_ORDER) {
     if (table === 'v2_journal_entries') {
       // Clear the self-referential reversal link before deleting the rows, else

@@ -12,7 +12,8 @@ import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book, V2_BOOK_VERSION } from '../src/accountingV2/appBootstrap';
 import { V2AppService } from '../src/accountingV2/appService';
 import { V2_TABLES } from '../src/db/schema';
-import { exportV2Data, importV2Data, V2_BACKUP_VERSION } from '../src/db/v2Backup';
+import { DELETE_ORDER, INSERT_ORDER, exportV2Data, importV2Data, V2_BACKUP_VERSION } from '../src/db/v2Backup';
+import { V2_COLLECTIONS } from '../src/accountingV2/types';
 import { withImportTransaction } from '../src/db/sqliteStore';
 
 async function countAll(runner: any): Promise<Record<string, number>> {
@@ -23,6 +24,17 @@ async function countAll(runner: any): Promise<Record<string, number>> {
   }
   return out;
 }
+
+describe('v2Backup table coverage', () => {
+  it('DELETE_ORDER and INSERT_ORDER cover every V2_TABLES table', () => {
+    expect(new Set(DELETE_ORDER)).toEqual(new Set(V2_TABLES));
+    expect(new Set(INSERT_ORDER)).toEqual(new Set(V2_TABLES));
+  });
+
+  it('V2_COLLECTIONS matches schema V2_TABLES', () => {
+    expect(new Set(V2_COLLECTIONS)).toEqual(new Set(V2_TABLES));
+  });
+});
 
 describe('v2Backup export/import', () => {
   it('round-trips every v2 table + meta with row counts and a journal line intact', async () => {

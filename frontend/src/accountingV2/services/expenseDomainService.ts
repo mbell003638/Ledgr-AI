@@ -79,6 +79,7 @@ export class ExpenseDomainService {
     const c = await this.getActiveContext(input.date);
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     const cash = input.paymentType === 'cash';
+    const productLines = Array.isArray(input.productLines) ? input.productLines : [];
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'supplier', c.bookId);
       const result = await postPurchase(this.repo, {
@@ -93,10 +94,10 @@ export class ExpenseDomainService {
           invoiceNo: input.invoiceNo,
           notes: input.notes,
           photo: input.photo,
+          ...(productLines.length ? { productLines } : {}),
         },
       });
       const isExpense = input.isExpense === true || input.billType === 'expense';
-      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
       if (!isExpense && productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
           .applyPurchaseLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
@@ -106,10 +107,13 @@ export class ExpenseDomainService {
   }
 
   async updateBill(id: string, input: AnyRecord) {
-    const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
+    const row = await this.db.first<any>('SELECT type,metadata FROM v2_sources WHERE id=?', [id]);
     if (!row || !['cash_purchase', 'credit_purchase'].includes(row.type)) throw new Error('Bill not found');
     const next = await this.editInput(input);
-    return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(next));
+    let priorMeta: AnyRecord = {};
+    try { priorMeta = JSON.parse(row.metadata || '{}'); } catch { priorMeta = {}; }
+    const payload = Array.isArray(next.productLines) ? next : { ...next, productLines: priorMeta.productLines };
+    return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(payload));
   }
 
   async deleteBill(id: string) {

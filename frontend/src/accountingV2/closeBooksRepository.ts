@@ -3,6 +3,7 @@ import { V2_ACCOUNT_CODES, type V2Member } from './types';
 import { round2 } from '../money';
 import { computePeriodicCogs } from './cogs';
 import { validatePostingInvariants } from './invariants';
+import { isOptionalModuleEnabled } from './optionalModules';
 
 let closeBooksSavepointSequence = 0;
 const cents = round2;
@@ -75,7 +76,8 @@ export class V2CloseBooksRepository {
       // replaces the old requirement that counts be dated EXACTLY on the start and close dates,
       // which made a mid-period count show COGS in the live report but throw at close.
       const cogsResult = await computePeriodicCogs(this.db, input.bookId, { start: period.start_date, end: input.date });
-      const { openingInventory, closingInventory, cogs } = cogsResult;
+      const { openingInventory, closingInventory } = cogsResult;
+      const perpetualInventory = await isOptionalModuleEnabled(this.db, 'perpetualInventory');
       // The close can only proceed with a known closing inventory. When the book has inventory
       // activity in the period (a recorded count or inventory purchases) but no distinct closing
       // count is derivable, periodic COGS is undefined — surface a clear, actionable error rather
@@ -98,6 +100,9 @@ export class V2CloseBooksRepository {
       const purchases = cents(Math.max(0, movement('1200')));
       const expenses = cents(Math.max(0, movement('6000')));
       const drawings = cents(Math.max(0, movement('3100')));
+      // Perpetual already posted Dr 5000 / Cr 1200 at sale time. Snapshot the
+      // period's posted 5000 movement so close does not apply the periodic formula.
+      const cogs = perpetualInventory ? cents(Math.max(0, movement(V2_ACCOUNT_CODES.COGS))) : cogsResult.cogs;
       const grossProfit = cents(sales - cogs);
       const commission = grossProfit > 0 ? cents(grossProfit * input.commissionPct / 100) : 0;
       const netProfit = cents(grossProfit - commission - expenses);
@@ -114,7 +119,10 @@ export class V2CloseBooksRepository {
       };
       const closedAt = new Date().toISOString();
       // 1. Recognize periodic COGS in the ledger: Dr 5000 / Cr 1200 (skip if zero).
-      await this.postAdjustmentJournal(`${input.id}:cogs`, input, closedAt, 'Cost of goods sold (periodic)', cogs, V2_ACCOUNT_CODES.COGS, V2_ACCOUNT_CODES.INVENTORY);
+      //    Perpetual already posted sale-time COGS; posting periodic would double-count.
+      if (!perpetualInventory) {
+        await this.postAdjustmentJournal(`${input.id}:cogs`, input, closedAt, 'Cost of goods sold (periodic)', cogs, V2_ACCOUNT_CODES.COGS, V2_ACCOUNT_CODES.INVENTORY);
+      }
       // 2. Recognize partnership commission as an expense/payable so the GL P&L equals net profit.
       await this.postAdjustmentJournal(`${input.id}:commission`, input, closedAt, 'Commission expense', commission, V2_ACCOUNT_CODES.COMMISSION_EXPENSE, V2_ACCOUNT_CODES.COMMISSION_PAYABLE);
       // 3. Closing entries: zero every income/expense account into Retained Earnings (3300),

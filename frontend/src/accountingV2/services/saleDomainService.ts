@@ -35,6 +35,7 @@ export class SaleDomainService {
     const lines = Array.isArray(input.lines) ? input.lines : [];
     const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
     const net = totals?.total ?? amount(input.total ?? input.amount);
+    const productLines = Array.isArray(input.productLines) ? input.productLines : [];
     return this.repo.runInTransaction(async () => {
       const result = await postCashSale(this.repo, {
         ...c,
@@ -49,9 +50,9 @@ export class SaleDomainService {
           subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
           tax: totals?.tax ?? Number(input.tax || 0),
           taxRate: Number(input.taxRate || 0),
+          ...(productLines.length ? { productLines } : {}),
         },
       });
-      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
       if (productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
           .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
@@ -61,13 +62,16 @@ export class SaleDomainService {
   }
 
   async updateSale(id: string, input: AnyRecord) {
-    const row = await this.db.first<any>('SELECT type FROM v2_sources WHERE id=?', [id]);
+    const row = await this.db.first<any>('SELECT type,metadata FROM v2_sources WHERE id=?', [id]);
     if (row?.type === 'invoice' || row?.type === 'credit_sale' || input.clientName || input.partyId) {
       return this.invoices.updateInvoice(id, input);
     }
     const sourceType = row?.type && ['cash_sale', 'credit_sale', 'invoice'].includes(row.type) ? row.type : 'cash_sale';
     const next = await this.editInput(input);
-    return this.documents.replaceSource(id, sourceType, 'Edit sale', () => this.createSale(next));
+    let priorMeta: AnyRecord = {};
+    try { priorMeta = JSON.parse(row?.metadata || '{}'); } catch { priorMeta = {}; }
+    const payload = Array.isArray(next.productLines) ? next : { ...next, productLines: priorMeta.productLines };
+    return this.documents.replaceSource(id, sourceType, 'Edit sale', () => this.createSale(payload));
   }
 
   async deleteSale(id: string) {

@@ -151,6 +151,13 @@ export class FixedAssetDomainService {
     const amount = cents(Math.min(monthly, remaining));
     if (amount <= 0) throw new Error('Asset is fully depreciated');
 
+    const month = String(input.date).slice(0, 7);
+    const alreadyPosted = await this.db.first<{ id: string }>(
+      'SELECT id FROM v2_asset_depreciation WHERE asset_id=? AND substr(date,1,7)=? LIMIT 1',
+      [asset.id, month],
+    );
+    if (alreadyPosted) throw new Error('Depreciation already posted for this month');
+
     await this.repo.ensureDefaultAccounts(context.bookId);
     return this.repo.runInTransaction(async () => {
       const source: V2Source = {
@@ -186,8 +193,38 @@ export class FixedAssetDomainService {
     const asset = await this.loadAsset(context.bookId, input.assetId);
     if (!asset) throw new Error('Asset not found');
     if (asset.disposed) throw new Error('Asset has been disposed');
-    await this.db.run('UPDATE v2_fixed_assets SET disposed=1 WHERE id=? AND book_id=?', [asset.id, context.bookId]);
-    return { id: asset.id, disposed: true, date: input.date };
+
+    const cost = cents(asset.cost);
+    const accum = cents(asset.accum);
+    const nbv = cents(cost - accum);
+
+    await this.repo.ensureDefaultAccounts(context.bookId);
+    return this.repo.runInTransaction(async () => {
+      const writeOffCode = await this.writeOffExpenseCode(context.bookId);
+      const acct = (code: string) => `${context.bookId}:account:${code}`;
+      const lines = [
+        accum > 0 ? { accountId: acct(V2_ACCOUNT_CODES.ACCUM_DEPRECIATION), debit: accum, credit: 0, memo: asset.name } : null,
+        nbv > 0 ? { accountId: acct(writeOffCode), debit: nbv, credit: 0, memo: asset.name } : null,
+        cost > 0 ? { accountId: acct(V2_ACCOUNT_CODES.FIXED_ASSETS), debit: 0, credit: cost, memo: asset.name } : null,
+      ].filter((line): line is { accountId: string; debit: number; credit: number; memo: string } => !!line);
+
+      const source: V2Source = {
+        id: uid('asset_disposal'),
+        bookId: context.bookId,
+        type: 'asset_disposal',
+        date: input.date,
+        metadata: { assetId: asset.id, cost, accum, nbv, total: cost },
+      };
+      const journal = await this.repo.postSourceJournal(source, {
+        bookId: context.bookId,
+        periodId: context.periodId,
+        date: input.date,
+        memo: `Dispose asset: ${asset.name}`,
+        lines,
+      });
+      await this.db.run('UPDATE v2_fixed_assets SET disposed=1 WHERE id=? AND book_id=?', [asset.id, context.bookId]);
+      return { id: asset.id, disposed: true, date: input.date, source, journal };
+    });
   }
 
   async assetRegister() {
@@ -210,6 +247,11 @@ export class FixedAssetDomainService {
 
   private async requireModule() {
     requireOptionalModule(await isOptionalModuleEnabled(this.db, 'fixedAssets'), 'fixedAssets');
+  }
+
+  private async writeOffExpenseCode(bookId: string) {
+    const dep = await this.db.first('SELECT id FROM v2_accounts WHERE book_id=? AND code=?', [bookId, V2_ACCOUNT_CODES.DEPRECIATION_EXPENSE]);
+    return dep ? V2_ACCOUNT_CODES.DEPRECIATION_EXPENSE : V2_ACCOUNT_CODES.EXPENSES;
   }
 
   private async loadAssets(bookId: string) {

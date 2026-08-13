@@ -193,11 +193,11 @@ export class PayrollDomainService {
       const tax = cents(gross * Number(employee.tax_withhold_pct) / 100);
       const net = cents(gross - tax);
       return { employee, gross, tax, net };
-    });
+    }).filter((slip) => slip.gross !== 0);
+    if (!slips.length) throw new Error('No employees to pay');
     const totalGross = cents(slips.reduce((sum, slip) => sum + slip.gross, 0));
     const totalTax = cents(slips.reduce((sum, slip) => sum + slip.tax, 0));
     const totalNet = cents(slips.reduce((sum, slip) => sum + slip.net, 0));
-    if (totalGross === 0) throw new Error('No employees to pay');
 
     await this.repo.ensureDefaultAccounts(context.bookId);
     const cashCode = input.method === 'bank' ? V2_ACCOUNT_CODES.BANK : V2_ACCOUNT_CODES.CASH;
@@ -302,9 +302,10 @@ export class PayrollDomainService {
 
   /** Internal year-end totals by employee. Not a government filing. */
   async yearEndSummary(year: string): Promise<PayrollYearEndSummary> {
-    const context = await this.getActiveContext();
-    if (!context) return { year, employees: [], totals: { gross: 0, taxWithheld: 0, net: 0 } };
     const prefix = String(year || '').trim();
+    if (!/^\d{4}$/.test(prefix)) throw new Error('Year must be a four-digit year');
+    const context = await this.getActiveContext();
+    if (!context) return { year: prefix, employees: [], totals: { gross: 0, taxWithheld: 0, net: 0 } };
     const rows = await this.db.all<{ employee_id: string; name: string; gross: number; tax_withheld: number; net: number }>(
       `SELECT e.id AS employee_id, e.name,
               COALESCE(SUM(p.gross),0) AS gross,

@@ -2,6 +2,7 @@ import type { SqlRunner } from '../db/schema';
 import type { V2MemoryStore } from './schema';
 import { buildV2Reports, type V2ReportOptions, type V2Reports } from './reports';
 import { computePeriodicCogs } from './cogs';
+import { isOptionalModuleEnabled } from './optionalModules';
 import { V2_ACCOUNT_CODES } from './types';
 
 export type PersistentReportResult = { source: 'v2'; report: V2Reports };
@@ -54,11 +55,12 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
 /**
  * Compute the still-open period's periodic COGS as a synthetic report adjustment so
  * live P&L includes cost of sales before the close posts it. Returns undefined when
- * there is no open period, no closing count yet, or the report range excludes the
- * open period (so we never double-count a closed period's already-posted COGS).
+ * perpetualInventory is on (sale-time 5000 is already posted), there is no open
+ * period, no closing count yet, or the report range excludes the open period.
  */
 async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions) {
   try {
+    if (await isOptionalModuleEnabled(db, 'perpetualInventory')) return undefined;
     const period = await db.first<{ start_date: string; end_date: string }>(
       "SELECT start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1",
       [options.bookId],

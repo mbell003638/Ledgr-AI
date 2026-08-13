@@ -95,4 +95,25 @@ describe('optional payroll domain service', () => {
       await expect(payroll.runPayroll({ date: '2026-03-15', method: 'cash' })).rejects.toThrow(/employee/i);
     } finally { close(); }
   });
+
+  it('yearEndSummary requires a four-digit year and excludes other years', async () => {
+    const { close, payroll } = await setup('book_payroll_year', true);
+    try {
+      await expect(payroll.yearEndSummary('202')).rejects.toThrow();
+      await expect(payroll.yearEndSummary('')).rejects.toThrow();
+
+      await payroll.upsertEmployee({
+        name: 'Ada Lovelace',
+        role: 'Engineer',
+        payRate: 1000,
+        taxWithholdPct: 10,
+        startDate: '2026-01-01',
+      });
+      await payroll.runPayroll({ date: '2026-03-15', method: 'cash' });
+
+      const summary2025 = await payroll.yearEndSummary('2025');
+      expect(summary2025.employees).toEqual([]);
+      expect(summary2025.totals).toEqual({ gross: 0, taxWithheld: 0, net: 0 });
+    } finally { close(); }
+  });
 });

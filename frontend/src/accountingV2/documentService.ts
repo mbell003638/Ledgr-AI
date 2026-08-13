@@ -1,5 +1,6 @@
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Party, type V2Source } from './types';
 import { V2SqlRepository } from './repository';
+import { ProductDomainService } from './services/productDomainService';
 import { round2 } from '../money';
 import { validatePostingInvariants, type JournalLineInput } from './invariants';
 import { localTodayIso } from '../utils/dateValidation';
@@ -61,6 +62,7 @@ export class V2DocumentService {
   async reverseSource(sourceId: string, expectedType: string, memo: string, deleted = false, opts: { allowAllocations?: boolean } = {}) {
     return this.repoTx(async () => {
       const source = await this.sourceRow(sourceId, expectedType);
+      await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(source.book_id, source.id);
       if (expectedType === 'invoice') {
         // [Finding E / ACC-01c] Drop auto-applied advance allocations generated during invoice creation.
         // Pure advances only credited 2100 without crediting 1100. Direct receipts (which credited 1100)
@@ -101,6 +103,8 @@ export class V2DocumentService {
   /** Reverse and replace one source as a single all-or-nothing edit. */
   async replaceSource<T>(sourceId: string, expectedType: string, memo: string, createReplacement: () => Promise<T>): Promise<T> {
     return this.repoTx(async () => {
+      const source = await this.sourceRow(sourceId, expectedType);
+      await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(source.book_id, source.id);
       await this.reverseSource(sourceId, expectedType, memo);
       return createReplacement();
     });

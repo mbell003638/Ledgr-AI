@@ -3,6 +3,7 @@ import { V2SqlRepository } from '../repository';
 import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES } from '../types';
 import { mulMoney, round2 } from '../../money';
+import { localTodayIso } from '../../utils/dateValidation';
 
 type ActiveContext = { bookId: string; periodId: string };
 type ProductRow = {
@@ -112,9 +113,9 @@ export class ProductDomainService {
       if (openingQty) {
         let sourceId: string | null = null;
         const openingValue = openingQty > 0 && cost > 0 ? mulMoney(cost, openingQty) : 0;
+        const period = await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=? AND book_id=?', [c.periodId, c.bookId]);
+        const date = period?.start_date || localTodayIso();
         if (openingValue > 0) {
-          const period = await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=? AND book_id=?', [c.periodId, c.bookId]);
-          const date = period?.start_date || new Date().toISOString().slice(0, 10);
           const source = {
             id: uid('opening_stock'),
             bookId: c.bookId,
@@ -138,7 +139,7 @@ export class ProductDomainService {
         await this.insertMove({
           bookId: c.bookId,
           productId: id,
-          date: (await this.db.first<{ start_date: string }>('SELECT start_date FROM v2_periods WHERE id=? AND book_id=?', [c.periodId, c.bookId]))?.start_date || new Date().toISOString().slice(0, 10),
+          date,
           qty: openingQty,
           unitCost: cost,
           kind: 'adjust',
@@ -231,6 +232,27 @@ export class ProductDomainService {
       if (totalCogs > 0) {
         await this.postCogs(bookId, periodId, date, sourceId, totalCogs);
       }
+    });
+  }
+
+  async reverseMovesForSource(bookId: string, sourceId: string): Promise<void> {
+    if (!(await this.moduleEnabled())) return;
+    await this.repo.runInTransaction(async () => {
+      const moves = await this.db.all<{ id: string; product_id: string; qty: number; kind: string }>(
+        'SELECT id,product_id,qty,kind FROM v2_stock_moves WHERE book_id=? AND source_id=?',
+        [bookId, sourceId],
+      );
+      if (!moves.length) return;
+      for (const move of moves) {
+        const product = await this.loadProduct(bookId, move.product_id);
+        const qty = Number(move.qty);
+        const current = Number(product.qty);
+        const nextQty = move.kind === 'sale' ? current + qty
+          : move.kind === 'purchase' ? current - qty
+          : current - qty;
+        await this.db.run('UPDATE v2_products SET qty=? WHERE id=? AND book_id=?', [nextQty, product.id, bookId]);
+      }
+      await this.db.run('DELETE FROM v2_stock_moves WHERE book_id=? AND source_id=?', [bookId, sourceId]);
     });
   }
 

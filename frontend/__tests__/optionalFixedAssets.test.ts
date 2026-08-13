@@ -90,4 +90,58 @@ describe('optional fixed assets domain service', () => {
       await expect(assets.postDepreciation({ assetId: acquired.asset.id, date: '2027-01-28' })).rejects.toThrow(/fully depreciated|remaining/i);
     } finally { close(); }
   });
+
+  it('dispose after one month dep writes off NBV and accum so 1400 nets to 0', async () => {
+    const { runner, close, book, assets } = await setup(true);
+    try {
+      const acquired = await assets.acquireAsset({
+        name: 'Laptop',
+        category: 'computer',
+        date: '2026-07-01',
+        cost: 1200,
+        residual: 0,
+        usefulLifeMonths: 12,
+        funding: 'cash',
+      });
+      await assets.postDepreciation({ assetId: acquired.asset.id, date: '2026-07-31' });
+      const disposed = await assets.disposeAsset({ assetId: acquired.asset.id, date: '2026-08-15' });
+      expect(disposed.disposed).toBe(true);
+      expect(disposed.source.type).toBe('asset_disposal');
+      expect(await runner.all('SELECT account_id,debit,credit FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [disposed.journal.id])).toEqual([
+        { account_id: `${book.id}:account:1450`, debit: 100, credit: 0 },
+        { account_id: `${book.id}:account:6300`, debit: 1100, credit: 0 },
+        { account_id: `${book.id}:account:1400`, debit: 0, credit: 1200 },
+      ]);
+      const fixedNet = await runner.first<{ net: number }>(
+        'SELECT COALESCE(SUM(debit),0)-COALESCE(SUM(credit),0) AS net FROM v2_journal_lines WHERE account_id=?',
+        [`${book.id}:account:1400`],
+      );
+      const accumNet = await runner.first<{ net: number }>(
+        'SELECT COALESCE(SUM(debit),0)-COALESCE(SUM(credit),0) AS net FROM v2_journal_lines WHERE account_id=?',
+        [`${book.id}:account:1450`],
+      );
+      expect(fixedNet?.net).toBe(0);
+      expect(accumNet?.net).toBe(0);
+      const listed = await assets.listAssets();
+      expect(listed[0].disposed).toBe(true);
+    } finally { close(); }
+  });
+
+  it('throws when depreciation is posted twice in the same calendar month', async () => {
+    const { close, assets } = await setup(true);
+    try {
+      const acquired = await assets.acquireAsset({
+        name: 'Laptop',
+        category: 'computer',
+        date: '2026-07-01',
+        cost: 1200,
+        residual: 0,
+        usefulLifeMonths: 12,
+        funding: 'cash',
+      });
+      const first = await assets.postDepreciation({ assetId: acquired.asset.id, date: '2026-07-15' });
+      expect(first.amount).toBe(100);
+      await expect(assets.postDepreciation({ assetId: acquired.asset.id, date: '2026-07-31' })).rejects.toThrow('Depreciation already posted for this month');
+    } finally { close(); }
+  });
 });
