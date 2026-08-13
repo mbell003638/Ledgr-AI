@@ -7,35 +7,35 @@ import {
 } from '../src/accountingV2/invariants';
 
 describe('accountingV2 Invariant Engine', () => {
-  it('passes balanced double-entry postings', async () => {
+  it('passes balanced double-entry postings', () => {
     const lines = [
       { accountCode: '1000', debitCents: 5000, creditCents: 0 },
       { accountCode: '4000', debitCents: 0, creditCents: 5000 },
     ];
-    await expect(validatePostingInvariants(lines)).resolves.not.toThrow();
+    expect(() => validatePostingInvariants(lines)).not.toThrow();
   });
 
-  it('rejects unbalanced journal entries (INV-01)', async () => {
+  it('rejects unbalanced journal entries (INV-01)', () => {
     const lines = [
       { accountCode: '1000', debitCents: 5000, creditCents: 0 },
       { accountCode: '4000', debitCents: 0, creditCents: 4000 },
     ];
-    await expect(validatePostingInvariants(lines)).rejects.toThrow(InvariantError);
-    await expect(validatePostingInvariants(lines)).rejects.toThrow('BALANCED_JOURNAL');
+    expect(() => validatePostingInvariants(lines)).toThrow(InvariantError);
+    expect(() => validatePostingInvariants(lines)).toThrow('BALANCED_JOURNAL');
   });
 
-  it('rejects journal entries with fewer than 2 lines (INV-02)', async () => {
+  it('rejects journal entries with fewer than 2 lines (INV-02)', () => {
     const lines = [{ accountCode: '1000', debitCents: 5000, creditCents: 0 }];
-    await expect(validatePostingInvariants(lines)).rejects.toThrow(InvariantError);
-    await expect(validatePostingInvariants(lines)).rejects.toThrow('MINIMUM_LINES');
+    expect(() => validatePostingInvariants(lines)).toThrow(InvariantError);
+    expect(() => validatePostingInvariants(lines)).toThrow('MINIMUM_LINES');
   });
 
-  it('rejects negative line amounts (INV-03)', async () => {
+  it('rejects negative line amounts (INV-03)', () => {
     const lines = [
       { accountCode: '1000', debitCents: -5000, creditCents: 0 },
       { accountCode: '4000', debitCents: 0, creditCents: -5000 },
     ];
-    await expect(validatePostingInvariants(lines)).rejects.toThrow(InvariantError);
-    await expect(validatePostingInvariants(lines)).rejects.toThrow('NON_NEGATIVE_AMOUNTS');
+    expect(() => validatePostingInvariants(lines)).toThrow(InvariantError);
+    expect(() => validatePostingInvariants(lines)).toThrow('NON_NEGATIVE_AMOUNTS');
   });
 });

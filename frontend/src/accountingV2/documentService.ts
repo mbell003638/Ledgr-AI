@@ -1,22 +1,15 @@
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Party, type V2Source } from './types';
 import { V2SqlRepository } from './repository';
 import { round2 } from '../money';
+import { validatePostingInvariants, type JournalLineInput } from './invariants';
 
 const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 const positive = (n: number, label = 'Amount') => { const value = cents(n); if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be positive`); return value; };
 const today = () => new Date().toISOString().slice(0, 10);
-type JournalLineInput = { accountId: string; partyId?: string | null; debit: number; credit: number; memo?: string | null };
-/** Balance + validity guard mirroring the repository's assertBalanced (see [L1]). */
+/** Balance + validity guard delegating to canonical validatePostingInvariants. */
 function assertBalanced(lines: JournalLineInput[]) {
-  const rounded = lines.map((l) => ({ debit: cents(l.debit), credit: cents(l.credit) }));
-  const debit = rounded.reduce((s, l) => s + l.debit, 0);
-  const credit = rounded.reduce((s, l) => s + l.credit, 0);
-  if (!rounded.length
-    || rounded.some((l) => !Number.isFinite(l.debit) || !Number.isFinite(l.credit) || l.debit < 0 || l.credit < 0 || (l.debit > 0 && l.credit > 0) || (l.debit === 0 && l.credit === 0))
-    || Math.abs(debit - credit) > 0.005) {
-    throw new Error('Journal entry must balance after cent rounding and contain valid debit/credit lines');
-  }
+  validatePostingInvariants(lines);
 }
 let savepointSequence = 0;
 

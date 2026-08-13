@@ -168,9 +168,6 @@ const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> =
   drawing: ['amount', 'date', 'notes'],
   cash_entry: ['amount', 'date', 'type', 'category', 'notes'],
 };
-=======
-const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'record_inventory', 'log_personal_expense'];
->>>>>>> Stashed changes
 const assistantAmount = (value: unknown) => {
   const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[^0-9.-]/g, '')) : NaN;
   return Number.isFinite(amount) ? amount : NaN;
