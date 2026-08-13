@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
-import { V2_BOOK_VERSION, accountingBookVersion } from './appBootstrap';
+import { V2_BOOK_VERSION, accountingBookVersion, ensureDefaultAccounts } from './appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 import type { V2PartyRole } from './types';
@@ -112,6 +112,7 @@ export class V2AppService {
   async activeContext(date?: string): Promise<V2ActiveContext | null> {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
+    await ensureDefaultAccounts(this.db, active.value);
     if (!date) {
       const period = await this.db.first<{ id: string }>("SELECT id FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
       return period ? { bookId: active.value, periodId: period.id } : null;

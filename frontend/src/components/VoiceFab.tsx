@@ -95,6 +95,7 @@ export default function VoiceFab() {
       if (!resolution.ok) throw new Error(resolution.question);
       const p: any = resolution.command;
       const proposalByIntent: Record<string, any> = {
+        expense: { type: 'add_expense', params: { category: p.category || 'General', amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
         bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
         sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
         receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
@@ -121,7 +122,9 @@ export default function VoiceFab() {
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
-        if (parsed.intent === "bill") {
+        if (parsed.intent === "expense") {
+          await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash" });
+        } else if (parsed.intent === "bill") {
           const list = await api.listSuppliers();
           const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
           if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);

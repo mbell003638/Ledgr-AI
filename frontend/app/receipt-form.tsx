@@ -132,9 +132,10 @@ export default function ReceiptFormScreen() {
       if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
       
       if (editId) {
-         await api.deleteReceipt(editId);
+        await api.updateReceipt(editId, payload);
+      } else {
+        await api.createReceipt(payload);
       }
-      await api.createReceipt(payload);
       router.back();
     } catch (e: any) {
       setErr(e?.message || "Failed to save receipt.");

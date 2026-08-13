@@ -384,10 +384,11 @@ export async function testKey(cfg: AIConfig) {
 const PARSE_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['bill', 'sale', 'receipt', 'supplier_payment', 'drawing', 'inventory', 'unknown'] },
+    intent: { type: 'string', enum: ['bill', 'sale', 'receipt', 'expense', 'supplier_payment', 'drawing', 'inventory', 'unknown'] },
     date: { type: 'string' },
     amount: { type: 'number' },
     currency: { type: 'string', enum: ['USD'] },
+    category: { type: 'string' },
     supplierName: { type: 'string' },
     customerName: { type: 'string' },
     partnerName: { type: 'string' },
@@ -403,15 +404,16 @@ const PARSE_SCHEMA = {
 export async function parseCommand(cfg: AIConfig, text: string, currency = 'USD') {
   const today = new Date().toISOString().slice(0, 10);
   const prompt =
-    `Today is ${today}. Parse this shop accounting voice command into JSON. ` +
-    "Intents: 'bill' (vendor purchase), 'sale' (customer revenue — a plain cash sale), " +
+    `Today is ${today}. Parse this shop or personal accounting voice command into JSON. ` +
+    "Intents: 'expense' (business or personal expense like rent, tea, fuel, lunch, utilities, transport), " +
+    "'bill' (vendor purchase), 'sale' (customer revenue — a plain cash sale), " +
     "'receipt' (money RECEIVED from a customer — e.g. 'received 500 from Ali', 'Ali paid his invoice', 'took 200 advance from Sara'), " +
     "'supplier_payment' (paying a supplier), 'drawing' (partner withdrawal), 'inventory' (stock count). " +
     "For a 'receipt', also set receiptMode: 'cash_sale' (walk-in paid now, no customer owed), " +
     "'against_invoice' (settling what a named customer already owes), or 'advance' (money before any invoice). " +
-    "Set customerName when a customer is named, and method (cash/card/bank/upi) if stated. " +
+    "Set category for an expense, customerName when a customer is named, and method (cash/card/bank/upi) if stated. " +
     'Use ISO date YYYY-MM-DD. All amounts are in ' + currency + '. ' +
-    "Provide a short human summary. Fields: intent, date, amount, currency, supplierName, customerName, partnerName, paymentType, receiptMode, method, notes, summary. " +
+    "Provide a short human summary. Fields: intent, date, amount, currency, category, supplierName, customerName, partnerName, paymentType, receiptMode, method, notes, summary. " +
     'Command: ' + text;
   const out = await call(cfg, prompt, [], PARSE_SCHEMA);
   return parseJson(out);

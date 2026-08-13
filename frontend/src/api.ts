@@ -858,7 +858,7 @@ export const api = {
     const from = `${m}-01`; const [year, month] = m.split('-').map(Number);
     const to = `${m}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
     const report = await v2Report(from, to);
-    return { month: m, periodStart: from, revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, expenses: report.profitAndLoss.expenses - report.profitAndLoss.cogs, commission: 0, managerCommissionPct: 0, netProfit: report.profitAndLoss.netProfit };
+    return { month: m, periodStart: from, revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, expenses: report.profitAndLoss.expenses, commission: 0, managerCommissionPct: 0, netProfit: report.profitAndLoss.netProfit };
   },
   dailySummary: async (d: string) => {
     const runner = activeSqlRunner();
@@ -1094,20 +1094,59 @@ export const api = {
 
   // Enhanced reports
   taxReport: async (from: string, to: string) => {
-    const [settings, config, invoices, receipts, bills] = await Promise.all([
-      api.getSettings(), api.getV2BookConfig(), v2SourceDocuments(['invoice']), v2SourceDocuments(['receipt']), v2SourceDocuments(['cash_purchase','credit_purchase']),
+    const [settings, config, invoices, cashSales, receipts, bills, creditNotes] = await Promise.all([
+      api.getSettings(), api.getV2BookConfig(), v2SourceDocuments(['invoice']), v2SourceDocuments(['cash_sale']), v2SourceDocuments(['receipt']), v2SourceDocuments(['cash_purchase','credit_purchase']), v2SourceDocuments(['credit_note']),
     ]);
     const inRange = (row: any) => row.date >= from && row.date <= to;
     const taxOf = (gross: number, rate: number) => rate > 0 ? Math.round((gross - gross / (1 + rate / 100)) * 100) / 100 : 0;
     const basis = config?.basis === 'cash' ? 'cash' : 'accrual';
-    const outputRows = (basis === 'accrual' ? invoices : receipts).filter(inRange);
-    const outputBase = outputRows.reduce((sum: number, row: any) => sum + Number(row.total || row.amount || 0), 0);
-    const outputTax = outputRows.reduce((sum: number, row: any) => sum + taxOf(Number(row.total || row.amount || 0), Number(row.taxRate || settings.taxRate || 0)), 0);
     const rate = Number(settings.taxRate || 0);
+
+    let outputBase = 0;
+    let outputTax = 0;
+    if (basis === 'accrual') {
+      const salesRows = [...invoices, ...cashSales].filter(inRange);
+      for (const row of salesRows) {
+        const total = Number(row.total || row.amount || 0);
+        const rowTax = Number(row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+        const base = Number(row.metadata?.subtotal ?? (total - rowTax));
+        outputBase += base;
+        outputTax += rowTax;
+      }
+    } else {
+      const cashRows = [...cashSales, ...receipts].filter(inRange);
+      for (const row of cashRows) {
+        const total = Number(row.total || row.amount || 0);
+        const rowTax = Number(row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+        const base = Number(row.metadata?.subtotal ?? (total - rowTax));
+        outputBase += base;
+        outputTax += rowTax;
+      }
+    }
+
+    const cnRows = creditNotes.filter(inRange);
+    const creditNoteTax = cnRows.reduce((sum: number, row: any) => {
+      const total = Number(row.total || row.amount || 0);
+      return sum + Number(row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+    }, 0);
+    const netOutputTax = Math.max(0, Math.round((outputTax - creditNoteTax) * 100) / 100);
+
     const inputRows = bills.filter(inRange);
-    const inputBase = inputRows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-    const inputTax = inputRows.reduce((sum: number, row: any) => sum + taxOf(Number(row.amount || 0), Number(row.taxRate || rate)), 0);
-    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax: 0, debitNoteTax: 0, netOutputTax: outputTax, inputBase, inputTax, netTaxPayable: Math.round((outputTax - inputTax) * 100) / 100 };
+    let inputBase = 0;
+    let inputTax = 0;
+    for (const row of inputRows) {
+      const total = Number(row.amount || row.total || 0);
+      const rowTax = Number(row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+      const base = Number(row.metadata?.subtotal ?? (total - rowTax));
+      inputBase += base;
+      inputTax += rowTax;
+    }
+    inputBase = Math.round(inputBase * 100) / 100;
+    inputTax = Math.round(inputTax * 100) / 100;
+    outputBase = Math.round(outputBase * 100) / 100;
+    outputTax = Math.round(outputTax * 100) / 100;
+
+    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax: 0, netOutputTax, inputBase, inputTax, netTaxPayable: Math.round((netOutputTax - inputTax) * 100) / 100 };
   },
   salesRegister: async (from: string, to: string) => {
     const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));

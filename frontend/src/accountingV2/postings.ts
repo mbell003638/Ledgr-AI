@@ -153,7 +153,9 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
   // part of the new payable instead of leaving cash tied up in an advance.
   const applied = input.method ? 0 : Math.min(await supplierAdvanceBalance(repo, input.bookId, input.partyId), amount);
   const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, metadata: { partyId: input.partyId, total: amount, method: input.method, ...(applied > 0 ? { supplierAdvanceApplied: cents(applied) } : {}), ...(input.metadata || {}) } };
-  const lines: any[] = [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.INVENTORY}`, partyId: input.partyId, debit: amount, credit: 0 }];
+  const isExpense = Boolean(input.metadata?.isExpense || input.metadata?.category);
+  const debitCode = isExpense ? V2_ACCOUNT_CODES.EXPENSES : V2_ACCOUNT_CODES.INVENTORY;
+  const lines: any[] = [{ accountId: `${input.bookId}:account:${debitCode}`, partyId: input.partyId, debit: amount, credit: 0 }];
   if (input.method) {
     lines.push({ accountId: `${input.bookId}:account:${paymentCode(input.method)}`, partyId: input.partyId, debit: 0, credit: amount });
   } else {
@@ -161,7 +163,7 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
     const payable = cents(amount - applied);
     if (payable > 0.005) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: 0, credit: payable });
   }
-  const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Purchase', lines });
+  const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: isExpense ? 'Expense bill' : 'Purchase bill', lines });
   return { source, journal, supplierAdvanceApplied: cents(applied) };
 }
 export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:string;periodId:string;partyId:string;date:string;amount:number;method:V2PaymentMethod;metadata?:Record<string, unknown>}){
@@ -200,7 +202,7 @@ export async function postExpense(repo:V2SqlRepository,input:{bookId:string;peri
  *   - credit note  → DR AP, CR COGS            (we owe the supplier LESS)
  *   - debit note   → DR COGS, CR AP            (we owe the supplier MORE)
  */
-async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string }, kind: 'credit_note'|'debit_note') {
+async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string; method?: V2PaymentMethod }, kind: 'credit_note'|'debit_note') {
   const amount = cents(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const role = input.role === 'supplier' ? 'supplier' : 'customer';
@@ -214,30 +216,31 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
   const reference = String(input.reference || '').trim() || undefined;
   const reason = String(input.reason || '').trim();
   const notes = String(input.notes || '').trim();
+  const method = input.method;
+  const payAccount = method ? paymentCode(method) : (role === 'supplier' ? V2_ACCOUNT_CODES.AP : V2_ACCOUNT_CODES.AR);
   const source: V2Source = {
     id: uid(kind), bookId: input.bookId, type: kind, date: input.date, reference,
-    metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount, reason, notes },
+    metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount, reason, notes, ...(method ? { method } : {}) },
   };
   const credit = kind === 'credit_note';
   const lines = role === 'supplier'
     ? (credit ? [
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: amount, credit: 0 },
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: 0, credit: amount },
       ] : [
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: amount, credit: 0 },
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: 0, credit: amount },
+        { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: 0, credit: amount },
       ])
     : (credit ? [
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES_RETURNS}`, debit: amount, credit: 0 },
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: 0, credit: amount },
+        { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: 0, credit: amount },
       ] : [
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: amount, credit: 0 },
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
       ]);
   const journal = await repo.postSourceJournal(source, {
     bookId: input.bookId, periodId: input.periodId, date: input.date,
-    memo: [kind === 'credit_note' ? 'Credit note' : 'Debit note', reason || notes].filter(Boolean).join(': '),
-    lines,
+    memo: `${role === 'supplier' ? 'Supplier' : 'Customer'} ${kind.replace('_', ' ')}`, lines,
   });
   return { source, journal };
 }

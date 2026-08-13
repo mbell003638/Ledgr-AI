@@ -188,7 +188,14 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
   const summary = typeof doc.summary === 'string' ? doc.summary : '';
 
   // ---- Transactions ----
-  const entries = Array.isArray(doc.entries) ? doc.entries : [];
+  const isClosingReport = docType === 'closing_report';
+  const entries = isClosingReport ? [] : (Array.isArray(doc.entries) ? doc.entries : []);
+  if (isClosingReport && Array.isArray(doc.entries) && doc.entries.length > 0) {
+    flaggedRows.push({
+      label: 'Closing Report P&L summary entries',
+      reason: 'Closing report summary totals cannot be imported as new individual ledger transactions',
+    });
+  }
   for (const raw of entries) {
     const entry = asRecord(raw);
     if (!entry) continue; // junk (string/number/null) — ignore

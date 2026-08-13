@@ -119,28 +119,23 @@ function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) 
   const sourceById = new Map(store.sources.map((s) => [s.id, s]));
   const metaTotal = (id: string) => cents(Number((sourceById.get(id)?.metadata as any)?.total || 0));
 
-  // Revenue: cash sales in range + receipts allocated to invoices + unallocated advance receipts - cash customer returns
+  // Revenue: cash sales in range + all cash receipts received in range (on the receipt date) - cash refunds
   const cashSales = live.filter((s) => s.type === 'cash_sale' && inRange(s.date)).reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
-  const received = store.allocations
-    .filter((a) => a.bookId === options.bookId)
-    .filter((a) => { const receipt = sourceById.get(a.receiptSourceId); const date = receipt?.date || a.allocatedAt; return receipt && !(receipt.metadata as any)?.deleted && !(receipt.metadata as any)?.reversed && inRange(date); })
-    .reduce((sum, a) => cents(sum + Number(a.amount)), 0);
-  const directAdvances = live
-    .filter((s) => s.type === 'receipt' && inRange(s.date))
-    .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.advance || 0)), 0);
+  const receipts = live.filter((s) => s.type === 'receipt' && inRange(s.date)).reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || (s.metadata as any)?.amount || 0)), 0);
   const cashReturns = live
-    .filter((s) => s.type === 'credit_note' && inRange(s.date))
+    .filter((s) => s.type === 'credit_note' && inRange(s.date) && (s.metadata as any)?.method && (s.metadata as any)?.method !== 'credit')
     .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
-  const revenue = Math.max(0, cents(cashSales + received + directAdvances - cashReturns));
+  const revenue = Math.max(0, cents(cashSales + receipts - cashReturns));
 
   // COGS (cash basis): the cost of inventory bought for cash in the period. Kept out of the
   // expense total below so grossProfit and netProfit derive from disjoint buckets.
   const cogs = live.filter((s) => s.type === 'cash_purchase' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
 
-  // Expenses: cash-paid operating expenses + cash paid to suppliers, both on their own date.
-  // Cash purchases are intentionally NOT included here (they land in cogs above).
+  // Expenses: cash-paid operating expenses + cash paid to settle supplier payables (excluding 1210 prepayments).
   const cashExpenses = live.filter((s) => s.type === 'expense' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
-  const supplierPayments = live.filter((s) => s.type === 'supplier_payment' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+  const supplierPayments = live
+    .filter((s) => s.type === 'supplier_payment' && inRange(s.date))
+    .reduce((sum, s) => cents(sum + Math.max(0, metaTotal(s.id) - Number((s.metadata as any)?.supplierAdvance || 0))), 0);
   const expenses = cents(cashExpenses + supplierPayments);
 
   return { revenue, cogs, expenses };

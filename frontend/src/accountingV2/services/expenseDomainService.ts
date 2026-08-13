@@ -86,7 +86,13 @@ export class ExpenseDomainService {
         partyId,
         amount: amount(input.amount ?? input.total),
         method: cash ? method(input.method) : undefined,
-        metadata: { invoiceNo: input.invoiceNo, notes: input.notes, photo: input.photo },
+        metadata: {
+          category: input.category,
+          isExpense: input.isExpense,
+          invoiceNo: input.invoiceNo,
+          notes: input.notes,
+          photo: input.photo,
+        },
       });
     });
   }

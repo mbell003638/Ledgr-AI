@@ -93,6 +93,9 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
     case "add_expense":
       await api.createExpense({ category: p.category || "General", amount: p.amount, date: p.date || today, method: p.method || "cash", notes: tagNote(p.notes) });
       return "Expense recorded ✓";
+    case "log_personal_expense":
+      await api.createExpense({ category: p.category || "Personal", amount: p.amount, date: p.date || today, method: p.method || "cash", notes: tagNote(p.notes || "Personal expense") });
+      return `Personal expense of $${Number(p.amount).toFixed(2)} recorded ✓`;
     case "add_sale":
       await api.createSale({ amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
       return "Sale recorded ✓";

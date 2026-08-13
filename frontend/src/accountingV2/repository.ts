@@ -144,7 +144,14 @@ export class V2SqlRepository {
     const credited = noteRows.reduce((sum, nr) => {
       try { return sum + Number(JSON.parse(nr.metadata || '{}').total || 0); } catch { return sum; }
     }, 0);
-    return Math.max(0, cents(total - Number(row?.paid || 0) - credited));
+    const debitRows = await this.db.all<{ metadata: string }>(
+      "SELECT metadata FROM v2_sources WHERE type='debit_note' AND json_extract(metadata,'$.invoiceSourceId')=? AND (json_extract(metadata,'$.reversed') IS NULL OR json_extract(metadata,'$.reversed')=0) AND (json_extract(metadata,'$.deleted') IS NULL OR json_extract(metadata,'$.deleted')=0)",
+      [invoiceSourceId],
+    );
+    const debited = debitRows.reduce((sum, nr) => {
+      try { return sum + Number(JSON.parse(nr.metadata || '{}').total || 0); } catch { return sum; }
+    }, 0);
+    return Math.max(0, cents(total + debited - Number(row?.paid || 0) - credited));
   }
 
   async accountBalance(bookId: string, accountId: string, range: V2DateRange = {}): Promise<number> {

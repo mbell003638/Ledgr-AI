@@ -61,8 +61,9 @@ export class V2DocumentService {
     return this.repoTx(async () => {
       const source = await this.sourceRow(sourceId, expectedType);
       if (expectedType === 'invoice') {
-        // [Finding E / ACC-01c] Drop advance allocations generated during invoice creation
-        // since reversing this invoice restores the customer advance (2100) credit.
+        // [Finding E / ACC-01c] Drop auto-applied advance allocations generated during invoice creation.
+        // Pure advances only credited 2100 without crediting 1100. Direct receipts (which credited 1100)
+        // are preserved even if they also credited 2100 for an excess balance.
         await this.repo.db.run(`
           DELETE FROM v2_invoice_allocations
           WHERE invoice_source_id = ?
@@ -72,6 +73,13 @@ export class V2DocumentService {
               JOIN v2_journal_lines l ON l.journal_id = j.id
               JOIN v2_accounts a ON a.id = l.account_id
               WHERE a.code = '2100'
+            )
+            AND receipt_source_id NOT IN (
+              SELECT s.id FROM v2_sources s
+              JOIN v2_journal_entries j ON j.source_id = s.id
+              JOIN v2_journal_lines l ON l.journal_id = j.id
+              JOIN v2_accounts a ON a.id = l.account_id
+              WHERE a.code = '1100'
             )
         `, [sourceId]);
 

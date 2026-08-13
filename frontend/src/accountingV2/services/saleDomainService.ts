@@ -11,6 +11,8 @@ import type { InvoiceDomainService } from './invoiceDomainService';
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => value === 'upi' ? 'mobile' : methods.has(value) ? value : 'cash';
+const paymentMethodOrUndefined = (value: any): V2PaymentMethod | undefined =>
+  value === 'upi' ? 'mobile' : methods.has(value) ? value : undefined;
 const amount = (value: any) => Number(value);
 const cents = round2;
 
@@ -132,6 +134,7 @@ export class SaleDomainService {
         reference: input.reference,
         reason: input.reason,
         notes: input.notes,
+        method: paymentMethodOrUndefined(input.method),
       });
     });
   }

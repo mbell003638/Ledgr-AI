@@ -127,3 +127,20 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
 
   return { bookId: id, periodId, version: V2_BOOK_VERSION };
 }
+
+/**
+ * Ensure all default accounts (including newly introduced accounts like 2300 Tax Payable)
+ * exist for the specified book without wiping any existing accounts or balances.
+ */
+export async function ensureDefaultAccounts(db: SqlRunner, bookId: string): Promise<void> {
+  const accounts = defaultAccounts(bookId);
+  for (const account of accounts) {
+    const existing = await db.first<{ id: string }>('SELECT id FROM v2_accounts WHERE id=?', [account.id]);
+    if (!existing) {
+      await db.run(
+        'INSERT INTO v2_accounts(id,book_id,code,name,type,payment_method,active) VALUES(?,?,?,?,?,?,1)',
+        [account.id, bookId, account.code, account.name, account.type, account.paymentMethod || null]
+      );
+    }
+  }
+}

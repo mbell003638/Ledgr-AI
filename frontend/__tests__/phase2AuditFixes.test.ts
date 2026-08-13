@@ -88,6 +88,7 @@ describe('Audit Phase 2 Forensic Fixes', () => {
       date: '2026-03-10',
       clientName: 'Advance Debtor',
       amount: 30,
+      method: 'cash',
       reason: 'Cash refund',
     });
 

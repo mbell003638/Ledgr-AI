@@ -1353,7 +1353,7 @@ export async function exportBackup() {
   let v2: any = undefined;
   const runner = backendActiveSqlRunner();
   if (runner) {
-    try { v2 = await exportV2Data(runner); } catch { /* v2 export best-effort */ }
+    v2 = await exportV2Data(runner);
   }
 
   // [Finding D] Multi-book capture. The top-level data/settings/logo above are
