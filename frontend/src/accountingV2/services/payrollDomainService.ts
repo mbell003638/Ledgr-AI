@@ -185,7 +185,7 @@ export class PayrollDomainService {
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     if (input.method !== 'cash' && input.method !== 'bank') throw new Error('Payroll method must be cash or bank');
 
-    const employees = await this.loadEmployeesForRun(context.bookId, input.employeeIds);
+    const employees = await this.loadEmployeesForRun(context.bookId, input.date, input.employeeIds);
     if (!employees.length) throw new Error('No employees to pay');
 
     const slips = employees.map((employee) => {
@@ -314,10 +314,13 @@ export class PayrollDomainService {
        FROM v2_payslips p
        JOIN v2_pay_runs r ON r.id = p.pay_run_id
        JOIN v2_employees e ON e.id = p.employee_id
-       WHERE r.book_id=? AND r.date LIKE ?
+       LEFT JOIN v2_sources s ON s.id = r.source_id
+       WHERE r.book_id=? AND r.date>=? AND r.date<=?
+         AND COALESCE(json_extract(s.metadata,'$.reversed'),0)=0
+         AND COALESCE(json_extract(s.metadata,'$.deleted'),0)=0
        GROUP BY e.id, e.name
        ORDER BY e.name, e.id`,
-      [context.bookId, `${prefix}%`],
+      [context.bookId, `${prefix}-01-01`, `${prefix}-12-31`],
     );
     const employees = rows.map((row) => ({
       employeeId: row.employee_id,
@@ -341,20 +344,21 @@ export class PayrollDomainService {
     requireOptionalModule(await isOptionalModuleEnabled(this.db, 'payroll'), 'payroll');
   }
 
-  private async loadEmployeesForRun(bookId: string, employeeIds?: string[]) {
+  private async loadEmployeesForRun(bookId: string, payDate: string, employeeIds?: string[]) {
     const ids = (employeeIds || []).map((id) => String(id || '').trim()).filter(Boolean);
+    const started = '(start_date IS NULL OR start_date=\'\' OR start_date<=?)';
     if (ids.length) {
       const placeholders = ids.map(() => '?').join(',');
       return this.db.all<EmployeeRow>(
         `SELECT id,book_id,name,role,pay_rate,tax_withhold_pct,start_date,archived
-         FROM v2_employees WHERE book_id=? AND archived=0 AND id IN (${placeholders})
+         FROM v2_employees WHERE book_id=? AND archived=0 AND ${started} AND id IN (${placeholders})
          ORDER BY name, id`,
-        [bookId, ...ids],
+        [bookId, payDate, ...ids],
       );
     }
     return this.db.all<EmployeeRow>(
-      'SELECT id,book_id,name,role,pay_rate,tax_withhold_pct,start_date,archived FROM v2_employees WHERE book_id=? AND archived=0 ORDER BY name, id',
-      [bookId],
+      `SELECT id,book_id,name,role,pay_rate,tax_withhold_pct,start_date,archived FROM v2_employees WHERE book_id=? AND archived=0 AND ${started} ORDER BY name, id`,
+      [bookId, payDate],
     );
   }
 }

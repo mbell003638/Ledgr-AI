@@ -78,6 +78,40 @@ What is *not* claimed: official tax-office e-filing, FIFO costing, or a device w
 
 **Fixed:** Runtime guard on wipe (same idea as factory reset) plus tests that `DELETE_ORDER` / `INSERT_ORDER` / `V2_COLLECTIONS` equal `V2_TABLES`.
 
+### 3.8 P0 — Reverse only flipped the first journal on a source
+
+**Found:** A stocked sale posts two journals (sale + COGS). `journalForSource` used `SELECT … first()`. Delete could leave Dr 5000 / Cr 1200 posted.
+
+**Fixed:** Reverse **every** journal for that `source_id`.
+
+### 3.9 P1 — Dashboard and Reports omitted 1400 / 1450 / 2310
+
+**Found:** Buying a fixed asset or withholding payroll tax did not change home net worth. Reports dumped 1400 into “Other assets” and skipped contra 1450 / payroll tax 2310.
+
+**Fixed:** Dashboard assets include 1400+1450; liabilities include 2300+2310. Reports show “Fixed Assets (net)” and tax payable includes 2310.
+
+### 3.10 P1 — Period close ignored wages and depreciation
+
+**Found:** Snapshot expenses used only account 6000. 6200 and 6300 still closed to RE, so partner split overstated profit.
+
+**Fixed:** Close expenses = 6000 + 6200 + 6300.
+
+### 3.11 P1 — Cash-basis P&L ignored pay runs
+
+**Fixed:** Cash expenses include `pay_run` `totalNet`.
+
+### 3.12 P1 — Invoices never moved live stock
+
+**Fixed:** Same optional product picker as Log Sale; `productLines` on create only.
+
+### 3.13 P1 — Year-end included reversed pay runs; employees paid before start date
+
+**Fixed:** Year-end excludes reversed/deleted sources and uses a calendar year range. Pay run skips employees whose `start_date` is after the pay date. Depreciation/dispose cannot precede acquisition.
+
+### 3.14 P2 — Custom report detail codes skipped new accounts
+
+**Fixed:** Trial/BS detail includes 1400, 1450, 2310.
+
 ### Already correct (no code change)
 
 - Modules stay off until Customize Features (`OPTIONAL_FEATURE_KEYS` not in persona baselines).

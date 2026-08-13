@@ -18,8 +18,8 @@ export type CustomReportOutput = { bookId: string; from?: string; to?: string; d
 const labels: Record<CustomReportSectionId, string> = { trialBalance: 'Trial Balance', profit: 'Profit & Loss', balanceSheet: 'Balance Sheet', sales: 'Sales', purchases: 'Purchases', receipts: 'Receipts', expenses: 'Expenses', cash: 'Cash', inventory: 'Inventory & COGS', debtors: 'Customers', creditors: 'Suppliers', members: 'Capital Statement', tax: 'Tax', notes: 'Notes' };
 const statementFields: Partial<Record<CustomReportSectionId, CustomReportField[]>> = { profit: ['revenue', 'expenses', 'netProfit'], balanceSheet: ['assets', 'liabilities', 'equity'], trialBalance: ['accountCode', 'accountName', 'debit', 'credit'] };
 const detailCodesBySection: Partial<Record<CustomReportSectionId, string[]>> = {
-  trialBalance: ['1100', '1210', '1500', '2000', '2100', '2500', '3000', '3100', '3200'],
-  balanceSheet: ['1100', '1210', '1500', '2000', '2100', '2500', '3000', '3100', '3200'],
+  trialBalance: ['1100', '1210', '1400', '1450', '1500', '2000', '2100', '2310', '2500', '3000', '3100', '3200'],
+  balanceSheet: ['1100', '1210', '1400', '1450', '1500', '2000', '2100', '2310', '2500', '3000', '3100', '3200'],
   debtors: ['1100', '2100'],
   creditors: ['1210', '2000'],
   members: ['3000', '3100', '3200'],

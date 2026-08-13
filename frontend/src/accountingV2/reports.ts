@@ -136,7 +136,10 @@ function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) 
   const supplierPayments = live
     .filter((s) => s.type === 'supplier_payment' && inRange(s.date))
     .reduce((sum, s) => cents(sum + Math.max(0, metaTotal(s.id) - Number((s.metadata as any)?.supplierAdvance || 0))), 0);
-  const expenses = cents(cashExpenses + supplierPayments);
+  const payrollCash = live
+    .filter((s) => s.type === 'pay_run' && inRange(s.date))
+    .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.totalNet || 0)), 0);
+  const expenses = cents(cashExpenses + supplierPayments + payrollCash);
 
   return { revenue, cogs, expenses };
 }

@@ -23,6 +23,7 @@ import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
+import { getEnabledFeatures } from "@/src/utils/featureFlags";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -747,6 +748,10 @@ export default function InvoicesScreen() {
   const [discountInput, setDiscountInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [stockEnabled, setStockEnabled] = useState(false);
+  const [products, setProducts] = useState<{ id: string; name: string; sku?: string | null; cost?: number; archived?: boolean }[]>([]);
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockQty, setStockQty] = useState("");
 
   // Version at which the list last loaded, so a focus-return with no
   // intervening mutation can skip the full re-read (instant back-navigation).
@@ -759,6 +764,14 @@ export default function InvoicesScreen() {
       setOverdue(od as Invoice[]);
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBiz(s);
+      const on = getEnabledFeatures(s).includes("perpetualInventory");
+      setStockEnabled(on);
+      if (on) {
+        const list = await api.listProducts().catch(() => []);
+        setProducts((Array.isArray(list) ? list : []).filter((p: any) => p?.id && !p.archived));
+      } else {
+        setProducts([]);
+      }
       loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
@@ -785,6 +798,8 @@ export default function InvoicesScreen() {
     setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setFormError("");
     applyTaxFromSettings(s);
+    setStockProductId("");
+    setStockQty("");
     setShowForm(true);
   }, [biz]);
 
@@ -837,6 +852,11 @@ export default function InvoicesScreen() {
       const label = taxLabelInput.trim();
       const totals = calculateInvoiceTotals(validLines, discount, rate);
       if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
+      const stockProduct = products.find((p) => p.id === stockProductId);
+      const qty = parseFloat(stockQty);
+      const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty > 0
+        ? [{ productId: stockProduct.id, qty }]
+        : undefined;
       const payload = {
         clientName: clientName.trim(), clientPhone: clientPhone.trim(),
         date: dateIso, dueDate: dueDateIso || undefined,
@@ -849,6 +869,7 @@ export default function InvoicesScreen() {
         discount: totals.discount,
         tax: totals.tax,
         total: totals.total,
+        ...(productLines ? { productLines } : {}),
       };
       if (editId) await api.updateInvoice(editId, payload);
       else await api.createInvoice(payload);
@@ -1217,6 +1238,27 @@ export default function InvoicesScreen() {
 
                 <Card style={{ marginTop: theme.spacing.md }}>
                   <Text style={styles.label}>Line Items</Text>
+                  {!editId && stockEnabled ? (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.label}>Product stock (optional)</Text>
+                      <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Deducts live quantity when this invoice is created.</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                        <View style={{ flexDirection: "row", gap: 6 }}>
+                          <Pressable onPress={() => { setStockProductId(""); setStockQty(""); }} style={{ borderWidth: 1, borderColor: !stockProductId ? theme.color.brandPrimary : theme.color.border, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
+                            <Text style={{ fontSize: 12, fontWeight: "600", color: !stockProductId ? theme.color.brandPrimary : theme.color.onSurface }}>None</Text>
+                          </Pressable>
+                          {products.map((p) => (
+                            <Pressable key={p.id} onPress={() => setStockProductId(p.id)} style={{ borderWidth: 1, borderColor: stockProductId === p.id ? theme.color.brandPrimary : theme.color.border, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 }}>
+                              <Text style={{ fontSize: 12, fontWeight: "600", color: stockProductId === p.id ? theme.color.brandPrimary : theme.color.onSurface }}>{p.name}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                      {stockProductId ? (
+                        <TextInput value={stockQty} onChangeText={setStockQty} keyboardType="numeric" placeholder="Quantity" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      ) : null}
+                    </View>
+                  ) : null}
                   {lines.map((l, i) => (
                     <View key={i} style={{ marginTop: 10 }}>
                       <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={styles.input} />

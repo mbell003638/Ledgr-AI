@@ -93,8 +93,11 @@ export class V2DocumentService {
       } else if (expectedType === 'receipt') {
         await this.repo.db.run('DELETE FROM v2_invoice_allocations WHERE receipt_source_id=?', [sourceId]);
       }
-      const original = await this.journalForSource(sourceId);
-      const reversal = await this.insertReversal(source, original, memo);
+      const originals = await this.journalsForSource(sourceId);
+      let reversal = await this.insertReversal(source, originals[0], memo);
+      for (const extra of originals.slice(1)) {
+        reversal = await this.insertReversal(source, extra, memo);
+      }
       await this.repo.db.run("UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.reversed',1,'$.deleted',?,'$.reversalSourceId',?) WHERE id=?", [deleted ? 1 : 0, reversal.source.id, sourceId]);
       return reversal;
     });
@@ -161,7 +164,9 @@ export class V2DocumentService {
     return this.repoTx(async () => {
       const old = await this.receiptRow(receiptSourceId);
       await this.repo.db.run('DELETE FROM v2_invoice_allocations WHERE receipt_source_id=?', [receiptSourceId]);
-      const reversal = await this.insertReversal(old, await this.journalForSource(receiptSourceId), 'Edit receipt');
+      const journals = await this.journalsForSource(receiptSourceId);
+      let reversal = await this.insertReversal(old, journals[0], 'Edit receipt');
+      for (const extra of journals.slice(1)) reversal = await this.insertReversal(old, extra, 'Edit receipt');
       const next = await this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId });
       await this.repo.db.run('UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,\'{}\'),\'$.reversed\',1,\'$.reversalSourceId\',?) WHERE id=?', [reversal.source.id, receiptSourceId]);
       return { reversal, replacement: next };
@@ -233,7 +238,14 @@ export class V2DocumentService {
     if (metadata.reversed || metadata.deleted) throw new Error('Transaction has already been reversed');
     return row;
   }
-  private async journalForSource(id: string) { const j = await this.repo.db.first<any>('SELECT * FROM v2_journal_entries WHERE source_id=?', [id]); if (!j) throw new Error('Receipt journal not found'); j.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [j.id]); return j; }
+  private async journalsForSource(id: string) {
+    const rows = await this.repo.db.all<any>('SELECT * FROM v2_journal_entries WHERE source_id=? ORDER BY posted_at,id', [id]);
+    if (!rows.length) throw new Error('Receipt journal not found');
+    for (const journal of rows) {
+      journal.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [journal.id]);
+    }
+    return rows;
+  }
 
   private async periodRow(bookId: string, periodId: string): Promise<PeriodStatusRow | null> {
     return this.repo.db.first<PeriodStatusRow>('SELECT id,start_date,end_date,status FROM v2_periods WHERE id=? AND book_id=?', [periodId, bookId]);

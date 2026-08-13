@@ -143,6 +143,7 @@ export class FixedAssetDomainService {
     const asset = await this.loadAsset(context.bookId, input.assetId);
     if (!asset) throw new Error('Asset not found');
     if (asset.disposed) throw new Error('Asset has been disposed');
+    if (input.date < asset.acquired_date) throw new Error('Cannot depreciate before the acquisition date');
 
     const depreciable = cents(asset.cost - asset.residual);
     const remaining = cents(depreciable - asset.accum);
@@ -193,6 +194,7 @@ export class FixedAssetDomainService {
     const asset = await this.loadAsset(context.bookId, input.assetId);
     if (!asset) throw new Error('Asset not found');
     if (asset.disposed) throw new Error('Asset has been disposed');
+    if (input.date < asset.acquired_date) throw new Error('Cannot dispose before the acquisition date');
 
     const cost = cents(asset.cost);
     const accum = cents(asset.accum);

@@ -175,13 +175,14 @@ export default function ReportsScreen() {
         const invBal = findBal(['1200']);
         const arBal = findBal(['1100']);
         const suppAdvBal = findBal(['1210']);
-        const otherAssetBal = findBal(['1300', '1400', '1500']);
-        const totalAssets = report.balanceSheet?.assets ?? round2(cashBal + invBal + arBal + suppAdvBal + otherAssetBal);
+        const fixedAssetBal = findBal(['1400', '1450']);
+        const otherAssetBal = findBal(['1300', '1500']);
+        const totalAssets = report.balanceSheet?.assets ?? round2(cashBal + invBal + arBal + suppAdvBal + fixedAssetBal + otherAssetBal);
 
         const apBal = findBal(['2000']);
         const commPayBal = findBal(['2200']);
         const custAdvBal = findBal(['2100']);
-        const taxPayBal = findBal(['2300']);
+        const taxPayBal = findBal(['2300', '2310']);
         const otherLiabBal = findBal(['2400', '2500']);
         const totalLiabilities = report.balanceSheet?.liabilities ?? round2(apBal + commPayBal + custAdvBal + taxPayBal + otherLiabBal);
         const equity = report.balanceSheet?.equity ?? round2(totalAssets - totalLiabilities);
@@ -190,6 +191,7 @@ export default function ReportsScreen() {
           assets: { cash: cashBal, inventory: invBal, extra: [
             { name: "Customers", amount: arBal },
             { name: "Supplier Advances", amount: suppAdvBal },
+            { name: "Fixed Assets (net)", amount: fixedAssetBal },
             { name: "Other Assets", amount: otherAssetBal },
           ].filter((a) => a.amount), total: totalAssets },
           liabilities: { suppliersPayable: apBal, extra: [

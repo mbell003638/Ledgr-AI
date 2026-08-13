@@ -68,9 +68,11 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   const commissionPayable = cents(getBal('2200'));
   const otherAssets = cents(getBal('1500'));
   const otherLiabilities = cents(getBal('2500'));
+  const fixedAssetsNet = cents(getBal('1400') + getBal('1450'));
+  const taxPayable = cents(getBal('2300') + getBal('2310'));
 
-  const assets = cents(cash + inventoryValue + accountsReceivable + supplierAdvances + otherAssets);
-  const liabilities = cents(accountsPayable + customerAdvances + commissionPayable + otherLiabilities);
+  const assets = cents(cash + inventoryValue + accountsReceivable + supplierAdvances + otherAssets + fixedAssetsNet);
+  const liabilities = cents(accountsPayable + customerAdvances + commissionPayable + otherLiabilities + taxPayable);
   const netWorth = cents(assets - liabilities);
   const drawings = cents(getBal('3100'));
 
@@ -138,5 +140,6 @@ async function openingBalances(db: SqlRunner, bookId: string, periodStart: strin
   const inventory = await balancesAsOf(db, bookId, periodStart, ['1200']);
   const receivable = await balancesAsOf(db, bookId, periodStart, ['1100']);
   const otherAssets = await balancesAsOf(db, bookId, periodStart, ['1500']);
-  return { cash, inventory, assets: round2(cash + inventory + receivable + otherAssets) };
+  const fixedAssets = await balancesAsOf(db, bookId, periodStart, ['1400', '1450']);
+  return { cash, inventory, assets: round2(cash + inventory + receivable + otherAssets + fixedAssets) };
 }
