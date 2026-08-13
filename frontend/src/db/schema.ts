@@ -109,6 +109,10 @@ export function schemaSql(): string {
 
 export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec('PRAGMA foreign_keys = ON;');
+  await db.exec('PRAGMA journal_mode = WAL;');
+  await db.exec('PRAGMA busy_timeout = 5000;');
+  await db.exec('PRAGMA synchronous = NORMAL;');
+  await db.exec('PRAGMA wal_autocheckpoint = 1000;');
   await db.exec(schemaSql());
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {

@@ -141,7 +141,7 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
 }
 
 export type AssistantEntryEntity = 'expense' | 'sale' | 'bill' | 'supplier_payment' | 'receipt' | 'invoice' | 'quote' | 'customer' | 'supplier' | 'delivery_note' | 'note' | 'inventory_count' | 'capital' | 'drawing' | 'cash_entry';
-export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_supplier' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'add_capital' | 'record_inventory' | 'update_entry' | 'delete_entry';
+export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_supplier' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'add_capital' | 'record_inventory' | 'update_entry' | 'delete_entry' | 'log_personal_expense';
 // isDestructive mirrors the V2 write flag so confirm UIs can react uniformly.
 // All current assistant proposals are additive, so this stays false/undefined;
 // it exists so a destructive proposal (if ever added) is rendered with a
@@ -149,7 +149,7 @@ export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'a
 export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation; isDestructive?: boolean };
 export type AssistantProposalValidationResult = { ok: true; action: AssistantProposal } | { ok: false; errors: string[] };
 
-const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry'];
+const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry', 'log_personal_expense'];
 const ASSISTANT_ENTRY_ENTITIES: AssistantEntryEntity[] = ['expense', 'sale', 'bill', 'supplier_payment', 'receipt', 'invoice', 'quote', 'customer', 'supplier', 'delivery_note', 'note', 'inventory_count', 'capital', 'drawing', 'cash_entry'];
 const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> = {
   expense: ['amount', 'date', 'category', 'method', 'notes'],
@@ -168,6 +168,9 @@ const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> =
   drawing: ['amount', 'date', 'notes'],
   cash_entry: ['amount', 'date', 'type', 'category', 'notes'],
 };
+=======
+const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'record_inventory', 'log_personal_expense'];
+>>>>>>> Stashed changes
 const assistantAmount = (value: unknown) => {
   const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[^0-9.-]/g, '')) : NaN;
   return Number.isFinite(amount) ? amount : NaN;

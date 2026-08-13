@@ -1,9 +1,10 @@
 import type { V2Basis, V2BookStyle } from './types';
 
-export type PersonaId = 'retail' | 'wholesale' | 'salon' | 'handyman' | 'professional_service' | 'it_freelancer' | 'vendor' | 'custom';
+export type PersonaId = 'personal' | 'retail' | 'wholesale' | 'salon' | 'handyman' | 'professional_service' | 'it_freelancer' | 'vendor' | 'custom';
 export type PersonaConfig = { id: PersonaId; label: string; description: string; modules: string[]; questions: string[] };
 
 export const PERSONAS: PersonaConfig[] = [
+  { id: 'personal', label: 'Personal Finance', description: 'Personal budget, daily expenses, payees, assets and net worth.', modules: ['sales', 'expenses', 'net_worth', 'parties', 'reports'], questions: ['Track category budgets?', 'Track net worth statement?'] },
   { id: 'retail', label: 'Retail Shop', description: 'Stock, purchases, inventory and customer sales.', modules: ['sales', 'invoices', 'inventory', 'purchases', 'parties', 'reports'], questions: ['Track periodic inventory?', 'Use partnership close-books?'] },
   { id: 'wholesale', label: 'Wholesale / Trading', description: 'Bulk stock, suppliers and receivables.', modules: ['sales', 'invoices', 'inventory', 'purchases', 'parties', 'reports'], questions: ['Track periodic inventory?', 'Default credit terms?'] },
   { id: 'salon', label: 'Salon / Beauty', description: 'Services, customers, appointments and expenses.', modules: ['sales', 'invoices', 'parties', 'expenses', 'reports'], questions: ['Track service providers?', 'Track appointments?'] },
