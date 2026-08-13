@@ -47,6 +47,12 @@ export function TransactionAuditModal({
     setLoading(true);
     try {
       const services = v2Services();
+      const appService = new V2AppService(services.repo.db);
+      const ctx = await appService.activeContext();
+      if (!ctx) {
+        setEntries([]);
+        return;
+      }
       const runner = services.repo.db;
       const rows = await runner.all<{
         id: string;
@@ -55,7 +61,8 @@ export function TransactionAuditModal({
         reference: string | null;
         metadata: string;
       }>(
-        "SELECT id, type, date, reference, metadata FROM v2_sources ORDER BY date DESC, id DESC LIMIT 50"
+        "SELECT id, type, date, reference, metadata FROM v2_sources WHERE book_id=? ORDER BY date DESC, id DESC LIMIT 50",
+        [ctx.bookId]
       );
 
       const items: AuditLogEntry[] = rows.map((row: any) => {

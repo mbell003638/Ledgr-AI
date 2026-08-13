@@ -2,6 +2,7 @@ import type { SqlRunner } from '../db/schema';
 import { V2_ACCOUNT_CODES, type V2Member } from './types';
 import { round2 } from '../money';
 import { computePeriodicCogs } from './cogs';
+import { validatePostingInvariants } from './invariants';
 
 let closeBooksSavepointSequence = 0;
 const cents = round2;
@@ -92,7 +93,8 @@ export class V2CloseBooksRepository {
       const balances = await this.accountTotals(input.bookId, 'j.date<=?', [input.date]);
       const movement = (code: string) => this.net(periodTotals, code);
       const balance = (code: string) => this.net(balances, code);
-      const sales = cents(-movement('4000') + movement('4010'));
+      const returns = movement('4010');
+      const sales = cents(-movement('4000') - returns);
       const purchases = cents(Math.max(0, movement('1200')));
       const expenses = cents(Math.max(0, movement('6000')));
       const drawings = cents(Math.max(0, movement('3100')));
@@ -144,6 +146,7 @@ export class V2CloseBooksRepository {
   }
 
   private async writeJournal(journalId: string, input: CloseBooksInput, postedAt: string, memo: string, lines: { accountId: string; debit: number; credit: number }[]) {
+    validatePostingInvariants(lines);
     await this.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [journalId, input.bookId, input.periodId, null, input.date, memo, postedAt, null]);
     for (const line of lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [journalId, line.accountId, null, cents(line.debit), cents(line.credit), memo]);
   }

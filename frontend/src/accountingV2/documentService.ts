@@ -61,10 +61,20 @@ export class V2DocumentService {
     return this.repoTx(async () => {
       const source = await this.sourceRow(sourceId, expectedType);
       if (expectedType === 'invoice') {
-        // [Finding E] The allocation guard blocks DELETE (you can't drop an invoice
-        // that has receipts against it). An EDIT that re-posts and re-points those
-        // allocations passes allowAllocations so a partially-paid invoice can be
-        // corrected instead of dead-ending.
+        // [Finding E / ACC-01c] Drop advance allocations generated during invoice creation
+        // since reversing this invoice restores the customer advance (2100) credit.
+        await this.repo.db.run(`
+          DELETE FROM v2_invoice_allocations
+          WHERE invoice_source_id = ?
+            AND receipt_source_id IN (
+              SELECT s.id FROM v2_sources s
+              JOIN v2_journal_entries j ON j.source_id = s.id
+              JOIN v2_journal_lines l ON l.journal_id = j.id
+              JOIN v2_accounts a ON a.id = l.account_id
+              WHERE a.code = '2100'
+            )
+        `, [sourceId]);
+
         if (!opts.allowAllocations) {
           const allocated = await this.repo.db.first('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [sourceId]);
           if (allocated) throw new Error('Cannot reverse an invoice with receipt allocations');
@@ -102,24 +112,34 @@ export class V2DocumentService {
     createReplacement: () => Promise<T>,
   ): Promise<T> {
     return this.repoTx(async () => {
-      const allocRows = await this.repo.db.all<{ id: string; amount: number }>('SELECT id,amount FROM v2_invoice_allocations WHERE invoice_source_id=?', [sourceId]);
-      const allocated = cents(allocRows.reduce((sum, r) => sum + Number(r.amount || 0), 0));
+      // Only count allocations from direct manual receipts (not advance applications).
+      const directReceiptAllocs = await this.repo.db.all<{ id: string; amount: number }>(`
+        SELECT a.id, a.amount FROM v2_invoice_allocations a
+        JOIN v2_sources s ON s.id = a.receipt_source_id
+        JOIN v2_journal_entries j ON j.source_id = s.id
+        JOIN v2_journal_lines l ON l.journal_id = j.id
+        JOIN v2_accounts acc ON acc.id = l.account_id
+        WHERE a.invoice_source_id = ? AND acc.code = '1100'
+      `, [sourceId]);
+      const allocated = cents(directReceiptAllocs.reduce((sum, r) => sum + Number(r.amount || 0), 0));
       const total = cents(newTotal);
       if (allocated > 0.005 && total < allocated - 0.005) {
         throw new Error(`$${allocated.toFixed(2)} already received against this invoice — delete/adjust the receipt first or set the total to $${allocated.toFixed(2)} or more.`);
       }
       await this.reverseSource(sourceId, 'invoice', memo, false, { allowAllocations: true });
       const replacement = await createReplacement();
-      // Re-point the preserved allocations onto the replacement invoice.
-      if (allocRows.length) {
-        await this.repo.db.run('UPDATE v2_invoice_allocations SET invoice_source_id=? WHERE invoice_source_id=?', [replacement.source.id, sourceId]);
-        // Reflect the applied amount + paid status on the replacement metadata.
-        const meta = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [replacement.source.id]);
-        let metadata: any = {}; try { metadata = JSON.parse(meta?.metadata || '{}'); } catch { metadata = {}; }
-        metadata.advanceApplied = cents(Number(metadata.advanceApplied || 0) + allocated);
-        metadata.status = allocated >= total - 0.005 ? 'paid' : allocated > 0 ? 'partial' : 'unpaid';
-        await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(metadata), replacement.source.id]);
+      // Re-point the preserved direct receipt allocations onto the replacement invoice.
+      if (directReceiptAllocs.length) {
+        for (const alloc of directReceiptAllocs) {
+          await this.repo.db.run('UPDATE v2_invoice_allocations SET invoice_source_id=? WHERE id=?', [replacement.source.id, alloc.id]);
+        }
       }
+      // Re-read current open balance and update replacement status metadata
+      const open = await this.repo.invoiceOpen(replacement.source.id);
+      const meta = await this.repo.db.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [replacement.source.id]);
+      let metadata: any = {}; try { metadata = JSON.parse(meta?.metadata || '{}'); } catch { metadata = {}; }
+      metadata.status = open <= 0.005 ? 'paid' : open < total - 0.005 ? 'partial' : 'unpaid';
+      await this.repo.db.run('UPDATE v2_sources SET metadata=? WHERE id=?', [JSON.stringify(metadata), replacement.source.id]);
       return replacement;
     });
   }
@@ -127,6 +147,7 @@ export class V2DocumentService {
   async editReceipt(receiptSourceId: string, input: Omit<ReceiptInput, 'bookId'|'partyId'> & { partyId?: string; bookId?: string }) {
     return this.repoTx(async () => {
       const old = await this.receiptRow(receiptSourceId);
+      await this.repo.db.run('DELETE FROM v2_invoice_allocations WHERE receipt_source_id=?', [receiptSourceId]);
       const reversal = await this.insertReversal(old, await this.journalForSource(receiptSourceId), 'Edit receipt');
       const next = await this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId });
       await this.repo.db.run('UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,\'{}\'),\'$.reversed\',1,\'$.reversalSourceId\',?) WHERE id=?', [reversal.source.id, receiptSourceId]);

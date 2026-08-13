@@ -524,7 +524,6 @@ export const api = {
   deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
 
   createParty: async (p: any) => {
-    const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const name = (p.name || '').trim();
     if (!name) throw new Error('Business account name is required');
     const runner = activeSqlRunner();
@@ -532,12 +531,16 @@ export const api = {
     const service = new V2AppService(runner);
     const ctx = await service.activeContext();
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
-    if ((await service.listParties()).some((party: any) => norm(party.name) === norm(name))) throw new Error(`A party named '${name}' already exists in this account.`);
-    await service.assertPartyNameAvailable(name, ctx.bookId);
-    const id = p.id || `party_${Date.now()}`;
-    const roles = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
-    await service.repo.createParty({ id, bookId: ctx.bookId, name, phone: p.phone, email: p.email, roles });
-    return { id, name, phone: p.phone, email: p.email, roles };
+    const roles: string[] = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
+    const primaryRole = roles.includes('supplier') && !roles.includes('customer') ? 'supplier' : 'customer';
+    const party = await service.ensureParty(name, primaryRole, { phone: p.phone, email: p.email });
+    for (const r of roles) {
+      if (r !== primaryRole && (r === 'customer' || r === 'supplier')) {
+        await service.ensureParty(name, r, { phone: p.phone, email: p.email });
+      }
+    }
+    const finalRoles = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
+    return { id: party.id, name: party.name, phone: party.phone || p.phone, email: party.email || p.email, roles: finalRoles };
   },
 
   findOrCreateParty: async (rawName: string, role: 'customer' | 'supplier' = 'customer', details?: { phone?: string; email?: string }) => {

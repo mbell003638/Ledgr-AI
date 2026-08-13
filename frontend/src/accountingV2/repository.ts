@@ -137,7 +137,14 @@ export class V2SqlRepository {
     if (!invoice) throw new Error('Invoice not found');
     const total = Number(JSON.parse(invoice.metadata || '{}').total || 0);
     const row = await this.db.first<{ paid: number }>('SELECT COALESCE(SUM(amount),0) AS paid FROM v2_invoice_allocations WHERE invoice_source_id=?', [invoiceSourceId]);
-    return cents(total - Number(row?.paid || 0));
+    const noteRows = await this.db.all<{ metadata: string }>(
+      "SELECT metadata FROM v2_sources WHERE type='credit_note' AND json_extract(metadata,'$.invoiceSourceId')=? AND (json_extract(metadata,'$.reversed') IS NULL OR json_extract(metadata,'$.reversed')=0) AND (json_extract(metadata,'$.deleted') IS NULL OR json_extract(metadata,'$.deleted')=0)",
+      [invoiceSourceId],
+    );
+    const credited = noteRows.reduce((sum, nr) => {
+      try { return sum + Number(JSON.parse(nr.metadata || '{}').total || 0); } catch { return sum; }
+    }, 0);
+    return Math.max(0, cents(total - Number(row?.paid || 0) - credited));
   }
 
   async accountBalance(bookId: string, accountId: string, range: V2DateRange = {}): Promise<number> {

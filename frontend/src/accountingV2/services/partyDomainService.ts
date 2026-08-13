@@ -17,10 +17,11 @@ export const partyDisplayName = (value: any) => {
   return name;
 };
 
-export const stablePartyId = (role: V2PartyRole, input: AnyRecord) => {
+export const stablePartyId = (role: V2PartyRole, input: AnyRecord, bookId?: string) => {
   const explicit = input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'];
   if (explicit) return String(explicit);
-  return `v2:${role}:${normalized(partyDisplayName(input[role === 'customer' ? 'clientName' : 'supplierName']))}`;
+  const cleanName = normalized(partyDisplayName(input[role === 'customer' ? 'clientName' : 'supplierName']));
+  return bookId ? `${bookId}:party:${role}:${cleanName}` : `v2:${role}:${cleanName}`;
 };
 
 export type V2ScanPartyRequest = { name: string; role: V2PartyRole };
@@ -48,17 +49,30 @@ export class PartyDomainService {
   }
 
   async party(input: AnyRecord, role: V2PartyRole, bookId: string) {
-    const id = stablePartyId(role, input);
     const requestedName = partyDisplayName(input[role === 'customer' ? 'clientName' : 'supplierName']);
-    const name = requestedName || partyDisplayName(input.partyId || id) || id;
-    await this.assertPartyNameAvailable(name, bookId);
-    const existing = await this.db.first('SELECT id FROM v2_parties WHERE id=? AND book_id=?', [id, bookId]);
-    if (!existing) await this.repo.createParty({ id, bookId, name, phone: input.clientPhone || input.phone, email: input.email, roles: [role] });
-    else {
-      const row = await this.db.first<{ roles: string }>('SELECT roles FROM v2_parties WHERE id=? AND book_id=?', [id, bookId]);
-      const roles: V2PartyRole[] = row ? JSON.parse(row.roles) : [];
-      if (!roles.includes(role)) await this.db.run('UPDATE v2_parties SET roles=? WHERE id=?', [JSON.stringify([...roles, role]), id]);
+    const explicitId = input.partyId || input[role === 'customer' ? 'debtorId' : 'supplierId'];
+    let existing: { id: string; name: string; roles: string } | null = null;
+    if (explicitId) {
+      existing = await this.db.first<{ id: string; name: string; roles: string }>('SELECT id,name,roles FROM v2_parties WHERE id=? AND book_id=?', [explicitId, bookId]);
     }
+    if (!existing && requestedName) {
+      existing = (await this.partyByName(bookId, requestedName, role)) || (await this.partyByName(bookId, requestedName));
+    }
+    const name = requestedName || existing?.name || partyDisplayName(explicitId) || 'Party';
+    await this.assertPartyNameAvailable(name, bookId);
+
+    if (existing) {
+      const id = existing.id;
+      let roles: V2PartyRole[] = [];
+      try { roles = JSON.parse(existing.roles || '[]'); } catch { roles = []; }
+      if (!roles.includes(role)) {
+        await this.db.run('UPDATE v2_parties SET roles=? WHERE id=? AND book_id=?', [JSON.stringify([...roles, role]), id, bookId]);
+      }
+      return id;
+    }
+
+    const id = explicitId ? String(explicitId) : stablePartyId(role, { ...input, [role === 'customer' ? 'clientName' : 'supplierName']: name }, bookId);
+    await this.repo.createParty({ id, bookId, name, phone: input.clientPhone || input.phone, email: input.email, roles: [role] });
     return id;
   }
 
@@ -146,7 +160,7 @@ export class PartyDomainService {
         let roles: V2PartyRole[] = [];
         try { roles = JSON.parse(row.roles || '[]'); } catch { roles = []; }
         const role = roles.includes('supplier') && !roles.includes('customer') ? 'supplier' : 'customer';
-        const canonicalId = `v2:${role}:${normalized(cleanName)}`;
+        const canonicalId = stablePartyId(role, { clientName: cleanName, supplierName: cleanName }, bookId);
         const corrupt = cleanName !== String(row.name || '').trim() || /^v2:(customer|supplier):v2:/i.test(row.id);
         if (!corrupt || !cleanName) continue;
         if (row.id === canonicalId) {
