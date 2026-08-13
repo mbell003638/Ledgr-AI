@@ -10,6 +10,7 @@ const { spawnSync } = require("node:child_process");
 const ALLOWED_FINDINGS = new Set([
   "image-size:GHSA-w3rx-r6r6-pgpr",
   "image-size:GHSA-5p2g-fcmc-qvqq",
+  "nanoid:GHSA-2v37-7h3g-55p8",
 ]);
 
 const npmCli = process.env.npm_execpath;
