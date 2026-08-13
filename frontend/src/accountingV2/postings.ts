@@ -61,11 +61,19 @@ async function supplier(repo: V2SqlRepository, bookId: string, partyId: string) 
 export async function postCashSale(repo: V2SqlRepository, input: { bookId: string; periodId: string; date: string; amount: number; method?: V2PaymentMethod; reference?: string; metadata?: Record<string, unknown> }) {
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const method = input.method || 'cash';
+  const tax = cents(Number(input.metadata?.tax || 0));
+  const subtotal = tax > 0 && tax < amount ? cents(amount - tax) : amount;
   const source: V2Source = { id: uid('cash_sale'), bookId: input.bookId, type: 'cash_sale', date: input.date, reference: input.reference, metadata: { total: amount, method, ...(input.metadata || {}) } };
-  const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Cash sale', lines: [
+  const lines: any[] = [
     { accountId: `${input.bookId}:account:${paymentCode(method)}`, debit: amount, credit: 0 },
-    { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
-  ] });
+  ];
+  if (tax > 0 && subtotal < amount) {
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: subtotal });
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax });
+  } else {
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount });
+  }
+  const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Cash sale', lines });
   return { source, journal };
 }
 
@@ -90,11 +98,18 @@ export async function postInvoice(repo: V2SqlRepository, input: { bookId: string
   }
   const appliedTotal = cents(advanceAllocations.reduce((sum, a) => sum + a.amount, 0));
   const status = appliedTotal >= amount - 0.005 ? 'paid' : appliedTotal > 0 ? 'partial' : 'unpaid';
+  const tax = cents(Number(input.metadata?.tax || 0));
+  const subtotal = tax > 0 && tax < amount ? cents(amount - tax) : amount;
   const source: V2Source = { id: sourceId, bookId: input.bookId, type: 'invoice', date: input.date, reference: input.reference, metadata: { ...(input.metadata || {}), partyId: input.partyId, total: amount, status, ...(appliedTotal > 0 ? { advanceApplied: appliedTotal } : {}) } };
   const lines: any[] = [
     { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
-    { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
   ];
+  if (tax > 0 && subtotal < amount) {
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: subtotal });
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax });
+  } else {
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount });
+  }
   if (appliedTotal > 0) {
     // Consume the advance: Dr Customer Advances (2100) / Cr AR (1100) for the applied amount.
     lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CUSTOMER_ADVANCES}`, partyId: input.partyId, debit: appliedTotal, credit: 0 });

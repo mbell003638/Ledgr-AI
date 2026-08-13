@@ -41,8 +41,8 @@ export class InvoiceDomainService {
           taxLabel: input.taxLabel,
           taxRate: Number(input.taxRate || 0),
           discount: totals?.discount ?? Number(input.discount || 0),
-          subtotal: totals?.subtotal ?? Number(input.subtotal ?? net),
-          tax: totals?.tax ?? 0,
+          subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
+          tax: totals?.tax ?? Number(input.tax || 0),
         },
       });
     });

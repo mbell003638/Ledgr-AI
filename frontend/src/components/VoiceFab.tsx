@@ -135,9 +135,11 @@ export default function VoiceFab() {
         } else if (parsed.intent === "receipt") {
           const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
           const method = parsed.method || "cash";
-          let debtorId: string | null = null;
-          let allocations: { invoiceId: string; amountApplied: number }[] = [];
-          if (parsed.customerName) {
+          if (!parsed.customerName || mode === "cash_sale") {
+            await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, method });
+          } else {
+            let debtorId: string | null = null;
+            let allocations: { invoiceId: string; amountApplied: number }[] = [];
             const debtors = await api.listDebtors();
             const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsed.customerName.trim().toLowerCase());
             if (match) debtorId = match.id;
@@ -148,12 +150,12 @@ export default function VoiceFab() {
                 .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
               if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
             }
+            await api.createReceipt({
+              mode, date, amount: parsed.amount, method,
+              debtorId, clientName: parsed.customerName,
+              allocations, notes: parsed.notes || parsed.summary,
+            });
           }
-          await api.createReceipt({
-            mode, date, amount: parsed.amount, method,
-            debtorId, clientName: parsed.customerName || "",
-            allocations, notes: parsed.notes || parsed.summary,
-          });
         } else if (parsed.intent === "supplier_payment") {
           const list = await api.listSuppliers();
           const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());

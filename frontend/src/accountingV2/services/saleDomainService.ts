@@ -42,8 +42,8 @@ export class SaleDomainService {
         notes: input.notes,
         lines,
         discount: totals?.discount ?? Number(input.discount || 0),
-        subtotal: totals?.subtotal ?? Number(input.subtotal ?? input.amount ?? net),
-        tax: totals?.tax ?? 0,
+        subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
+        tax: totals?.tax ?? Number(input.tax || 0),
         taxRate: Number(input.taxRate || 0),
       },
     });
@@ -69,6 +69,10 @@ export class SaleDomainService {
   }
 
   async createReceipt(input: AnyRecord) {
+    const isUnnamedCashSale = input.mode === 'cash_sale' || (!input.partyId && !input.debtorId && !input.clientName && (!input.allocations || input.allocations.length === 0));
+    if (isUnnamedCashSale) {
+      return this.createSale(input);
+    }
     const c = await this.getActiveContext(input.date);
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     const allocations = (input.allocations || []).map((a: AnyRecord) => ({

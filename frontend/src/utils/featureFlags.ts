@@ -187,6 +187,18 @@ const SERVICE_BASE: FeatureKey[] = [
  */
 export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
   // --- Canonical PersonaId keys ---
+  // Personal finance: focus on expenses, budget, cashbook, income, payees, and reports.
+  personal: [
+    "expenses",
+    "cashbook",
+    "sales",
+    "receipts",
+    "reports",
+    "monthly",
+    "ask",
+    "voice",
+    "assets",
+  ],
   // Retail & wholesale hold stock and buy from suppliers → full set.
   retail: DEFAULT_ALL_KEYS,
   wholesale: DEFAULT_ALL_KEYS,

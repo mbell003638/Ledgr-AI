@@ -119,13 +119,19 @@ function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) 
   const sourceById = new Map(store.sources.map((s) => [s.id, s]));
   const metaTotal = (id: string) => cents(Number((sourceById.get(id)?.metadata as any)?.total || 0));
 
-  // Revenue: cash sales in range + receipts allocated to invoices, recognized on the receipt date.
+  // Revenue: cash sales in range + receipts allocated to invoices + unallocated advance receipts - cash customer returns
   const cashSales = live.filter((s) => s.type === 'cash_sale' && inRange(s.date)).reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
   const received = store.allocations
     .filter((a) => a.bookId === options.bookId)
     .filter((a) => { const receipt = sourceById.get(a.receiptSourceId); const date = receipt?.date || a.allocatedAt; return receipt && !(receipt.metadata as any)?.deleted && !(receipt.metadata as any)?.reversed && inRange(date); })
     .reduce((sum, a) => cents(sum + Number(a.amount)), 0);
-  const revenue = cents(cashSales + received);
+  const directAdvances = live
+    .filter((s) => s.type === 'receipt' && inRange(s.date))
+    .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.advance || 0)), 0);
+  const cashReturns = live
+    .filter((s) => s.type === 'credit_note' && inRange(s.date))
+    .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
+  const revenue = Math.max(0, cents(cashSales + received + directAdvances - cashReturns));
 
   // COGS (cash basis): the cost of inventory bought for cash in the period. Kept out of the
   // expense total below so grossProfit and netProfit derive from disjoint buckets.
