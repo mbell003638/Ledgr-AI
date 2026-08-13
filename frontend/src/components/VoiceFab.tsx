@@ -10,6 +10,7 @@ import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolutio
 import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
+import { localTodayIso } from "@/src/utils/dateValidation";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -117,7 +118,7 @@ export default function VoiceFab() {
     if (!parsed) return;
     setSaving(true);
     try {
-      const date = parsed.date || new Date().toISOString().slice(0, 10);
+      const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");

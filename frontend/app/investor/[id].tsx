@@ -10,7 +10,7 @@ import { FormField, FormActions } from '@/src/components/FormCard';
 import { useTheme } from '@/src/context/ThemeContext';
 import { fmt, shortDate } from '@/src/theme';
 import { getCurrencySymbol } from '@/src/db/local';
-import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
+import { isValidDateString, localTodayIso, normalizeDateInput } from '@/src/utils/dateValidation';
 import type { InvestorLedgerDetail, InvestorLedgerTransaction } from '@/src/accountingV2/investorLedgerService';
 import { OpeningBalancesModal } from '@/src/components/OpeningBalancesModal';
 
@@ -33,7 +33,7 @@ export default function InvestorDetailScreen() {
   const [error, setError] = useState('');
   const [action, setAction] = useState<Action | null>(null);
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localTodayIso());
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');

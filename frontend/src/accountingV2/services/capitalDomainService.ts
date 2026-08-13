@@ -378,7 +378,22 @@ export class CapitalDomainService {
     const expected = await expectedAt(period.end_date);
     const openingInventory = await expectedAt(period.start_date);
     const lastAudit = history.length ? history[history.length - 1] : null;
-    return { expected, openingInventory, lastAudit, purchasesSince: 0, salesSince: 0, history: history.reverse(), periodStart: period.start_date, periodEnd: period.end_date, periodPolicy: await this.periodPolicy(context.bookId) };
+    const sinceDate = lastAudit?.date || period.start_date;
+    const sinceSources = await this.db.all<any>(
+      `SELECT type, metadata FROM v2_sources WHERE book_id=? AND date>=? AND date<=?`,
+      [context.bookId, sinceDate, period.end_date],
+    );
+    let purchasesSince = 0;
+    let salesSince = 0;
+    for (const row of sinceSources) {
+      let meta: AnyRecord = {};
+      try { meta = JSON.parse(row.metadata || '{}'); } catch { continue; }
+      if (meta.reversed || meta.deleted) continue;
+      const tot = Number(meta.total || 0);
+      if (row.type === 'cash_purchase' || row.type === 'credit_purchase') purchasesSince += tot;
+      else if (row.type === 'cash_sale' || row.type === 'invoice') salesSince += tot;
+    }
+    return { expected, openingInventory, lastAudit, purchasesSince: cents(purchasesSince), salesSince: cents(salesSince), history: history.reverse(), periodStart: period.start_date, periodEnd: period.end_date, periodPolicy: await this.periodPolicy(context.bookId) };
   }
 
   async deleteV2InventoryCount(id: string) {
@@ -427,8 +442,10 @@ export class CapitalDomainService {
   async closeBooks(input: V2CloseBooksAppInput): Promise<V2CloseBooksAppResult> {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book');
-    if (!Number.isFinite(input.actualStock) || input.actualStock < 0) throw new Error('Actual stock must be a finite non-negative amount');
-    if (!Number.isFinite(input.openingInventory) || input.openingInventory < 0) throw new Error('Opening inventory must be a finite non-negative amount');
+    const openingInventory = input.openingInventory != null ? Number(input.openingInventory) : 0;
+    const actualStock = input.actualStock != null ? Number(input.actualStock) : openingInventory;
+    if (!Number.isFinite(actualStock) || actualStock < 0) throw new Error('Actual stock must be a finite non-negative amount');
+    if (!Number.isFinite(openingInventory) || openingInventory < 0) throw new Error('Opening inventory must be a finite non-negative amount');
     return this.repo.runInTransaction(async () => {
       let period = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
       if (!period) throw new Error('No open accounting period to close');

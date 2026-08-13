@@ -14,6 +14,8 @@ import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolutio
 
 import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
 
+import { localTodayIso } from "@/src/utils/dateValidation";
+
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 // Source tag prefixed onto notes/memo of records created via voice (fix M-5).
@@ -73,6 +75,7 @@ export default function VoiceModal() {
       const proposalByIntent: Record<string, any> = {
         bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
         sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+        expense: { type: 'add_expense', params: { amount: p.amount, date: p.date, category: p.category || 'General', notes: p.notes || p.summary } },
         receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
         supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
         drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
@@ -92,7 +95,7 @@ export default function VoiceModal() {
     if (!parsed) return;
     setSaving(true);
     try {
-      const date = parsed.date || new Date().toISOString().slice(0, 10);
+      const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
@@ -108,6 +111,13 @@ export default function VoiceModal() {
         });
       } else if (parsed.intent === "sale") {
         await api.createSale({ date, amount: parsed.amount, currency, notes: voiceNote(parsed.notes || parsed.summary) });
+      } else if (parsed.intent === "expense") {
+        await api.createExpense({
+          date, amount: parsed.amount, currency,
+          category: parsed.category || "General",
+          method: parsed.method || "cash",
+          notes: voiceNote(parsed.notes || parsed.summary),
+        });
       } else if (parsed.intent === "receipt") {
         const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
         const method = parsed.method || "cash";
@@ -121,7 +131,7 @@ export default function VoiceModal() {
           // Auto-allocate an against_invoice receipt to this customer's oldest unpaid invoice.
           if (mode === "against_invoice") {
             const invs = (await api.listInvoices())
-              .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsed.customerName.toLowerCase()))
+              .filter((i: any) => i.status !== "paid" && (i.partyId === debtorId || i.debtorId === debtorId || (i.clientName && i.clientName.trim().toLowerCase() === parsed.customerName.trim().toLowerCase())))
               .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
             if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
           }

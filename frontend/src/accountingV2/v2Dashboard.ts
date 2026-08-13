@@ -3,6 +3,7 @@ import { round2 } from '../money';
 import { buildPersistentV2Reports } from './persistentReports';
 import { partnershipProfitFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
+import { localTodayIso } from '../utils/dateValidation';
 
 const cents = round2;
 
@@ -83,7 +84,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
     "SELECT start_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1",
     [bookId]
   );
-  const periodStart = period?.start_date || new Date().toISOString().slice(0, 10);
+  const periodStart = period?.start_date || localTodayIso();
 
   // Real opening figures: balances as of the START of the open period (inclusive of
   // opening-balance entries dated on the start date), not aliases of current balances.

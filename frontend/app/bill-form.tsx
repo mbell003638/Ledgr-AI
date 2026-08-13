@@ -19,6 +19,8 @@ export default function BillForm() {
   const [supplierId, setSupplierId] = useState<string>(params.supplierId || "");
   const [amount, setAmount] = useState("");
   const currency = "USD";
+  const [billType, setBillType] = useState<"inventory" | "expense">("inventory");
+  const [expenseCategory, setExpenseCategory] = useState<string>("Rent");
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [notes, setNotes] = useState("");
@@ -39,7 +41,10 @@ export default function BillForm() {
         if (b) {
           setSupplierId(b.supplierId);
           setAmount(String(b.amount));
-          
+          if (b.isExpense || b.category) {
+            setBillType("expense");
+            if (b.category) setExpenseCategory(b.category);
+          }
           setPaymentType(b.paymentType);
           setInvoiceNo(b.invoiceNo || "");
           setNotes(b.notes || "");
@@ -141,6 +146,8 @@ export default function BillForm() {
       const payload = {
         supplierId: finalSupplierId, date: dateIso, amount: amt, currency,
         paymentType, invoiceNo, notes: finalNotes, photo,
+        isExpense: billType === "expense",
+        category: billType === "expense" ? expenseCategory : undefined,
       };
       if (editId) await api.updateBill(editId, payload);
       else await api.createBill(payload);
@@ -159,6 +166,8 @@ export default function BillForm() {
 
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
+
+  const EXPENSE_CATEGORIES = ["Rent", "Utilities", "Salaries", "Maintenance", "Office Supplies", "Marketing", "Other"];
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -198,15 +207,53 @@ export default function BillForm() {
           ) : null}
 
           <Card style={{ marginTop: theme.spacing.md }}>
-            <PartyAutocompleteInput
-              testID="input-supplier-name"
-              label="Supplier / Vendor name *"
-              value={newSupplierName}
-              onChangeText={setNewSupplierName}
-              placeholder="e.g. Sharma Traders"
-              roleFilter="all"
-              onSelectParty={(p) => setSupplierId(p.id)}
-            />
+            <Text style={styles.label}>Bill Type</Text>
+            <View style={styles.segRowFull}>
+              {(["inventory", "expense"] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  testID={`bill-type-${t}`}
+                  onPress={() => setBillType(t)}
+                  style={[styles.segBtnFull, billType === t && styles.segBtnActive]}
+                >
+                  <Text style={[styles.segText, billType === t && styles.segTextActive]}>
+                    {t === "inventory" ? "Stock / Inventory" : "Expense / Overhead"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {billType === "expense" ? (
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.label}>Expense Category</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <Pressable
+                        key={cat}
+                        testID={`exp-cat-${cat.toLowerCase().replace(/\s+/g, '-')}`}
+                        onPress={() => setExpenseCategory(cat)}
+                        style={[styles.chip, expenseCategory === cat && styles.chipActive]}
+                      >
+                        <Text style={[styles.chipText, expenseCategory === cat && styles.chipTextActive]}>{cat}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            ) : null}
+
+            <View style={{ marginTop: 12 }}>
+              <PartyAutocompleteInput
+                testID="input-supplier-name"
+                label="Supplier / Vendor name *"
+                value={newSupplierName}
+                onChangeText={setNewSupplierName}
+                placeholder="e.g. Sharma Traders"
+                roleFilter="all"
+                onSelectParty={(p) => setSupplierId(p.id)}
+              />
+            </View>
             <Text style={[styles.label, { marginTop: 12 }]}>Phone (optional)</Text>
             <TextInput
               testID="input-supplier-phone"

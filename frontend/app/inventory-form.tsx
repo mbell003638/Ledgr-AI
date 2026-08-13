@@ -8,7 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
-import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 export default function InventoryForm() {
@@ -22,7 +22,7 @@ export default function InventoryForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<any>(null);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localTodayIso());
   const [history, setHistory] = useState<any[]>([]);
   const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
 
@@ -74,10 +74,10 @@ export default function InventoryForm() {
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [commissionPct, setCommissionPct] = useState("");
-  const [closeDate, setCloseDate] = useState(new Date().toISOString().slice(0, 10));
+  const [closeDate, setCloseDate] = useState(() => localTodayIso());
 
   const beginClose = () => {
-    setCloseDate(periodPolicy.mode === "fixed" && periodPolicy.endDate ? periodPolicy.endDate : (date || new Date().toISOString().slice(0, 10)));
+    setCloseDate(periodPolicy.mode === "fixed" && periodPolicy.endDate ? periodPolicy.endDate : (date || localTodayIso()));
     setConfirmClose(true);
     setError("");
   };

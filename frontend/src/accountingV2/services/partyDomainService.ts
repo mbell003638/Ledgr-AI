@@ -226,33 +226,43 @@ export class PartyDomainService {
     let roles: string[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
     if (!roles.includes(role)) return null;
     const sourceTypes = role === 'customer' ? ['invoice', 'receipt', 'credit_note', 'debit_note'] : ['cash_purchase', 'credit_purchase', 'supplier_payment', 'credit_note', 'debit_note', 'opening_balance'];
-    const placeholders = sourceTypes.map(() => '?').join(','); const accountCode = role === 'customer' ? '1100' : '2000';
+    const placeholders = sourceTypes.map(() => '?').join(',');
     const rows = await this.db.all<any>(`SELECT s.id,s.type,s.date,s.reference,s.metadata,
-      COALESCE(SUM(CASE WHEN a.code=? THEN l.debit ELSE 0 END),0) AS debit,
-      COALESCE(SUM(CASE WHEN a.code=? THEN l.credit ELSE 0 END),0) AS credit
+      COALESCE(SUM(CASE WHEN a.code='1100' THEN l.debit ELSE 0 END),0) AS ar_debit,
+      COALESCE(SUM(CASE WHEN a.code='1100' THEN l.credit ELSE 0 END),0) AS ar_credit,
+      COALESCE(SUM(CASE WHEN a.code='2100' THEN l.credit - l.debit ELSE 0 END),0) AS advance_credit,
+      COALESCE(SUM(CASE WHEN a.code='2000' THEN l.credit - l.debit ELSE 0 END),0) AS ap_balance,
+      COALESCE(SUM(CASE WHEN a.code='1210' THEN l.debit - l.credit ELSE 0 END),0) AS supplier_prepayment
       FROM v2_sources s LEFT JOIN v2_journal_entries j ON j.source_id=s.id
       LEFT JOIN v2_journal_lines l ON l.journal_id=j.id AND l.party_id=? LEFT JOIN v2_accounts a ON a.id=l.account_id
       WHERE s.book_id=? AND (json_extract(s.metadata,'$.partyId')=? OR EXISTS (
         SELECT 1 FROM v2_journal_entries je2 JOIN v2_journal_lines jl2 ON jl2.journal_id=je2.id
         WHERE je2.source_id=s.id AND jl2.party_id=?
       )) AND s.type IN (${placeholders})
-      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [accountCode, accountCode, id, context.bookId, id, id, ...sourceTypes]);
+      GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [id, context.bookId, id, id, ...sourceTypes]);
     const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
     if (role === 'customer') {
       let running = 0;
-      const ledger = active.map((row) => { const debit = cents(row.debit); const credit = cents(row.credit); running = cents(running + debit - credit); return { id: row.id, kind: row.type, date: row.date, ref: row.reference, reason: row.metadata.reason || '', notes: row.metadata.notes || '', amount: Number(row.metadata.total || debit || credit || 0), debit, credit, balance: running }; });
+      const ledger = active.map((row) => {
+        const debit = cents(row.ar_debit);
+        const credit = cents(Number(row.ar_credit) + Number(row.advance_credit));
+        running = cents(running + debit - credit);
+        return { id: row.id, kind: row.type, date: row.date, ref: row.reference, reason: row.metadata.reason || '', notes: row.metadata.notes || '', amount: Number(row.metadata.total || debit || credit || 0), debit, credit, balance: running };
+      });
       const totalInvoiced = cents(active.filter((row) => row.type === 'invoice').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       const totalPaid = cents(active.filter((row) => row.type === 'receipt').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
+      const advanceBalance = cents(Math.max(0, active.reduce((sum, row) => sum + Number(row.advance_credit), 0)));
       return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles,
         payments: active.filter((row) => row.type === 'receipt').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '' })),
-        totalInvoiced, totalPaid, balance: running, statement: { ledger: ledger.slice().reverse(), balance: running } };
+        totalInvoiced, totalPaid, balance: running, advanceBalance, statement: { ledger: ledger.slice().reverse(), balance: running, advanceBalance } };
     }
     const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
     const notes = active.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), reason: row.metadata.reason || '', notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
     const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
     const billsTotal = cents(bills.reduce((sum, row) => sum + row.amount, 0)); const paymentsTotal = cents(payments.reduce((sum, row) => sum + row.amount, 0));
-    const balance = cents(active.reduce((sum, row) => sum + Number(row.credit) - Number(row.debit), 0));
-    return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), notes: notes.reverse(), billsTotal, paymentsTotal, balance };
+    const advanceBalance = cents(Math.max(0, active.reduce((sum, row) => sum + Number(row.supplier_prepayment), 0)));
+    const balance = cents(active.reduce((sum, row) => sum + Number(row.ap_balance) - Number(row.supplier_prepayment), 0));
+    return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), notes: notes.reverse(), billsTotal, paymentsTotal, balance, advanceBalance };
   }
 
   async updateParty(id: string, patch: AnyRecord) {

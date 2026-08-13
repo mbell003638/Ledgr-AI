@@ -11,8 +11,7 @@ export function isValidDateString(dateStr: string): boolean {
  * which is wrong for UTC+ users near midnight (e.g. DRC at UTC+1/+2: an entry
  * made at 00:30 local would otherwise be dated to the previous day).
  */
-export function localTodayIso(): string {
-  const d = new Date();
+export function localTodayIso(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 

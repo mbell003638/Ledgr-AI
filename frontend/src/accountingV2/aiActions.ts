@@ -193,12 +193,17 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
     }
     const changes = record(params.changes);
     if (!changes || Object.keys(changes).length === 0) return { ok: false, errors: ['entry changes are required'] };
+    const normalizedChanges = { ...changes };
     const unsupportedFields = Object.keys(changes).filter((field) => !ASSISTANT_UPDATE_FIELDS[entity].includes(field));
     if (unsupportedFields.length) return { ok: false, errors: [`unsupported ${entity} fields: ${unsupportedFields.join(', ')}`] };
     for (const field of ['date', 'dueDate', 'validUntil'] as const) {
       if (changes[field] !== undefined && changes[field] !== '' && !date(changes[field])) return { ok: false, errors: [`${field} must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
     }
-    if (changes.method !== undefined && !METHODS.includes(changes.method as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
+    if (changes.method !== undefined) {
+      const normMethod = String(changes.method).toLowerCase() === 'upi' ? 'mobile' : changes.method;
+      if (!METHODS.includes(normMethod as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
+      normalizedChanges.method = normMethod;
+    }
     if (changes.paymentType !== undefined && !['cash', 'credit'].includes(String(changes.paymentType))) return { ok: false, errors: ['paymentType is invalid'] };
     if (changes.taxRate !== undefined && (!Number.isFinite(Number(changes.taxRate)) || Number(changes.taxRate) < 0 || Number(changes.taxRate) > 100)) return { ok: false, errors: ['taxRate must be between 0 and 100'] };
     if (entity === 'quote' && changes.status !== undefined && !['draft', 'sent', 'accepted', 'expired'].includes(String(changes.status))) return { ok: false, errors: ['quote status is invalid'] };
@@ -209,7 +214,6 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
     if (JSON.stringify(changes).length > 12_000) return { ok: false, errors: ['entry changes are too large'] };
     if (Array.isArray(changes.lines) && changes.lines.length > 50) return { ok: false, errors: ['invoice or quote lines cannot exceed 50'] };
     if (Array.isArray(changes.items) && changes.items.length > 50) return { ok: false, errors: ['delivery note items cannot exceed 50'] };
-    const normalizedChanges = { ...changes };
     if (changes.amount !== undefined) {
       const amount = assistantAmount(changes.amount);
       if (!positive(amount)) return { ok: false, errors: [`amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`] };
@@ -236,9 +240,12 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
   if (type === 'create_receipt' && mode === 'against_invoice' && !text(params.invoiceId)) return { ok: false, errors: ['invoiceId is required for an invoice receipt'] };
   const paymentType = params.paymentType;
   if (paymentType !== undefined && !['cash', 'credit'].includes(String(paymentType))) return { ok: false, errors: ['paymentType is invalid'] };
-  const method = params.method;
-  if (method !== undefined && !METHODS.includes(method as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
-  const normalized = { ...params, date: dateValue, ...(needAmount ? { amount } : {}) };
+  let method = params.method;
+  if (method !== undefined) {
+    if (String(method).toLowerCase() === 'upi') method = 'mobile';
+    if (!METHODS.includes(method as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
+  }
+  const normalized = { ...params, date: dateValue, ...(needAmount ? { amount } : {}), ...(method !== undefined ? { method } : {}) };
   const name = String(params[requiredName || 'customerName'] || '').trim();
   const summary = type.replace(/_/g, ' ') + (needAmount ? ` of ${amount.toFixed(2)}` : '') + (name ? ` for ${name}` : '');
   return { ok: true, action: { source, type, params: normalized, confirmation: { required: true, preview: `Confirm ${summary} on ${dateValue}` } } };

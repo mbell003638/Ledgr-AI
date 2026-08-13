@@ -2,11 +2,12 @@ import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Party, type V2Source } f
 import { V2SqlRepository } from './repository';
 import { round2 } from '../money';
 import { validatePostingInvariants, type JournalLineInput } from './invariants';
+import { localTodayIso } from '../utils/dateValidation';
 
 const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 const positive = (n: number, label = 'Amount') => { const value = cents(n); if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be positive`); return value; };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localTodayIso();
 /** Balance + validity guard delegating to canonical validatePostingInvariants. */
 function assertBalanced(lines: JournalLineInput[]) {
   validatePostingInvariants(lines);

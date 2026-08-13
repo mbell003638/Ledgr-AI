@@ -740,7 +740,7 @@ const ASK_SCHEMA = {
       properties: {
         type: {
           type: 'string',
-          enum: ['add_expense', 'add_sale', 'add_bill', 'create_supplier_payment', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry'],
+          enum: ['add_expense', 'log_personal_expense', 'add_sale', 'add_bill', 'create_supplier_payment', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry'],
         },
         params: { type: 'object' },
         confirm: { type: 'string' }, // one-line human summary to show before applying

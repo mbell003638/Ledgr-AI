@@ -10,14 +10,14 @@ import { fmt } from "@/src/theme";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { FormField, FormActions } from "@/src/components/FormCard";
-import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { parseMoneyInput } from "@/src/money";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 
 type EntryMode = "asset" | "liability";
 type BalanceEntry = { id: string; type: EntryMode; date: string; name: string; category: string; amount: number; counterparty: string; notes: string; origin?: "manual" | "opening" };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localTodayIso();
 const assetFunding = [
   { id: "cash", label: "Cash" }, { id: "bank", label: "Bank" },
   { id: "capital", label: "Owner Capital" }, { id: "liability", label: "Credit / Loan" },

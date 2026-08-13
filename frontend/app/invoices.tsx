@@ -1012,7 +1012,7 @@ export default function InvoicesScreen() {
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: theme.spacing.md }}>
               <Text style={styles.sub}>Date: {shortDate(selected.date)}</Text>
-              {selected.dueDate ? <Text style={[styles.sub, { color: selected.status === "unpaid" && selected.dueDate < new Date().toISOString().slice(0, 10) ? theme.color.error : theme.color.muted }]}>Due: {shortDate(selected.dueDate)}</Text> : null}
+              {selected.dueDate ? <Text style={[styles.sub, { color: selected.status === "unpaid" && selected.dueDate < localTodayIso() ? theme.color.error : theme.color.muted }]}>Due: {shortDate(selected.dueDate)}</Text> : null}
             </View>
           </Card>
 

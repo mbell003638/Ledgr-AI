@@ -191,9 +191,15 @@ export class SaleDomainService {
       FROM v2_journal_entries e
       JOIN v2_journal_lines l ON e.id = l.journal_id
       LEFT JOIN v2_sources s ON e.source_id = s.id
-      WHERE e.book_id = ? AND l.account_id IN (?,?)
+      WHERE e.book_id = ? AND l.account_id IN (?,?,?,?)
       ORDER BY e.date DESC, e.id DESC
-    `, [context.bookId, `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, `${context.bookId}:account:${V2_ACCOUNT_CODES.BANK}`]);
+    `, [
+      context.bookId,
+      `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`,
+      `${context.bookId}:account:${V2_ACCOUNT_CODES.BANK}`,
+      `${context.bookId}:account:${V2_ACCOUNT_CODES.CARD}`,
+      `${context.bookId}:account:${V2_ACCOUNT_CODES.MOBILE}`,
+    ]);
     return rows.map((row) => {
       let meta: AnyRecord = {};
       try { meta = JSON.parse(row.source_metadata || '{}'); } catch { /* empty */ }

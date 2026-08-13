@@ -152,8 +152,8 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
   // [M2] For CREDIT bills, apply any supplier advance (1210) the party holds: it settles
   // part of the new payable instead of leaving cash tied up in an advance.
   const applied = input.method ? 0 : Math.min(await supplierAdvanceBalance(repo, input.bookId, input.partyId), amount);
+  const isExpense = Boolean(input.metadata?.isExpense === true || input.metadata?.billType === 'expense');
   const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, metadata: { partyId: input.partyId, total: amount, method: input.method, ...(applied > 0 ? { supplierAdvanceApplied: cents(applied) } : {}), ...(input.metadata || {}) } };
-  const isExpense = Boolean(input.metadata?.isExpense || input.metadata?.category);
   const debitCode = isExpense ? V2_ACCOUNT_CODES.EXPENSES : V2_ACCOUNT_CODES.INVENTORY;
   const lines: any[] = [{ accountId: `${input.bookId}:account:${debitCode}`, partyId: input.partyId, debit: amount, credit: 0 }];
   if (input.method) {
@@ -166,6 +166,7 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
   const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: isExpense ? 'Expense bill' : 'Purchase bill', lines });
   return { source, journal, supplierAdvanceApplied: cents(applied) };
 }
+
 export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:string;periodId:string;partyId:string;date:string;amount:number;method:V2PaymentMethod;metadata?:Record<string, unknown>}){
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   await partyWithRole(repo, input.bookId, input.partyId, 'supplier');
@@ -186,7 +187,9 @@ export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:str
   const journal = await repo.postSourceJournal(source, { bookId: input.bookId, periodId: input.periodId, date: input.date, memo: 'Supplier payment', lines });
   return { source, journal, supplierAdvance: advance };
 }
+
 export async function postExpense(repo:V2SqlRepository,input:{bookId:string;periodId:string;date:string;amount:number;method:V2PaymentMethod;metadata?:Record<string, unknown>}){const amount=cents(input.amount);if(!Number.isFinite(amount)||amount<=0)throw new Error('Amount must be positive');const source:V2Source={id:uid('expense'),bookId:input.bookId,type:'expense',date:input.date,metadata:{...(input.metadata||{}),total:amount,method:input.method}};const journal=await repo.postSourceJournal(source,{bookId:input.bookId,periodId:input.periodId,date:input.date,memo:String(input.metadata?.notes||input.metadata?.category||'Expense'),lines:[{accountId:`${input.bookId}:account:${V2_ACCOUNT_CODES.EXPENSES}`,debit:amount,credit:0},{accountId:`${input.bookId}:account:${paymentCode(input.method)}`,debit:0,credit:amount}]});return{source,journal};}
+
 /**
  * [Finding A] Post a credit/debit note against a customer (AR) or supplier (AP).
  *
@@ -199,25 +202,35 @@ export async function postExpense(repo:V2SqlRepository,input:{bookId:string;peri
  *   - credit note  → DR Sales Returns, CR AR   (customer owes LESS — balance drops)
  *   - debit note   → DR AR, CR Sales           (customer owes MORE)
  * Supplier notes (role 'supplier', account AP):
- *   - credit note  → DR AP, CR COGS            (we owe the supplier LESS)
- *   - debit note   → DR COGS, CR AP            (we owe the supplier MORE)
+ *   - credit note  → DR AP, CR Inventory/Expense (we owe the supplier LESS)
+ *   - debit note   → DR Inventory/Expense, CR AP (we owe the supplier MORE)
  */
 async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string; method?: V2PaymentMethod }, kind: 'credit_note'|'debit_note') {
   const amount = cents(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const role = input.role === 'supplier' ? 'supplier' : 'customer';
-  if (role === 'supplier') await supplier(repo, input.bookId, input.partyId);
-  else await customer(repo, input.bookId, input.partyId);
-  if (input.invoiceSourceId) {
-    const inv = await repo.db.first<{ metadata:string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type='invoice'", [input.invoiceSourceId, input.bookId]);
-    const meta = inv ? JSON.parse(inv.metadata) : {};
-    if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
+  let isExpenseBill = false;
+  if (role === 'supplier') {
+    await supplier(repo, input.bookId, input.partyId);
+    if (input.invoiceSourceId) {
+      const bill = await repo.db.first<{ metadata: string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=?", [input.invoiceSourceId, input.bookId]);
+      const meta = bill ? JSON.parse(bill.metadata || '{}') : {};
+      if (meta.isExpense === true || meta.billType === 'expense') isExpenseBill = true;
+    }
+  } else {
+    await customer(repo, input.bookId, input.partyId);
+    if (input.invoiceSourceId) {
+      const inv = await repo.db.first<{ metadata:string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type='invoice'", [input.invoiceSourceId, input.bookId]);
+      const meta = inv ? JSON.parse(inv.metadata) : {};
+      if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
+    }
   }
   const reference = String(input.reference || '').trim() || undefined;
   const reason = String(input.reason || '').trim();
   const notes = String(input.notes || '').trim();
   const method = input.method;
   const payAccount = method ? paymentCode(method) : (role === 'supplier' ? V2_ACCOUNT_CODES.AP : V2_ACCOUNT_CODES.AR);
+  const supplierAccount = isExpenseBill ? V2_ACCOUNT_CODES.EXPENSES : V2_ACCOUNT_CODES.INVENTORY;
   const source: V2Source = {
     id: uid(kind), bookId: input.bookId, type: kind, date: input.date, reference,
     metadata: { partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount, reason, notes, ...(method ? { method } : {}) },
@@ -226,9 +239,9 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
   const lines = role === 'supplier'
     ? (credit ? [
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: amount, credit: 0 },
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: 0, credit: amount },
+        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: 0, credit: amount },
       ] : [
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.COGS}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: amount, credit: 0 },
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: 0, credit: amount },
       ])
     : (credit ? [

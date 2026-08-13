@@ -18,7 +18,7 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { round2 } from "@/src/money";
 import { v2Reports } from "@/src/accountingV2/runtime";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
-import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital Statement", "Capital Withdrawals", "Suppliers", "Customers", "Tax", "Sales Reg", "Receipts"] as const;
@@ -41,7 +41,7 @@ function normalizeCapitalStatement(value: any) {
 function rangePreset(preset: string): { from: string; to: string } {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const iso = (d: Date) => localTodayIso(d);
   switch (preset) {
     case "This Month": return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
     case "Last Month": return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
@@ -169,28 +169,46 @@ export default function ReportsScreen() {
           drawings: 0,
           netProfit: report.profitAndLoss.netProfit,
         });
+        const tbAccounts = report.trialBalance.accounts || [];
+        const findBal = (codes: string[]) => tbAccounts.filter((a: any) => codes.includes(a.code)).reduce((s: number, a: any) => s + (a.normalBalance || 0), 0);
+        const cashBal = findBal(['1000', '1010', '1020', '1030']);
+        const invBal = findBal(['1200']);
+        const arBal = findBal(['1100']);
+        const suppAdvBal = findBal(['1210']);
+        const otherAssetBal = findBal(['1300', '1400', '1500']);
+        const totalAssets = report.balanceSheet?.assets ?? round2(cashBal + invBal + arBal + suppAdvBal + otherAssetBal);
+
+        const apBal = findBal(['2000']);
+        const commPayBal = findBal(['2200']);
+        const custAdvBal = findBal(['2100']);
+        const taxPayBal = findBal(['2300']);
+        const otherLiabBal = findBal(['2400', '2500']);
+        const totalLiabilities = report.balanceSheet?.liabilities ?? round2(apBal + commPayBal + custAdvBal + taxPayBal + otherLiabBal);
+        const equity = report.balanceSheet?.equity ?? round2(totalAssets - totalLiabilities);
+
         setBs({
-          assets: { cash: current.cash, inventory: current.inventoryValue, extra: [
-            { name: "Customers", amount: Number(current.accountsReceivable || 0) },
-            { name: "Supplier Advances", amount: Number(current.supplierAdvances || 0) },
-            { name: "Other Assets", amount: Number(current.otherAssets || 0) },
-          ].filter((a) => a.amount), total: Number(current.assets || 0) },
-          liabilities: { suppliersPayable: Number(current.accountsPayable || 0), extra: [
-            { name: "Commission Payable", amount: Number(current.commissionPayable || 0) },
-            { name: "Customer Advances", amount: Number(current.customerAdvances || 0) },
-            { name: "Other Liabilities", amount: Number(current.otherLiabilities || 0) },
-          ].filter((l) => l.amount), total: Number(current.liabilities || 0) },
-          equity: Number(current.netWorth || 0),
+          assets: { cash: cashBal, inventory: invBal, extra: [
+            { name: "Customers", amount: arBal },
+            { name: "Supplier Advances", amount: suppAdvBal },
+            { name: "Other Assets", amount: otherAssetBal },
+          ].filter((a) => a.amount), total: totalAssets },
+          liabilities: { suppliersPayable: apBal, extra: [
+            { name: "Commission Payable", amount: commPayBal },
+            { name: "Customer Advances", amount: custAdvBal },
+            { name: "Tax Payable", amount: taxPayBal },
+            { name: "Other Liabilities", amount: otherLiabBal },
+          ].filter((l) => l.amount), total: totalLiabilities },
+          equity,
         });
         setTb({
           debits: report.trialBalance.accounts.filter((a) => a.debit > 0).map((a) => ({ account: a.name, amount: a.debit })),
           credits: report.trialBalance.accounts.filter((a) => a.credit > 0).map((a) => ({ account: a.name, amount: a.credit })),
         });
         setAssetDist([
-          { label: "Cash", value: Number(current.cash || 0) },
-          { label: "Inventory", value: Number(current.inventoryValue || 0) },
-          { label: "Receivables", value: Number(current.accountsReceivable || 0) },
-          { label: "Other Assets", value: Number(current.otherAssets || 0) },
+          { label: "Cash", value: cashBal },
+          { label: "Inventory", value: invBal },
+          { label: "Receivables", value: arBal },
+          { label: "Other Assets", value: otherAssetBal },
         ].filter((item) => item.value !== 0));
       }
       setPeriods(Array.isArray(pd) ? pd : []);

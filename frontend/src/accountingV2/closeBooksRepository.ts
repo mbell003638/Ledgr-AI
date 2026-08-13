@@ -151,14 +151,22 @@ export class V2CloseBooksRepository {
     for (const line of lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [journalId, line.accountId, null, cents(line.debit), cents(line.credit), memo]);
   }
 
-  /** Post a single Dr debitCode / Cr creditCode adjustment for `amount`; no-op when zero. */
+  /** Post a single Dr debitCode / Cr creditCode adjustment for `amount`; no-op when zero. Supports negative adjustments (e.g. inventory gains). */
   private async postAdjustmentJournal(journalId: string, input: CloseBooksInput, postedAt: string, memo: string, amount: number, debitCode: string, creditCode: string) {
     const value = cents(amount);
-    if (value <= 0) return;
-    await this.writeJournal(journalId, input, postedAt, memo, [
-      { accountId: await this.accountId(input.bookId, debitCode), debit: value, credit: 0 },
-      { accountId: await this.accountId(input.bookId, creditCode), debit: 0, credit: value },
-    ]);
+    if (value === 0) return;
+    if (value > 0) {
+      await this.writeJournal(journalId, input, postedAt, memo, [
+        { accountId: await this.accountId(input.bookId, debitCode), debit: value, credit: 0 },
+        { accountId: await this.accountId(input.bookId, creditCode), debit: 0, credit: value },
+      ]);
+    } else {
+      const absValue = cents(-value);
+      await this.writeJournal(journalId, input, postedAt, memo, [
+        { accountId: await this.accountId(input.bookId, creditCode), debit: absValue, credit: 0 },
+        { accountId: await this.accountId(input.bookId, debitCode), debit: 0, credit: absValue },
+      ]);
+    }
   }
 
   /**

@@ -3,6 +3,7 @@ import { V2SqlRepository } from '../repository';
 import { V2DocumentService } from '../documentService';
 import { postInvoice } from '../postings';
 import { calculateInvoiceTotals } from '../../utils/invoiceTotals';
+import { localTodayIso } from '../../utils/dateValidation';
 import type { PartyDomainService } from './partyDomainService';
 
 type AnyRecord = Record<string, any>;
@@ -60,9 +61,16 @@ export class InvoiceDomainService {
       let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { metadata = {}; }
       return { source: { id: row.id, type: row.type, date: row.date, reference: row.reference, metadata } };
     }
+    const row = await this.db.first<any>("SELECT id,type,date,reference,metadata FROM v2_sources WHERE id=? AND type='invoice'", [id]);
+    if (!row) throw new Error('Invoice not found');
+    let priorMeta: AnyRecord = {}; try { priorMeta = JSON.parse(row.metadata || '{}'); } catch { priorMeta = {}; }
     const next = await this.editInput(input);
     const allocated = await this.db.first<{ id: string }>('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [id]);
     if (allocated) {
+      const nextPartyId = next.partyId || next.customerId;
+      if (nextPartyId && priorMeta.partyId && nextPartyId !== priorMeta.partyId) {
+        throw new Error('Cannot change customer on an invoice that has active receipt allocations. Remove receipt allocations first.');
+      }
       const newTotal = amount(next.total ?? next.amount);
       return this.documents.replaceInvoicePreservingAllocations(id, 'Edit invoice', newTotal, () => this.createInvoice(next));
     }
@@ -74,7 +82,7 @@ export class InvoiceDomainService {
   }
 
   async markInvoicePaid(id: string, input: AnyRecord = {}) {
-    const date = input.date || new Date().toISOString().slice(0, 10);
+    const date = input.date || localTodayIso();
     const c = await this.getActiveContext(date);
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     return this.documents.markInvoicePaid(id, { periodId: c.periodId, date, method: input.method });
