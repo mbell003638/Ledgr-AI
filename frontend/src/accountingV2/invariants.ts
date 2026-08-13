@@ -1,4 +1,4 @@
-import { toCents, num } from '../money';
+import { toCents, round2, num } from '../money';
 
 export class InvariantError extends Error {
   constructor(public invariantName: string, message: string) {
@@ -8,9 +8,12 @@ export class InvariantError extends Error {
 }
 
 export type JournalLineInput = {
-  accountCode: string;
-  debitCents: number;
-  creditCents: number;
+  accountCode?: string;
+  accountId?: string;
+  debit?: number;
+  credit?: number;
+  debitCents?: number;
+  creditCents?: number;
   memo?: string;
 };
 
@@ -19,6 +22,13 @@ export type InvariantCheck = {
   description: string;
   check: (lines: JournalLineInput[]) => void | Promise<void>;
 };
+
+function getCents(value: number | undefined, centsValue: number | undefined): number {
+  if (centsValue !== undefined && Number.isFinite(centsValue)) {
+    return Math.round(centsValue);
+  }
+  return toCents(round2(num(value)));
+}
 
 /**
  * INV-01: BALANCED_JOURNAL
@@ -31,8 +41,10 @@ export const balancedJournalInvariant: InvariantCheck = {
     let totalDebit = 0;
     let totalCredit = 0;
     for (const line of lines) {
-      totalDebit += toCents(line.debitCents || 0);
-      totalCredit += toCents(line.creditCents || 0);
+      const d = getCents(line.debit, line.debitCents);
+      const c = getCents(line.credit, line.creditCents);
+      totalDebit += d;
+      totalCredit += c;
     }
     if (totalDebit !== totalCredit) {
       throw new InvariantError(
@@ -59,17 +71,31 @@ export const minimumLinesInvariant: InvariantCheck = {
 
 /**
  * INV-03: NON_NEGATIVE_AMOUNTS
- * Line amounts must be non-negative integers.
+ * Line amounts must be non-negative integers/decimals.
  */
 export const nonNegativeAmountsInvariant: InvariantCheck = {
   name: 'NON_NEGATIVE_AMOUNTS',
   description: 'Line debit and credit amounts must be non-negative.',
   check: (lines: JournalLineInput[]) => {
     for (const line of lines) {
-      if ((line.debitCents || 0) < 0 || (line.creditCents || 0) < 0) {
+      const d = getCents(line.debit, line.debitCents);
+      const c = getCents(line.credit, line.creditCents);
+      if (d < 0 || c < 0) {
         throw new InvariantError(
           'NON_NEGATIVE_AMOUNTS',
-          `Negative line amounts detected (debit: ${line.debitCents}, credit: ${line.creditCents}).`
+          `Negative line amounts detected (debit: ${d}, credit: ${c}).`
+        );
+      }
+      if (d > 0 && c > 0) {
+        throw new InvariantError(
+          'INVALID_LINE_MUTUAL_EXCLUSION',
+          `Line cannot have both debit and credit amounts (debit: ${d}, credit: ${c}).`
+        );
+      }
+      if (d === 0 && c === 0) {
+        throw new InvariantError(
+          'ZERO_LINE_AMOUNT',
+          'Line cannot have zero debit and zero credit.'
         );
       }
     }
@@ -86,9 +112,9 @@ export const CORE_INVARIANTS: InvariantCheck[] = [
  * Runs all core invariants on candidate posting lines before database write.
  * Throws InvariantError on any invariant breach.
  */
-export async function validatePostingInvariants(lines: JournalLineInput[], extraChecks: InvariantCheck[] = []): Promise<void> {
+export function validatePostingInvariants(lines: JournalLineInput[], extraChecks: InvariantCheck[] = []): void {
   const allChecks = [...CORE_INVARIANTS, ...extraChecks];
   for (const check of allChecks) {
-    await check.check(lines);
+    check.check(lines);
   }
 }

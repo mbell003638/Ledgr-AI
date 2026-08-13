@@ -2,6 +2,7 @@ import type { V2Account, V2Book, V2JournalEntry, V2Party, V2Source } from './typ
 import { defaultAccounts } from './schema';
 import type { SqlRunner } from '../db/schema';
 import { round2 } from '../money';
+import { validatePostingInvariants } from './invariants';
 
 export type V2DateRange = { from?: string; to?: string };
 export type V2ReconciliationError = {
@@ -88,10 +89,7 @@ export class V2SqlRepository {
   }
 
   private assertBalanced(lines: V2JournalEntry['lines']) {
-    const rounded = lines.map((l) => ({ ...l, debit: cents(l.debit), credit: cents(l.credit) }));
-    const debit = rounded.reduce((s, l) => s + l.debit, 0);
-    const credit = rounded.reduce((s, l) => s + l.credit, 0);
-    if (!rounded.length || rounded.some((l) => !Number.isFinite(l.debit) || !Number.isFinite(l.credit) || l.debit < 0 || l.credit < 0 || (l.debit > 0 && l.credit > 0) || (l.debit === 0 && l.credit === 0)) || Math.abs(debit - credit) > 0.005) throw new Error('Journal entry must balance after cent rounding and contain valid debit/credit lines');
+    validatePostingInvariants(lines);
   }
 
   private async validateJournal(input: Omit<V2JournalEntry, 'id'>, pendingSourceId?: string) {
