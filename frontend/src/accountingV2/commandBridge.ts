@@ -26,7 +26,8 @@ export async function runConfirmedV2Command(source: V2ActionSource, rawAction: u
       if (action.direction === 'received') return service.createReceipt({ debtorId: action.partyId, clientName: action.partyId, date: action.date, amount: action.amount, method: action.method, allocations: action.invoiceId ? [{ invoiceSourceId: action.invoiceId, amount: action.amount }] : [] });
       return service.createPayment({ supplierId: action.partyId, supplierName: action.partyId, date: action.date, amount: action.amount, method: action.method });
     }
-    return service.closeBooks({ actualStock: 0, openingInventory: 0, commissionPct: 0 });
+    const overview = await service.inventoryOverview();
+    return service.closeBooks({ date: action.date, actualStock: overview?.expected ?? overview?.openingInventory ?? 0, openingInventory: overview?.openingInventory ?? 0, commissionPct: 0 });
   });
   return { action: validation.action, executed: true, result };
 }

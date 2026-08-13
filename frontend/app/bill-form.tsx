@@ -41,10 +41,8 @@ export default function BillForm() {
         if (b) {
           setSupplierId(b.supplierId);
           setAmount(String(b.amount));
-          if (b.isExpense || b.category) {
-            setBillType("expense");
-            if (b.category) setExpenseCategory(b.category);
-          }
+          setBillType(b.isExpense === true || b.billType === "expense" ? "expense" : "inventory");
+          if (b.category) setExpenseCategory(b.category);
           setPaymentType(b.paymentType);
           setInvoiceNo(b.invoiceNo || "");
           setNotes(b.notes || "");

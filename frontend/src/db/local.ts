@@ -1,5 +1,6 @@
 import { computeCogs, grossProfit as calcGross, commission as calcCommission, netProfit as calcNet, computeCash } from '../accounting';
 import { pctOf, subMoney, addMoney, round2 } from '../money';
+import { localTodayIso } from '../utils/dateValidation';
 import {
   readColl as backendReadColl,
   writeColl as backendWriteColl,
@@ -111,11 +112,12 @@ export async function getSettings(): Promise<Record<string, any>> {
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',
     enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
+    managerCommissionPct: Number(s.managerCommissionPct || 0),
   };
 }
 
 const ACCOUNTING_SETTING_KEYS = new Set([
-  'managerCommissionPct', 'currentPeriodStart', 'openingInventory', 'openingCash',
+  'currentPeriodStart', 'openingInventory', 'openingCash',
   'openingCapital', 'investors', 'partnerNames', 'extraAssets', 'extraLiabilities',
   'accountingStyle', 'accountingBasis', 'selectedPersonas', 'activePersona',
 ]);
@@ -698,7 +700,7 @@ export async function investorLedgerDetail(rawId: string): Promise<InvestorLedge
   ]);
   const investor = legacyInvestor(settings, rawId);
   const periodStart = settings.currentPeriodStart || '1970-01-01';
-  const periodEnd = new Date().toISOString().slice(0, 10);
+  const periodEnd = localTodayIso();
   const sameInvestor = (item: any) => {
     const itemId = String(item?.investorId || '');
     const itemName = String(item?.partnerName || '').trim().toLowerCase();
@@ -1495,7 +1497,7 @@ export async function resetAll() {
     backendClearColl('deliveryNotes'),
     backendClearColl('cashEntries'),
   ]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayIso();
   await writeSettings({
     ...s,
     currentPeriodStart: today,
@@ -1631,7 +1633,7 @@ export async function markInvoicePaid(id: string) {
   //   receipt record + cash entry IN + debtor payment + invoice status sync
   return createReceipt({
     mode: 'against_invoice',
-    date: new Date().toISOString().slice(0, 10),
+    date: localTodayIso(),
     amount: inv.total,
     debtorId: debtor?.id || null,
     clientName: inv.clientName,
@@ -1640,7 +1642,7 @@ export async function markInvoicePaid(id: string) {
   });
 }
 export async function overdueInvoices() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayIso();
   const all = await readColl<any>('invoices');
   return all.filter((inv: any) => inv.status === 'unpaid' && inv.dueDate && inv.dueDate < today);
 }
@@ -2053,7 +2055,7 @@ export async function convertQuoteToInvoice(
   const payload = {
     clientName: q.clientName,
     clientPhone: q.clientPhone,
-    date: opts?.date || new Date().toISOString().slice(0, 10),
+    date: opts?.date || localTodayIso(),
     dueDate: opts?.dueDate,
     lines: q.lines,
     taxRate: q.taxRate,

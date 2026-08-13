@@ -12,7 +12,7 @@ import { buildCustomReport, customReportBreakdownRows, summarizeCustomReport, CU
 import { buildCustomReportHtml, buildPnlRows, customReportShareText, drCrLabel, registerRowLabel, registerRowValue, trialBalanceTotals, type CustomReportPnl } from '@/src/utils/customReportDocument';
 import { money, symbolFor } from '@/src/utils/reportDocument';
 import { printHtml } from '@/src/utils/print';
-import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
+import { isValidDateString, normalizeDateInput, localTodayIso } from '@/src/utils/dateValidation';
 
 const SECTIONS = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Sales', 'Purchases', 'Receipts', 'Expenses', 'Inventory & COGS', 'Customers', 'Suppliers', 'Capital Statement'] as const;
 const SECTION_IDS: Record<string, CustomReportSectionId> = { 'Trial Balance': 'trialBalance', 'Profit & Loss': 'profit', 'Balance Sheet': 'balanceSheet', Sales: 'sales', Purchases: 'purchases', Receipts: 'receipts', Expenses: 'expenses', 'Inventory & COGS': 'inventory', Customers: 'debtors', Suppliers: 'creditors', 'Capital Statement': 'members' };
@@ -26,8 +26,8 @@ export default function CustomReportScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const [from, setFrom] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(localTodayIso(new Date(new Date().getFullYear(), 0, 1)));
+  const [to, setTo] = useState(localTodayIso());
   const [selected, setSelected] = useState<string[]>(['Trial Balance', 'Profit & Loss', 'Balance Sheet']);
   const [fields, setFields] = useState<CustomReportField[]>([...CUSTOM_REPORT_FIELDS]);
   const [groupBy, setGroupBy] = useState<CustomReportGroup>('none');

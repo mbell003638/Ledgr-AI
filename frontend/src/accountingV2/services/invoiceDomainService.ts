@@ -67,7 +67,9 @@ export class InvoiceDomainService {
     const next = await this.editInput(input);
     const allocated = await this.db.first<{ id: string }>('SELECT id FROM v2_invoice_allocations WHERE invoice_source_id=? LIMIT 1', [id]);
     if (allocated) {
-      const nextPartyId = next.partyId || next.customerId;
+      const c = await this.getActiveContext(next.date || row.date);
+      if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+      const nextPartyId = next.partyId || next.customerId || (next.clientName ? await this.parties.party(next, 'customer', c.bookId) : null);
       if (nextPartyId && priorMeta.partyId && nextPartyId !== priorMeta.partyId) {
         throw new Error('Cannot change customer on an invoice that has active receipt allocations. Remove receipt allocations first.');
       }

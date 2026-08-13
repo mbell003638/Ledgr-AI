@@ -23,6 +23,7 @@ import {
   type V2ClosingBalancePartner,
   type V2ClosingBalancesImportInput,
 } from './services/capitalDomainService';
+import { localTodayIso } from '../utils/dateValidation';
 
 export {
   partyDisplayName,
@@ -166,7 +167,7 @@ export class V2AppService {
     }
     const open = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date DESC LIMIT 1", [bookId]);
     if (!open) return null;
-    const now = new Date().toISOString().slice(0, 10);
+    const now = localTodayIso();
     return now < open.start_date ? open.start_date : now > open.end_date ? open.end_date : now;
   }
 

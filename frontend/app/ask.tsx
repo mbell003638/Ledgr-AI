@@ -99,9 +99,11 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
     case "add_sale":
       await api.createSale({ amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
       return "Sale recorded ✓";
-    case "add_bill":
-      await api.createBill({ supplierName: p.supplierName, amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
+    case "add_bill": {
+      const supplier = requireExactMatch(await api.listSuppliers(), p.supplierName, "Supplier");
+      await api.createBill({ supplierId: supplier.id, supplierName: supplier.name, amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
       return "Purchase recorded ✓";
+    }
     case "add_debtor":
       await api.findOrCreateParty(p.name, "customer", { phone: p.phone || "" });
       return `Customer "${p.name}" added ✓`;
@@ -119,9 +121,10 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
       return `Payment to "${supplier.name}" recorded ✓`;
     }
     case "create_invoice": {
+      const customer = requireExactMatch(await api.listDebtors(), p.clientName, "Customer");
       const amt = Number(p.amount);
-      await api.createInvoice({ clientName: p.clientName, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
-      return `Invoice for "${p.clientName}" created ✓`;
+      await api.createInvoice({ partyId: customer.id, debtorId: customer.id, clientName: customer.name, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
+      return `Invoice for "${customer.name}" created ✓`;
     }
     case "create_receipt": {
       const amt = Number(p.amount);
@@ -143,9 +146,10 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
       return `Receipt for ${amt.toFixed(2)} recorded ✓`;
     }
     case "create_quote": {
+      const customer = requireExactMatch(await api.listDebtors(), p.clientName, "Customer");
       const amt = Number(p.amount);
-      await api.createQuote({ clientName: p.clientName, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
-      return `Quote for "${p.clientName}" created ✓`;
+      await api.createQuote({ partyId: customer.id, debtorId: customer.id, clientName: customer.name, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
+      return `Quote for "${customer.name}" created ✓`;
     }
     case "create_drawing": {
       const member = requireExactMatch(await api.listInvestors(), p.partnerName, "Capital Account");

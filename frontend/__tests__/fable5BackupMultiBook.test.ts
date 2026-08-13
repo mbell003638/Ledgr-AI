@@ -147,3 +147,97 @@ describe('Finding B — quote→invoice conversion is visible to the V2 ledger',
     expect((await api.receiptsRegister('2026-03-01', '2026-03-31')).total).toBe(40);
   });
 });
+
+describe('4th Audit API & Reports Findings', () => {
+  beforeEach(() => { jest.resetModules(); resetMem(); installMocks(); });
+
+  it('taxReport() netTaxPayable reflects glTaxPayable for accrual basis when Account 2300 exists and always returns glTaxPayable', async () => {
+    const { api } = await bootDefault();
+    await api.postV2OpeningBalances({ date: '2026-01-01', cash: 1000, inventory: 0 });
+    await api.updateSettings({ taxRate: 10, taxLabel: 'VAT' });
+    const customer = await api.findOrCreateParty('Tax Customer', 'customer');
+
+    await api.createInvoice({
+      partyId: customer.id,
+      date: '2026-02-10',
+      total: 110,
+      taxRate: 10,
+      tax: 10,
+      lines: [{ description: 'Service', qty: 1, rate: 100 }],
+    });
+
+    const report = await api.taxReport('2026-02-01', '2026-02-28');
+    expect(report.glTaxPayable).toBe(10);
+    expect(report.netTaxPayable).toBe(10);
+    expect(report.outputTax).toBe(10);
+  });
+
+  it('monthlySummary(m) parses year/month, calculates genuine last day of month, and calculates manager commission', async () => {
+    const { api } = await bootDefault();
+    await api.postV2OpeningBalances({ date: '2026-01-01', cash: 1000, inventory: 0 });
+    await api.updateSettings({ managerCommissionPct: 15 });
+    const customer = await api.findOrCreateParty('Feb Customer', 'customer');
+
+    await api.createSale({
+      partyId: customer.id,
+      date: '2026-02-15',
+      amount: 400,
+      method: 'cash',
+    });
+
+    const summary = await api.monthlySummary('2026-02');
+    expect(summary.periodStart).toBe('2026-02-01');
+    expect(summary.revenue).toBe(400);
+    expect(summary.grossProfit).toBe(400);
+    expect(summary.managerCommissionPct).toBe(15);
+    expect(summary.commission).toBe(60); // 15% of 400
+  });
+
+  it('dailySummary(d) calculates netCash from actual liquid cash movements rather than accrual revenue, computes expenses, and counts payments', async () => {
+    const { api } = await bootDefault();
+    await api.postV2OpeningBalances({ date: '2026-01-01', cash: 1000, inventory: 0 });
+    const customer = await api.findOrCreateParty('Daily Customer', 'customer');
+    const supplier = await api.findOrCreateParty('Daily Supplier', 'supplier');
+
+    const date = '2026-03-15';
+
+    // 1. Accrual unpaid invoice of $1000 (should NOT inflate netCash)
+    await api.createInvoice({
+      partyId: customer.id,
+      date,
+      amount: 1000,
+      lines: [{ description: 'Consulting', qty: 1, rate: 1000 }],
+    });
+
+    // 2. Cash sale of $250 (actual cash in)
+    await api.createSale({
+      partyId: customer.id,
+      date,
+      amount: 250,
+      method: 'cash',
+    });
+
+    // 3. Supplier payment of $70 (actual cash out)
+    await api.createBill({
+      supplierId: supplier.id,
+      date,
+      amount: 100,
+      paymentType: 'credit',
+    });
+    await api.createPayment({
+      supplierId: supplier.id,
+      date,
+      amount: 70,
+      method: 'cash',
+    });
+
+    const daily = await api.dailySummary(date);
+    expect(daily.revenue).toBe(1250); // 1000 invoice + 250 cash sale
+    expect(daily.netCash).toBe(180); // 250 cash in - 70 cash out (NOT 1250)
+    expect(daily.salesCount).toBe(2); // 1 invoice + 1 cash sale
+    expect(daily.billsCount).toBe(1); // 1 bill
+    expect(daily.paymentsCount).toBe(1); // 1 payment
+    expect(daily.expenses).toBe(0);
+  });
+});
+

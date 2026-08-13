@@ -259,6 +259,7 @@ async function preferenceSettings() {
     accountingBasis: config.basis,
     selectedPersonas: config.selectedPersonas,
     activePersona: config.activePersona,
+    managerCommissionPct: config.retailPartnership?.commissionPct ?? settings.managerCommissionPct ?? 0,
   };
 }
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
@@ -514,6 +515,25 @@ export const api = {
   },
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
+    const runner = activeSqlRunner();
+    if (runner && s.managerCommissionPct !== undefined) {
+      const service = new V2AppService(runner);
+      const context = await service.activeContext();
+      if (context) {
+        const repo = new V2BookConfigRepository(runner);
+        const config = await repo.getBookConfig(context.bookId);
+        await repo.updateBookConfig(context.bookId, {
+          style: config.style,
+          basis: config.basis,
+          selectedPersonas: config.selectedPersonas,
+          activePersona: config.activePersona,
+          retailPartnership: {
+            ...config.retailPartnership,
+            commissionPct: Number(s.managerCommissionPct || 0),
+          },
+        });
+      }
+    }
     const r = await db.updateSettings(s);
     const preferences = await preferenceSettings();
     bumpDataVersion();
@@ -861,13 +881,18 @@ export const api = {
     ].filter((item) => Number(item.value) !== 0);
   },
   monthlySummary: async (m: string) => {
+    const [year, month] = m.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
     const from = `${m}-01`;
-    const to = `${m}-31`;
+    const to = `${m}-${String(lastDay).padStart(2, '0')}`;
     const report = await v2Report(from, to);
     const pnl = report.profitAndLoss;
     const config = await api.getV2BookConfig();
     const isCash = config?.basis === 'cash';
     const operatingExpenses = isCash ? pnl.expenses : round2(pnl.grossProfit - pnl.netProfit);
+    const settings: any = await api.getSettings().catch(() => ({}));
+    const commissionPct = Number(settings?.managerCommissionPct || 0);
+    const commission = commissionPct > 0 ? round2(pnl.netProfit * (commissionPct / 100)) : 0;
     return {
       month: m,
       periodStart: from,
@@ -877,8 +902,8 @@ export const api = {
       grossProfit: pnl.grossProfit,
       expenses: operatingExpenses,
       totalExpenses: pnl.expenses,
-      commission: 0,
-      managerCommissionPct: 0,
+      commission,
+      managerCommissionPct: commissionPct,
       netProfit: pnl.netProfit,
     };
   },
@@ -891,19 +916,25 @@ export const api = {
     const report = await buildPersistentV2Reports(runner, { bookId: ctx.bookId, from: d, to: d });
     const salesAndInvoices = await service.listSalesAndInvoices();
     const bills = await service.listBills();
+    const payments = await api.listPayments();
+    const cashMovements = await service.listCashMovements();
     const daySales = salesAndInvoices.filter((x: any) => (x.date || '').slice(0, 10) === d);
     const dayBills = bills.filter((x: any) => (x.date || '').slice(0, 10) === d);
+    const dayPayments = payments.filter((x: any) => (x.date || '').slice(0, 10) === d);
+    const dayMovements = cashMovements.filter((m: any) => (m.date || '').slice(0, 10) === d);
+    const netCash = round2(dayMovements.reduce((sum: number, m: any) => sum + (m.direction === 'in' ? Number(m.amount || 0) : -Number(m.amount || 0)), 0));
+    const expenses = round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
     return {
       date: d,
       revenue: report.profitAndLoss.revenue,
       purchases: report.profitAndLoss.cogs,
       grossProfit: report.profitAndLoss.grossProfit,
-      expenses: report.profitAndLoss.expenses,
+      expenses,
       netProfit: report.profitAndLoss.netProfit,
-      netCash: report.profitAndLoss.revenue,
+      netCash,
       salesCount: daySales.length,
       billsCount: dayBills.length,
-      paymentsCount: 0,
+      paymentsCount: dayPayments.length,
     };
   },
 
@@ -1173,8 +1204,9 @@ export const api = {
 
     const glTaxAccount = report?.trialBalance?.accounts?.find((a: any) => a.code === '2300');
     const glTaxPayable = glTaxAccount ? glTaxAccount.normalBalance : 0;
+    const netTaxPayable = (basis === 'accrual' && glTaxAccount) ? glTaxPayable : Math.round((netOutputTax - inputTax) * 100) / 100;
 
-    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax: 0, netOutputTax, inputBase, inputTax, netTaxPayable: Math.round((netOutputTax - inputTax) * 100) / 100, glTaxPayable };
+    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax: 0, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable };
   },
   salesRegister: async (from: string, to: string) => {
     const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));

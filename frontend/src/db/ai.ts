@@ -9,6 +9,8 @@
  * - baseUrl is only needed for 'custom' (any OpenAI-compatible endpoint).
  */
 
+import { localTodayIso } from '../utils/dateValidation';
+
 export type ProviderId = 'gemini' | 'anthropic' | 'openrouter' | 'custom' | 'custom_anthropic';
 
 // Default provider used when the stored provider is missing/unknown/legacy.
@@ -402,7 +404,7 @@ const PARSE_SCHEMA = {
 };
 
 export async function parseCommand(cfg: AIConfig, text: string, currency = 'USD') {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayIso();
   const prompt =
     `Today is ${today}. Parse this shop or personal accounting voice command into JSON. ` +
     "Intents: 'expense' (business or personal expense like rent, tea, fuel, lunch, utilities, transport), " +
@@ -565,7 +567,7 @@ const ANALYZE_TEXT_MAX_CHARS = 20_000;
  * images/PDFs are covered by the same never-follow-instructions clause.
  */
 export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayIso();
   let prompt =
     `Today is ${today}. You are analyzing ONE business document (a receipt, supplier statement, ` +
     'closing report / trial balance from another accounting app, transaction list, or other record) ' +
