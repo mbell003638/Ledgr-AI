@@ -1,4 +1,5 @@
 import type { V2PartyRole, V2PaymentMethod } from './types';
+import { localTodayIso } from '../utils/dateValidation';
 
 export type V2ActionSource = 'ai' | 'voice';
 export type V2Report = 'profit_and_loss' | 'balance_sheet' | 'cash_flow' | 'trial_balance';
@@ -139,7 +140,8 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
   }
 }
 
-export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'record_inventory';
+export type AssistantEntryEntity = 'expense' | 'sale' | 'bill' | 'supplier_payment' | 'receipt' | 'invoice' | 'quote' | 'customer' | 'supplier' | 'delivery_note' | 'note' | 'inventory_count' | 'capital' | 'drawing' | 'cash_entry';
+export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_supplier' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'add_capital' | 'record_inventory' | 'update_entry' | 'delete_entry';
 // isDestructive mirrors the V2 write flag so confirm UIs can react uniformly.
 // All current assistant proposals are additive, so this stays false/undefined;
 // it exists so a destructive proposal (if ever added) is rendered with a
@@ -147,9 +149,27 @@ export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'a
 export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation; isDestructive?: boolean };
 export type AssistantProposalValidationResult = { ok: true; action: AssistantProposal } | { ok: false; errors: string[] };
 
-const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'record_inventory'];
+const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry'];
+const ASSISTANT_ENTRY_ENTITIES: AssistantEntryEntity[] = ['expense', 'sale', 'bill', 'supplier_payment', 'receipt', 'invoice', 'quote', 'customer', 'supplier', 'delivery_note', 'note', 'inventory_count', 'capital', 'drawing', 'cash_entry'];
+const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> = {
+  expense: ['amount', 'date', 'category', 'method', 'notes'],
+  sale: ['amount', 'date', 'paymentType', 'method', 'notes'],
+  bill: ['amount', 'date', 'paymentType', 'method', 'notes', 'invoiceNo'],
+  supplier_payment: ['amount', 'date', 'method', 'notes'],
+  receipt: ['amount', 'date', 'method', 'notes'],
+  invoice: ['amount', 'date', 'dueDate', 'notes', 'clientName', 'clientPhone', 'lines', 'taxRate', 'taxLabel'],
+  quote: ['amount', 'date', 'validUntil', 'notes', 'clientName', 'clientPhone', 'lines', 'taxRate', 'taxLabel', 'status'],
+  customer: ['name', 'phone', 'email', 'address', 'notes'],
+  supplier: ['name', 'phone', 'email', 'address', 'notes'],
+  delivery_note: ['date', 'clientName', 'clientPhone', 'invoiceId', 'items', 'vehicleNo', 'status', 'notes'],
+  note: ['amount', 'date', 'reference', 'reason', 'notes'],
+  inventory_count: [],
+  capital: ['amount', 'date', 'notes'],
+  drawing: ['amount', 'date', 'notes'],
+  cash_entry: ['amount', 'date', 'type', 'category', 'notes'],
+};
 const assistantAmount = (value: unknown) => {
-  const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[^0-9.-]/g, '')) : NaN;
   return Number.isFinite(amount) ? amount : NaN;
 };
 
@@ -158,23 +178,62 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
   const value = record(input);
   if (!value || !ASSISTANT_PROPOSAL_TYPES.includes(value.type as AssistantProposalType)) return { ok: false, errors: ['unsupported AI action'] };
   const params = record(value.params) || {};
+  if (JSON.stringify(params).length > 20_000) return { ok: false, errors: ['AI action is too large'] };
   const type = value.type as AssistantProposalType;
-  const dateValue = params.date === undefined ? new Date().toISOString().slice(0, 10) : params.date;
+  if (type === 'update_entry' || type === 'delete_entry') {
+    const entity = String(params.entity || '') as AssistantEntryEntity;
+    const id = String(params.id || '').trim();
+    if (!ASSISTANT_ENTRY_ENTITIES.includes(entity)) return { ok: false, errors: ['entry entity is unsupported'] };
+    if (!id) return { ok: false, errors: ['entry id is required'] };
+    if (type === 'delete_entry' && (entity === 'customer' || entity === 'supplier')) return { ok: false, errors: ['Customer and Supplier deletion must be done from the dedicated screen'] };
+    if (entity === 'capital' && !text(params.memberId)) return { ok: false, errors: ['memberId is required for a capital entry'] };
+    if (type === 'update_entry' && entity === 'inventory_count') return { ok: false, errors: ['inventory counts must be reversed and re-recorded'] };
+    if (type === 'delete_entry') {
+      return { ok: true, action: { source, type, params: { entity, id, memberId: params.memberId }, isDestructive: true, confirmation: { required: true, preview: `Reverse / delete ${entity.replace(/_/g, ' ')} ${id}` } } };
+    }
+    const changes = record(params.changes);
+    if (!changes || Object.keys(changes).length === 0) return { ok: false, errors: ['entry changes are required'] };
+    const unsupportedFields = Object.keys(changes).filter((field) => !ASSISTANT_UPDATE_FIELDS[entity].includes(field));
+    if (unsupportedFields.length) return { ok: false, errors: [`unsupported ${entity} fields: ${unsupportedFields.join(', ')}`] };
+    for (const field of ['date', 'dueDate', 'validUntil'] as const) {
+      if (changes[field] !== undefined && changes[field] !== '' && !date(changes[field])) return { ok: false, errors: [`${field} must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
+    }
+    if (changes.method !== undefined && !METHODS.includes(changes.method as V2PaymentMethod)) return { ok: false, errors: ['payment method is invalid'] };
+    if (changes.paymentType !== undefined && !['cash', 'credit'].includes(String(changes.paymentType))) return { ok: false, errors: ['paymentType is invalid'] };
+    if (changes.taxRate !== undefined && (!Number.isFinite(Number(changes.taxRate)) || Number(changes.taxRate) < 0 || Number(changes.taxRate) > 100)) return { ok: false, errors: ['taxRate must be between 0 and 100'] };
+    if (entity === 'quote' && changes.status !== undefined && !['draft', 'sent', 'accepted', 'expired'].includes(String(changes.status))) return { ok: false, errors: ['quote status is invalid'] };
+    if (entity === 'delivery_note' && changes.status !== undefined && !['pending', 'delivered'].includes(String(changes.status))) return { ok: false, errors: ['delivery note status is invalid'] };
+    if (entity === 'cash_entry' && changes.type !== undefined && !['income', 'expense'].includes(String(changes.type))) return { ok: false, errors: ['cash entry type is invalid'] };
+    if (Array.isArray(changes.lines) && changes.lines.some((line) => !record(line) || !text(record(line)?.description) || !positive(record(line)?.qty ?? record(line)?.quantity) || !positive(record(line)?.rate ?? record(line)?.unitPrice))) return { ok: false, errors: ['invoice or quote lines are invalid'] };
+    if (Array.isArray(changes.items) && changes.items.some((item) => !record(item) || !text(record(item)?.description) || !positive(record(item)?.qty ?? record(item)?.quantity))) return { ok: false, errors: ['delivery note items are invalid'] };
+    if (JSON.stringify(changes).length > 12_000) return { ok: false, errors: ['entry changes are too large'] };
+    if (Array.isArray(changes.lines) && changes.lines.length > 50) return { ok: false, errors: ['invoice or quote lines cannot exceed 50'] };
+    if (Array.isArray(changes.items) && changes.items.length > 50) return { ok: false, errors: ['delivery note items cannot exceed 50'] };
+    const normalizedChanges = { ...changes };
+    if (changes.amount !== undefined) {
+      const amount = assistantAmount(changes.amount);
+      if (!positive(amount)) return { ok: false, errors: [`amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`] };
+      normalizedChanges.amount = amount;
+    }
+    if (changes.date !== undefined && !date(changes.date)) return { ok: false, errors: [`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
+    return { ok: true, action: { source, type, params: { entity, id, changes: normalizedChanges, memberId: params.memberId }, confirmation: { required: true, preview: `Update ${entity.replace(/_/g, ' ')} ${id}: ${JSON.stringify(normalizedChanges)}` } } };
+  }
+  const dateValue = params.date === undefined ? localTodayIso() : params.date;
   if (!date(dateValue)) return { ok: false, errors: [`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
   const amount = assistantAmount(params.amount);
-  const needAmount = type !== 'add_debtor';
+  const needAmount = !['add_debtor', 'add_supplier'].includes(type);
   // Reject NaN/Infinity, non-positive (or negative for inventory), AND anything above MAX_AI_AMOUNT.
   const amountBad = !Number.isFinite(amount) || amount > MAX_AI_AMOUNT || (type === 'record_inventory' ? amount < 0 : amount <= 0);
   if (needAmount && amountBad) return { ok: false, errors: [`amount must be a positive number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`] };
-  const requiredName = type === 'add_bill' ? 'supplierName'
-    : ['add_debtor', 'add_debtor_payment'].includes(type) ? 'name'
+  const requiredName = ['add_bill', 'create_supplier_payment'].includes(type) ? 'supplierName'
+    : ['add_debtor', 'add_supplier', 'add_debtor_payment'].includes(type) ? 'name'
     : ['create_invoice', 'create_quote'].includes(type) ? 'clientName'
-    : type === 'create_supplier_payment' ? 'supplierName'
-    : type === 'create_drawing' ? 'partnerName' : null;
+    : ['create_drawing', 'add_capital'].includes(type) ? 'partnerName' : null;
   if (requiredName && !text(params[requiredName])) return { ok: false, errors: [`${requiredName} is required`] };
   const mode = params.mode;
   if (type === 'create_receipt' && mode !== undefined && !['cash_sale', 'against_invoice', 'advance'].includes(String(mode))) return { ok: false, errors: ['receipt mode is invalid'] };
   if (type === 'create_receipt' && mode === 'against_invoice' && !text(params.customerName)) return { ok: false, errors: ['customerName is required for an invoice receipt'] };
+  if (type === 'create_receipt' && mode === 'against_invoice' && !text(params.invoiceId)) return { ok: false, errors: ['invoiceId is required for an invoice receipt'] };
   const paymentType = params.paymentType;
   if (paymentType !== undefined && !['cash', 'credit'].includes(String(paymentType))) return { ok: false, errors: ['paymentType is invalid'] };
   const method = params.method;

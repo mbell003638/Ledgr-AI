@@ -27,7 +27,9 @@ describe('V2 UI contracts', () => {
     const source = readApp('ask.tsx');
 
     expect(source).not.toContain('await applyAction(action)');
-    expect(source).toContain('proposal.action.confirmation.preview');
+    expect(source).toContain('pendingProposal.action.confirmation.preview');
+    expect(source).toContain('applyAction(proposal.action)');
+    expect(source).toContain('applyingProposalRef.current');
   });
 
   it('voice validates the draft before showing confirmation and executes only from the confirm handler', () => {
@@ -361,7 +363,12 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('AsyncStorage.getItem(historyKey)');
     expect(source).toContain('askHistoryStorageKey(api.activeBookId())');
     expect(source).toContain('Clear Ask AI history');
-    expect(source).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(source).toContain('enabled={Platform.OS === "ios"}');
+    expect(source).toContain('behavior={Platform.OS === "ios" ? "padding" : undefined}');
+    expect(source).not.toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
+    expect(source).toContain('testID="ask-pending-action-card"');
+    expect(source).toContain('submitBehavior="submit"');
+    expect(source).toContain('onSubmitEditing={() => send(input)}');
     expect(source).toContain('keyboardDismissMode="on-drag"');
     expect(appConfig.expo.android.softwareKeyboardLayoutMode).toBe('resize');
   });

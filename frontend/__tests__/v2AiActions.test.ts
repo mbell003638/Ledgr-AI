@@ -116,8 +116,34 @@ describe('V2 AI/voice action validation', () => {
     expect(debtor).toMatchObject({ ok: true, action: { type: 'add_debtor', params: { name: 'Amit' } } });
     expect(validateAssistantProposal({ type: 'add_bill', params: { amount: 25, date: '2026-01-01' } }, 'ai')).toEqual({ ok: false, errors: ['supplierName is required'] });
     expect(validateAssistantProposal({ type: 'create_receipt', params: { amount: 10, date: '2026-01-01', mode: 'against_invoice' } }, 'ai')).toEqual({ ok: false, errors: ['customerName is required for an invoice receipt'] });
+    expect(validateAssistantProposal({ type: 'create_receipt', params: { amount: 10, date: '2026-01-01', mode: 'against_invoice', customerName: 'Amit' } }, 'ai')).toEqual({ ok: false, errors: ['invoiceId is required for an invoice receipt'] });
     await expect(executeAssistantProposal(debtor, { confirmed: false }, () => 'bad')).rejects.toThrow(/explicit confirmation/i);
     await expect(executeAssistantProposal(debtor, { confirmed: true }, () => 'saved')).resolves.toBe('saved');
+  });
+
+  it('normalizes currency amounts and requires exact safe targets for mutations', () => {
+    const payment = validateAssistantProposal({ type: 'create_supplier_payment', params: { supplierName: 'Amit', amount: '$500', date: '2026-01-01' } }, 'ai');
+    expect(payment).toMatchObject({ ok: true, action: { params: { amount: 500 } } });
+
+    const deletion = validateAssistantProposal({ type: 'delete_entry', params: { entity: 'expense', id: 'expense-1' } }, 'ai');
+    expect(deletion).toMatchObject({ ok: true, action: { isDestructive: true, params: { entity: 'expense', id: 'expense-1' } } });
+
+    expect(validateAssistantProposal({ type: 'update_entry', params: { entity: 'inventory_count', id: 'count-1', changes: { amount: 20 } } }, 'ai')).toEqual({
+      ok: false,
+      errors: ['inventory counts must be reversed and re-recorded'],
+    });
+    expect(validateAssistantProposal({ type: 'delete_entry', params: { entity: 'capital', id: 'capital-1' } }, 'ai')).toEqual({
+      ok: false,
+      errors: ['memberId is required for a capital entry'],
+    });
+    expect(validateAssistantProposal({ type: 'update_entry', params: { entity: 'expense', id: 'expense-1', changes: { roles: ['supplier'] } } }, 'ai')).toEqual({
+      ok: false,
+      errors: ['unsupported expense fields: roles'],
+    });
+    expect(validateAssistantProposal({ type: 'delete_entry', params: { entity: 'customer', id: 'customer-1' } }, 'ai')).toEqual({
+      ok: false,
+      errors: ['Customer and Supplier deletion must be done from the dedicated screen'],
+    });
   });
 });
 

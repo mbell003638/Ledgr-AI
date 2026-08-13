@@ -4,13 +4,14 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/db/local";
-import { executeAssistantProposal, validateAssistantProposal } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
+import { localTodayIso } from "@/src/utils/dateValidation";
 import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
@@ -50,73 +51,218 @@ function buildReceiptPrompt(ocr: any): string {
   );
 }
 
+type ValidatedProposal = Extract<AssistantProposalValidationResult, { ok: true }>;
+
+function requireExactMatch<T extends { id: string; name?: string }>(rows: T[], name: unknown, label: string): T {
+  const requested = String(name || "").trim().toLocaleLowerCase();
+  const exact = rows.filter((row) => String(row.name || "").trim().toLocaleLowerCase() === requested);
+  if (exact.length !== 1) {
+    throw new Error(exact.length > 1
+      ? `More than one ${label} is named "${String(name)}". Choose the exact entry in Ledgr first.`
+      : `${label} "${String(name)}" was not found. Add it first or use its exact Ledgr name.`);
+  }
+  return exact[0];
+}
+
+function requireEntry<T extends { id: string }>(rows: T[], id: unknown, label: string): T {
+  const found = rows.find((row) => row.id === String(id || ""));
+  if (!found) throw new Error(`${label} was not found. Refresh Ask AI and try again.`);
+  return found;
+}
+
+function mergeAmount(current: any, changes: any) {
+  if (changes.amount === undefined) return { ...current, ...changes };
+  const amount = Number(changes.amount);
+  const next = { ...current, ...changes, amount, total: amount };
+  if (Array.isArray(current.lines)) {
+    if (current.lines.length > 1 && changes.lines === undefined) {
+      throw new Error("This document has multiple lines. Tell me which line to change.");
+    }
+    if (current.lines.length === 1 && changes.lines === undefined) {
+      const qty = Number(current.lines[0].qty ?? current.lines[0].quantity ?? 1) || 1;
+      next.lines = [{ ...current.lines[0], qty, rate: amount / qty }];
+    }
+  }
+  return next;
+}
+
 async function applyAction(action: { type: string; params: any }): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localTodayIso();
   const p = action.params || {};
   switch (action.type) {
     case "add_expense":
-      await api.createExpense({ category: p.category || "General", amount: p.amount, date: p.date || today, notes: tagNote(p.notes) });
+      await api.createExpense({ category: p.category || "General", amount: p.amount, date: p.date || today, method: p.method || "cash", notes: tagNote(p.notes) });
       return "Expense recorded ✓";
     case "add_sale":
-      await api.createSale({ amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", notes: tagNote(p.notes) });
+      await api.createSale({ amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
       return "Sale recorded ✓";
     case "add_bill":
-      await api.createBill({ supplierName: p.supplierName || "Unknown", amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", notes: tagNote(p.notes) });
+      await api.createBill({ supplierName: p.supplierName, amount: p.amount, date: p.date || today, paymentType: p.paymentType || "cash", method: p.method || "cash", notes: tagNote(p.notes) });
       return "Purchase recorded ✓";
     case "add_debtor":
       await api.findOrCreateParty(p.name, "customer", { phone: p.phone || "" });
       return `Customer "${p.name}" added ✓`;
+    case "add_supplier":
+      await api.findOrCreateParty(p.name, "supplier", { phone: p.phone || "" });
+      return `Supplier "${p.name}" added ✓`;
     case "add_debtor_payment": {
-      const customer = await api.findOrCreateParty(p.name, "customer");
-      if (!customer) return `Could not find customer "${p.name}".`;
-      await api.createReceipt({ mode: "advance", debtorId: customer.id, clientName: customer.name, amount: p.amount, date: p.date || today, method: "cash", notes: tagNote(p.notes || "customer advance") });
-      return `Customer advance from "${customer.name}" recorded ✓`;
+      const customer = requireExactMatch(await api.listDebtors(), p.name, "Customer");
+      await api.createReceipt({ mode: "advance", debtorId: customer.id, clientName: customer.name, amount: p.amount, date: p.date || today, method: p.method || "cash", notes: tagNote(p.notes || "customer advance") });
+      return `Payment received from "${customer.name}" ✓`;
+    }
+    case "create_supplier_payment": {
+      const supplier = requireExactMatch(await api.listSuppliers(), p.supplierName, "Supplier");
+      await api.createPayment({ type: "supplier_payment", supplierId: supplier.id, supplierName: supplier.name, amount: p.amount, date: p.date || today, method: p.method || "cash", notes: tagNote(p.notes) });
+      return `Payment to "${supplier.name}" recorded ✓`;
     }
     case "create_invoice": {
-      const amt = Number(p.amount) || 0;
-      await api.createInvoice({
-        clientName: p.clientName,
-        lines: [{ description: p.notes || "Service", qty: 1, rate: amt }],
-        taxRate: 0,
-        total: amt,
-        date: p.date || today,
-        notes: tagNote(p.notes),
-      });
+      const amt = Number(p.amount);
+      await api.createInvoice({ clientName: p.clientName, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
       return `Invoice for "${p.clientName}" created ✓`;
     }
     case "create_receipt": {
-      const amt = Number(p.amount) || 0;
-      const mode = ["cash_sale", "against_invoice", "advance"].includes(p.mode) ? p.mode : (p.customerName ? "against_invoice" : "cash_sale");
+      const amt = Number(p.amount);
+      const mode = p.mode || (p.customerName ? "advance" : "cash_sale");
       let debtorId: string | null = null;
+      let clientName = "";
       let allocations: { invoiceId: string; amountApplied: number }[] = [];
-      if (mode !== "cash_sale" && p.customerName) {
-        const debtors = await api.listDebtors();
-        const match = debtors.find((d: any) => (d.name || "").toLowerCase().includes(String(p.customerName).toLowerCase()));
-        if (match) debtorId = match.id;
-        else { const c = await api.createDebtor({ name: p.customerName }); debtorId = c.id; }
+      if (mode !== "cash_sale") {
+        const customer = requireExactMatch(await api.listDebtors(), p.customerName, "Customer");
+        debtorId = customer.id;
+        clientName = customer.name || "";
         if (mode === "against_invoice") {
-          const invs = (await api.listInvoices())
-            .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(String(p.customerName).toLowerCase()))
-            .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-          if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: amt }];
+          const invoices = (await api.listInvoices()).filter((item: any) => item.status !== "paid" && item.id === String(p.invoiceId || ""));
+          if (invoices.length !== 1) throw new Error("Choose the exact unpaid invoice before applying this receipt.");
+          allocations = [{ invoiceId: invoices[0].id, amountApplied: amt }];
         }
       }
-      await api.createReceipt({ mode, amount: amt, date: p.date || today, method: p.method || "cash", debtorId, clientName: p.customerName || "", allocations, notes: tagNote(p.notes) });
+      await api.createReceipt({ mode, amount: amt, date: p.date || today, method: p.method || "cash", debtorId, clientName, allocations, notes: tagNote(p.notes) });
       return `Receipt for ${amt.toFixed(2)} recorded ✓`;
     }
     case "create_quote": {
-      const amt = Number(p.amount) || 0;
-      await api.createQuote({
-        clientName: p.clientName,
-        lines: [{ description: p.notes || "Service", qty: 1, rate: amt }],
-        taxRate: 0,
-        date: p.date || today,
-        notes: tagNote(p.notes),
-      });
+      const amt = Number(p.amount);
+      await api.createQuote({ clientName: p.clientName, lines: [{ description: p.notes || "Service", qty: 1, rate: amt }], taxRate: 0, total: amt, date: p.date || today, notes: tagNote(p.notes) });
       return `Quote for "${p.clientName}" created ✓`;
     }
+    case "create_drawing": {
+      const member = requireExactMatch(await api.listInvestors(), p.partnerName, "Capital Account");
+      await api.drawInvestorFunds(member.id, { amount: Number(p.amount), date: p.date || today, notes: tagNote(p.notes) });
+      return `Withdrawal for "${member.name}" recorded ✓`;
+    }
+    case "add_capital": {
+      const member = requireExactMatch(await api.listInvestors(), p.partnerName, "Capital Account");
+      await api.depositInvestorCapital(member.id, { amount: Number(p.amount), date: p.date || today, notes: tagNote(p.notes) });
+      return `Capital for "${member.name}" added ✓`;
+    }
+    case "record_inventory":
+      await api.recordV2InventoryCount({ date: p.date || today, value: Number(p.amount), notes: tagNote(p.notes) });
+      return "Inventory count recorded ✓";
+    case "update_entry": {
+      const changes = p.changes || {};
+      switch (p.entity) {
+        case "expense": {
+          const current = requireEntry(await api.listExpenses(), p.id, "Expense");
+          await api.updateExpense(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "sale": {
+          const current = requireEntry((await api.listSales()).filter((row: any) => row.type !== "invoice"), p.id, "Sale");
+          await api.updateSale(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "bill": {
+          const current = requireEntry(await api.listBills(), p.id, "Bill");
+          await api.updateBill(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "supplier_payment": {
+          const current = requireEntry((await api.listPayments()).filter((row: any) => row.type === "supplier_payment"), p.id, "Supplier payment");
+          await api.updatePayment(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "receipt": {
+          const current = requireEntry(await api.listReceipts(), p.id, "Receipt");
+          await api.updateReceipt(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "invoice": {
+          const current = requireEntry(await api.listInvoices(), p.id, "Invoice");
+          await api.updateInvoice(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "quote": {
+          const current = requireEntry(await api.listQuotes(), p.id, "Quote");
+          await api.updateQuote(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "customer": {
+          const current = requireEntry(await api.listDebtors(), p.id, "Customer");
+          await api.updateDebtor(current.id, { ...current, ...changes });
+          break;
+        }
+        case "supplier": {
+          const current = requireEntry(await api.listSuppliers(), p.id, "Supplier");
+          await api.updateSupplier(current.id, { ...current, ...changes });
+          break;
+        }
+        case "delivery_note": {
+          const current = requireEntry(await api.listDeliveryNotes(), p.id, "Delivery note");
+          await api.updateDeliveryNote(current.id, { ...current, ...changes });
+          break;
+        }
+        case "note":
+          await api.updateNote(String(p.id), changes);
+          break;
+        case "capital": {
+          const memberId = String(p.memberId || "");
+          if (!memberId) throw new Error("The Capital Account is missing. Ask again using the partner name.");
+          const ledger = await api.getInvestorLedger(memberId);
+          const current = requireEntry(ledger.transactions.filter((row: any) => row.type === "capital_injection"), p.id, "Capital entry");
+          await api.updateInvestorCapital(memberId, current.id, { amount: Number(changes.amount ?? current.amount), date: changes.date || current.date, notes: tagNote(changes.notes ?? current.notes) });
+          break;
+        }
+        case "drawing": {
+          const current = requireEntry((await api.listPayments()).filter((row: any) => row.type === "drawing"), p.id, "Withdrawal");
+          await api.updatePayment(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "cash_entry": {
+          const current = requireEntry((await api.listCashEntries()).filter((row: any) => row.editable), p.id, "Cash Book entry");
+          await api.updateCashEntry(current.id, mergeAmount(current, changes));
+          break;
+        }
+        case "inventory_count":
+          throw new Error("Inventory counts are audit records. Reverse this count, then record a corrected count.");
+        default:
+          throw new Error("That entry type cannot be edited from Ask AI.");
+      }
+      return "Entry updated ✓";
+    }
+    case "delete_entry":
+      switch (p.entity) {
+        case "expense": await api.deleteExpense(String(p.id)); break;
+        case "sale": await api.deleteSale(String(p.id)); break;
+        case "bill": await api.deleteBill(String(p.id)); break;
+        case "supplier_payment":
+        case "drawing": await api.deletePayment(String(p.id)); break;
+        case "receipt": await api.deleteReceipt(String(p.id)); break;
+        case "invoice": await api.deleteInvoice(String(p.id)); break;
+        case "quote": await api.deleteQuote(String(p.id)); break;
+        case "delivery_note": await api.deleteDeliveryNote(String(p.id)); break;
+        case "note": await api.deleteNote(String(p.id)); break;
+        case "inventory_count": await api.deleteV2InventoryCount(String(p.id)); break;
+        case "cash_entry": await api.deleteCashEntry(String(p.id)); break;
+        case "capital": {
+          const memberId = String(p.memberId || "");
+          if (!memberId) throw new Error("The Capital Account is missing. Ask again using the partner name.");
+          await api.deleteInvestorCapital(memberId, String(p.id));
+          break;
+        }
+        default: throw new Error("That entry type cannot be reversed or deleted from Ask AI.");
+      }
+      return ["quote", "delivery_note"].includes(String(p.entity)) ? "Entry deleted ✓" : "Entry safely reversed ✓";
     default:
-      return "Unknown action — no changes made.";
+      throw new Error("Unknown action — no changes made.");
   }
 }
 
@@ -129,6 +275,7 @@ const SUGGESTIONS = [
 
 export default function AskBooks() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
@@ -138,6 +285,10 @@ export default function AskBooks() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [applyingProposal, setApplyingProposal] = useState(false);
+  const applyingProposalRef = useRef(false);
+  const [pendingProposal, setPendingProposal] = useState<ValidatedProposal | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -156,6 +307,18 @@ export default function AskBooks() {
     AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(messages))).catch(() => {});
   }, [historyKey, messages]);
 
+  useEffect(() => {
+    const shown = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => {
+      setKeyboardVisible(true);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    const hidden = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => {
+      setKeyboardVisible(false);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+
   const clearHistory = () => {
     confirmAction(
       "Clear Ask AI history?",
@@ -164,6 +327,7 @@ export default function AskBooks() {
         try {
           await AsyncStorage.removeItem(historyKey);
           setMessages([]);
+          setPendingProposal(null);
           setInput("");
           Keyboard.dismiss();
         } catch (e: any) {
@@ -176,59 +340,73 @@ export default function AskBooks() {
 
   const buildContext = async (): Promise<string> => {
     const today = new Date();
-    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, today.toISOString().slice(0, 10));
+    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso());
     return JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
   };
+  const applyPendingProposal = async () => {
+    const proposal = pendingProposal;
+    if (!proposal || applyingProposalRef.current) return;
+    applyingProposalRef.current = true;
+    setApplyingProposal(true);
+    try {
+      const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
+      setPendingProposal(null);
+      setMessages((m) => [...m, { role: "assistant", text: String(result) }]);
+    } catch (err: any) {
+      setMessages((m) => [...m, { role: "assistant", text: `I couldn't apply that change: ${err?.message || "error"}` }]);
+    } finally {
+      applyingProposalRef.current = false;
+      setApplyingProposal(false);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  };
+
+  const cancelPendingProposal = (includeUserMessage = false) => {
+    setPendingProposal(null);
+    setMessages((m) => [
+      ...m,
+      ...(includeUserMessage ? [{ role: "user" as const, text: "Cancel" }] : []),
+      { role: "assistant", text: "Okay — I did not change your books." },
+    ]);
+  };
+
   const send = async (text: string) => {
     const q = text.trim();
-    if (!q || loading) return;
+    if (!q || loading || applyingProposal) return;
+
+    if (pendingProposal && /^(yes\b|y$|i confirm\b|confirm\b|apply\b|proceed\b|ok(?:ay)?\b|please (?:apply|record|enter|save)\b)/i.test(q)) {
+      setInput("");
+      setMessages((m) => [...m, { role: "user", text: q }]);
+      await applyPendingProposal();
+      return;
+    }
+    if (pendingProposal && /^(no\b|n$|cancel\b|stop\b|discard\b|never ?mind\b)/i.test(q)) {
+      setInput("");
+      cancelPendingProposal(true);
+      return;
+    }
+
+    const priorProposal = pendingProposal;
+    const questionForAi = priorProposal
+      ? `The user is revising this pending Ledgr transaction entry. Existing action JSON: ${JSON.stringify(priorProposal.action)}. User follow-up: ${q}. Return the full revised action, or ask one counter-question.`
+      : q;
+    if (priorProposal) setPendingProposal(null);
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       const context = await buildContext();
-      const res: any = await api.askBooks(q, context);
+      const res: any = await api.askBooks(questionForAi, context);
       const answer = typeof res === "string" ? res : res?.answer || "";
       const action = typeof res === "string" ? null : res?.action || null;
-      setMessages((m) => [...m, { role: "assistant", text: answer }]);
+      if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
       if (action && action.type) {
-        const proposal = validateAssistantProposal(action, 'ai');
+        const proposal = validateAssistantProposal(action, "ai");
         if (!proposal.ok) {
-          setMessages((m) => [...m, { role: "assistant", text: `I couldn't validate that change: ${proposal.errors.join("; ")}` }]);
-          return;
-        }
-        const applyConfirmed = async () => {
-          try {
-            const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(action));
-            setMessages((m) => [...m, { role: "assistant", text: result }]);
-          } catch (err: any) {
-            setMessages((m) => [...m, { role: "assistant", text: `Couldn't apply that: ${err?.message || "error"}` }]);
-          } finally {
-            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-          }
-        };
-        // Destructive actions (e.g. close_books, if ever routed here) get a
-        // hardened, red confirmation with an explicit warning and strong label.
-        if (proposal.action.isDestructive) {
-          const isClose = String(action.type).includes("close");
-          Alert.alert(
-            "Are you sure?",
-            `${proposal.action.confirmation.preview}\n\nThis closes the period permanently — it cannot be undone.`,
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: isClose ? "Close Books" : "Confirm", style: "destructive", onPress: applyConfirmed },
-            ],
-          );
+          setMessages((m) => [...m, { role: "assistant", text: `I need one more detail before I can prepare that change: ${proposal.errors[0]}.` }]);
         } else {
-          Alert.alert(
-            "Apply this change?",
-            proposal.action.confirmation.preview,
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Apply", isPreferred: true, onPress: applyConfirmed },
-            ],
-          );
+          setPendingProposal(proposal);
         }
       }
     } catch (e: any) {
@@ -240,7 +418,7 @@ export default function AskBooks() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Pressable accessibilityLabel="Back" onPress={() => { Keyboard.dismiss(); router.back(); }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>Ask about your books</Text>
@@ -252,9 +430,9 @@ export default function AskBooks() {
       </View>
 
       <KeyboardAvoidingView
-        enabled
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        enabled={Platform.OS === "ios"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.body}
         keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <ScrollView
@@ -287,6 +465,25 @@ export default function AskBooks() {
             </View>
           ))}
 
+          {pendingProposal && (
+            <View testID="ask-pending-action-card" style={[styles.proposalCard, pendingProposal.action.isDestructive && styles.proposalCardDestructive]}>
+              <View style={styles.proposalHeader}>
+                <Ionicons name={pendingProposal.action.isDestructive ? "warning-outline" : "checkmark-circle-outline"} size={20} color={pendingProposal.action.isDestructive ? theme.color.error : theme.color.brandPrimary} />
+                <Text style={styles.proposalTitle}>{pendingProposal.action.isDestructive ? "Review reversal" : "Review Ledgr change"}</Text>
+              </View>
+              <Text style={styles.proposalPreview}>{pendingProposal.action.confirmation.preview}</Text>
+              <Text style={styles.proposalHint}>Nothing changes until you tap Apply.</Text>
+              <View style={styles.proposalButtons}>
+                <Pressable testID="ask-proposal-cancel" disabled={applyingProposal} onPress={() => cancelPendingProposal()} style={styles.proposalCancel}>
+                  <Text style={styles.proposalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable testID="ask-proposal-apply" disabled={applyingProposal} onPress={applyPendingProposal} style={[styles.proposalApply, pendingProposal.action.isDestructive && styles.proposalApplyDestructive, applyingProposal && { opacity: 0.6 }]}>
+                  {applyingProposal ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.proposalApplyText}>{pendingProposal.action.isDestructive ? "Reverse / Delete" : "Apply"}</Text>}
+                </Pressable>
+              </View>
+            </View>
+          )}
+
           {loading && (
             <View style={[styles.bubble, styles.bubbleAI]}>
               <ActivityIndicator color={theme.color.brandPrimary} />
@@ -294,7 +491,7 @@ export default function AskBooks() {
           )}
         </ScrollView>
 
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, { paddingBottom: theme.spacing.md + (keyboardVisible ? 0 : insets.bottom) }]}>
           <View style={styles.inputWrapper}>
             <Pressable
               style={styles.attachBtn}
@@ -355,11 +552,15 @@ export default function AskBooks() {
               placeholder="Message Ledgr AI..."
               placeholderTextColor={theme.color.muted}
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
-              multiline={true}
+              multiline
               numberOfLines={1}
+              submitBehavior="submit"
+              returnKeyType="send"
+              onSubmitEditing={() => send(input)}
+              maxLength={4000}
             />
             {input.trim().length > 0 ? (
-              <Pressable onPress={() => send(input)} disabled={loading} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
+              <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : (
@@ -377,6 +578,7 @@ export default function AskBooks() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
+    body: { flex: 1 },
     headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
     messageContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md, flexGrow: 1 },
@@ -389,10 +591,22 @@ function makeStyles(theme: any) {
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
     bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    inputBar: { flexDirection: "row", padding: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
+    proposalCard: { width: "100%", padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, marginBottom: theme.spacing.sm },
+    proposalCardDestructive: { borderColor: theme.color.error },
+    proposalHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+    proposalTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: theme.color.onSurface },
+    proposalPreview: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
+    proposalHint: { fontSize: 12, color: theme.color.muted, marginTop: 6 },
+    proposalButtons: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: theme.spacing.md },
+    proposalCancel: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border },
+    proposalCancelText: { color: theme.color.onSurface, fontWeight: "600" },
+    proposalApply: { minWidth: 88, minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary },
+    proposalApplyDestructive: { backgroundColor: theme.color.error },
+    proposalApplyText: { color: "#fff", fontWeight: "700" },
+    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
     attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, maxHeight: 120 },
-    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, maxHeight: 96, textAlignVertical: "center" },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
+    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
   });
