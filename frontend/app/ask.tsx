@@ -9,7 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import * as ImagePicker from "expo-image-picker";

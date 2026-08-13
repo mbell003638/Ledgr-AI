@@ -8,7 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { fmt, shortDate } from "@/src/theme";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";

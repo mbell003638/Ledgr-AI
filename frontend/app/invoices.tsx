@@ -17,7 +17,7 @@ import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { amountToWords } from "@/src/utils/numberToWords";
 import { printHtml } from "@/src/utils/print";

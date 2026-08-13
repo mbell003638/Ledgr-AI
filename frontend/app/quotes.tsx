@@ -15,7 +15,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 
 type Line = { description: string; qty: number; rate: number };

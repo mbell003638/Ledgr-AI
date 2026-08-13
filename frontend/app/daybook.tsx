@@ -7,7 +7,7 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { fmt, shortDate } from "@/src/theme";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 
 type Entry = { id: string; date: string; type: string; amount: number; label: string; sub: string; color: string };
 

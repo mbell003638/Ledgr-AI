@@ -13,7 +13,7 @@ import { Card } from "@/src/components/UI";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { amountToWords } from "@/src/utils/numberToWords";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { printHtml } from "@/src/utils/print";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";

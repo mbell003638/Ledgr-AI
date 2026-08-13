@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 

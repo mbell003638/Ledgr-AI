@@ -8,7 +8,7 @@ import { confirmAction } from "@/src/utils/alerts";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { ScreenHeader, Empty } from "@/src/components/UI";
 import { requireAuth } from "@/src/utils/lock";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";

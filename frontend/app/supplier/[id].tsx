@@ -9,7 +9,7 @@ import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { printHtml } from "@/src/utils/print";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";

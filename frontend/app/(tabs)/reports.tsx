@@ -10,7 +10,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { printHtml } from "@/src/utils/print";
 import { showAlert } from "@/src/utils/alerts";

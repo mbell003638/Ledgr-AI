@@ -9,7 +9,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { CURRENCIES, type TaxLabel } from "@/src/db/local";
+import { CURRENCIES, type TaxLabel } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { deviceHasLock } from "@/src/utils/lock";

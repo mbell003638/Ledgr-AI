@@ -7,7 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import { fmt, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { Card } from "@/src/components/UI";
 import { validateReconcileEntry } from "@/src/accountingV2/aiActions";
 

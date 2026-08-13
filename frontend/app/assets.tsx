@@ -7,7 +7,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { fmt } from "@/src/theme";
-import { getCurrencySymbol } from "@/src/db/local";
+import { getCurrencySymbol } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
