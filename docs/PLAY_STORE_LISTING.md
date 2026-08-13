@@ -4,7 +4,7 @@ Finalize this after confirming the permanent app name and taking screenshots fro
 
 ## App name
 
-Ledgr Codex
+Ledgr
 
 ## Short description
 
@@ -14,7 +14,7 @@ Offline accounting, inventory and reports for small businesses.
 
 Run your business books from one clear, local-first accounting app.
 
-Ledgr Codex helps shops, service businesses, freelancers and partnerships record everyday transactions and understand their financial position without depending on a developer-operated cloud service.
+Ledgr helps shops, service businesses, freelancers and partnerships record everyday transactions and understand their financial position without depending on a developer-operated cloud service.
 
 Key features:
 

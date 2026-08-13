@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Ledgr Codex",
-    "slug": "ledgr-ai",
+    "name": "Ledgr",
+    "slug": "ledgr",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

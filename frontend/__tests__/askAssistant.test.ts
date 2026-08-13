@@ -17,7 +17,7 @@ describe('Ask AI assistant routing', () => {
     global.fetch = fetchSpy as any;
 
     await expect(askBooks(geminiConfig, 'What is Gift Nifty current price?', '{}')).resolves.toEqual({
-      answer: 'Ledgr AI is focused on your business, bookkeeping, reports, and app workflows. I cannot provide live market, news, weather, or other external information.',
+      answer: 'Ledgr is focused on your business, bookkeeping, reports, and app workflows. I cannot provide live market, news, weather, or other external information.',
       action: null,
     });
     expect(fetchSpy).not.toHaveBeenCalled();

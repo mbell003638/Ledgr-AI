@@ -1,6 +1,6 @@
-# Ledgr Codex — Local-First Business Accounting
+# Ledgr — Local-First Business Accounting
 
-Ledgr Codex is a mobile accounting app for small businesses. It keeps its authoritative double-entry books in on-device SQLite, works without a developer-operated backend, and can be used offline for all non-AI features.
+Ledgr is a mobile accounting app for small businesses. It keeps its authoritative double-entry books in on-device SQLite, works without a developer-operated backend, and can be used offline for all non-AI features.
 
 ## Features
 
@@ -28,7 +28,7 @@ See docs/PRIVACY_POLICY.md, docs/PLAY_DATA_SAFETY.md and docs/PLAY_RELEASE_CHECK
 
 Current Codex Android identity:
 
-- Display name: Ledgr Codex
+- Display name: Ledgr
 - Application ID: com.ahem.ledgrai.codexsol
 - Public version: 1.0.0
 - Android version code: 1

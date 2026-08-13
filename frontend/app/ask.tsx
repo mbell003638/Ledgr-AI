@@ -552,7 +552,7 @@ export default function AskBooks() {
             <TextInput
               value={input}
               onChangeText={setInput}
-              placeholder="Message Ledgr AI..."
+              placeholder="Message Ledgr..."
               placeholderTextColor={theme.color.muted}
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
               multiline

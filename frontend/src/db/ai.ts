@@ -757,7 +757,7 @@ const ASK_SCHEMA = {
  */
 export async function askBooks(cfg: AIConfig, question: string, dataContext: string) {
   if (isClearlyExternalQuestion(question)) {
-    return { answer: 'Ledgr AI is focused on your business, bookkeeping, reports, and app workflows. I cannot provide live market, news, weather, or other external information.', action: null };
+    return { answer: 'Ledgr is focused on your business, bookkeeping, reports, and app workflows. I cannot provide live market, news, weather, or other external information.', action: null };
   }
   const localNow = localClockContext();
   const prompt =
