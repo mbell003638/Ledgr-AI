@@ -10,6 +10,13 @@ const yearEnd = (date: string) => `${date.slice(0, 4)}-12-31`;
  * without being added here.
  */
 const V2_FACTORY_DELETE_ORDER: readonly string[] = [
+  'v2_payslips',
+  'v2_pay_runs',
+  'v2_employees',
+  'v2_asset_depreciation',
+  'v2_fixed_assets',
+  'v2_stock_moves',
+  'v2_products',
   'v2_journal_lines',
   'v2_invoice_allocations',
   'v2_close_books',
@@ -65,6 +72,13 @@ export async function deleteV2BookData(db: SqlRunner, bookId: string): Promise<b
 
   await db.exec('SAVEPOINT v2_delete_book');
   try {
+    await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_employees WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_asset_depreciation WHERE asset_id IN (SELECT id FROM v2_fixed_assets WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_fixed_assets WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_stock_moves WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_products WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [bookId]);
     await db.run('DELETE FROM v2_invoice_allocations WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_close_books WHERE book_id=?', [bookId]);
@@ -104,6 +118,13 @@ export async function resetV2AccountingData(db: SqlRunner, bookId: string, perio
 
   await db.exec('SAVEPOINT v2_reset_book');
   try {
+    await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_employees WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_asset_depreciation WHERE asset_id IN (SELECT id FROM v2_fixed_assets WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_fixed_assets WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_stock_moves WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_products WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_invoice_allocations WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_close_books WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_inventory_counts WHERE book_id=?', [bookId]);

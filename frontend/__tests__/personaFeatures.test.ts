@@ -4,10 +4,11 @@ import {
   isFeatureEnabled,
   PERSONA_DEFAULT_FEATURES,
   ALL_FEATURES,
+  OPTIONAL_FEATURE_KEYS,
   type FeatureKey,
 } from "../src/utils/featureFlags";
 
-const ALL_KEYS = ALL_FEATURES.map((f) => f.key);
+const ALL_KEYS = ALL_FEATURES.map((f) => f.key).filter((key) => !OPTIONAL_FEATURE_KEYS.includes(key));
 
 describe("persona → dashboard tiles mapping", () => {
   it("resolves the canonical PersonaId values written by onboarding/settings", () => {
@@ -122,6 +123,13 @@ describe("persona → dashboard tiles mapping", () => {
       expect(enabled).toEqual(custom);
       expect(isFeatureEnabled({ enabledFeatures: custom }, "inventory")).toBe(false);
       expect(isFeatureEnabled({ enabledFeatures: custom }, "sales")).toBe(true);
+    });
+
+    it("optional payroll / fixed assets / live stock stay off until the user enables them", () => {
+      for (const key of OPTIONAL_FEATURE_KEYS) {
+        expect(getEnabledFeatures({ activePersona: "retail" })).not.toContain(key);
+        expect(isFeatureEnabled({ enabledFeatures: [...ALL_KEYS, key] }, key)).toBe(true);
+      }
     });
 
     it("an empty enabledFeatures array is ignored and falls back to the persona baseline", () => {

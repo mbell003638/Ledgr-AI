@@ -23,6 +23,9 @@ import {
   type V2ClosingBalancePartner,
   type V2ClosingBalancesImportInput,
 } from './services/capitalDomainService';
+import { PayrollDomainService } from './services/payrollDomainService';
+import { FixedAssetDomainService } from './services/fixedAssetDomainService';
+import { ProductDomainService } from './services/productDomainService';
 import { localTodayIso } from '../utils/dateValidation';
 
 export {
@@ -65,6 +68,9 @@ export class V2AppService {
   readonly expenses: ExpenseDomainService;
   readonly sales: SaleDomainService;
   readonly capital: CapitalDomainService;
+  readonly payroll: PayrollDomainService;
+  readonly fixedAssets: FixedAssetDomainService;
+  readonly products: ProductDomainService;
 
   constructor(readonly db: SqlRunner) {
     this.repo = new V2SqlRepository(db);
@@ -97,6 +103,9 @@ export class V2AppService {
       (input) => this.editInput(input),
       (id) => this.sourceType(id),
     );
+    this.payroll = new PayrollDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.fixedAssets = new FixedAssetDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.products = new ProductDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.capital = new CapitalDomainService(
       this.db,
       this.repo,
@@ -235,6 +244,24 @@ export class V2AppService {
   async deleteManualBalanceTransaction(sourceId: string) { return this.capital.deleteManualBalanceTransaction(sourceId); }
   async updateManualBalanceTransaction(sourceId: string, input: AnyRecord) { return this.capital.updateManualBalanceTransaction(sourceId, input); }
   async closeBooks(input: V2CloseBooksAppInput): Promise<V2CloseBooksAppResult> { return this.capital.closeBooks(input); }
+
+  listEmployees() { return this.payroll.listEmployees(); }
+  upsertEmployee(input: AnyRecord) { return this.payroll.upsertEmployee(input as any); }
+  archiveEmployee(id: string) { return this.payroll.archiveEmployee(id); }
+  runPayroll(input: AnyRecord) { return this.payroll.runPayroll(input as any); }
+  listPayRuns() { return this.payroll.listPayRuns(); }
+  listPayslips(payRunId: string) { return this.payroll.listPayslips(payRunId); }
+  yearEndPayrollSummary(year: string) { return this.payroll.yearEndSummary(year); }
+
+  listFixedAssets() { return this.fixedAssets.listAssets(); }
+  acquireFixedAsset(input: AnyRecord) { return this.fixedAssets.acquireAsset(input as any); }
+  postAssetDepreciation(input: AnyRecord) { return this.fixedAssets.postDepreciation(input as any); }
+  disposeFixedAsset(input: AnyRecord) { return this.fixedAssets.disposeAsset(input as any); }
+
+  listProducts() { return this.products.listProducts(); }
+  upsertProduct(input: AnyRecord) { return this.products.upsertProduct(input as any); }
+  archiveProduct(id: string) { return this.products.archiveProduct(id); }
+  adjustProductQty(input: AnyRecord) { return this.products.adjustQty(input as any); }
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {

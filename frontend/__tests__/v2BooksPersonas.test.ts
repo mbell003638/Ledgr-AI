@@ -19,7 +19,7 @@ describe('V2BookConfigRepository — persistent books and persona isolation', ()
       await initSchema(runner);
       const active = await runner.all<{ type: string }>('SELECT type FROM v2_personas WHERE book_id = ? AND active = 1', ['old-book']);
       expect(active).toEqual([{ type: 'retail' }]);
-      expect((await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='schema_version'"))?.value).toBe('5');
+      expect((await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='schema_version'"))?.value).toBe('6');
     } finally { close(); }
   });
 

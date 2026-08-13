@@ -974,6 +974,66 @@ export const api = {
     bumpDataVersion();
     return result;
   },
+  listEmployees: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listEmployees();
+  },
+  upsertEmployee: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).upsertEmployee(input); bumpDataVersion(); return r;
+  },
+  archiveEmployee: async (id: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).archiveEmployee(id); bumpDataVersion(); return r;
+  },
+  runPayroll: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).runPayroll(input); bumpDataVersion(); return r;
+  },
+  listPayRuns: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listPayRuns();
+  },
+  listPayslips: async (payRunId: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listPayslips(payRunId);
+  },
+  yearEndPayrollSummary: async (year: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).yearEndPayrollSummary(year);
+  },
+  listFixedAssets: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listFixedAssets();
+  },
+  acquireFixedAsset: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).acquireFixedAsset(input); bumpDataVersion(); return r;
+  },
+  postAssetDepreciation: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).postAssetDepreciation(input); bumpDataVersion(); return r;
+  },
+  disposeFixedAsset: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).disposeFixedAsset(input); bumpDataVersion(); return r;
+  },
+  listProducts: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listProducts();
+  },
+  upsertProduct: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).upsertProduct(input); bumpDataVersion(); return r;
+  },
+  archiveProduct: async (id: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).archiveProduct(id); bumpDataVersion(); return r;
+  },
+  adjustProductQty: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).adjustProductQty(input); bumpDataVersion(); return r;
+  },
   // Clears books and ledgers only; device preferences and AI credentials remain.
   clearAccountingData: async () => {
     const runner = activeSqlRunner();

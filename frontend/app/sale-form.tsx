@@ -10,6 +10,9 @@ import { Card } from "@/src/components/UI";
 import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+import { getEnabledFeatures } from "@/src/utils/featureFlags";
+
+type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
 export default function SaleForm() {
   const theme = useTheme();
@@ -31,6 +34,27 @@ export default function SaleForm() {
   const [discount, setDiscount] = useState("");
   type LineItem = { description: string; qty: string; unit: string; rate: string };
   const [lines, setLines] = useState<LineItem[]>([]);
+  const [stockEnabled, setStockEnabled] = useState(false);
+  const [products, setProducts] = useState<StockProduct[]>([]);
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockQty, setStockQty] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.getSettings();
+        const on = getEnabledFeatures(settings).includes("perpetualInventory");
+        setStockEnabled(on);
+        if (on) {
+          const list = await (api as any).listProducts();
+          setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived));
+        }
+      } catch {
+        setStockEnabled(false);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     (async () => {
       if (editId) {
@@ -104,6 +128,11 @@ export default function SaleForm() {
       if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
 
       const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined };
+      const qty = Number(stockQty);
+      const stockProduct = products.find((p) => p.id === stockProductId);
+      const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
+        ? [{ productId: stockProduct.id, qty, ...(Number.isFinite(Number(stockProduct.cost)) ? { unitCost: Number(stockProduct.cost) } : {}) }]
+        : undefined;
 
       if (editId) {
         if (saleType === "party" || customerName.trim()) {
@@ -116,12 +145,13 @@ export default function SaleForm() {
           await api.updateSale(editId, { ...common, currency });
         }
       } else if (saleType === "cash") {
-        await api.createSale({ ...common, currency });
+        await api.createSale({ ...common, currency, ...(productLines ? { productLines } : {}) });
       } else {
         await api.createInvoice({
           clientName: customerName.trim(),
           clientPhone: customerPhone.trim(),
           ...common,
+          ...(productLines ? { productLines } : {}),
         });
       }
       router.back();
@@ -251,6 +281,51 @@ export default function SaleForm() {
               </View>
             ))}
 
+            {!editId && stockEnabled ? (
+              <View style={{ marginTop: 14 }}>
+                <Text style={styles.label}>Product stock (optional)</Text>
+                <Text style={styles.hint}>Deducts from live product quantity when this sale is saved.</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    <Pressable
+                      testID="pick-product-none"
+                      onPress={() => { setStockProductId(""); setStockQty(""); }}
+                      style={[styles.chip, !stockProductId && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, !stockProductId && styles.chipTextActive]}>None</Text>
+                    </Pressable>
+                    {products.map((p) => (
+                      <Pressable
+                        key={p.id}
+                        testID={`pick-product-${p.id}`}
+                        onPress={() => setStockProductId(p.id)}
+                        style={[styles.chip, stockProductId === p.id && styles.chipActive]}
+                      >
+                        <Text style={[styles.chipText, stockProductId === p.id && styles.chipTextActive]}>
+                          {p.name}{p.sku ? ` · ${p.sku}` : ""}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+                {stockProductId ? (
+                  <>
+                    <Text style={[styles.label, { marginTop: 12 }]}>Quantity</Text>
+                    <TextInput
+                      testID="input-stock-qty"
+                      value={stockQty}
+                      onChangeText={setStockQty}
+                      keyboardType="numeric"
+                      placeholder="1"
+                      placeholderTextColor={theme.color.muted}
+                      style={styles.input}
+                    />
+                  </>
+                ) : null}
+                {!products.length ? <Text style={styles.hint}>No products yet — add one under Products.</Text> : null}
+              </View>
+            ) : null}
+
             <Text style={[styles.label, { marginTop: 12 }]}>Subtotal Amount ($)</Text>
             <TextInput testID="input-sale-amount" value={amount} onChangeText={setAmount} editable={lines.length === 0} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={[styles.input, lines.length > 0 && { opacity: 0.72 }]} />
             <Text style={[styles.label, { marginTop: 12 }]}>Discount ($, optional)</Text>
@@ -295,7 +370,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   segText: { color: theme.color.muted, fontWeight: "500", fontSize: 12, textAlign: "center" },
   segTextActive: { color: theme.color.brandPrimary, fontWeight: "700" },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+  chipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary },
   chipText: { fontSize: 13, color: theme.color.onSurface, fontWeight: "500" },
+  chipTextActive: { color: theme.color.onBrandPrimary || "#fff" },
   error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },

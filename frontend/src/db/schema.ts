@@ -17,12 +17,15 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
   'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts',
   'v2_members', 'v2_close_books',
+  'v2_employees', 'v2_pay_runs', 'v2_payslips',
+  'v2_fixed_assets', 'v2_asset_depreciation',
+  'v2_products', 'v2_stock_moves',
 ] as const;
 
 export function schemaSql(): string {
@@ -98,6 +101,51 @@ export function schemaSql(): string {
       FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT,
       FOREIGN KEY(journal_id) REFERENCES v2_journal_entries(id) ON UPDATE CASCADE ON DELETE RESTRICT,
       UNIQUE(book_id, period_id)
+    );
+    CREATE TABLE IF NOT EXISTS v2_employees (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, role TEXT,
+      pay_rate REAL NOT NULL DEFAULT 0, tax_withhold_pct REAL NOT NULL DEFAULT 0,
+      start_date TEXT, archived INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_pay_runs (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, period_id TEXT NOT NULL, date TEXT NOT NULL,
+      notes TEXT, source_id TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_payslips (
+      id TEXT PRIMARY KEY, pay_run_id TEXT NOT NULL, employee_id TEXT NOT NULL,
+      gross REAL NOT NULL, tax_withheld REAL NOT NULL, net REAL NOT NULL, notes TEXT,
+      FOREIGN KEY(pay_run_id) REFERENCES v2_pay_runs(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(employee_id) REFERENCES v2_employees(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_fixed_assets (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL,
+      acquired_date TEXT NOT NULL, cost REAL NOT NULL, residual REAL NOT NULL DEFAULT 0,
+      useful_life_months INTEGER NOT NULL, method TEXT NOT NULL DEFAULT 'straight_line',
+      disposed INTEGER NOT NULL DEFAULT 0, source_id TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_asset_depreciation (
+      id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, date TEXT NOT NULL, amount REAL NOT NULL, source_id TEXT,
+      FOREIGN KEY(asset_id) REFERENCES v2_fixed_assets(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_products (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, sku TEXT, name TEXT NOT NULL, unit TEXT,
+      cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty REAL NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_stock_moves (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, product_id TEXT NOT NULL, date TEXT NOT NULL,
+      qty REAL NOT NULL, unit_cost REAL NOT NULL DEFAULT 0, kind TEXT NOT NULL, source_id TEXT,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(product_id) REFERENCES v2_products(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_v2_journals_book_date ON v2_journal_entries(book_id, date);

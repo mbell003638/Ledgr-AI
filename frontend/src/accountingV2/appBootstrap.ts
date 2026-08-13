@@ -82,6 +82,13 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
     // the book from scratch. Fresh ids make these deletes no-ops.
     const existing = await db.first<{ id: string }>('SELECT id FROM v2_books WHERE id=?', [id]);
     if (existing) {
+      await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [id]);
+      await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_employees WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_asset_depreciation WHERE asset_id IN (SELECT id FROM v2_fixed_assets WHERE book_id=?)', [id]);
+      await db.run('DELETE FROM v2_fixed_assets WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_stock_moves WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_products WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [id]);
       await db.run('DELETE FROM v2_invoice_allocations WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_close_books WHERE book_id=?', [id]);

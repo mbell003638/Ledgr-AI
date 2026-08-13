@@ -7,6 +7,7 @@ import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
 import type { InvoiceDomainService } from './invoiceDomainService';
+import { ProductDomainService } from './productDomainService';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -34,20 +35,28 @@ export class SaleDomainService {
     const lines = Array.isArray(input.lines) ? input.lines : [];
     const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
     const net = totals?.total ?? amount(input.total ?? input.amount);
-    return postCashSale(this.repo, {
-      ...c,
-      date: input.date,
-      amount: net,
-      method: method(input.method),
-      reference: input.reference,
-      metadata: {
-        notes: input.notes,
-        lines,
-        discount: totals?.discount ?? Number(input.discount || 0),
-        subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
-        tax: totals?.tax ?? Number(input.tax || 0),
-        taxRate: Number(input.taxRate || 0),
-      },
+    return this.repo.runInTransaction(async () => {
+      const result = await postCashSale(this.repo, {
+        ...c,
+        date: input.date,
+        amount: net,
+        method: method(input.method),
+        reference: input.reference,
+        metadata: {
+          notes: input.notes,
+          lines,
+          discount: totals?.discount ?? Number(input.discount || 0),
+          subtotal: totals?.subtotal ?? (input.subtotal != null ? Number(input.subtotal) : (input.tax != null ? Number(net) - Number(input.tax) : net)),
+          tax: totals?.tax ?? Number(input.tax || 0),
+          taxRate: Number(input.taxRate || 0),
+        },
+      });
+      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+      if (productLines.length) {
+        await new ProductDomainService(this.db, this.repo, this.getActiveContext)
+          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+      }
+      return result;
     });
   }
 

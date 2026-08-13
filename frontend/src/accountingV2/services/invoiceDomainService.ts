@@ -5,6 +5,7 @@ import { postInvoice } from '../postings';
 import { calculateInvoiceTotals } from '../../utils/invoiceTotals';
 import { localTodayIso } from '../../utils/dateValidation';
 import type { PartyDomainService } from './partyDomainService';
+import { ProductDomainService } from './productDomainService';
 
 type AnyRecord = Record<string, any>;
 const amount = (value: any) => Number(value);
@@ -27,7 +28,7 @@ export class InvoiceDomainService {
     const net = totals?.total ?? amount(input.total ?? input.amount);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'customer', c.bookId);
-      return postInvoice(this.repo, {
+      const result = await postInvoice(this.repo, {
         ...c,
         date: input.date,
         partyId,
@@ -46,6 +47,12 @@ export class InvoiceDomainService {
           tax: totals?.tax ?? Number(input.tax || 0),
         },
       });
+      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+      if (productLines.length) {
+        await new ProductDomainService(this.db, this.repo, this.getActiveContext)
+          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+      }
+      return result;
     });
   }
 

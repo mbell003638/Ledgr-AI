@@ -14,7 +14,13 @@ export type FeatureKey =
   | "reports"
   | "monthly"
   | "ask"
-  | "voice";
+  | "voice"
+  | "payroll"
+  | "fixedAssets"
+  | "perpetualInventory";
+
+/** Off unless the user turns them on in Customize Features. Never in persona baselines. */
+export const OPTIONAL_FEATURE_KEYS: FeatureKey[] = ["payroll", "fixedAssets", "perpetualInventory"];
 
 export interface FeatureMeta {
   key: FeatureKey;
@@ -155,9 +161,35 @@ export const ALL_FEATURES: FeatureMeta[] = [
     color: "#1C4030",
     description: "Hands-free voice entry for sales, bills, and expenses.",
   },
+  {
+    key: "payroll",
+    label: "Payroll (optional)",
+    category: "accounting",
+    icon: "people-outline",
+    color: "#E4DCEC",
+    description: "Employees, pay runs, tax withheld, payslips, and a year-end summary. Off until you enable it.",
+  },
+  {
+    key: "fixedAssets",
+    label: "Fixed Asset Register (optional)",
+    category: "accounting",
+    icon: "car-outline",
+    color: "#D8DCE8",
+    description: "Equipment, vehicles, and computers with straight-line depreciation. Off until you enable it.",
+  },
+  {
+    key: "perpetualInventory",
+    label: "Live Product Stock (optional)",
+    category: "accounting",
+    icon: "layers-outline",
+    color: "#DCE8D4",
+    description: "Each sale and purchase changes quantity on the product. Off until you enable it — periodic counts stay the default.",
+  },
 ];
 
-const DEFAULT_ALL_KEYS: FeatureKey[] = ALL_FEATURES.map((f) => f.key);
+const DEFAULT_ALL_KEYS: FeatureKey[] = ALL_FEATURES
+  .map((f) => f.key)
+  .filter((key) => !OPTIONAL_FEATURE_KEYS.includes(key));
 
 // Baseline tile set for a pure service/professional persona: no stock, no
 // supplier bills lead — invoice + receipt driven.

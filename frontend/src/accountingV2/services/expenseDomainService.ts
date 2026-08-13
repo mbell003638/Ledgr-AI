@@ -6,6 +6,7 @@ import { postExpense, postPurchase, postSupplierPayment } from '../postings';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
+import { ProductDomainService } from './productDomainService';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -80,7 +81,7 @@ export class ExpenseDomainService {
     const cash = input.paymentType === 'cash';
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'supplier', c.bookId);
-      return postPurchase(this.repo, {
+      const result = await postPurchase(this.repo, {
         ...c,
         date: input.date,
         partyId,
@@ -94,6 +95,13 @@ export class ExpenseDomainService {
           photo: input.photo,
         },
       });
+      const isExpense = input.isExpense === true || input.billType === 'expense';
+      const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+      if (!isExpense && productLines.length) {
+        await new ProductDomainService(this.db, this.repo, this.getActiveContext)
+          .applyPurchaseLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+      }
+      return result;
     });
   }
 

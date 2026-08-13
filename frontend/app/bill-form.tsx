@@ -9,6 +9,9 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+import { getEnabledFeatures } from "@/src/utils/featureFlags";
+
+type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
 export default function BillForm() {
   const theme = useTheme();
@@ -30,6 +33,26 @@ export default function BillForm() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [stockEnabled, setStockEnabled] = useState(false);
+  const [products, setProducts] = useState<StockProduct[]>([]);
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockQty, setStockQty] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await api.getSettings();
+        const on = getEnabledFeatures(settings).includes("perpetualInventory");
+        setStockEnabled(on);
+        if (on) {
+          const list = await (api as any).listProducts();
+          setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived));
+        }
+      } catch {
+        setStockEnabled(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -141,6 +164,12 @@ export default function BillForm() {
         : "";
       const finalNotes = [itemSummaryText, notes.trim()].filter(Boolean).join(" — ");
 
+      const qty = Number(stockQty);
+      const stockProduct = products.find((p) => p.id === stockProductId);
+      const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
+        ? [{ productId: stockProduct.id, qty, ...(Number.isFinite(Number(stockProduct.cost)) ? { unitCost: Number(stockProduct.cost) } : {}) }]
+        : undefined;
+
       const payload = {
         supplierId: finalSupplierId, date: dateIso, amount: amt, currency,
         paymentType, invoiceNo, notes: finalNotes, photo,
@@ -148,7 +177,7 @@ export default function BillForm() {
         category: billType === "expense" ? expenseCategory : undefined,
       };
       if (editId) await api.updateBill(editId, payload);
-      else await api.createBill(payload);
+      else await api.createBill({ ...payload, ...(productLines ? { productLines } : {}) });
       router.back();
     } catch (e: any) { setError(e.message || "Failed"); }
     finally { setSaving(false); }
@@ -302,6 +331,51 @@ export default function BillForm() {
                 </Pressable>
               </View>
             ))}
+
+            {!editId && stockEnabled ? (
+              <View style={{ marginTop: 8 }}>
+                <Text style={styles.label}>Product stock (optional)</Text>
+                <Text style={styles.hint}>Adds to live product quantity when this bill is saved.</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    <Pressable
+                      testID="pick-product-none"
+                      onPress={() => { setStockProductId(""); setStockQty(""); }}
+                      style={[styles.chip, !stockProductId && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipText, !stockProductId && styles.chipTextActive]}>None</Text>
+                    </Pressable>
+                    {products.map((p) => (
+                      <Pressable
+                        key={p.id}
+                        testID={`pick-product-${p.id}`}
+                        onPress={() => setStockProductId(p.id)}
+                        style={[styles.chip, stockProductId === p.id && styles.chipActive]}
+                      >
+                        <Text style={[styles.chipText, stockProductId === p.id && styles.chipTextActive]}>
+                          {p.name}{p.sku ? ` · ${p.sku}` : ""}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+                {stockProductId ? (
+                  <>
+                    <Text style={[styles.label, { marginTop: 12 }]}>Quantity</Text>
+                    <TextInput
+                      testID="input-stock-qty"
+                      value={stockQty}
+                      onChangeText={setStockQty}
+                      keyboardType="numeric"
+                      placeholder="1"
+                      placeholderTextColor={theme.color.muted}
+                      style={styles.input}
+                    />
+                  </>
+                ) : null}
+                {!products.length ? <Text style={[styles.hint, { marginTop: 6 }]}>No products yet — add one under Products.</Text> : null}
+              </View>
+            ) : null}
 
             <Text style={[styles.label, { marginTop: 8 }]}>Total Amount ($)</Text>
             <TextInput

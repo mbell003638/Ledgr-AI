@@ -18,11 +18,16 @@ export const V2_COLLECTIONS = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods',
   'v2_sources', 'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations',
   'v2_inventory_counts', 'v2_members', 'v2_close_books',
+  'v2_employees', 'v2_pay_runs', 'v2_payslips',
+  'v2_fixed_assets', 'v2_asset_depreciation',
+  'v2_products', 'v2_stock_moves',
 ] as const;
 export type V2Collection = typeof V2_COLLECTIONS[number];
 
 export const V2_ACCOUNT_CODES = {
-  CASH: '1000', BANK: '1010', CARD: '1020', MOBILE: '1030', AR: '1100', INVENTORY: '1200', SUPPLIER_ADVANCES: '1210', OTHER_ASSETS: '1500',
-  AP: '2000', CUSTOMER_ADVANCES: '2100', COMMISSION_PAYABLE: '2200', TAX_PAYABLE: '2300', OTHER_LIABILITIES: '2500', CAPITAL: '3000', DRAWINGS: '3100', CURRENT_PROFIT: '3200', RETAINED_EARNINGS: '3300', OWNER_CONTRIBUTIONS: '3400',
-  SALES: '4000', SALES_RETURNS: '4010', COGS: '5000', EXPENSES: '6000', COMMISSION_EXPENSE: '6100',
+  CASH: '1000', BANK: '1010', CARD: '1020', MOBILE: '1030', AR: '1100', INVENTORY: '1200', SUPPLIER_ADVANCES: '1210',
+  FIXED_ASSETS: '1400', ACCUM_DEPRECIATION: '1450', OTHER_ASSETS: '1500',
+  AP: '2000', CUSTOMER_ADVANCES: '2100', COMMISSION_PAYABLE: '2200', TAX_PAYABLE: '2300', PAYROLL_TAX_PAYABLE: '2310', OTHER_LIABILITIES: '2500',
+  CAPITAL: '3000', DRAWINGS: '3100', CURRENT_PROFIT: '3200', RETAINED_EARNINGS: '3300', OWNER_CONTRIBUTIONS: '3400',
+  SALES: '4000', SALES_RETURNS: '4010', COGS: '5000', EXPENSES: '6000', COMMISSION_EXPENSE: '6100', WAGES_EXPENSE: '6200', DEPRECIATION_EXPENSE: '6300',
 } as const;
