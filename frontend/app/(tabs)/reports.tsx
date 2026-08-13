@@ -17,7 +17,7 @@ import { showAlert } from "@/src/utils/alerts";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { round2 } from "@/src/money";
 import { v2Reports } from "@/src/accountingV2/runtime";
-import { partnershipProfitFromReports, postedCommissionFromReports } from "@/src/accountingV2/reports";
+import { partnershipDisplayFromReports } from "@/src/accountingV2/reports";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
@@ -138,7 +138,7 @@ export default function ReportsScreen() {
         const report = core.report;
         const current = snapshotDash;
         const commissionPct = Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0);
-        const profit = partnershipProfitFromReports(report.profitAndLoss, commissionPct, postedCommissionFromReports(report));
+        const profit = partnershipDisplayFromReports(report, commissionPct);
         setDash({
           totalSales: report.profitAndLoss.revenue,
           totalPurchases: report.profitAndLoss.expenses,
@@ -162,11 +162,8 @@ export default function ReportsScreen() {
           revenue: report.profitAndLoss.revenue,
           cogs: report.profitAndLoss.cogs,
           grossProfit: report.profitAndLoss.grossProfit,
-          // Operating expenses = gross − net (= accrual `expenses` − cogs, or the
-          // cash-basis `expenses` which already excludes cogs). Basis-agnostic and
-          // never double-counts cogs, matching the engine invariant
-          // netProfit = grossProfit − operatingExpenses in both bases.
-          operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit),
+          // OpEx excludes posted 6100 so Gross − OpEx − Commission = overlay net.
+          operatingExpenses: profit.operatingExpenses,
           managerCommissionPct: commissionPct,
           commission: profit.commission,
           drawings: 0,

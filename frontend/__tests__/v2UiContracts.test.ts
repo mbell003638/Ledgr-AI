@@ -74,12 +74,11 @@ describe('V2 UI contracts', () => {
     // overlay (journal net minus unposted manager commission), not a remapped field.
     expect(v2Block).toContain('cogs: report.profitAndLoss.cogs');
     expect(v2Block).toContain('grossProfit: report.profitAndLoss.grossProfit');
-    expect(v2Block).toContain('partnershipProfitFromReports');
+    expect(v2Block).toContain('partnershipDisplayFromReports');
     expect(v2Block).toContain('netProfit: profit.netProfit');
+    expect(v2Block).toContain('operatingExpenses: profit.operatingExpenses');
     expect(v2Block).not.toContain('cogs: report.profitAndLoss.expenses');
     expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
-    // Operating expenses are derived as gross − journal net (basis-agnostic, never double-counts cogs).
-    expect(v2Block).toContain('operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit)');
   });
 
   it('Settings saves authoritative V2 book, persona, and member configuration', () => {
@@ -414,5 +413,26 @@ describe('V2 UI contracts', () => {
     const source = readApp('customize-features.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');
     expect(source).toMatch(/updateSettings\(\{\s*enabledFeatures/);
+  });
+
+  it('Quick Action Create Invoice opens the invoices modal, not sale-form', () => {
+    const quick = readSource('src/components/QuickActionMenu.tsx');
+    const invoices = readApp('invoices.tsx');
+    expect(quick).toContain('title="Create Invoice"');
+    expect(quick).toContain('pathname: "/invoices"');
+    expect(quick).toContain('action: "create"');
+    expect(quick).toContain('title="Log Sale"');
+    expect(quick).toContain('navigate("/sale-form")');
+    expect(invoices).toContain('params.action !== "create"');
+    expect(invoices).toContain('setSelected(null)');
+    expect(invoices).toContain('api.getSettings()');
+  });
+
+  it('overdueInvoices compares due dates to localTodayIso, not a UTC slice', () => {
+    const apiSrc = readSource('src/api.ts');
+    const localSrc = readSource('src/db/local.ts');
+    expect(apiSrc).toMatch(/overdueInvoices:[\s\S]*dueDate < localTodayIso\(\)/);
+    expect(apiSrc).not.toMatch(/overdueInvoices:[\s\S]*toISOString\(\)\.slice\(0,\s*10\)/);
+    expect(localSrc).toMatch(/export async function overdueInvoices\(\)[\s\S]*localTodayIso\(\)/);
   });
 });

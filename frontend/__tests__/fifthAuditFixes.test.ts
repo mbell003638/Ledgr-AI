@@ -2,7 +2,7 @@ import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book } from '../src/accountingV2/appBootstrap';
 import { V2AppService } from '../src/accountingV2/appService';
 import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
-import { partnershipProfitFromReports, postedCommissionFromReports } from '../src/accountingV2/reports';
+import { partnershipDisplayFromReports, partnershipProfitFromReports, postedCommissionFromReports } from '../src/accountingV2/reports';
 import { getV2Dashboard } from '../src/accountingV2/v2Dashboard';
 import { V2BookConfigRepository } from '../src/accountingV2/bookConfigRepository';
 
@@ -114,6 +114,12 @@ describe('5th Audit leftover fixes', () => {
         const dash = await getV2Dashboard(runner, bookId);
         expect(dash.commission).toBe(60);
         expect(dash.netProfit).toBe(340);
+
+        const display = partnershipDisplayFromReports(report, 15);
+        expect(display.operatingExpenses).toBe(0);
+        expect(display.commission).toBe(60);
+        expect(display.netProfit).toBe(340);
+        expect(display.grossProfit - display.operatingExpenses - display.commission).toBe(display.netProfit);
       } finally { close(); }
     });
   });

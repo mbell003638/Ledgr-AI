@@ -138,7 +138,7 @@ export default function QuickActionMenu() {
     shadowRadius: theme.effects.glowRadius + fabHover.value * 8,
   }), [reduceMotion, theme]);
 
-  const navigate = (route: string) => {
+  const navigate = (route: string | { pathname: string; params?: Record<string, string> }) => {
     closeMenu();
     router.push(route as any);
   };
@@ -221,7 +221,7 @@ export default function QuickActionMenu() {
               iconBackground="rgba(56,189,248,0.15)"
               title="Create Invoice"
               subtitle="Bill a customer with line items & tax"
-              onPress={() => navigate("/invoices?action=create")}
+              onPress={() => navigate({ pathname: "/invoices", params: { action: "create" } })}
             />
             <QuickActionRow
               icon="💰"

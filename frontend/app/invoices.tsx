@@ -770,23 +770,41 @@ export default function InvoicesScreen() {
     return () => task.cancel();
   }, [load]));
 
-  const openNew = useCallback(() => {
+  const applyTaxFromSettings = (settings: any) => {
+    const defLabel = settings?.taxLabel && settings.taxLabel !== "None"
+      ? (settings.taxLabel === "Custom" ? (settings.taxLabelCustom || "Tax") : settings.taxLabel)
+      : "";
+    setTaxLabelInput(defLabel);
+    setTaxRateInput(settings?.taxRate ? String(settings.taxRate) : "");
+  };
+
+  const openNew = useCallback((settings?: any) => {
+    const s = settings || biz;
+    setSelected(null);
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setFormError("");
-    // Pre-fill tax from global settings; user can override per-invoice.
-    const defLabel = biz.taxLabel && biz.taxLabel !== "None" ? (biz.taxLabel === "Custom" ? (biz.taxLabelCustom || "Tax") : biz.taxLabel) : "";
-    setTaxLabelInput(defLabel);
-    setTaxRateInput(biz.taxRate ? String(biz.taxRate) : "");
+    applyTaxFromSettings(s);
     setShowForm(true);
   }, [biz]);
 
+  const consumedCreate = React.useRef(false);
   React.useEffect(() => {
-    if (params.action === "create" || params.new === "1") {
-      openNew();
-      router.setParams({ action: undefined, new: undefined } as any);
+    if (params.action !== "create" && params.new !== "1") {
+      consumedCreate.current = false;
+      return;
     }
-  }, [params.action, params.new, router, openNew]);
+    if (consumedCreate.current) return;
+    consumedCreate.current = true;
+    let cancelled = false;
+    (async () => {
+      const s = await api.getSettings().catch(() => biz);
+      if (cancelled) return;
+      openNew(s);
+      router.setParams({ action: "", new: "" });
+    })();
+    return () => { cancelled = true; };
+  }, [params.action, params.new, router, openNew, biz]);
 
   const openEdit = (inv: Invoice) => {
     setEditId(inv.id);

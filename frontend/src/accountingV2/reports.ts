@@ -407,3 +407,22 @@ export function partnershipProfitFromReports(
   const netProfit = cents(pnl.netProfit - additional);
   return { revenue: cents(pnl.revenue), cogs: cents(pnl.cogs), grossProfit, commission, expenses: cents(pnl.expenses), netProfit };
 }
+
+export type V2PartnershipDisplay = V2PartnershipProfit & {
+  operatingExpenses: number;
+  managerCommissionPct: number;
+  postedCommission: number;
+};
+
+/**
+ * Screen/API P&L stack: Gross − operatingExpenses − commission = netProfit.
+ * Posted 6100 is shown as commission, not also as operating expense.
+ */
+export function partnershipDisplayFromReports(report: V2Reports, commissionPct: number): V2PartnershipDisplay {
+  const posted = postedCommissionFromReports(report);
+  const profit = partnershipProfitFromReports(report.profitAndLoss, commissionPct, posted);
+  const journalOpex = cents(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
+  const operatingExpenses = cents(Math.max(0, journalOpex - posted));
+  const pct = Number.isFinite(commissionPct) ? commissionPct : 0;
+  return { ...profit, operatingExpenses, managerCommissionPct: pct, postedCommission: posted };
+}

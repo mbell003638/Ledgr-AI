@@ -1,4 +1,4 @@
-import type { V2Reports, V2ReportDetail } from './reports';
+import { partnershipDisplayFromReports, type V2Reports, type V2ReportDetail } from './reports';
 
 export const CUSTOM_REPORT_SECTIONS = ['trialBalance', 'profit', 'balanceSheet', 'sales', 'purchases', 'receipts', 'expenses', 'cash', 'inventory', 'debtors', 'creditors', 'members', 'tax', 'notes'] as const;
 export type CustomReportSectionId = typeof CUSTOM_REPORT_SECTIONS[number];
@@ -6,7 +6,7 @@ export const CUSTOM_REPORT_FIELDS = ['date', 'memo', 'reference', 'accountCode',
 export type CustomReportField = typeof CUSTOM_REPORT_FIELDS[number];
 export type CustomReportGroup = 'none' | 'day' | 'month' | 'account' | 'party';
 export type CustomReportDetailLevel = 'consolidated' | 'detailed' | 'both';
-export type CustomReportOptions = { sections: CustomReportSectionId[]; fields: CustomReportField[]; groupBy: CustomReportGroup; detailLevel?: CustomReportDetailLevel; sortBy?: 'date' | 'amount' | 'account'; sortDirection?: 'asc' | 'desc' };
+export type CustomReportOptions = { sections: CustomReportSectionId[]; fields: CustomReportField[]; groupBy: CustomReportGroup; detailLevel?: CustomReportDetailLevel; sortBy?: 'date' | 'amount' | 'account'; sortDirection?: 'asc' | 'desc'; commissionPct?: number };
 export type CustomReportRow = Partial<Record<CustomReportField, string | number>>;
 export type CustomReportGroupOutput = { key: string; rows: CustomReportRow[]; total: number };
 export type CustomReportBreakdownItem = { label: string; debit: number; credit: number; amount: number };
@@ -134,7 +134,10 @@ export function buildCustomReport(report: V2Reports, options: CustomReportOption
     const permitted = statementFields[id];
     const fields = options.fields.filter((field) => !permitted || permitted.includes(field));
     let rows: CustomReportRow[];
-    if (id === 'profit') rows = [{ revenue: report.profitAndLoss.revenue, expenses: report.profitAndLoss.expenses, netProfit: report.profitAndLoss.netProfit }];
+    if (id === 'profit') {
+      const display = partnershipDisplayFromReports(report, Number(options.commissionPct || 0));
+      rows = [{ revenue: display.revenue, expenses: display.operatingExpenses + display.commission, netProfit: display.netProfit }];
+    }
     else if (id === 'balanceSheet') rows = [{ assets: report.balanceSheet.assets, liabilities: report.balanceSheet.liabilities, equity: report.balanceSheet.equity }];
     else if (id === 'trialBalance') rows = report.trialBalance.accounts.map((a) => ({ accountCode: a.code, accountName: a.name, debit: a.debit, credit: a.credit }));
     else rows = report.details.filter((detail) => detailFor(id, detail)).map((detail) => pickRow(id, detail, fields));

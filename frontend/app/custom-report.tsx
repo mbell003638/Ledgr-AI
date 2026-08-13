@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/context/ThemeContext';
 import { api } from '@/src/api';
 import { v2Reports } from '@/src/accountingV2/runtime';
+import { partnershipDisplayFromReports } from '@/src/accountingV2/reports';
 import { buildCustomReport, customReportBreakdownRows, summarizeCustomReport, CUSTOM_REPORT_FIELDS, type CustomReportBreakdown, type CustomReportDetailLevel, type CustomReportField, type CustomReportGroup, type CustomReportOutput, type CustomReportRow, type CustomReportSection, type CustomReportSectionId } from '@/src/accountingV2/customReports';
 import { buildCustomReportHtml, buildPnlRows, customReportShareText, drCrLabel, registerRowLabel, registerRowValue, trialBalanceTotals, type CustomReportPnl } from '@/src/utils/customReportDocument';
 import { money, symbolFor } from '@/src/utils/reportDocument';
@@ -52,9 +53,10 @@ export default function CustomReportScreen() {
     setFrom(fromIso); setTo(toIso);
     setBusy(true);
     try {
-      const [result, settings] = await Promise.all([
+      const [result, settings, config] = await Promise.all([
         v2Reports({ from: fromIso, to: toIso }),
         api.getSettings().catch(() => ({} as any)),
+        api.getV2BookConfig().catch(() => null),
       ]);
       const nextMeta: ReportMeta = {
         businessName: String((settings as any).businessName || (settings as any).name || 'Ledgr'),
@@ -62,8 +64,16 @@ export default function CustomReportScreen() {
         currencySymbol: symbolFor((settings as any).currency),
       };
       setMeta(nextMeta);
-      const output = buildCustomReport(result.report, { sections: selected.map((section) => SECTION_IDS[section]), fields, groupBy, detailLevel, sortBy: 'date', sortDirection: 'asc' });
-      const pnl: CustomReportPnl = { ...result.report.profitAndLoss };
+      const commissionPct = Number(config?.retailPartnership?.commissionPct ?? (settings as any).managerCommissionPct ?? 0);
+      const output = buildCustomReport(result.report, { sections: selected.map((section) => SECTION_IDS[section]), fields, groupBy, detailLevel, sortBy: 'date', sortDirection: 'asc', commissionPct });
+      const display = partnershipDisplayFromReports(result.report, commissionPct);
+      const pnl: CustomReportPnl = {
+        revenue: display.revenue,
+        cogs: display.cogs,
+        grossProfit: display.grossProfit,
+        expenses: display.operatingExpenses + display.commission,
+        netProfit: display.netProfit,
+      };
       const summary = summarizeCustomReport(output);
       const nextDoc: StructuredDoc = { output, pnl, summary };
       const text = customReportShareText(output, { pnl, summary, currencySymbol: nextMeta.currencySymbol });

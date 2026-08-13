@@ -11,7 +11,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
-import { partnershipProfitFromReports, postedCommissionFromReports } from './accountingV2/reports';
+import { partnershipDisplayFromReports } from './accountingV2/reports';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
@@ -385,6 +385,12 @@ async function v2Report(from?: string, to?: string) {
   const context = await new V2AppService(runner).activeContext();
   if (!context) throw new Error('No active versioned V2 book with an open accounting period');
   return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to });
+}
+
+async function liveCommissionPct() {
+  const config = await api.getV2BookConfig().catch(() => null);
+  const settings: any = await api.getSettings().catch(() => ({}));
+  return Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
 }
 
 export const api = {
@@ -854,13 +860,14 @@ export const api = {
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     const period = await service.getActivePeriod();
     const report = await v2Report(period?.startDate, period?.endDate);
+    const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     const members = await api.listInvestors();
     const investors = await Promise.all(members.map(async (member: any) => {
       const detail = await mergedInvestorLedgerDetail(member.id);
-      const profitShare = Math.round(report.profitAndLoss.netProfit * Number(member.profitSharePct || 0)) / 100;
+      const profitShare = Math.round(display.netProfit * Number(member.profitSharePct || 0)) / 100;
       return { id: member.id, name: member.name, contributed: detail.openingCapital + detail.totalInjected, drawings: detail.totalDrawings, profitShare, balance: detail.currentCapitalBalance, profitSharePct: member.profitSharePct };
     }));
-    return { netProfit: report.profitAndLoss.netProfit, investors };
+    return { netProfit: display.netProfit, investors };
   },
   drawingsHistory: async () => (await v2SourceDocuments(['drawing'])).map((row: any) => ({ ...row, investorId: row.memberId })),
   monthlyProfitTrend: async (months = 6) => {
@@ -870,7 +877,8 @@ export const api = {
       const from = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
       const to = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
       const report = await v2Report(from, to);
-      out.push({ month: from.slice(0, 7), revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, netProfit: report.profitAndLoss.netProfit });
+      const display = partnershipDisplayFromReports(report, await liveCommissionPct());
+      out.push({ month: from.slice(0, 7), revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, netProfit: display.netProfit });
     }
     return out;
   },
@@ -888,12 +896,7 @@ export const api = {
     const to = `${m}-${String(lastDay).padStart(2, '0')}`;
     const report = await v2Report(from, to);
     const pnl = report.profitAndLoss;
-    const config = await api.getV2BookConfig();
-    const isCash = config?.basis === 'cash';
-    const operatingExpenses = isCash ? pnl.expenses : round2(pnl.grossProfit - pnl.netProfit);
-    const settings: any = await api.getSettings().catch(() => ({}));
-    const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
-    const profit = partnershipProfitFromReports(pnl, commissionPct, postedCommissionFromReports(report));
+    const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     return {
       month: m,
       periodStart: from,
@@ -901,11 +904,11 @@ export const api = {
       purchases: pnl.cogs,
       cogs: pnl.cogs,
       grossProfit: pnl.grossProfit,
-      expenses: operatingExpenses,
+      expenses: display.operatingExpenses,
       totalExpenses: pnl.expenses,
-      commission: profit.commission,
-      managerCommissionPct: commissionPct,
-      netProfit: profit.netProfit,
+      commission: display.commission,
+      managerCommissionPct: display.managerCommissionPct,
+      netProfit: display.netProfit,
     };
   },
   dailySummary: async (d: string) => {
@@ -924,14 +927,14 @@ export const api = {
     const dayPayments = payments.filter((x: any) => (x.date || '').slice(0, 10) === d);
     const dayMovements = cashMovements.filter((m: any) => (m.date || '').slice(0, 10) === d);
     const netCash = round2(dayMovements.reduce((sum: number, m: any) => sum + (m.direction === 'in' ? Number(m.amount || 0) : -Number(m.amount || 0)), 0));
-    const expenses = round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
+    const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     return {
       date: d,
       revenue: report.profitAndLoss.revenue,
       purchases: report.profitAndLoss.cogs,
       grossProfit: report.profitAndLoss.grossProfit,
-      expenses,
-      netProfit: report.profitAndLoss.netProfit,
+      expenses: display.operatingExpenses,
+      netProfit: display.netProfit,
       netCash,
       salesCount: daySales.length,
       billsCount: dayBills.length,
@@ -1084,20 +1087,16 @@ export const api = {
   // Date-range reports
   pnlRange: async (from: string, to: string) => {
     const report = await v2Report(from, to);
-    const config = await api.getV2BookConfig();
-    const settings: any = await api.getSettings().catch(() => ({}));
-    const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
-    const pnl = partnershipProfitFromReports(report.profitAndLoss, commissionPct, postedCommissionFromReports(report));
-    const expenses = round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
+    const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     return {
       revenue: report.profitAndLoss.revenue,
       purchases: report.profitAndLoss.cogs,
       cogs: report.profitAndLoss.cogs,
       grossProfit: report.profitAndLoss.grossProfit,
-      expenses,
-      managerCommissionPct: commissionPct,
-      commission: pnl.commission,
-      netProfit: pnl.netProfit,
+      expenses: display.operatingExpenses,
+      managerCommissionPct: display.managerCommissionPct,
+      commission: display.commission,
+      netProfit: display.netProfit,
     };
   },
   creditorsReport: async (_from?: string, _to?: string) => (await api.listSuppliers()).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0 })),
