@@ -65,4 +65,16 @@ describe('validated V2 AI/voice command bridge', () => {
     }, false, { service })).rejects.toThrow(/explicit confirmation/i);
     expect(service.createInvoice).not.toHaveBeenCalled();
   });
+
+  it('rejects close_books instead of closing from a fake GL inventory count', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      const closeBooks = jest.spyOn(service, 'closeBooks');
+      await expect(runConfirmedV2Command('ai', {
+        intent: 'close_books', periodId: 'open-2026', date: '2026-12-31',
+      }, true, { service })).rejects.toThrow(/explicit physical inventory count/i);
+      expect(closeBooks).not.toHaveBeenCalled();
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_close_books'))?.n)).toBe(0);
+    } finally { close(); }
+  });
 });

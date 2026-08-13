@@ -26,8 +26,10 @@ export async function runConfirmedV2Command(source: V2ActionSource, rawAction: u
       if (action.direction === 'received') return service.createReceipt({ debtorId: action.partyId, clientName: action.partyId, date: action.date, amount: action.amount, method: action.method, allocations: action.invoiceId ? [{ invoiceSourceId: action.invoiceId, amount: action.amount }] : [] });
       return service.createPayment({ supplierId: action.partyId, supplierName: action.partyId, date: action.date, amount: action.amount, method: action.method });
     }
-    const overview = await service.inventoryOverview();
-    return service.closeBooks({ date: action.date, actualStock: overview?.expected ?? overview?.openingInventory ?? 0, openingInventory: overview?.openingInventory ?? 0, commissionPct: 0 });
+    if (action.intent === 'close_books') {
+      throw new Error('Close Books requires an explicit physical inventory count from the Close Books screen and cannot be run from this command bridge.');
+    }
+    throw new Error(`Unsupported write intent: ${(action as { intent?: string }).intent || 'unknown'}`);
   });
   return { action: validation.action, executed: true, result };
 }

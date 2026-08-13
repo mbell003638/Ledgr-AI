@@ -11,6 +11,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
+import { partnershipProfitFromReports } from './accountingV2/reports';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
@@ -891,8 +892,8 @@ export const api = {
     const isCash = config?.basis === 'cash';
     const operatingExpenses = isCash ? pnl.expenses : round2(pnl.grossProfit - pnl.netProfit);
     const settings: any = await api.getSettings().catch(() => ({}));
-    const commissionPct = Number(settings?.managerCommissionPct || 0);
-    const commission = commissionPct > 0 ? round2(pnl.netProfit * (commissionPct / 100)) : 0;
+    const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
+    const profit = partnershipProfitFromReports(pnl, commissionPct);
     return {
       month: m,
       periodStart: from,
@@ -902,9 +903,9 @@ export const api = {
       grossProfit: pnl.grossProfit,
       expenses: operatingExpenses,
       totalExpenses: pnl.expenses,
-      commission,
+      commission: profit.commission,
       managerCommissionPct: commissionPct,
-      netProfit: pnl.netProfit,
+      netProfit: profit.netProfit,
     };
   },
   dailySummary: async (d: string) => {
@@ -1083,7 +1084,21 @@ export const api = {
   // Date-range reports
   pnlRange: async (from: string, to: string) => {
     const report = await v2Report(from, to);
-    return { revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, cogs: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, expenses: report.profitAndLoss.expenses - report.profitAndLoss.cogs, netProfit: report.profitAndLoss.netProfit };
+    const config = await api.getV2BookConfig();
+    const settings: any = await api.getSettings().catch(() => ({}));
+    const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
+    const pnl = partnershipProfitFromReports(report.profitAndLoss, commissionPct);
+    const expenses = round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
+    return {
+      revenue: report.profitAndLoss.revenue,
+      purchases: report.profitAndLoss.cogs,
+      cogs: report.profitAndLoss.cogs,
+      grossProfit: report.profitAndLoss.grossProfit,
+      expenses,
+      managerCommissionPct: commissionPct,
+      commission: pnl.commission,
+      netProfit: pnl.netProfit,
+    };
   },
   creditorsReport: async (_from?: string, _to?: string) => (await api.listSuppliers()).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0 })),
   debtorsReport: async (_from?: string, _to?: string) => (await api.listDebtors()).map((party: any) => ({ id: party.id, name: party.name, balance: party.receivable || party.balance || 0 })),
@@ -1102,7 +1117,7 @@ export const api = {
   updateInvoice: (id: string, inv: any) => mutateTransaction('updateInvoice', id, inv),
   deleteInvoice: (id: string) => mutateTransaction('deleteInvoice', id),
   markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, input || {}),
-  overdueInvoices: async () => (await api.listInvoices()).filter((invoice: any) => invoice.status !== 'paid' && invoice.dueDate && invoice.dueDate < new Date().toISOString().slice(0, 10)),
+  overdueInvoices: async () => (await api.listInvoices()).filter((invoice: any) => invoice.status !== 'paid' && invoice.dueDate && invoice.dueDate < localTodayIso()),
 
   // Receipts (money actually received)
   listReceipts: async () => {

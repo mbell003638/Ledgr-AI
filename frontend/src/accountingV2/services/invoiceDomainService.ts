@@ -69,14 +69,24 @@ export class InvoiceDomainService {
     if (allocated) {
       const c = await this.getActiveContext(next.date || row.date);
       if (!c) throw new Error('No active versioned V2 book with an open accounting period');
-      const nextPartyId = next.partyId || next.customerId || (next.clientName ? await this.parties.party(next, 'customer', c.bookId) : null);
-      if (nextPartyId && priorMeta.partyId && nextPartyId !== priorMeta.partyId) {
+      const nextPartyId = await this.resolveExistingCustomerId(next, c.bookId);
+      const unresolvedNewName = !next.partyId && !next.customerId && !next.debtorId && !!next.clientName && !nextPartyId;
+      if ((nextPartyId && priorMeta.partyId && nextPartyId !== priorMeta.partyId) || unresolvedNewName) {
         throw new Error('Cannot change customer on an invoice that has active receipt allocations. Remove receipt allocations first.');
       }
       const newTotal = amount(next.total ?? next.amount);
       return this.documents.replaceInvoicePreservingAllocations(id, 'Edit invoice', newTotal, () => this.createInvoice(next));
     }
     return this.documents.replaceSource(id, 'invoice', 'Edit invoice', () => this.createInvoice(next));
+  }
+
+  /** Lookup only. Never createParty / ensureParty / party() — those insert before the allocation guard can throw. */
+  private async resolveExistingCustomerId(next: AnyRecord, bookId: string): Promise<string | null> {
+    const explicitId = next.partyId || next.customerId || next.debtorId;
+    if (explicitId) return String(explicitId);
+    if (!next.clientName) return null;
+    const existing = await this.parties.partyByName(bookId, String(next.clientName), 'customer');
+    return existing?.id ?? null;
   }
 
   async deleteInvoice(id: string) {

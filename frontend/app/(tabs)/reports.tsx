@@ -164,8 +164,10 @@ export default function ReportsScreen() {
           // never double-counts cogs, matching the engine invariant
           // netProfit = grossProfit − operatingExpenses in both bases.
           operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit),
-          managerCommissionPct: 0,
-          commission: 0,
+          managerCommissionPct: Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0),
+          commission: Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0) > 0 && report.profitAndLoss.grossProfit > 0
+            ? round2(report.profitAndLoss.grossProfit * (Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0) / 100))
+            : 0,
           drawings: 0,
           netProfit: report.profitAndLoss.netProfit,
         });

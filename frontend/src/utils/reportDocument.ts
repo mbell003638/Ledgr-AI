@@ -188,9 +188,9 @@ export function assembleMonthlyReport(
 
   // Hero: distributable profit = gross − commission (matches the prototype,
   // where Net Profit = Profit Before Commission − Commission).
-  const profitBeforeCommission = num(summary?.grossProfit);
+  const profitBeforeCommission = round2(num(summary?.grossProfit) - num(summary?.expenses));
   const commission = num(summary?.commission);
-  const netProfit = round2(profitBeforeCommission - commission);
+  const netProfit = summary?.netProfit !== undefined ? num(summary.netProfit) : round2(profitBeforeCommission - commission);
   const commissionPct = Math.round(num(summary?.managerCommissionPct) * 100) / 100;
 
   const investors: any[] = Array.isArray(capital?.investors) ? capital.investors : [];

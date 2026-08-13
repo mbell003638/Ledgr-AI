@@ -63,7 +63,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     global.fetch = fetchSpy as any;
     try {
       await expect(analyzeDocumentAI(
-        { provider: 'openrouter', apiKey: 'test-key', model: 'test-model' },
+        { provider: 'openai', apiKey: 'test-key', model: 'test-model' },
         { base64: 'JVBERi0xLjQ=', mimeType: 'application/pdf' },
       )).rejects.toThrow(/PDF Scan & Import.*only with the Gemini provider.*not sent or analyzed/i);
       expect(fetchSpy).not.toHaveBeenCalled();
@@ -81,7 +81,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     global.fetch = fetchSpy as any;
     try {
       await expect(analyzeDocumentAI(
-        { provider: 'custom', apiKey: 'test-key', model: 'test-model', baseUrl: 'https://example.com/v1' },
+        { provider: 'openai', apiKey: 'test-key', model: 'test-model', baseUrl: 'https://example.com/v1' },
         { text: '2026-08-01 opening balance 100' },
       )).resolves.toMatchObject({ docType: 'statement', summary: 'One row', entries: [] });
       expect(fetchSpy).toHaveBeenCalledTimes(2);

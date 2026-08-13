@@ -190,7 +190,8 @@ describe('4th Audit API & Reports Findings', () => {
     expect(summary.revenue).toBe(400);
     expect(summary.grossProfit).toBe(400);
     expect(summary.managerCommissionPct).toBe(15);
-    expect(summary.commission).toBe(60); // 15% of 400
+    expect(summary.commission).toBe(60); // 15% of gross 400
+    expect(summary.netProfit).toBe(340); // after commission
   });
 
   it('dailySummary(d) calculates netCash from actual liquid cash movements rather than accrual revenue, computes expenses, and counts payments', async () => {

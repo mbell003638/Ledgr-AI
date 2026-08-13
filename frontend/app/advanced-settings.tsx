@@ -13,7 +13,13 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/utils/dateValidation";
+
+const PROVIDER_MARK: Record<ProviderId, string> = {
+  gemini: "✨",
+  openai: "⚡",
+  anthropic: "💬",
+};
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -92,7 +98,7 @@ export default function AdvancedSettingsScreen() {
     const meta = PROVIDERS.find((item) => item.id === nextProvider)!;
     setProvider(nextProvider);
     setModelName(meta.defaultModel);
-    setBaseUrl(nextProvider === "custom" || nextProvider === "custom_anthropic" ? "" : meta.defaultBaseUrl);
+    setBaseUrl(meta.defaultBaseUrl);
     setTestResult(null);
   };
 
@@ -185,6 +191,7 @@ export default function AdvancedSettingsScreen() {
         baseUrl: baseUrl.trim() || undefined,
       });
       try {
+        const currentCfg = await api.getV2BookConfig().catch(() => null);
         await api.updateV2BookConfig({
           basis: accountingBasis,
           style: accountingStyle,
@@ -195,7 +202,7 @@ export default function AdvancedSettingsScreen() {
           activePersona,
           retailPartnership: {
             enabled: accountingStyle === "retail_partnership",
-            commissionPct: 0,
+            commissionPct: currentCfg?.retailPartnership?.commissionPct ?? 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
           },
@@ -241,7 +248,7 @@ export default function AdvancedSettingsScreen() {
     setBusy("export"); setStatus(null);
     try {
       const full: any = await api.exportBackup();
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = localTodayIso();
       await shareJsonFile(`ledgr-backup-${stamp}.json`, full);
       setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
     } catch (e: any) {
@@ -378,6 +385,7 @@ export default function AdvancedSettingsScreen() {
   };
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const selectedProviderTitle = PROVIDERS.find((item) => item.id === provider)?.label ?? "Google Gemini";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -519,30 +527,53 @@ export default function AdvancedSettingsScreen() {
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
-              <AccordionRow title="AI Provider" subtitle="Multiple providers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.xs }}>
-                    {PROVIDERS.map((item) => (
-                      <Pressable
-                        key={item.id}
-                        onPress={() => chooseProvider(item.id)}
-                        style={[
-                          { flexGrow: 1, flexBasis: "45%", minHeight: 42, paddingVertical: 8, paddingHorizontal: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center", justifyContent: "center" },
-                          provider === item.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" },
-                        ]}
-                      >
-                        <Text style={[{ fontSize: 12, textAlign: "center", fontWeight: "600", color: theme.color.onSurface }, provider === item.id && { color: theme.color.brandPrimary }]}>{item.label}</Text>
-                      </Pressable>
-                    ))}
+                  <View style={styles.providerTileRow}>
+                    {PROVIDERS.map((item) => {
+                      const selected = provider === item.id;
+                      return (
+                        <GlowPressable
+                          key={item.id}
+                          haptic
+                          topHighlight={false}
+                          animateBorder={false}
+                          clipSafe
+                          hoverLift={0}
+                          hoverScale={1}
+                          pressScale={0.97}
+                          restingBorderColor="transparent"
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={item.label}
+                          onPress={() => chooseProvider(item.id)}
+                          style={[styles.providerTile, selected && styles.providerTileSelected]}
+                        >
+                          <Text style={styles.providerMark}>{PROVIDER_MARK[item.id]}</Text>
+                          <Text style={[styles.providerTileTitle, selected && styles.providerTileTitleSelected]} numberOfLines={2}>
+                            {item.label}
+                          </Text>
+                        </GlowPressable>
+                      );
+                    })}
                   </View>
+                  <Text style={styles.hint}>OpenAI compatible covers OpenRouter, Groq, and any /v1 host. Anthropic compatible covers official Claude or a proxy.</Text>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
-                  <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder="Paste your API key" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
+                  <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
-                  <TextInput value={modelName} onChangeText={setModelName} placeholder="model name" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
-                  {(provider === "custom" || provider === "custom_anthropic") && (
+                  <TextInput value={modelName} onChangeText={setModelName} placeholder={PROVIDERS.find((item) => item.id === provider)?.defaultModel || "model name"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                  {(provider === "openai" || provider === "anthropic") && (
                     <>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
-                      <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://..." placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                      <TextInput
+                        value={baseUrl}
+                        onChangeText={setBaseUrl}
+                        placeholder={provider === "openai" ? "https://openrouter.ai/api/v1 or any /v1 host" : "https://api.anthropic.com/v1"}
+                        placeholderTextColor={theme.color.muted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.input}
+                      />
                     </>
                   )}
                   <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
@@ -738,5 +769,42 @@ function makeStyles(theme: any) {
       borderWidth: 1, borderColor: theme.color.brandPrimary, marginTop: theme.spacing.md,
     },
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
+    providerTileRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    providerTile: {
+      flex: 1,
+      flexDirection: "row",
+      minHeight: 40,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.color.border,
+      backgroundColor: theme.color.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    providerTileSelected: {
+      borderColor: theme.color.brandPrimary,
+      backgroundColor: theme.color.brandPrimary + "14",
+    },
+    providerMark: {
+      fontSize: 14,
+      lineHeight: 18,
+    },
+    providerTileTitle: {
+      flexShrink: 1,
+      fontSize: 11,
+      fontWeight: "600",
+      color: theme.color.onSurface,
+      textAlign: "left",
+      lineHeight: 14,
+    },
+    providerTileTitleSelected: {
+      color: theme.color.brandPrimary,
+    },
   });
 }

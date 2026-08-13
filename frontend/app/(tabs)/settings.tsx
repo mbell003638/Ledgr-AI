@@ -148,6 +148,7 @@ export default function SettingsScreen() {
         baseUrl: baseUrl.trim() || undefined,
       });
       try {
+        const currentCfg = await api.getV2BookConfig().catch(() => null);
         await api.updateV2BookConfig({
           basis: accountingBasis,
           style: accountingStyle,
@@ -156,7 +157,7 @@ export default function SettingsScreen() {
           activePersona,
           retailPartnership: {
             enabled: accountingStyle === "retail_partnership",
-            commissionPct: 0,
+            commissionPct: currentCfg?.retailPartnership?.commissionPct ?? 0,
             inventoryCadence: "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
           },

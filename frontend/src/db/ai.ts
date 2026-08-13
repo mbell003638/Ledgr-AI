@@ -1,17 +1,13 @@
 /**
  * Multi-provider AI router (no backend).
- * Supports: Google Gemini (native), OpenAI-compatible, Anthropic, OpenRouter.
- * Exposes the same surface as the old gemini.ts so callers don't change:
- *   testKey, parseCommand, ocrReceipt, transcribe, reconcileStatementAI
- *
- * A "provider config" is { provider, apiKey, model, baseUrl? }.
- * - provider: 'gemini' | 'anthropic' | 'openrouter' | 'custom' | 'custom_anthropic'
- * - baseUrl is only needed for 'custom' (any OpenAI-compatible endpoint).
+ * Three dialects: Google Gemini (native), OpenAI-compatible, Anthropic.
+ * OpenRouter / Groq / local servers use the OpenAI-compatible row + a base URL.
+ * Official Claude or an Anthropic-compatible proxy use the Anthropic row + base URL.
  */
 
 import { localTodayIso } from '../utils/dateValidation';
 
-export type ProviderId = 'gemini' | 'anthropic' | 'openrouter' | 'custom' | 'custom_anthropic';
+export type ProviderId = 'gemini' | 'openai' | 'anthropic';
 
 // Default provider used when the stored provider is missing/unknown/legacy.
 export const DEFAULT_PROVIDER: ProviderId = 'gemini';
@@ -22,7 +18,7 @@ export interface AIConfig {
   provider: ProviderId;
   apiKey: string;
   model: string;
-  baseUrl?: string; // for custom OpenAI-compatible or Anthropic-compatible endpoints
+  baseUrl?: string; // OpenAI-compatible or Anthropic-compatible endpoint
 }
 
 export interface ProviderMeta {
@@ -48,41 +44,21 @@ export const PROVIDERS: ProviderMeta[] = [
     api: 'gemini',
   },
   {
+    id: 'openai',
+    label: 'OpenAI compatible',
+    defaultBaseUrl: '',
+    defaultModel: '',
+    keyHint: 'Bearer key — OpenRouter, Groq, OpenAI, or any /v1 host',
+    supportsVision: true,
+    supportsAudio: false,
+    api: 'openai',
+  },
+  {
     id: 'anthropic',
-    label: 'Anthropic Claude',
+    label: 'Anthropic compatible',
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-sonnet-4-6',
-    keyHint: 'sk-ant-… from console.anthropic.com',
-    supportsVision: true,
-    supportsAudio: false,
-    api: 'anthropic',
-  },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'google/gemini-3.6-flash',
-    keyHint: 'sk-or-… from openrouter.ai',
-    supportsVision: true,
-    supportsAudio: false,
-    api: 'openai',
-  },
-  {
-    id: 'custom',
-    label: 'Custom (OpenAI Compatible)',
-    defaultBaseUrl: '',
-    defaultModel: '',
-    keyHint: 'Your endpoint API key',
-    supportsVision: true,
-    supportsAudio: false,
-    api: 'openai',
-  },
-  {
-    id: 'custom_anthropic',
-    label: 'Custom (Anthropic Compatible)',
-    defaultBaseUrl: '',
-    defaultModel: '',
-    keyHint: 'Your Anthropic API key',
+    keyHint: 'sk-ant-… or your proxy key',
     supportsVision: true,
     supportsAudio: false,
     api: 'anthropic',
@@ -168,6 +144,9 @@ async function call(
   const api = resolveApi(cfg);
   if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema);
   if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema);
+  if (!resolveBaseUrl(cfg)) {
+    throw new Error('Set a Base URL for the OpenAI-compatible provider (for example https://openrouter.ai/api/v1).');
+  }
   return callOpenAI(cfg, prompt, parts, jsonSchema);
 }
 
@@ -310,7 +289,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     'Content-Type': 'application/json',
     Authorization: `Bearer ${cfg.apiKey}`,
   };
-  if (cfg.provider === 'openrouter') {
+  if (/openrouter\.ai/i.test(resolveBaseUrl(cfg))) {
     headers['HTTP-Referer'] = 'https://ledgr.app';
     headers['X-Title'] = 'Ledgr';
   }
