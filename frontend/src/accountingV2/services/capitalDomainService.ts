@@ -443,8 +443,9 @@ export class CapitalDomainService {
     const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
     if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) throw new Error('No active versioned V2 book');
     const openingInventory = input.openingInventory != null ? Number(input.openingInventory) : 0;
-    const actualStock = input.actualStock != null ? Number(input.actualStock) : openingInventory;
-    if (!Number.isFinite(actualStock) || actualStock < 0) throw new Error('Actual stock must be a finite non-negative amount');
+    if (input.actualStock == null) throw new Error('Physical inventory count required: actualStock must be a finite non-negative amount');
+    const actualStock = Number(input.actualStock);
+    if (!Number.isFinite(actualStock) || actualStock < 0) throw new Error('Physical inventory count required: actualStock must be a finite non-negative amount');
     if (!Number.isFinite(openingInventory) || openingInventory < 0) throw new Error('Opening inventory must be a finite non-negative amount');
     return this.repo.runInTransaction(async () => {
       let period = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1", [active.value]);
@@ -468,8 +469,8 @@ export class CapitalDomainService {
       }
       const closeRepo = new V2CloseBooksRepository(this.db);
       const counts = await closeRepo.listInventoryCounts(active.value, period.id);
-      if (!counts.some((count) => count.date === period.start_date)) await closeRepo.recordInventoryCount({ id: `${period.id}:opening-inventory`, bookId: active.value, periodId: period.id, date: period.start_date, value: input.openingInventory });
-      if (!counts.some((count) => count.date === closeDate)) await closeRepo.recordInventoryCount({ id: `${period.id}:closing-inventory`, bookId: active.value, periodId: period.id, date: closeDate, value: input.actualStock });
+      if (!counts.some((count) => count.date === period.start_date)) await closeRepo.recordInventoryCount({ id: `${period.id}:opening-inventory`, bookId: active.value, periodId: period.id, date: period.start_date, value: openingInventory });
+      if (!counts.some((count) => count.date === closeDate)) await closeRepo.recordInventoryCount({ id: `${period.id}:closing-inventory`, bookId: active.value, periodId: period.id, date: closeDate, value: actualStock });
       const nextStart = dayAfter(closeDate);
       let next = await this.db.first<PeriodRow>("SELECT id,start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' AND start_date>? ORDER BY start_date LIMIT 1", [active.value, closeDate]);
       if (!next) {

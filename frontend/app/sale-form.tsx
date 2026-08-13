@@ -89,7 +89,8 @@ export default function SaleForm() {
     if (dateIso !== date) setDate(dateIso);
     setSaving(true); setError("");
     try {
-      if (customerName.trim()) {
+      // Do not create a party on invoice edit — allocated renames must throw without an insert.
+      if (!editId && customerName.trim()) {
         await api.findOrCreateParty(customerName.trim(), "customer", { phone: customerPhone.trim() });
       }
 

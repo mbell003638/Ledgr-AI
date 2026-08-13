@@ -1,6 +1,10 @@
 import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book } from '../src/accountingV2/appBootstrap';
 import { V2AppService } from '../src/accountingV2/appService';
+import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
+import { partnershipProfitFromReports, postedCommissionFromReports } from '../src/accountingV2/reports';
+import { getV2Dashboard } from '../src/accountingV2/v2Dashboard';
+import { V2BookConfigRepository } from '../src/accountingV2/bookConfigRepository';
 
 describe('5th Audit leftover fixes', () => {
   async function setupBook(bookId: string = 'audit5_book') {
@@ -75,6 +79,56 @@ describe('5th Audit leftover fixes', () => {
             amount: 400,
           }),
         ).rejects.toThrow(/Cannot change customer on an invoice that has active receipt allocations/);
+      } finally { close(); }
+    });
+  });
+
+  describe('closed-range commission is not overlaid twice', () => {
+    it('keeps net 340 / commission 60 after a 15% close on a $400 cash sale', async () => {
+      const { runner, close, service, bookId } = await setupBook('book_comm_double');
+      try {
+        const configRepo = new V2BookConfigRepository(runner);
+        const current = await configRepo.getBookConfig(bookId);
+        await configRepo.updateBookConfig(bookId, {
+          ...current,
+          retailPartnership: { ...current.retailPartnership, enabled: true, commissionPct: 15 },
+        });
+
+        await service.createSale({ date: '2026-02-15', amount: 400, method: 'cash' });
+        await service.closeBooks({ actualStock: 0, openingInventory: 0, commissionPct: 15, date: '2026-02-28' });
+
+        const report = await buildPersistentV2Reports(runner, { bookId, from: '2026-02-01', to: '2026-02-28' });
+        expect(report.profitAndLoss).toMatchObject({ revenue: 400, grossProfit: 400, netProfit: 340 });
+        const posted = postedCommissionFromReports(report);
+        expect(posted).toBe(60);
+
+        const profit = partnershipProfitFromReports(report.profitAndLoss, 15, posted);
+        expect(profit.commission).toBe(60);
+        expect(profit.netProfit).toBe(340);
+        expect(profit.commission).not.toBe(120);
+        expect(profit.netProfit).not.toBe(280);
+
+        const naive = partnershipProfitFromReports(report.profitAndLoss, 15);
+        expect(naive.netProfit).toBe(280);
+
+        const dash = await getV2Dashboard(runner, bookId);
+        expect(dash.commission).toBe(60);
+        expect(dash.netProfit).toBe(340);
+      } finally { close(); }
+    });
+  });
+
+  describe('closeBooks requires an explicit physical count', () => {
+    it('throws when actualStock is omitted and accepts an explicit count', async () => {
+      const { close, service } = await setupBook('book_actual_stock');
+      try {
+        await expect(
+          service.closeBooks({ openingInventory: 10 } as any),
+        ).rejects.toThrow(/physical inventory count required/i);
+
+        const closed = await service.closeBooks({ actualStock: 10, openingInventory: 10, commissionPct: 0 });
+        expect(closed.source).toBe('v2');
+        expect(closed.result.snapshot.closingInventory).toBe(10);
       } finally { close(); }
     });
   });

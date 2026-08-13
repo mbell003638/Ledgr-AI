@@ -17,6 +17,7 @@ import { showAlert } from "@/src/utils/alerts";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { round2 } from "@/src/money";
 import { v2Reports } from "@/src/accountingV2/runtime";
+import { partnershipProfitFromReports, postedCommissionFromReports } from "@/src/accountingV2/reports";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
@@ -136,11 +137,13 @@ export default function ReportsScreen() {
       {
         const report = core.report;
         const current = snapshotDash;
+        const commissionPct = Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0);
+        const profit = partnershipProfitFromReports(report.profitAndLoss, commissionPct, postedCommissionFromReports(report));
         setDash({
           totalSales: report.profitAndLoss.revenue,
           totalPurchases: report.profitAndLoss.expenses,
           grossProfit: report.profitAndLoss.grossProfit,
-          netProfit: report.profitAndLoss.netProfit,
+          netProfit: profit.netProfit,
           cash: current.cash,
           inventoryValue: current.inventoryValue,
           accountsReceivable: current.accountsReceivable,
@@ -164,12 +167,10 @@ export default function ReportsScreen() {
           // never double-counts cogs, matching the engine invariant
           // netProfit = grossProfit − operatingExpenses in both bases.
           operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit),
-          managerCommissionPct: Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0),
-          commission: Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0) > 0 && report.profitAndLoss.grossProfit > 0
-            ? round2(report.profitAndLoss.grossProfit * (Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0) / 100))
-            : 0,
+          managerCommissionPct: commissionPct,
+          commission: profit.commission,
           drawings: 0,
-          netProfit: report.profitAndLoss.netProfit,
+          netProfit: profit.netProfit,
         });
         const tbAccounts = report.trialBalance.accounts || [];
         const findBal = (codes: string[]) => tbAccounts.filter((a: any) => codes.includes(a.code)).reduce((s: number, a: any) => s + (a.normalBalance || 0), 0);
@@ -343,6 +344,7 @@ export default function ReportsScreen() {
         line("COGS", pnl.cogs),
         line("Gross Profit", pnl.grossProfit),
         line("Operating Expenses", pnl.operatingExpenses || 0),
+        ...(pnl.managerCommissionPct > 0 ? [line(`Manager Commission (${pnl.managerCommissionPct}%)`, pnl.commission)] : []),
         line("Net Profit", pnl.netProfit),
       ].join("\n");
     } else if (seg === "Balance" && bs) {

@@ -158,7 +158,7 @@ export default function SettingsScreen() {
           retailPartnership: {
             enabled: accountingStyle === "retail_partnership",
             commissionPct: currentCfg?.retailPartnership?.commissionPct ?? 0,
-            inventoryCadence: "irregular",
+            inventoryCadence: currentCfg?.retailPartnership?.inventoryCadence ?? "irregular",
             members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
           },
         });

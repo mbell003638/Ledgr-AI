@@ -3,7 +3,7 @@ import { V2SqlRepository } from './repository';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from './types';
 import { round2 } from '../money';
 import { buildPersistentV2Reports } from './persistentReports';
-import { partnershipProfitFromReports } from './reports';
+import { partnershipProfitFromReports, postedCommissionFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 
@@ -200,7 +200,7 @@ export class V2InvestorLedgerService {
     const reports = await buildPersistentV2Reports(this.db, { bookId, from: period.start_date, to: period.end_date });
     let commissionPct = 0;
     try { commissionPct = (await new V2BookConfigRepository(this.db).getBookConfig(bookId)).retailPartnership.commissionPct; } catch { /* config is optional in low-level books */ }
-    const { netProfit } = partnershipProfitFromReports(reports.profitAndLoss, commissionPct);
+    const { netProfit } = partnershipProfitFromReports(reports.profitAndLoss, commissionPct, postedCommissionFromReports(reports));
     return cents(netProfit * Number(percentage) / 100);
   }
 

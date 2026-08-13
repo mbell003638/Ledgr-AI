@@ -1,5 +1,5 @@
 import type { V2MemoryStore } from './schema';
-import type { V2Account, V2AccountType, V2JournalEntry } from './types';
+import { V2_ACCOUNT_CODES, type V2Account, type V2AccountType, type V2JournalEntry } from './types';
 import { round2 } from '../money';
 
 const cents = round2;
@@ -368,17 +368,42 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
 export type V2PartnershipProfit = { revenue: number; cogs: number; grossProfit: number; commission: number; expenses: number; netProfit: number };
 
 /**
- * The single derivation of partnership profit for the OPEN period, shared by the
- * dashboard and the investor ledger so every profit surface agrees. Takes a
- * journal-derived report (COGS already reflected) plus the commission rate and
- * applies the manager commission consistently. Commission is an open-period accrual
- * estimate (it is only posted to the GL at close), so it is subtracted here rather
- * than read from the ledger.
+ * 6100 already recognized in this report's P&L (historical P&L skips 'Period close'
+ * transfers, so a closed month still shows the commission journal). Trial balance
+ * is zero after close, so this reads details with the same exclusion. Returns 0
+ * when 6100 is not already inside `pnl.expenses` (cash-basis P&L ignores GL 6100).
  */
-export function partnershipProfitFromReports(pnl: V2Reports['profitAndLoss'], commissionPct: number): V2PartnershipProfit {
+export function postedCommissionFromReports(report: V2Reports): number {
+  const posted = cents((report.details || []).reduce((sum, line) => {
+    if (line.accountCode !== V2_ACCOUNT_CODES.COMMISSION_EXPENSE || line.memo === 'Period close') return sum;
+    return sum + line.debit - line.credit;
+  }, 0));
+  if (!(posted > 0)) return 0;
+  const journalExpenses = cents((report.details || []).reduce((sum, line) => {
+    if (line.accountType !== 'expense' || line.memo === 'Period close') return sum;
+    return sum + line.debit - line.credit;
+  }, 0));
+  if (Math.abs(cents(report.profitAndLoss.expenses) - journalExpenses) > TOLERANCE) return 0;
+  return posted;
+}
+
+/**
+ * The single derivation of partnership profit, shared by the dashboard, monthly
+ * summary, range P&L, and the investor ledger. Overlay is the manager commission
+ * on gross profit. `postedCommission` is 6100 already inside `pnl.netProfit`
+ * (use `postedCommissionFromReports`); only the unposted remainder is subtracted.
+ */
+export function partnershipProfitFromReports(
+  pnl: V2Reports['profitAndLoss'],
+  commissionPct: number,
+  postedCommission = 0,
+): V2PartnershipProfit {
   const grossProfit = cents(pnl.grossProfit);
   const pct = Number.isFinite(commissionPct) ? commissionPct : 0;
-  const commission = grossProfit > 0 ? cents(grossProfit * pct / 100) : 0;
-  const netProfit = cents(pnl.netProfit - commission);
+  const overlay = grossProfit > 0 ? cents(grossProfit * pct / 100) : 0;
+  const posted = Number.isFinite(postedCommission) && postedCommission >= 0 ? cents(postedCommission) : 0;
+  const additional = Math.max(0, cents(overlay - posted));
+  const commission = cents(posted + additional);
+  const netProfit = cents(pnl.netProfit - additional);
   return { revenue: cents(pnl.revenue), cogs: cents(pnl.cogs), grossProfit, commission, expenses: cents(pnl.expenses), netProfit };
 }

@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
@@ -721,6 +721,8 @@ function buildHtml(inv: Invoice, biz: any, sym: string, prevBalance = 0, themeCo
 export default function InvoicesScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ action?: string; new?: string }>();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [overdue, setOverdue] = useState<Invoice[]>([]);
@@ -768,7 +770,7 @@ export default function InvoicesScreen() {
     return () => task.cancel();
   }, [load]));
 
-  const openNew = () => {
+  const openNew = useCallback(() => {
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(localTodayIso());
     setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setFormError("");
@@ -777,7 +779,14 @@ export default function InvoicesScreen() {
     setTaxLabelInput(defLabel);
     setTaxRateInput(biz.taxRate ? String(biz.taxRate) : "");
     setShowForm(true);
-  };
+  }, [biz]);
+
+  React.useEffect(() => {
+    if (params.action === "create" || params.new === "1") {
+      openNew();
+      router.setParams({ action: undefined, new: undefined } as any);
+    }
+  }, [params.action, params.new, router, openNew]);
 
   const openEdit = (inv: Invoice) => {
     setEditId(inv.id);
@@ -802,7 +811,8 @@ export default function InvoicesScreen() {
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
     setSaving(true); setFormError("");
     try {
-      await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
+      // Do not create a party on invoice edit — allocated renames must throw without an insert.
+      if (!editId) await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       const validLines = lines.filter((l) => l.description.trim());
       const rate = parseFloat(taxRateInput) || 0;
       const discount = parseFloat(discountInput) || 0;

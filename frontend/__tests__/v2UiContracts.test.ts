@@ -70,13 +70,15 @@ describe('V2 UI contracts', () => {
     const v2Block = reports.slice(start, end);
 
     // COGS and gross profit must come from the engine's real fields, not be aliased
-    // to the total-expense or net-profit figures.
+    // to the total-expense or net-profit figures. Displayed net is the partnership
+    // overlay (journal net minus unposted manager commission), not a remapped field.
     expect(v2Block).toContain('cogs: report.profitAndLoss.cogs');
     expect(v2Block).toContain('grossProfit: report.profitAndLoss.grossProfit');
-    expect(v2Block).toContain('netProfit: report.profitAndLoss.netProfit');
+    expect(v2Block).toContain('partnershipProfitFromReports');
+    expect(v2Block).toContain('netProfit: profit.netProfit');
     expect(v2Block).not.toContain('cogs: report.profitAndLoss.expenses');
     expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
-    // Operating expenses are derived as gross − net (basis-agnostic, never double-counts cogs).
+    // Operating expenses are derived as gross − journal net (basis-agnostic, never double-counts cogs).
     expect(v2Block).toContain('operatingExpenses: round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit)');
   });
 
@@ -389,6 +391,24 @@ describe('V2 UI contracts', () => {
     expect(sale).toContain('input-sale-discount');
     expect(sale).toContain('discount: totals.discount');
     expect(sale).toContain('editable={lines.length === 0}');
+  });
+  it('invoice and sale edit paths do not create a party immediately before updateInvoice', () => {
+    const invoices = readApp('invoices.tsx');
+    const sale = readApp('sale-form.tsx');
+    const saveInvoice = invoices.slice(invoices.indexOf('const saveInvoice = async () =>'), invoices.indexOf('const markPaid'));
+    const saveSale = sale.slice(sale.indexOf('const save = async () =>'), sale.indexOf('const remove = async () =>'));
+
+    expect(saveInvoice).toContain('findOrCreateParty');
+    expect(saveInvoice).toMatch(/if\s*\(\s*!editId\s*\)[\s\S]*?findOrCreateParty/);
+    const invoiceEdit = saveInvoice.slice(saveInvoice.indexOf('if (editId)'), saveInvoice.indexOf('else await api.createInvoice'));
+    expect(invoiceEdit).toContain('updateInvoice');
+    expect(invoiceEdit).not.toMatch(/findOrCreateParty|ensureParty/);
+
+    expect(saveSale).toContain('findOrCreateParty');
+    expect(saveSale).toMatch(/if\s*\(\s*!editId[\s\S]*?findOrCreateParty/);
+    const saleEdit = saveSale.slice(saveSale.indexOf('if (editId)'), saveSale.indexOf('} else if (saleType === "cash")'));
+    expect(saleEdit).toContain('updateInvoice');
+    expect(saleEdit).not.toMatch(/findOrCreateParty|ensureParty/);
   });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');

@@ -1,7 +1,7 @@
 import type { SqlRunner } from '../db/schema';
 import { round2 } from '../money';
 import { buildPersistentV2Reports } from './persistentReports';
-import { partnershipProfitFromReports } from './reports';
+import { partnershipProfitFromReports, postedCommissionFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
 import { localTodayIso } from '../utils/dateValidation';
 
@@ -48,7 +48,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   // Profit is derived from the journal-authoritative report (COGS included), not the
   // sales−purchases shortcut, so the dashboard agrees with reports and the investor ledger.
   const commPct = config?.retailPartnership?.commissionPct || 0;
-  const profit = partnershipProfitFromReports(reports.profitAndLoss, commPct);
+  const profit = partnershipProfitFromReports(reports.profitAndLoss, commPct, postedCommissionFromReports(reports));
   const grossProfit = profit.grossProfit;
   const commission = profit.commission;
   const netProfit = profit.netProfit;

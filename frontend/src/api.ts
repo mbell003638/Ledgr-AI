@@ -11,7 +11,7 @@ import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appB
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
-import { partnershipProfitFromReports } from './accountingV2/reports';
+import { partnershipProfitFromReports, postedCommissionFromReports } from './accountingV2/reports';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
@@ -893,7 +893,7 @@ export const api = {
     const operatingExpenses = isCash ? pnl.expenses : round2(pnl.grossProfit - pnl.netProfit);
     const settings: any = await api.getSettings().catch(() => ({}));
     const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
-    const profit = partnershipProfitFromReports(pnl, commissionPct);
+    const profit = partnershipProfitFromReports(pnl, commissionPct, postedCommissionFromReports(report));
     return {
       month: m,
       periodStart: from,
@@ -1087,7 +1087,7 @@ export const api = {
     const config = await api.getV2BookConfig();
     const settings: any = await api.getSettings().catch(() => ({}));
     const commissionPct = Number(config?.retailPartnership?.commissionPct ?? settings?.managerCommissionPct ?? 0);
-    const pnl = partnershipProfitFromReports(report.profitAndLoss, commissionPct);
+    const pnl = partnershipProfitFromReports(report.profitAndLoss, commissionPct, postedCommissionFromReports(report));
     const expenses = round2(report.profitAndLoss.grossProfit - report.profitAndLoss.netProfit);
     return {
       revenue: report.profitAndLoss.revenue,

@@ -216,8 +216,20 @@ export default function QuickActionMenu() {
               <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
             </GlowPressable>
 
-            <View style={{ height: 8 }} />
-            <QuickActionRow icon="🧾" iconBackground="rgba(74,222,128,0.15)" title="Create Invoice" subtitle="Record a new sale" onPress={() => navigate("/sale-form")} />
+            <QuickActionRow
+              icon="🧾"
+              iconBackground="rgba(56,189,248,0.15)"
+              title="Create Invoice"
+              subtitle="Bill a customer with line items & tax"
+              onPress={() => navigate("/invoices?action=create")}
+            />
+            <QuickActionRow
+              icon="💰"
+              iconBackground="rgba(74,222,128,0.15)"
+              title="Log Sale"
+              subtitle="Record a quick cash or credit sale"
+              onPress={() => navigate("/sale-form")}
+            />
             <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Log a bill or purchase" onPress={() => navigate("/bill-form")} />
             <QuickActionRow icon="💵" iconBackground="rgba(59,130,246,0.15)" title="Receive Payment" subtitle="Log incoming funds" onPress={() => navigate("/receipt-form")} />
             <QuickActionRow

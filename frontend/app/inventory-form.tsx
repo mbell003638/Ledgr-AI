@@ -29,6 +29,8 @@ export default function InventoryForm() {
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
   const [openingVisible, setOpeningVisible] = useState(false);
+  const [commissionPct, setCommissionPct] = useState("");
+  const [bookCommissionPct, setBookCommissionPct] = useState(0);
 
   const loadData = async () => {
     try {
@@ -38,6 +40,9 @@ export default function InventoryForm() {
       setInfo(v2);
       setHistory(Array.isArray(v2.history) ? v2.history : []);
       setPeriodPolicy(config?.periodPolicy || { mode: "flexible" });
+      const bookRate = Number(config?.retailPartnership?.commissionPct);
+      setBookCommissionPct(Number.isFinite(bookRate) ? bookRate : 0);
+      setCommissionPct(Number.isFinite(bookRate) && bookRate > 0 ? String(bookRate) : "");
       setOpeningEffectiveDate(String(opening?.date || v2?.periodStart || ""));
       setOpeningStock(Number(opening?.inventory ?? v2?.openingInventory ?? 0));
     } catch (e) { console.warn(e); }
@@ -73,7 +78,6 @@ export default function InventoryForm() {
 
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
-  const [commissionPct, setCommissionPct] = useState("");
   const [closeDate, setCloseDate] = useState(() => localTodayIso());
 
   const beginClose = () => {
@@ -85,7 +89,7 @@ export default function InventoryForm() {
   const closePeriod = async () => {
     const act = parseFloat(actual);
     if (isNaN(act) || act < 0) { setError("Enter actual stock first"); return; }
-    const pct = commissionPct.trim() === "" ? 0 : parseFloat(commissionPct);
+    const pct = commissionPct.trim() === "" ? bookCommissionPct : parseFloat(commissionPct);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) { setError("Enter a manager commission percentage from 0 to 100"); return; }
     const closingIso = normalizeDateInput(closeDate);
     if (!isValidDateString(closingIso)) { setError(`Couldn't read "${closeDate.trim()}" as a closing date. Please use YYYY-MM-DD.`); return; }
@@ -97,6 +101,7 @@ export default function InventoryForm() {
     setClosing(true); setError("");
     try {
       await api.closePeriod(act, notes, pct, closingIso);
+      await api.updateSettings({ managerCommissionPct: pct });
       router.back();
     } catch (e: any) { setError(e.message); }
     finally { setClosing(false); setConfirmClose(false); }
