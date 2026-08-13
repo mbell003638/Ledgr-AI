@@ -88,6 +88,14 @@ export default function AdvancedSettingsScreen() {
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  const chooseProvider = (nextProvider: ProviderId) => {
+    const meta = PROVIDERS.find((item) => item.id === nextProvider)!;
+    setProvider(nextProvider);
+    setModelName(meta.defaultModel);
+    setBaseUrl(nextProvider === "custom" || nextProvider === "custom_anthropic" ? "" : meta.defaultBaseUrl);
+    setTestResult(null);
+  };
+
   const updateAccountingStyle = async (style: "retail_partnership" | "standard") => {
     setAccountingStyle(style);
     try {
@@ -513,21 +521,25 @@ export default function AdvancedSettingsScreen() {
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
               <AccordionRow title="AI Provider" subtitle="Multiple providers" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.xs }}>
-                    <Pressable onPress={() => { setProvider("gemini"); setModelName("gemini-2.0-flash-001"); setBaseUrl(""); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider === "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider === "gemini" && { color: theme.color.brandPrimary }]}>Google Gemini</Text></Pressable>
-                    <Pressable onPress={() => { if (provider === "gemini") { setProvider("custom"); setTestResult(null); } }} style={[{ flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, provider !== "gemini" && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, provider !== "gemini" && { color: theme.color.brandPrimary }]}>Custom Provider</Text></Pressable>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.xs }}>
+                    {PROVIDERS.map((item) => (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => chooseProvider(item.id)}
+                        style={[
+                          { flexGrow: 1, flexBasis: "45%", minHeight: 42, paddingVertical: 8, paddingHorizontal: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center", justifyContent: "center" },
+                          provider === item.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" },
+                        ]}
+                      >
+                        <Text style={[{ fontSize: 12, textAlign: "center", fontWeight: "600", color: theme.color.onSurface }, provider === item.id && { color: theme.color.brandPrimary }]}>{item.label}</Text>
+                      </Pressable>
+                    ))}
                   </View>
-                  {provider !== "gemini" && (
-                    <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
-                      <Pressable onPress={() => { setProvider("custom"); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom" || provider === "openrouter") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom" || provider === "openrouter") && { color: theme.color.brandPrimary }]}>OpenAI Compatible</Text></Pressable>
-                      <Pressable onPress={() => { setProvider("custom_anthropic"); setTestResult(null); }} style={[{ flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" }, (provider === "custom_anthropic" || provider === "anthropic") && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}><Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, (provider === "custom_anthropic" || provider === "anthropic") && { color: theme.color.brandPrimary }]}>Anthropic Compatible</Text></Pressable>
-                    </View>
-                  )}
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder="Paste your API key" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
                   <TextInput value={modelName} onChangeText={setModelName} placeholder="model name" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
-                  {provider !== "gemini" && (
+                  {(provider === "custom" || provider === "custom_anthropic") && (
                     <>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
                       <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://..." placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />

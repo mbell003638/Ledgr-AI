@@ -14,7 +14,7 @@ export type ProviderId = 'gemini' | 'anthropic' | 'openrouter' | 'custom' | 'cus
 // Default provider used when the stored provider is missing/unknown/legacy.
 export const DEFAULT_PROVIDER: ProviderId = 'gemini';
 // Modern Gemini default; the previous 'gemini-2.0-flash-001' is deprecation-exposed.
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 
 export interface AIConfig {
   provider: ProviderId;
@@ -49,7 +49,7 @@ export const PROVIDERS: ProviderMeta[] = [
     id: 'anthropic',
     label: 'Anthropic Claude',
     defaultBaseUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-3-5-sonnet-20241022',
+    defaultModel: 'claude-sonnet-4-6',
     keyHint: 'sk-ant-… from console.anthropic.com',
     supportsVision: true,
     supportsAudio: false,
@@ -59,7 +59,7 @@ export const PROVIDERS: ProviderMeta[] = [
     id: 'openrouter',
     label: 'OpenRouter',
     defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'google/gemini-2.0-flash-001',
+    defaultModel: 'google/gemini-3.6-flash',
     keyHint: 'sk-or-… from openrouter.ai',
     supportsVision: true,
     supportsAudio: false,
@@ -160,11 +160,12 @@ async function call(
   cfg: AIConfig,
   prompt: string,
   parts: { inlineData: { mimeType: string; data: string } }[] = [],
-  jsonSchema?: any
+  jsonSchema?: any,
+  options: { googleSearch?: boolean } = {},
 ): Promise<string> {
   requireKey(cfg);
   const api = resolveApi(cfg);
-  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema);
+  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema, options);
   if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema);
   return callOpenAI(cfg, prompt, parts, jsonSchema);
 }
@@ -219,6 +220,9 @@ function aiHttpError(status: number, statusText: string, data: any): Error {
   if (status === 404 || status === 410) {
     return new Error('The configured AI model may be deprecated — open Settings and update the model name.');
   }
+  if (status === 401 || status === 403) {
+    return new Error('The AI provider rejected this API key. Check that the selected provider, API key, model, and account access all match.');
+  }
   return new Error(providerMsg);
 }
 
@@ -230,15 +234,33 @@ function isModelNotFoundError(status: number, message: string): boolean {
 // ---------------- Gemini native ----------------
 // Single Gemini generateContent call for a specific model. Key is sent in the
 // x-goog-api-key HEADER (not the URL query) so it can't leak via request logs.
-async function callGeminiModel(cfg: AIConfig, model: string, prompt: string, parts: any[], schema?: any): Promise<string> {
+function supportsGeminiStructuredSearch(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return normalized.startsWith('gemini-3.6-flash') || normalized === 'gemini-3.1-pro-preview';
+}
+
+async function callGeminiModel(
+  cfg: AIConfig,
+  model: string,
+  prompt: string,
+  parts: any[],
+  schema?: any,
+  options: { googleSearch?: boolean } = {},
+): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/models/${model}:generateContent`;
+  const useGoogleSearch = !!options.googleSearch && supportsGeminiStructuredSearch(model);
   const body: any = {
     contents: [{ role: 'user', parts: [{ text: prompt }, ...parts] }],
     generationConfig: {
       temperature: 0,
-      ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
+      ...(schema
+        ? useGoogleSearch
+          ? { responseFormat: { text: { mimeType: 'application/json', schema } } }
+          : { responseMimeType: 'application/json', responseSchema: schema }
+        : {}),
     },
+    ...(useGoogleSearch ? { tools: [{ googleSearch: {} }] } : {}),
   };
   const res = await fetchAI(url, {
     method: 'POST',
@@ -249,27 +271,32 @@ async function callGeminiModel(cfg: AIConfig, model: string, prompt: string, par
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
   if (!res.ok) throw aiHttpError(res.status, res.statusText, data);
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const responseParts = data?.candidates?.[0]?.content?.parts;
+  return Array.isArray(responseParts) ? responseParts.map((part: any) => part?.text || '').join('') : '';
 }
-
 // The previous hard-coded default that many installs still have persisted.
 const DEPRECATED_DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash-001';
 
-async function callGemini(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
+async function callGemini(
+  cfg: AIConfig,
+  prompt: string,
+  parts: any[],
+  schema?: any,
+  options: { googleSearch?: boolean } = {},
+): Promise<string> {
   try {
-    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema);
+    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema, options);
   } catch (error: any) {
     // If a model-not-found surfaces for the (deprecated) DEFAULT model, retry once
     // with the current alias before letting the actionable error from (d) bubble up.
     const msg = error?.message || '';
     const looksLikeModelIssue = isModelNotFoundError(0, msg) || /update the model name/i.test(msg);
     if (looksLikeModelIssue && cfg.model === DEPRECATED_DEFAULT_GEMINI_MODEL) {
-      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema);
+      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema, options);
     }
     throw error;
   }
 }
-
 // ---------------- OpenAI-compatible (OpenAI, OpenRouter, custom) ----------------
 async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
   const base = resolveBaseUrl(cfg);
@@ -672,6 +699,29 @@ const ACTION_SPEC =
   "Dates are YYYY-MM-DD; default to today if unspecified. Never invent amounts — if a required field is " +
   "missing, ask for it in 'answer' and set action to null.";
 
+export function isExplicitBookMutationRequest(question: string): boolean {
+  const q = question.toLowerCase();
+  const explicitVerb = /\b(add|record|create|enter|save|post|log|register)\b/.test(q);
+  const impliedTransaction = /\b(spent|paid|received|sold|bought|purchased)\b/.test(q) && /\d/.test(q);
+  const accountingObject = /\b(expense|sale|bill|purchase|customer|debtor|payment|invoice|receipt|quote|transaction|entry)\b/.test(q);
+  return accountingObject && (explicitVerb || impliedTransaction);
+}
+
+export function needsLiveInformationSearch(question: string): boolean {
+  return /\b(latest|breaking|news|headlines|live updates?|current (?:price|weather|score|events?)|today'?s? (?:news|weather|headlines|price|score))\b/i.test(question);
+}
+
+function localClockContext(now = new Date()): string {
+  const offsetMinutes = -now.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absolute = Math.abs(offsetMinutes);
+  const offset = `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`;
+  const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  let zone = '';
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
+  return `${localIso} UTC${offset}${zone ? ' (' + zone + ')' : ''}`;
+}
+
 const ASK_SCHEMA = {
   type: 'object',
   properties: {
@@ -697,14 +747,17 @@ const ASK_SCHEMA = {
  * for the app to confirm-and-apply.
  */
 export async function askBooks(cfg: AIConfig, question: string, dataContext: string) {
-  const today = new Date().toISOString().slice(0, 10);
+  const localNow = localClockContext();
   const prompt =
-    `You are the built-in AI assistant inside a bookkeeping app. Today is ${today}.\n` +
+    `You are the built-in AI assistant inside a bookkeeping app. The user's current device-local date and time is ${localNow}.\n` +
     'You have THREE jobs:\n' +
     "1) Answer questions about the user's finances using the data snapshot below.\n" +
     '2) Answer general questions and explain how to use this app (use the App Guide).\n' +
     '3) When the user asks to add/record/create data, PROPOSE one of the permitted actions for confirmation.\n\n' +
     'Rules: Be concise and friendly. Use the currency shown in the data. ' +
+    'For current time/date questions, answer from the device-local timestamp above. ' +
+    'For current news or other live-information questions, use Google Search when the provider makes it available; otherwise be transparent that live search is unavailable while still answering what you can. ' +
+    'Never include private bookkeeping data in a web-search query. ' +
     'For finance questions, base numbers on the snapshot; if a specific figure is not in the snapshot, ' +
     "say what you can see and note what's missing (do NOT refuse general or how-to questions). " +
     'Only fill "action" when the user is clearly requesting a change; otherwise set it to null.\n\n' +
@@ -713,12 +766,12 @@ export async function askBooks(cfg: AIConfig, question: string, dataContext: str
     `=== DATA SNAPSHOT ===\n${dataContext}\n=== END DATA ===\n\n` +
     `User: ${question}\n\n` +
     'Respond as JSON: { "answer": string, "action": null | { "type": string, "params": object, "confirm": string } }.';
-  const out = await call(cfg, prompt, [], ASK_SCHEMA);
+  const out = await call(cfg, prompt, [], ASK_SCHEMA, { googleSearch: needsLiveInformationSearch(question) });
   try {
     const parsed = parseJson(out);
     return {
       answer: (parsed.answer || '').trim() || "Sorry, I didn't catch that.",
-      action: parsed.action && parsed.action.type ? parsed.action : null,
+      action: parsed.action && parsed.action.type && isExplicitBookMutationRequest(question) ? parsed.action : null,
     };
   } catch {
     // Fallback: some providers ignore JSON schema — return raw text as the answer.

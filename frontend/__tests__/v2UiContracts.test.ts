@@ -357,12 +357,13 @@ describe('V2 UI contracts', () => {
   });
   it('keeps Ask AI history per business book, exposes clear history, and avoids the stuck Android keyboard layout', () => {
     const source = readApp('ask.tsx');
+    const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
     expect(source).toContain('AsyncStorage.getItem(historyKey)');
     expect(source).toContain('askHistoryStorageKey(api.activeBookId())');
     expect(source).toContain('Clear Ask AI history');
-    expect(source).toContain('enabled={Platform.OS === "ios"}');
+    expect(source).toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
     expect(source).toContain('keyboardDismissMode="on-drag"');
-    expect(source).not.toContain('Platform.OS === "ios" ? "padding" : "height"');
+    expect(appConfig.expo.android.softwareKeyboardLayoutMode).toBe('resize');
   });
   it('offers scan retry controls and explains automatic transient retries', () => {
     const source = readApp('scan-import.tsx');

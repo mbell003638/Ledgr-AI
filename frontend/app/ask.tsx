@@ -251,7 +251,12 @@ export default function AskBooks() {
         ) : <View style={{ width: 26 }} />}
       </View>
 
-      <KeyboardAvoidingView enabled={Platform.OS === "ios"} behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={80}>
+      <KeyboardAvoidingView
+        enabled
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+      >
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
