@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
-import { V2_ACCOUNT_CODES } from './types';
+import { V2_ACCOUNT_CODES, type V2PaymentMethod } from './types';
 import { round2 } from '../money';
 import { buildPersistentV2Reports } from './persistentReports';
 import { partnershipProfitFromReports } from './reports';
@@ -9,6 +9,13 @@ import { V2DocumentService } from './documentService';
 
 const cents = round2;
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+const paymentMethod = (value?: string): Exclude<V2PaymentMethod, 'other'> => value === 'upi' ? 'mobile' : ['cash', 'bank', 'card', 'mobile'].includes(String(value)) ? value as Exclude<V2PaymentMethod, 'other'> : 'cash';
+const paymentCode = (value?: string) => ({
+  cash: V2_ACCOUNT_CODES.CASH,
+  bank: V2_ACCOUNT_CODES.BANK,
+  card: V2_ACCOUNT_CODES.CARD,
+  mobile: V2_ACCOUNT_CODES.MOBILE,
+}[paymentMethod(value)] || V2_ACCOUNT_CODES.CASH);
 
 export type InvestorTransactionType = 'opening_capital' | 'capital_injection' | 'drawing' | 'profit_allocation';
 export type InvestorLedgerTransaction = {
@@ -121,20 +128,20 @@ export class V2InvestorLedgerService {
     return this.documents.reverseSource(sourceId, 'capital_injection', 'Delete capital deposit', true);
   }
 
-  async draw(input: { bookId: string; memberId: string; date: string; amount: number; notes?: string }) {
+  async draw(input: { bookId: string; memberId: string; date: string; amount: number; method?: V2PaymentMethod | 'upi'; notes?: string }) {
     await this.requirePartnership(input.bookId);
     const member = await this.member(input.bookId, input.memberId);
     const period = await this.periodForDate(input.bookId, input.date);
     const amount = this.positive(input.amount);
     const source = {
       id: uid('drawing'), bookId: input.bookId, type: 'drawing', date: input.date,
-      metadata: { memberId: member.id, memberName: member.name, total: amount, notes: input.notes || '', method: 'cash' },
+      metadata: { memberId: member.id, memberName: member.name, total: amount, notes: input.notes || '', method: paymentMethod(input.method) },
     };
     const journal = await this.repo.postSourceJournal(source, {
       bookId: input.bookId, periodId: period.id, date: input.date, memo: `Member drawing — ${member.name}`,
       lines: [
         { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.DRAWINGS}`, debit: amount, credit: 0, memo: member.name },
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: 0, credit: amount, memo: input.notes },
+        { accountId: `${input.bookId}:account:${paymentCode(input.method)}`, debit: 0, credit: amount, memo: input.notes },
       ],
     });
     return { source, journal };
@@ -143,7 +150,8 @@ export class V2InvestorLedgerService {
   private async requirePartnership(bookId: string) {
     const book = await this.db.first<{ style: string }>('SELECT style FROM v2_books WHERE id=?', [bookId]);
     if (!book) throw new Error('Book not found');
-    if (book.style !== 'retail_partnership') throw new Error('Capital Statements are available only when Equity Split is enabled');
+    const member = await this.db.first<{ id: string }>('SELECT id FROM v2_members WHERE book_id=? LIMIT 1', [bookId]);
+    if (book.style !== 'retail_partnership' && !member) throw new Error('Capital Statements are available only when Equity Split is enabled');
   }
 
   private async requireOwnedMovement(sourceId: string, bookId: string, memberId: string, type: 'capital_injection' | 'drawing') {

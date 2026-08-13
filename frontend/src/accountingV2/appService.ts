@@ -14,7 +14,7 @@ import type { AccountingPeriodPolicy } from './config';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
-const method = (value: any): V2PaymentMethod => methods.has(value) ? value : 'cash';
+const method = (value: any): V2PaymentMethod => value === 'upi' ? 'mobile' : methods.has(value) ? value : 'cash';
 const amount = (value: any) => Number(value);
 const cents = round2;
 const normalized = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -167,10 +167,20 @@ export class V2AppService {
     return now < open.start_date ? open.start_date : now > open.end_date ? open.end_date : now;
   }
 
+  async assertPartyNameAvailable(name: string, bookId?: string) {
+    const targetBookId = bookId || (await this.activeContext())?.bookId;
+    if (!targetBookId) throw new Error('No active versioned V2 book');
+    const members = await this.db.all<{ name: string }>('SELECT name FROM v2_members WHERE book_id=?', [targetBookId]);
+    if (members.some((member) => normalized(member.name) === normalized(name))) {
+      throw new Error(`A Capital Account named '${String(name || '').trim()}' already exists. A Customer or Supplier must use a different name.`);
+    }
+  }
+
   private async party(input: AnyRecord, role: V2PartyRole, bookId: string) {
     const id = stablePartyId(role, input);
     const requestedName = partyDisplayName(input[role === 'customer' ? 'clientName' : 'supplierName']);
     const name = requestedName || partyDisplayName(input.partyId || id) || id;
+    await this.assertPartyNameAvailable(name, bookId);
     const existing = await this.db.first('SELECT id FROM v2_parties WHERE id=? AND book_id=?', [id, bookId]);
     if (!existing) await this.repo.createParty({ id, bookId, name, phone: input.clientPhone || input.phone, email: input.email, roles: [role] });
     else {
@@ -368,7 +378,13 @@ export class V2AppService {
     return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles, bills: bills.reverse(), payments: payments.reverse(), notes: notes.reverse(), billsTotal, paymentsTotal, balance };
   }
 
-  async updateParty(id: string, patch: AnyRecord) { return this.documents.updateParty(id, patch); }
+  async updateParty(id: string, patch: AnyRecord) {
+    const current = await this.db.first<{ book_id: string; name: string }>('SELECT book_id,name FROM v2_parties WHERE id=?', [id]);
+    if (current && patch.name != null && normalized(patch.name) !== normalized(current.name)) {
+      await this.assertPartyNameAvailable(String(patch.name), current.book_id);
+    }
+    return this.documents.updateParty(id, patch);
+  }
   async archiveParty(id: string) { return this.documents.archiveParty(id); }
   async listSalesAndInvoices() {
     const context=await this.activeContext(); if(!context)return [];

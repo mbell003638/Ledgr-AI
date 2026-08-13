@@ -533,6 +533,7 @@ export const api = {
     const ctx = await service.activeContext();
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
     if ((await service.listParties()).some((party: any) => norm(party.name) === norm(name))) throw new Error(`A party named '${name}' already exists in this account.`);
+    await service.assertPartyNameAvailable(name, ctx.bookId);
     const id = p.id || `party_${Date.now()}`;
     const roles = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
     await service.repo.createParty({ id, bookId: ctx.bookId, name, phone: p.phone, email: p.email, roles });
@@ -547,7 +548,9 @@ export const api = {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
-    if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
+    const context = await service.activeContext();
+    if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    await service.assertPartyNameAvailable(name, context.bookId);
     const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
     const party = existing || await service.ensureParty(name, role, details);
     const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
@@ -739,7 +742,7 @@ export const api = {
     bumpDataVersion();
     return result;
   },
-  drawInvestorFunds: async (id: string, input: { amount: number; date: string; notes?: string }) => {
+  drawInvestorFunds: async (id: string, input: { amount: number; date: string; method?: 'cash' | 'bank' | 'card' | 'mobile' | 'upi'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);

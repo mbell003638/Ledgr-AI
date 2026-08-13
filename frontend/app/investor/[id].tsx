@@ -44,18 +44,14 @@ export default function InvestorDetailScreen() {
     if (!id) return;
     setError('');
     try {
-      const [settings, config] = await Promise.all([api.getSettings(), api.getV2BookConfig()]);
-      if (config?.style !== 'retail_partnership') {
-        router.replace('/(tabs)/suppliers' as any);
-        return;
-      }
+      const settings = await api.getSettings();
       const detail = await api.getInvestorLedger(id);
       setData(detail);
       setCurrency(getCurrencySymbol(settings.currency || 'USD'));
     } catch (e: any) {
       setError(e?.message || 'Could not load this capital statement.');
     } finally { setLoading(false); }
-  }, [id, router]);
+  }, [id]);
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 

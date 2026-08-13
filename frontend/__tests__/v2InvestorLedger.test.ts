@@ -47,7 +47,26 @@ describe('V2 partnership investor ledger', () => {
       }));
       expect((await ledger.detail(book.id, 'alice')).transactions.map((item) => item.type)).toEqual(expect.arrayContaining(['opening_capital', 'capital_injection', 'drawing']));
       expect((await repo.reconcileBook(book.id)).balanced).toBe(true);
+
       expect(close).toBeDefined();
+    } finally { close(); }
+  });
+
+  it('keeps a same-name Capital Account accessible after a wrong Supplier payment is reversed', async () => {
+    const { runner, repo, book, ledger, close } = await setup();
+    try {
+      await runner.run(
+        'INSERT INTO v2_parties(id,book_id,name,roles,archived) VALUES(?,?,?,?,0)',
+        ['stale-supplier-alice', book.id, 'Alice', JSON.stringify(['supplier'])],
+      );
+      const payment = await import('../src/accountingV2/postings').then(({ postSupplierPayment }) =>
+        postSupplierPayment(repo, { bookId: book.id, periodId: 'p1', partyId: 'stale-supplier-alice', date: '2026-07-15', amount: 100, method: 'cash' }),
+      );
+      await new (await import('../src/accountingV2/documentService')).V2DocumentService(repo)
+        .reverseSource(payment.source.id, 'supplier_payment', 'Delete wrong Supplier payment', true);
+
+      await expect(ledger.detail(book.id, 'alice')).resolves.toEqual(expect.objectContaining({ id: 'alice', name: 'Alice' }));
+      expect((await repo.reconcileBook(book.id)).balanced).toBe(true);
     } finally { close(); }
   });
 

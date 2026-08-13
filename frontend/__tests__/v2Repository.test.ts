@@ -71,4 +71,21 @@ describe('V2SqlRepository — atomic journal persistence', () => {
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_journal_lines'))?.n)).toBe(0);
     } finally { close(); }
   });
+
+  it('rejects a same-name Customer or Supplier at the repository write boundary', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const repo = new V2SqlRepository(runner);
+      const book = defaultBook('book-v2', 'V2 Shop');
+      await repo.createBook(book, defaultAccounts(book.id));
+      await runner.run(
+        'INSERT INTO v2_members(id,book_id,name,opening_contribution,current_capital,profit_share_pct) VALUES(?,?,?,?,?,?)',
+        ['member-amit', book.id, 'Amit', 0, 0, 100],
+      );
+      await expect(repo.createParty({ id: 'supplier-amit', bookId: book.id, name: '  amit  ', roles: ['supplier'] }))
+        .rejects.toThrow(/Capital Account named 'amit' already exists/i);
+      expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_parties'))?.n)).toBe(0);
+    } finally { close(); }
+  });
 });

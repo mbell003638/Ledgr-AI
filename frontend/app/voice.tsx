@@ -10,8 +10,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
+import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 
-import { findBestPartyMatch } from "@/src/utils/fuzzyMatch";
 import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
@@ -60,17 +60,15 @@ export default function VoiceModal() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
 
-      const p = await api.parseCommand(txt);
-      const spokenParty = p.supplierName || p.customerName || p.partnerName || "";
-      if (spokenParty) {
-        const existingParties = await api.searchParties("");
-        const matchedParty = findBestPartyMatch(spokenParty, existingParties, 0.60);
-        if (matchedParty) {
-          if (p.supplierName) p.supplierName = matchedParty.name;
-          if (p.customerName) p.customerName = matchedParty.name;
-          if (p.partnerName) p.partnerName = matchedParty.name;
-        }
-      }
+      const parsedCommand = await api.parseCommand(txt);
+      const [suppliers, customers, capitalAccounts] = await Promise.all([
+        api.listSuppliers(),
+        api.listDebtors(),
+        api.listInvestors(),
+      ]);
+      const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
+      if (!resolution.ok) throw new Error(resolution.question);
+      const p: any = resolution.command;
 
       const proposalByIntent: Record<string, any> = {
         bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
@@ -100,13 +98,11 @@ export default function VoiceModal() {
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
       if (parsed.intent === "bill") {
-        let sid = "";
-        if (parsed.supplierName) {
-          const party = await api.findOrCreateParty(parsed.supplierName, "supplier");
-          if (party) sid = party.id;
-        }
+        const list = await api.listSuppliers();
+        const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
         await api.createBill({
-          supplierId: sid, date, amount: parsed.amount, currency,
+          supplierId: match[0].id, date, amount: parsed.amount, currency,
           paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
           notes: voiceNote(parsed.notes || parsed.summary),
         });
@@ -117,11 +113,11 @@ export default function VoiceModal() {
         const method = parsed.method || "cash";
         let debtorId: string | null = null;
         let allocations: { invoiceId: string; amountApplied: number }[] = [];
-        if (mode !== "cash_sale" && parsed.customerName) {
+        if (parsed.customerName) {
           const debtors = await api.listDebtors();
-          const match = debtors.find((d: any) => d.name.toLowerCase().includes(parsed.customerName.toLowerCase()));
+          const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsed.customerName.trim().toLowerCase());
           if (match) debtorId = match.id;
-          else { const c = await api.createDebtor({ name: parsed.customerName }); debtorId = c.id; }
+          else throw new Error(`Customer "${parsed.customerName}" was not found. Add the Customer first.`);
           // Auto-allocate an against_invoice receipt to this customer's oldest unpaid invoice.
           if (mode === "against_invoice") {
             const invs = (await api.listInvoices())
@@ -136,24 +132,19 @@ export default function VoiceModal() {
           allocations, notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "supplier_payment") {
-        let sid = "";
-        if (parsed.supplierName) {
-          const list = await api.listSuppliers();
-          const match = list.find((s: any) => s.name.toLowerCase().includes(parsed.supplierName.toLowerCase()));
-          if (match) sid = match.id;
-          else { const c = await api.createSupplier({ name: parsed.supplierName }); sid = c.id; }
-        }
+        const list = await api.listSuppliers();
+        const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
         await api.createPayment({
           date, amount: parsed.amount, currency,
-          type: "supplier_payment", supplierId: sid,
-          method: "cash", notes: voiceNote(parsed.notes || parsed.summary),
+          type: "supplier_payment", supplierId: match[0].id,
+          method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary),
         });
       } else if (parsed.intent === "drawing") {
-        await api.createPayment({
-          date, amount: parsed.amount, currency,
-          type: "drawing", partnerName: parsed.partnerName || parsed.supplierName || "Capital Account",
-          method: "cash", notes: voiceNote(parsed.notes || parsed.summary),
-        });
+        const members = await api.listInvestors();
+        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
+        await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary) });
       } else if (parsed.intent === "inventory") {
         await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: voiceNote(parsed.notes || parsed.summary) });
       } else {
@@ -225,8 +216,10 @@ export default function VoiceModal() {
                 {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, parsed.currency || "USD")} theme={theme} />}
                 {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
                 {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
+                {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
                 {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
                 {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
+                {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
               </View>
               {isDestructive ? (
                 <View style={styles.destructiveWarn} testID="voice-destructive-warn">

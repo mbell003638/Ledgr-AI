@@ -39,12 +39,14 @@ export default function PartiesScreen() {
         payable: p.payable,
       })).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-      // Preserve member-ledger balances even when a V2 party row already exists.
+      // Capital Accounts and parties use different authoritative IDs. Keep
+      // separate rows even when their display names match so navigation can never
+      // send a Supplier/Customer ID to the Capital Statement screen.
       if (partnerActive) {
         for (const investor of investors) {
-          const existing = mapped.find((x) => x.name.toLowerCase() === investor.name.toLowerCase());
-          if (existing) { existing.role = "partner"; existing.capitalBalance = Number(investor.currentCapital || 0); }
-          else if (investor.name) mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
+          if (investor.name && !mapped.some((row) => row.role === "partner" && row.id === investor.id)) {
+            mapped.push({ id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
+          }
         }
       }
       return { items: mapped, isPartnerMode: partnerActive };
@@ -68,14 +70,17 @@ export default function PartiesScreen() {
         byName.set(k, { id: d.id, name: d.name, phone: d.phone, role: 'customer', receivable: Number(d.balance) || 0, payable: 0 });
       }
     }
-    if (partnerActive) {
-      for (const investor of investors) {
-        if (investor.name && !byName.has(investor.name.toLowerCase())) {
-          byName.set(investor.name.toLowerCase(), { id: investor.id, name: investor.name, role: "partner", receivable: 0, payable: 0, capitalBalance: Number(investor.currentCapital || 0) });
-        }
-      }
-    }
-    return { items: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)), isPartnerMode: partnerActive };
+    const investorRows: PartyRow[] = partnerActive
+      ? investors.filter((investor: any) => Boolean(investor.name)).map((investor: any) => ({
+          id: investor.id,
+          name: investor.name,
+          role: "partner" as const,
+          receivable: 0,
+          payable: 0,
+          capitalBalance: Number(investor.currentCapital || 0),
+        }))
+      : [];
+    return { items: [...byName.values(), ...investorRows].sort((a, b) => a.name.localeCompare(b.name) || a.role.localeCompare(b.role)), isPartnerMode: partnerActive };
   }, []);
 
   const { data, loading, refreshing, reload, refresh } = useScreenData(

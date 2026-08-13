@@ -13,6 +13,7 @@ export type V2ReconciliationError = {
 
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
+const normalized = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 let savepointSequence = 0;
 
 export class V2SqlRepository {
@@ -39,6 +40,10 @@ export class V2SqlRepository {
   }
 
   async createParty(party: V2Party) {
+    const members = await this.db.all<{ name: string }>('SELECT name FROM v2_members WHERE book_id=?', [party.bookId]);
+    if (members.some((member) => normalized(member.name) === normalized(party.name))) {
+      throw new Error(`A Capital Account named '${party.name.trim()}' already exists. A Customer or Supplier must use a different name.`);
+    }
     await this.db.run('INSERT INTO v2_parties(id,book_id,name,phone,email,roles,archived) VALUES(?,?,?,?,?,?,?)', [party.id, party.bookId, party.name, party.phone || null, party.email || null, JSON.stringify(party.roles), party.archived ? 1 : 0]);
     return party;
   }
