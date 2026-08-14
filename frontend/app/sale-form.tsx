@@ -181,7 +181,7 @@ export default function SaleForm() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-sale" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close sale form" testID="btn-close-sale" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>{editId ? "Edit Sale" : "Log Sale"}</Text>
         <View style={{ width: 26 }} />
       </View>
@@ -193,6 +193,7 @@ export default function SaleForm() {
               <Text style={styles.label}>Sale type</Text>
               <View style={styles.segRow}>
                 <Pressable
+                  accessibilityRole="radio" accessibilityState={{ selected: saleType === "cash" }} accessibilityLabel="Cash sale"
                   testID="seg-cash"
                   onPress={() => setSaleType("cash")}
                   style={[styles.segBtn, saleType === "cash" && styles.segBtnActive]}
@@ -200,6 +201,7 @@ export default function SaleForm() {
                   <Text style={[styles.segText, saleType === "cash" && styles.segTextActive]}>💵 Cash sale</Text>
                 </Pressable>
                 <Pressable
+                  accessibilityRole="radio" accessibilityState={{ selected: saleType === "party" }} accessibilityLabel="Credit sale to customer"
                   testID="seg-party"
                   onPress={() => setSaleType("party")}
                   style={[styles.segBtn, saleType === "party" && styles.segBtnActive]}
@@ -242,12 +244,12 @@ export default function SaleForm() {
             <Card>
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
-            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
+            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: locationId === location.id }} accessibilityLabel={`Use location ${location.name}`} key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
 
             {/* Line Items / Products (Optional) */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>
               <Text style={styles.label}>Itemized Items (Optional)</Text>
-              <Pressable onPress={addLine} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Add sale item" onPress={addLine} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Ionicons name="add-circle-outline" size={16} color={theme.color.brandPrimary} />
                 <Text style={{ fontSize: 13, fontWeight: "700", color: theme.color.brandPrimary }}>+ Add Item</Text>
               </Pressable>
@@ -286,7 +288,7 @@ export default function SaleForm() {
                   onChangeText={(val) => updateLine(idx, "rate", val)}
                   style={[styles.input, { flex: 1.2, marginTop: 0 }]}
                 />
-                <Pressable onPress={() => removeLine(idx)} style={{ padding: 4 }}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Remove sale item ${idx + 1}`} onPress={() => removeLine(idx)} style={{ padding: 4 }}>
                   <Ionicons name="trash-outline" size={18} color={theme.color.error} />
                 </Pressable>
                 </View>
@@ -300,6 +302,7 @@ export default function SaleForm() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
                   <View style={{ flexDirection: "row", gap: 6 }}>
                     <Pressable
+                      accessibilityRole="radio" accessibilityState={{ selected: !stockProductId }} accessibilityLabel="No product stock deduction"
                       testID="pick-product-none"
                       onPress={() => { setStockProductId(""); setStockQty(""); }}
                       style={[styles.chip, !stockProductId && styles.chipActive]}
@@ -308,6 +311,7 @@ export default function SaleForm() {
                     </Pressable>
                     {products.map((p) => (
                       <Pressable
+                        accessibilityRole="radio" accessibilityState={{ selected: stockProductId === p.id }} accessibilityLabel={`Deduct stock for ${p.name}`}
                         key={p.id}
                         testID={`pick-product-${p.id}`}
                         onPress={() => setStockProductId(p.id)}
@@ -351,7 +355,8 @@ export default function SaleForm() {
           </Card>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable testID="btn-save-sale" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={editId ? "Update sale" : "Save sale"} testID="btn-save-sale" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+
             {saving ? <ActivityIndicator color="#fff" /> : (
               <Text style={styles.saveText}>
                 {editId ? "Update Sale" : saleType === "cash" ? "Save Cash Sale" : "Create Invoice & Save"}
@@ -359,7 +364,8 @@ export default function SaleForm() {
             )}
           </Pressable>
           {editId ? (
-            <Pressable testID="btn-delete-sale" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Delete sale" testID="btn-delete-sale" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+
               {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete Sale</Text>}
             </Pressable>
           ) : null}

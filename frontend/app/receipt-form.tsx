@@ -147,7 +147,7 @@ export default function ReceiptFormScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close receipt form" onPress={() => router.back()} hitSlop={10}>
           <Ionicons name="close" size={26} color={theme.color.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle}>{editId ? "Edit Receipt" : "New Receipt"}</Text>
@@ -158,11 +158,13 @@ export default function ReceiptFormScreen() {
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: theme.spacing.lg }}>
           <LocationPicker value={locationId} onChange={setLocationId} />
           <View style={styles.scanRow}>
-            <Pressable onPress={scan} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Scan receipt" onPress={scan} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1 }]}>
+
               <Ionicons name="camera-outline" size={16} color="#fff" />
               <Text style={styles.scanText}>Scan</Text>
             </Pressable>
-            <Pressable onPress={uploadImg} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1, backgroundColor: theme.color.brandSecondary }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Upload receipt image" onPress={uploadImg} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1, backgroundColor: theme.color.brandSecondary }]}>
+
               <Ionicons name="image-outline" size={16} color="#fff" />
               <Text style={styles.scanText}>Upload</Text>
             </Pressable>
@@ -177,7 +179,8 @@ export default function ReceiptFormScreen() {
             <Text style={styles.label}>Receipt Type</Text>
             <View style={styles.modeRow}>
               {(["against_invoice", "advance"] as Mode[]).map((m) => (
-                <Pressable key={m} onPress={() => { setMode(m); setInvoiceId(null); }} style={[styles.modeBtn, mode === m && styles.modeBtnActive]}>
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected: mode === m }} accessibilityLabel={MODE_LABEL[m]} key={m} onPress={() => { setMode(m); setInvoiceId(null); }} style={[styles.modeBtn, mode === m && styles.modeBtnActive]}>
+
                   <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>{MODE_LABEL[m]}</Text>
                 </Pressable>
               ))}
@@ -208,7 +211,8 @@ export default function ReceiptFormScreen() {
                 ) : invoices
                   .filter((inv) => !clientName.trim() || inv.clientName.toLowerCase().includes(clientName.trim().toLowerCase()))
                   .map((inv) => (
-                    <Pressable key={inv.id} onPress={() => pickInvoice(inv)} style={[styles.pickRow, invoiceId === inv.id && styles.pickRowActive]}>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: invoiceId === inv.id }} accessibilityLabel={`Select invoice ${inv.invoiceNumber}`} key={inv.id} onPress={() => pickInvoice(inv)} style={[styles.pickRow, invoiceId === inv.id && styles.pickRowActive]}>
+
                       <Text style={styles.pickTitle}>{inv.invoiceNumber} · {inv.clientName}</Text>
                       <Text style={styles.pickAmt}>{currSym}{Number(inv.total).toFixed(2)}</Text>
                     </Pressable>
@@ -227,12 +231,14 @@ export default function ReceiptFormScreen() {
             <Text style={[styles.label, { marginTop: 12 }]}>Payment Method</Text>
             <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
               <Pressable
+                accessibilityRole="radio" accessibilityState={{ selected: method === "cash" }} accessibilityLabel="Cash receipt method"
                 onPress={() => { setMethod("cash"); }}
                 style={[{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface }, method === "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
               >
                 <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface, textAlign: "center" }, method === "cash" && { color: "#fff" }]}>Cash</Text>
               </Pressable>
               <Pressable
+                accessibilityRole="radio" accessibilityState={{ selected: method !== "cash" }} accessibilityLabel="Bank or custom receipt method"
                 onPress={() => { setMethod(method === "cash" ? "" : method); }}
                 style={[{ flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface }, method !== "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
               >
@@ -248,7 +254,8 @@ export default function ReceiptFormScreen() {
           </Card>
 
           {err ? <Text style={styles.error}>{err}</Text> : null}
-          <Pressable onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Save receipt" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Receipt</Text>}
           </Pressable>
           <View style={{ height: 60 }} />
