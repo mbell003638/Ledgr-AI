@@ -11,6 +11,7 @@ import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -24,6 +25,13 @@ export default function VoiceFab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.getSettings().then((settings) => { if (active) setAiEnabled(isCapabilityEnabled(settings, "ai_assistant")); }).catch(() => { if (active) setAiEnabled(false); });
+    return () => { active = false; };
+  }, []);
 
   const pulseScale = useSharedValue(1);
 
@@ -197,9 +205,14 @@ export default function VoiceFab() {
     transform: [{ scale: pulseScale.value }],
   }));
 
+  if (!aiEnabled) return null;
+
   return (
     <>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Voice assistant"
+        accessibilityHint="Record a transaction by voice"
         testID="voice-fab"
         onPress={start}
         style={({ pressed }) => [
@@ -233,8 +246,10 @@ export default function VoiceFab() {
                   “Paid supplier 1000 USD on July 17”
                 </Text>
                 <Animated.View style={animatedMicStyle}>
-                  <Pressable 
-                    onPress={phase === "recording" ? stopAndProcess : undefined} 
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={phase === "recording" ? "Stop recording" : "Voice assistant microphone"}
+                    onPress={phase === "recording" ? stopAndProcess : undefined}
                     style={[styles.bigMicBtn, { backgroundColor: phase === "recording" ? theme.color.error : theme.color.surfaceTertiary }]}
                   >
                     {phase === "processing" ? (
@@ -270,10 +285,10 @@ export default function VoiceFab() {
                 </View>
 
                 <View style={styles.btnRow}>
-                  <Pressable onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                     <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text>
                   </Pressable>
-                  <Pressable onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
                     {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>Save</Text>}
                   </Pressable>
                 </View>
@@ -282,7 +297,7 @@ export default function VoiceFab() {
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={32} color={theme.color.error} />
                 <Text style={styles.errorText}>{error}</Text>
-                <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
                   <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
                 </Pressable>
               </View>

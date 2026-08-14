@@ -62,6 +62,9 @@ export default function AdvancedSettingsScreen() {
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
+  const [aiRememberHistory, setAiRememberHistory] = useState(false);
+  const [customHostConfirmed, setCustomHostConfirmed] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   // Members = the owners/investors who put in capital and share profit.
   // Each: { name, amount (investment), profitSharePct (optional) }.
@@ -93,6 +96,7 @@ export default function AdvancedSettingsScreen() {
     setProvider(nextProvider);
     setModelName(meta.defaultModel);
     setBaseUrl(meta.defaultBaseUrl);
+    setCustomHostConfirmed(nextProvider === 'gemini' || meta.defaultBaseUrl.length > 0);
     setTestResult(null);
   };
 
@@ -126,6 +130,9 @@ export default function AdvancedSettingsScreen() {
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
+      setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
+      setAiRememberHistory(s.aiRememberHistory === true);
+      setCustomHostConfirmed(s.aiCustomHostConfirmed === true || !cfg.baseUrl || cfg.provider === 'gemini');
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
       const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
       setSelectedPersonas(configuredPersonas);
@@ -178,6 +185,9 @@ export default function AdvancedSettingsScreen() {
         throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
       }
       const meta = PROVIDERS.find((p) => p.id === provider)!;
+      if (isCustomProvider && baseUrl.trim() && !customHostConfirmed) {
+        throw new Error('Confirm that you trust this custom AI host before saving its API key.');
+      }
       await setAIConfig({
         provider,
         apiKey: key.trim(),
@@ -207,6 +217,9 @@ export default function AdvancedSettingsScreen() {
       await api.updateSettings({
         lockEnabled,
         themeMode: mode,
+        aiDataMode,
+        aiRememberHistory,
+        aiCustomHostConfirmed: customHostConfirmed,
       });
       setStatus({ ok: true, msg: "Settings saved." });
     } catch (e: any) {
@@ -221,6 +234,10 @@ export default function AdvancedSettingsScreen() {
     setTestResult(null);
     try {
       const meta = PROVIDERS.find((p) => p.id === provider)!;
+      if (isCustomProvider && baseUrl.trim() && !customHostConfirmed) {
+        setTestResult({ ok: false, msg: 'Confirm that you trust this custom AI host first.' });
+        return;
+      }
       await setAIConfig({
         provider,
         apiKey: key.trim(),
@@ -408,6 +425,8 @@ export default function AdvancedSettingsScreen() {
               <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: theme.spacing.sm, padding: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.success + "55", backgroundColor: theme.color.successBg }}><Ionicons name="shield-checkmark-outline" size={17} color={theme.color.success} /><Text style={{ flex: 1, color: theme.color.success, fontSize: 11, fontWeight: "700" }}>Ledger storage: {activeBook ? "Ready — SQLite V2 authoritative" : "Migration required"}</Text></View>
+                  <Text style={[styles.hint, { marginTop: theme.spacing.sm }]}>Book preferences remain device-local. Accounting postings use the active SQLite V2 ledger; do not treat secondary-book preferences as a separate source of accounting truth.</Text>
                   <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
                     {books.map((b) => {
                       const isActive = b.id === activeBook;
@@ -567,19 +586,37 @@ export default function AdvancedSettingsScreen() {
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
                       <TextInput
                         value={baseUrl}
-                        onChangeText={setBaseUrl}
+                        onChangeText={(value) => { setBaseUrl(value); setCustomHostConfirmed(false); }}
                         placeholder={provider === "openai" ? "https://openrouter.ai/api/v1 or any /v1 host" : "https://api.anthropic.com/v1"}
                         placeholderTextColor={theme.color.muted}
                         autoCapitalize="none"
                         autoCorrect={false}
                         style={styles.input}
                       />
+                      <Text style={styles.hint}>Your API key and selected book context will be sent to this host over HTTPS.</Text>
+                      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: customHostConfirmed }} onPress={() => setCustomHostConfirmed((value) => !value)} style={styles.securityCheckRow}>
+                        <Ionicons name={customHostConfirmed ? "checkbox" : "square-outline"} size={20} color={customHostConfirmed ? theme.color.brandPrimary : theme.color.muted} />
+                        <Text style={styles.securityCheckText}>I trust this custom provider with my API key and selected book data.</Text>
+                      </Pressable>
                     </>
                   )}
                   <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
                     <Pressable onPress={testKey} disabled={testing || !key} style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}>{testing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <Text style={styles.secondaryText}>Test Connection</Text>}</Pressable>
                     {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
                   </View>
+                </View>
+              </AccordionRow>
+              <AccordionRow title="AI Data & History" subtitle={aiDataMode === 'detailed' ? 'Detailed context enabled' : 'Summary only by default'} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Summary-only mode sends totals and reports. Detailed mode may include party names, open invoices, and recent entries. Conversation history is never remembered unless you enable it.</Text>
+                  <View style={styles.modeRow}>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'summary' }} onPress={() => setAiDataMode('summary')} style={[styles.modeBtn, aiDataMode === 'summary' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'summary' && styles.modeTextActive]}>Summary only</Text></Pressable>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'detailed' }} onPress={() => setAiDataMode('detailed')} style={[styles.modeBtn, aiDataMode === 'detailed' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'detailed' && styles.modeTextActive]}>Detailed context</Text></Pressable>
+                  </View>
+                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: aiRememberHistory }} onPress={() => setAiRememberHistory((value) => !value)} style={styles.securityCheckRow}>
+                    <Ionicons name={aiRememberHistory ? "checkbox" : "square-outline"} size={20} color={aiRememberHistory ? theme.color.brandPrimary : theme.color.muted} />
+                    <Text style={styles.securityCheckText}>Remember Ask AI conversation on this device.</Text>
+                  </Pressable>
                 </View>
               </AccordionRow>
             </View>
@@ -707,6 +744,8 @@ function makeStyles(theme: any) {
     modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
     modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
     modeTextActive: { color: theme.color.onBrandPrimary },
+    securityCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: theme.spacing.md, paddingVertical: 8 },
+    securityCheckText: { flex: 1, fontSize: 12, lineHeight: 18, color: theme.color.onSurface },
     currencyChip: {
       flexDirection: "row", alignItems: "center", justifyContent: "center",
       paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md,

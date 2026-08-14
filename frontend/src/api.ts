@@ -163,7 +163,9 @@ async function reconcileStatement(
   return { extracted, matched, missingInLedgr: missing, notOnStatement: extra, partyId, party, supplierId: party === 'supplier' ? partyId : undefined };
 }
 
-async function buildAiSnapshot(from: string, to: string) {
+type AiDataMode = 'summary' | 'detailed';
+
+async function buildAiSnapshot(from: string, to: string, mode: AiDataMode = 'summary') {
   const settings = await db.getSettings();
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -228,20 +230,21 @@ async function buildAiSnapshot(from: string, to: string) {
     ...deliveryNotes.slice(0, 100).map((row: any) => ({ id: row.id, entity: 'delivery_note', sourceType: 'delivery_note', date: row.date, reference: row.noteNumber || '', partyName: row.clientName || '', status: row.status, notes: row.notes || '', items: Array.isArray(row.items) ? row.items.slice(0, 20) : [] })),
   );
   recentEntries.sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id)));
-  const visibleEntries = recentEntries.slice(0, 300);
+  const detailed = mode === 'detailed';
+  const visibleEntries = detailed ? recentEntries.slice(0, 300) : [];
   return {
     source: 'v2', currency: settings.currency, businessName: settings.businessName,
     snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
     yearToDate: reports.profitAndLoss,
-    creditors: parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })),
-    debtors: parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })),
+    creditors: detailed ? parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })) : [],
+    debtors: detailed ? parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })) : [],
     expensesByCategory,
-    openInvoices: salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 50).map((item: any) => ({ id: item.id, number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })),
-    parties: parties.map((party: any) => ({ id: party.id, name: party.name, roles: party.roles, receivable: party.receivable, payable: party.payable })),
-    capitalAccounts: members.map((member: any) => ({ id: member.id, name: member.name })),
+    openInvoices: detailed ? salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 50).map((item: any) => ({ id: item.id, number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })) : [],
+    parties: detailed ? parties.map((party: any) => ({ id: party.id, name: party.name, roles: party.roles, receivable: party.receivable, payable: party.payable })) : [],
+    capitalAccounts: detailed ? members.map((member: any) => ({ id: member.id, name: member.name })) : [],
     recentEntries: visibleEntries,
-    snapshotLimit: 300,
-    snapshotTruncated: recentEntries.length > visibleEntries.length,
+    snapshotLimit: detailed ? 300 : 0,
+    snapshotTruncated: detailed && recentEntries.length > visibleEntries.length,
   };
 }
 
@@ -556,9 +559,20 @@ export const api = {
   renameBook: async (id: string, name: string) => { const r = await beRenameBook(id, name); bumpDataVersion(); return r; },
   deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
 
-  // POS sessions remain lightweight operational records; locations and stock transfers use V2 below.
+  // POS sessions keep register metadata locally, while cash settlement is posted to the authoritative V2 ledger.
   listPosSessions: async () => db.listPosSessions(),
   createPosSession: async (input: any) => { const r = await db.createPosSession(input); bumpDataVersion(); return r; },
+  posSettlementPreview: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).posSettlementPreview(input);
+  },
+  settlePosSession: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const result = await new V2AppService(runner).settlePosSession(input);
+    const updated = await db.updatePosSession(input.sessionId, { status: 'closed', closed_at: new Date().toISOString(), countedCash: result.countedCash, expectedCash: result.expectedCash, variance: result.variance, settlementSourceId: result.sourceId, settlementJournalId: result.journalId || null });
+    bumpDataVersion();
+    return { ...result, session: updated };
+  },
   closePosSession: async (id: string) => { const r = await db.closePosSession(id); bumpDataVersion(); return r; },
 
 
@@ -1137,7 +1151,7 @@ export const api = {
     return { ok: true };
   },
 
-  aiSnapshot: (from: string, to: string) => buildAiSnapshot(from, to),
+  aiSnapshot: (from: string, to: string, mode: AiDataMode = 'summary') => buildAiSnapshot(from, to, mode),
   // AI
   parseCommand: async (text: string) => { const settings = await db.getSettings(); return ai.parseCommand(await getAIConfig(), text, settings.currency || 'USD'); },
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },

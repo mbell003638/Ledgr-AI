@@ -73,7 +73,7 @@ export default function PartyForm() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-supplier" onPress={() => router.back()}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close form" testID="btn-close-supplier" onPress={() => router.back()}>
           <Ionicons name="close" size={26} color={theme.color.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle}>{editId ? `Edit ${partyType === 'supplier' ? 'Supplier' : 'Customer'}` : `New ${partyType === 'supplier' ? 'Supplier' : 'Customer'}`}</Text>
@@ -93,6 +93,8 @@ export default function PartyForm() {
           </Card>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${editId ? "Update" : "Save"} ${partyType === 'supplier' ? 'supplier' : 'customer'}`}
             testID="btn-save-supplier"
             onPress={save}
             disabled={saving}
@@ -101,7 +103,8 @@ export default function PartyForm() {
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update " : "Save "}{partyType === 'supplier' ? 'Supplier' : 'Customer'}</Text>}
           </Pressable>
           {editId ? (
-            <Pressable testID="btn-delete-supplier" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${partyType === 'supplier' ? 'supplier' : 'customer'}`} testID="btn-delete-supplier" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+
               {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete {partyType === 'supplier' ? 'Supplier' : 'Customer'}</Text>}
             </Pressable>
           ) : null}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "lastReviewed": "2026-08-14",
+  "policy": "Every exception must have an owner, rationale, mitigation, and an expiry no later than the next Expo SDK upgrade review.",
+  "exceptions": [
+    {
+      "package": "image-size",
+      "advisory": "GHSA-w3rx-r6r6-pgpr",
+      "summary": "ICNS parser denial of service through an infinite loop",
+      "owner": "Ledgr engineering",
+      "severity": "high",
+      "status": "temporarily-allowlisted",
+      "rationale": "This is a transitive Expo/Metro build-tool dependency and is not used to parse untrusted runtime uploads in the Android app.",
+      "mitigation": "The dependency remains locked; runtime document parsing is guarded; CI audit and Expo Doctor run on every release; reassess on Expo SDK upgrade.",
+      "expiry": "2026-11-30"
+    },
+    {
+      "package": "image-size",
+      "advisory": "GHSA-5p2g-fcmc-qvqq",
+      "summary": "JXL and HEIF parser denial of service through infinite loops",
+      "owner": "Ledgr engineering",
+      "severity": "high",
+      "status": "temporarily-allowlisted",
+      "rationale": "This is a transitive Expo/Metro build-tool dependency; Ledgr does not expose the affected parser as a server endpoint.",
+      "mitigation": "No production server-side execution depends on the package; lockfile is committed; CI audit and Expo Doctor remain mandatory; reassess on Expo SDK upgrade.",
+      "expiry": "2026-11-30"
+    },
+    {
+      "package": "nanoid",
+      "advisory": "GHSA-2v37-7h3g-55p8",
+      "summary": "Custom generators can loop indefinitely when size is zero",
+      "owner": "Ledgr engineering",
+      "severity": "high",
+      "status": "temporarily-allowlisted",
+      "rationale": "The advisory is transitive in the Metro/Expo build graph and Ledgr does not pass attacker-controlled zero-size generator arguments.",
+      "mitigation": "Application identifiers use controlled generators; lockfile is committed; CI audit and Expo Doctor run before release; reassess on Expo SDK upgrade.",
+      "expiry": "2026-11-30"
+    }
+  ]
+}

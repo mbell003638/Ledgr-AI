@@ -113,6 +113,9 @@ export async function getSettings(): Promise<Record<string, any>> {
     themeMode: s.themeMode ?? 'system',
     enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
     enabledCapabilities: Array.isArray(s.enabledCapabilities) ? s.enabledCapabilities : null,
+    aiDataMode: s.aiDataMode === 'detailed' ? 'detailed' : 'summary',
+    aiRememberHistory: s.aiRememberHistory === true,
+    aiCustomHostConfirmed: s.aiCustomHostConfirmed === true,
     managerCommissionPct: Number(s.managerCommissionPct || 0),
   };
 }

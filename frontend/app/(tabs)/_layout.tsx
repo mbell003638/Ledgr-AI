@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Tabs } from "expo-router";
 import { Platform, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
@@ -10,6 +10,8 @@ import Settings from "lucide-react-native/icons/settings";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
+import { api } from "@/src/api";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 const TAB_ICON_SIZE = 22;
 
@@ -124,6 +126,14 @@ export default function TabsLayout() {
   // The prototype is 80px tall. A 64px content area plus the real bottom
   // inset keeps that proportion while clearing gesture and three-button bars.
   const tabBarBottomInset = Math.max(insets.bottom, 16);
+  const [settings, setSettings] = useState<any>(null);
+  useEffect(() => {
+    let active = true;
+    api.getSettings().then((value) => { if (active) setSettings(value || {}); }).catch(() => { if (active) setSettings({}); });
+    return () => { active = false; };
+  }, []);
+  const reportingEnabled = settings != null && isCapabilityEnabled(settings, "reporting");
+  const accountsEnabled = settings != null && (isCapabilityEnabled(settings, "invoicing") || isCapabilityEnabled(settings, "procurement"));
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
@@ -174,6 +184,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="suppliers"
           options={{
+            href: settings == null || accountsEnabled ? undefined : null,
             title: "Accounts",
             tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Users} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-suppliers",
@@ -190,6 +201,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="reports"
           options={{
+            href: settings == null || reportingEnabled ? undefined : null,
             title: "Reports",
             tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={PieChart} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-reports",

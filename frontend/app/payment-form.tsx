@@ -103,7 +103,7 @@ export default function PaymentForm() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-payment" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close payment form" testID="btn-close-payment" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>{editId ? "Edit Payment" : "New Payment"}</Text>
         <View style={{ width: 26 }} />
       </View>
@@ -114,7 +114,7 @@ export default function PaymentForm() {
             <Text style={styles.label}>Payment Type</Text>
             <View style={styles.segRowFull}>
               {([["supplier_payment", "Supplier"], ["drawing", isPartnerMode ? "Withdraw Capital" : "Owner Withdrawal"], ["commission_payment", "Commission"]] as const).map(([v, lbl]) => (
-                <Pressable key={v} testID={`ptype-${v}`} onPress={() => setType(v)} style={[styles.segBtnFull, type === v && styles.segBtnActive]}>
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected: type === v }} accessibilityLabel={lbl} key={v} testID={`ptype-${v}`} onPress={() => setType(v)} style={[styles.segBtnFull, type === v && styles.segBtnActive]}>
                   <Text style={[styles.segText, type === v && styles.segTextActive]}>{lbl}</Text>
                 </Pressable>
               ))}
@@ -140,7 +140,7 @@ export default function PaymentForm() {
                 {partnerOptions.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
                     {partnerOptions.map((p) => (
-                      <Pressable key={p} testID={`partner-chip-${p}`} onPress={() => setPartnerName(p)} style={[styles.chip, partnerName === p && styles.chipActive]}>
+                      <Pressable accessibilityRole="radio" accessibilityState={{ selected: partnerName === p }} accessibilityLabel={`Capital account ${p}`} key={p} testID={`partner-chip-${p}`} onPress={() => setPartnerName(p)} style={[styles.chip, partnerName === p && styles.chipActive]}>
                         <Text style={[styles.chipText, partnerName === p && styles.chipTextActive]}>{p}</Text>
                       </Pressable>
                     ))}
@@ -160,12 +160,14 @@ export default function PaymentForm() {
             <Text style={[styles.label, { marginTop: 12 }]}>Payment Method</Text>
             <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
               <Pressable
+                accessibilityRole="radio" accessibilityState={{ selected: method === "cash" }} accessibilityLabel="Cash payment method"
                 onPress={() => { setMethod("cash"); }}
                 style={[styles.segBtnFull, { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border }, method === "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
               >
                 <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface, textAlign: "center" }, method === "cash" && { color: "#fff" }]}>Cash</Text>
               </Pressable>
               <Pressable
+                accessibilityRole="radio" accessibilityState={{ selected: method !== "cash" }} accessibilityLabel="Bank or custom payment method"
                 onPress={() => { setMethod(method === "cash" ? "" : method); }}
                 style={[styles.segBtnFull, { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.color.border }, method !== "cash" && { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary }]}
               >
@@ -180,11 +182,13 @@ export default function PaymentForm() {
             <TextInput testID="input-payment-notes" value={notes} onChangeText={setNotes} placeholder="e.g. Payment for Invoice INV-001, July rent, equipment" placeholderTextColor={theme.color.muted} style={[styles.input, { minHeight: 60 }]} multiline />
           </Card>
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable testID="btn-save-payment" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${editId ? "Update" : "Save"} payment`} testID="btn-save-payment" onPress={save} disabled={saving} style={({ pressed }) => [styles.saveBtn, (pressed || saving) && { opacity: 0.85 }]}>
+
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? "Update Payment" : "Save Payment"}</Text>}
           </Pressable>
           {editId ? (
-            <Pressable testID="btn-delete-payment" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Delete payment" testID="btn-delete-payment" onPress={remove} disabled={deleting} style={({ pressed }) => [{ padding: theme.spacing.md, alignItems: "center", marginTop: theme.spacing.sm }, (pressed || deleting) && { opacity: 0.85 }]}>
+
               {deleting ? <ActivityIndicator color={theme.color.error} /> : <Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 14 }}>Delete Payment</Text>}
             </Pressable>
           ) : null}

@@ -152,6 +152,7 @@ async function call(
 
 const AI_REQUEST_TIMEOUT_MS = 60_000;
 const AI_TRANSIENT_RETRY_MS = 1_500;
+const aiRequestId = () => `ledgr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 const TRANSIENT_AI_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function delay(ms: number): Promise<void> {
@@ -220,6 +221,7 @@ async function callGeminiModel(
   prompt: string,
   parts: any[],
   schema?: any,
+  requestId = aiRequestId(),
 ): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/models/${model}:generateContent`;
@@ -232,7 +234,7 @@ async function callGeminiModel(
   };
   const res = await fetchAI(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey, 'x-request-id': requestId },
     body: JSON.stringify(body),
   });
   const text = await res.text();
@@ -251,15 +253,16 @@ async function callGemini(
   parts: any[],
   schema?: any,
 ): Promise<string> {
+  const requestId = aiRequestId();
   try {
-    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema);
+    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema, requestId);
   } catch (error: any) {
     // If a model-not-found surfaces for the (deprecated) DEFAULT model, retry once
     // with the current alias before letting the actionable error from (d) bubble up.
     const msg = error?.message || '';
     const looksLikeModelIssue = isModelNotFoundError(0, msg) || /update the model name/i.test(msg);
     if (looksLikeModelIssue && cfg.model === DEPRECATED_DEFAULT_GEMINI_MODEL) {
-      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema);
+      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema, requestId);
     }
     throw error;
   }

@@ -83,14 +83,25 @@ function ThemedStack() {
   const { effective } = useThemeMode();
   const { ready: onboardingReady, hasOnboarded } = useOnboardingGate();
   const [settings, setSettings] = useState<any>(null);
+  const [settingsReady, setSettingsReady] = useState(false);
   const { width } = useWindowDimensions();
   useEffect(() => {
-    if (!hasOnboarded) { setSettings(null); return; }
-    api.getSettings().then(setSettings).catch(() => setSettings({}));
+    let active = true;
+    if (!hasOnboarded) {
+      setSettings(null);
+      setSettingsReady(false);
+      return () => { active = false; };
+    }
+    setSettingsReady(false);
+    api.getSettings()
+      .then((value) => { if (active) setSettings(value || {}); })
+      .catch(() => { if (active) setSettings({}); })
+      .finally(() => { if (active) setSettingsReady(true); });
+    return () => { active = false; };
   }, [hasOnboarded]);
-  const canOpen = (key: CapabilityKey) => settings == null || isCapabilityEnabled(settings, key);
+  const canOpen = (key: CapabilityKey) => settingsReady && settings != null && isCapabilityEnabled(settings, key);
   const isWideWeb = Platform.OS === "web" && width >= 768;
-  if (!onboardingReady) return <AppOpeningSplashScreen />;
+  if (!onboardingReady || (hasOnboarded && !settingsReady)) return <AppOpeningSplashScreen />;
   return (
     <View style={{ flex: 1, backgroundColor: isWideWeb ? theme.color.surfaceTertiary : theme.color.surface, alignItems: "center" }}>
       <StatusBar style={effective === "dark" ? "light" : "dark"} />

@@ -230,6 +230,67 @@ export class LocationDomainService {
     });
   }
 
+  async posSettlementPreview(input: { locationId: string; openingCash: number; openedAt?: string; date: string }) {
+    const c = await this.requireContext(input.date);
+    const locationId = await requireLocation(this.db, c.bookId, input.locationId);
+    const openingCash = round2(Number(input.openingCash || 0));
+    if (!Number.isFinite(openingCash) || openingCash < 0) throw new Error('Opening cash must be zero or a valid amount');
+    const fromDate = String(input.openedAt || input.date).slice(0, 10);
+    const row = await this.db.first<{ movement: number }>(
+      `SELECT COALESCE(SUM(l.debit-l.credit),0) AS movement
+       FROM v2_journal_entries j
+       JOIN v2_journal_lines l ON l.journal_id=j.id
+       JOIN v2_accounts a ON a.id=l.account_id
+       WHERE j.book_id=? AND j.date>=? AND j.date<=? AND l.location_id=? AND a.code=?`,
+      [c.bookId, fromDate, input.date, locationId, V2_ACCOUNT_CODES.CASH],
+    );
+    const movement = round2(Number(row?.movement || 0));
+    return { locationId, date: input.date, openingCash, ledgerMovement: movement, expectedCash: round2(openingCash + movement) };
+  }
+
+  async settlePosSession(input: { sessionId: string; locationId: string; openingCash: number; openedAt?: string; date: string; countedCash: number; notes?: string }) {
+    await this.requireModule();
+    const c = await this.requireContext(input.date);
+    const countedCash = round2(Number(input.countedCash));
+    if (!Number.isFinite(countedCash) || countedCash < 0) throw new Error('Counted cash must be zero or a valid amount');
+    const preview = await this.posSettlementPreview(input);
+    const variance = round2(countedCash - preview.expectedCash);
+    const sourceId = `pos_settlement:${String(input.sessionId || '').trim()}`;
+    if (sourceId.length <= 'pos_settlement:'.length) throw new Error('POS session id is required');
+    const existing = await this.db.first<{ id: string; metadata: string }>("SELECT id,metadata FROM v2_sources WHERE id=? AND book_id=? AND type='pos_settlement'", [sourceId, c.bookId]);
+    if (existing) {
+      let metadata: Record<string, any> = {};
+      try { metadata = JSON.parse(existing.metadata || '{}'); } catch { metadata = {}; }
+      return { ...preview, countedCash: Number(metadata.countedCash ?? countedCash), variance: Number(metadata.variance ?? variance), sourceId, journalId: null, alreadySettled: true };
+    }
+    if (variance === 0) return { ...preview, countedCash, variance, sourceId, journalId: null, alreadySettled: false };
+    const amount = Math.abs(variance);
+    const source = {
+      id: sourceId,
+      bookId: c.bookId,
+      type: 'pos_settlement',
+      date: input.date,
+      locationId: preview.locationId,
+      metadata: { sessionId: input.sessionId, locationId: preview.locationId, openingCash: preview.openingCash, ledgerMovement: preview.ledgerMovement, expectedCash: preview.expectedCash, countedCash, variance, notes: String(input.notes || '').trim() },
+    };
+    const journal = await this.repo.postSourceJournal(source, {
+      bookId: c.bookId,
+      periodId: c.periodId,
+      date: input.date,
+      memo: variance > 0 ? 'POS cash overage settlement' : 'POS cash shortage settlement',
+      lines: variance > 0
+        ? [
+            { accountId: acct(c.bookId, V2_ACCOUNT_CODES.CASH), debit: amount, credit: 0, locationId: preview.locationId },
+            { accountId: acct(c.bookId, V2_ACCOUNT_CODES.POS_VARIANCE), debit: 0, credit: amount, locationId: preview.locationId },
+          ]
+        : [
+            { accountId: acct(c.bookId, V2_ACCOUNT_CODES.POS_VARIANCE), debit: amount, credit: 0, locationId: preview.locationId },
+            { accountId: acct(c.bookId, V2_ACCOUNT_CODES.CASH), debit: 0, credit: amount, locationId: preview.locationId },
+          ],
+    });
+    return { ...preview, countedCash, variance, sourceId: source.id, journalId: journal.id, alreadySettled: false };
+  }
+
   private async cashAt(bookId: string, locationId: string, code: string): Promise<number> {
     const row = await this.db.first<{ bal: number }>(
       `SELECT COALESCE(SUM(l.debit - l.credit), 0) AS bal

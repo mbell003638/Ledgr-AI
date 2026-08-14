@@ -297,9 +297,25 @@ export default function AskBooks() {
   const [pendingProposal, setPendingProposal] = useState<ValidatedProposal | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
+  const [rememberHistory, setRememberHistory] = useState(false);
 
   useEffect(() => {
     let active = true;
+    api.getSettings().then((settings) => {
+      if (!active) return;
+      setAiDataMode(settings.aiDataMode === 'detailed' ? 'detailed' : 'summary');
+      setRememberHistory(settings.aiRememberHistory === true);
+    }).catch(() => {
+      if (active) { setAiDataMode('summary'); setRememberHistory(false); }
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!rememberHistory) { historyLoaded.current = true; return () => { active = false; }; }
+    historyLoaded.current = false;
     AsyncStorage.getItem(historyKey)
       .then((raw) => {
         if (!active) return;
@@ -308,12 +324,12 @@ export default function AskBooks() {
       .catch(() => {})
       .finally(() => { if (active) historyLoaded.current = true; });
     return () => { active = false; };
-  }, [historyKey]);
+  }, [historyKey, rememberHistory]);
 
   useEffect(() => {
-    if (!historyLoaded.current) return;
+    if (!historyLoaded.current || !rememberHistory) return;
     AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(messages))).catch(() => {});
-  }, [historyKey, messages]);
+  }, [historyKey, messages, rememberHistory]);
 
   useEffect(() => {
     const applyFrame = (e?: { endCoordinates?: { height?: number } }) => {
@@ -361,7 +377,7 @@ export default function AskBooks() {
 
   const buildContext = async (): Promise<string> => {
     const today = new Date();
-    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso());
+    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso(), aiDataMode);
     return JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
   };
   const applyPendingProposal = async () => {
@@ -442,6 +458,9 @@ export default function AskBooks() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Pressable accessibilityLabel="Back" onPress={() => { Keyboard.dismiss(); router.back(); }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="AI privacy settings" onPress={() => router.push("/advanced-settings")} style={styles.privacyBadge}>
+          <Text style={styles.privacyBadgeText}>{aiDataMode === 'detailed' ? 'Detailed context' : 'Summary only'}</Text>
+        </Pressable>
         <Text style={styles.headerTitle}>Ask about your books</Text>
         {messages.length > 0 ? (
           <Pressable accessibilityLabel="Clear Ask AI history" hitSlop={8} onPress={clearHistory}>
@@ -470,6 +489,7 @@ export default function AskBooks() {
               <View style={styles.welcome}>
                 <Ionicons name="sparkles-outline" size={32} color={theme.color.brandPrimary} />
                 <Text style={styles.welcomeText}>Ask me anything about your finances. I’ll answer using your actual data.</Text>
+                <Text style={styles.privacyHint}>{aiDataMode === 'detailed' ? 'Detailed context is enabled for this book. Change it in Advanced Settings.' : 'Summary-only mode is active. Party names, recent entries, and notes stay on this device.'}</Text>
               </View>
               <Text style={styles.suggestLabel}>Try asking</Text>
               {SUGGESTIONS.map((s) => (
@@ -601,10 +621,13 @@ function makeStyles(theme: any) {
     container: { flex: 1, backgroundColor: theme.color.surface },
     body: { flex: 1 },
     headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
-    headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
+    headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, flex: 1, marginHorizontal: 8 },
+    privacyBadge: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "18" },
+    privacyBadgeText: { fontSize: 10, fontWeight: "700", color: theme.color.brandPrimary },
     messageContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md, flexGrow: 1 },
     welcome: { alignItems: "center", padding: theme.spacing.xl, gap: 12 },
     welcomeText: { textAlign: "center", color: theme.color.muted, fontSize: 14, lineHeight: 20 },
+    privacyHint: { textAlign: "center", color: theme.color.muted, fontSize: 11, lineHeight: 16 },
     suggestLabel: { fontSize: 12, fontWeight: "700", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
     suggestChip: { padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginBottom: 8 },
     suggestText: { fontSize: 14, color: theme.color.onSurface },

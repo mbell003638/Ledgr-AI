@@ -314,11 +314,11 @@ export default function SupplierDetail() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-back" onPress={() => router.back()} hitSlop={10}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Go back" testID="btn-back" onPress={() => router.back()} hitSlop={10}>
           <Ionicons name="chevron-back" size={26} color={theme.color.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle}>Vendor Detail</Text>
-        <Pressable testID="btn-edit-supplier" onPress={() => router.push({ pathname: "/party-form", params: { id: id, type: "supplier" } })} hitSlop={10}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Edit supplier" testID="btn-edit-supplier" onPress={() => router.push({ pathname: "/party-form", params: { id: id, type: "supplier" } })} hitSlop={10}>
           <Ionicons name="pencil-outline" size={22} color={theme.color.brandPrimary} />
         </Pressable>
       </View>
@@ -442,7 +442,7 @@ export default function SupplierDetail() {
               >
                 <Ionicons name="create-outline" size={18} color={theme.color.brandPrimary} />
               </Pressable>
-              {isNote ? <Pressable accessibilityLabel={`Reverse ${label}`} hitSlop={8} onPress={() => reverseNote(t)}>
+              {isNote ? <Pressable accessibilityRole="button" accessibilityLabel={`Reverse ${label}`} hitSlop={8} onPress={() => reverseNote(t)}>
                 <Ionicons name="trash-outline" size={18} color={theme.color.error} />
               </Pressable> : null}
             </View>
@@ -460,7 +460,7 @@ export default function SupplierDetail() {
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>{editingNoteId ? "Edit" : "Issue"} {noteKind === "credit" ? "Credit" : "Debit"} Note for {data.name}</Text>
               {!editingNoteId ? <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                {(["credit", "debit"] as const).map((kind) => <Pressable key={kind} onPress={() => setNoteKind(kind)} style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: noteKind === kind ? theme.color.brandPrimary : theme.color.border, backgroundColor: noteKind === kind ? `${theme.color.brandPrimary}20` : theme.color.surfaceSecondary }}><Text style={{ color: noteKind === kind ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "700" }}>{kind === "credit" ? "Credit Note" : "Debit Note"}</Text></Pressable>)}
+                {(["credit", "debit"] as const).map((kind) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: noteKind === kind }} accessibilityLabel={kind === "credit" ? "Credit note" : "Debit note"} key={kind} onPress={() => setNoteKind(kind)} style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", borderWidth: 1, borderColor: noteKind === kind ? theme.color.brandPrimary : theme.color.border, backgroundColor: noteKind === kind ? `${theme.color.brandPrimary}20` : theme.color.surfaceSecondary }}><Text style={{ color: noteKind === kind ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "700" }}>{kind === "credit" ? "Credit Note" : "Debit Note"}</Text></Pressable>)}
               </View> : null}
               {noteError ? <Text style={styles.modalErr}>{noteError}</Text> : null}
               <Text style={styles.modalLabel}>Date</Text>

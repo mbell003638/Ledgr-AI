@@ -86,7 +86,7 @@ export default function StockTransfersScreen() {
       <Ionicons name="swap-horizontal-outline" size={40} color={theme.color.brandPrimary} />
       <Text style={styles.title}>Stock transfers are off</Text>
       <Text style={styles.sub}>Enable Multi-location retail from Settings to move stock between locations.</Text>
-      <Pressable onPress={() => router.replace("/customize-features")} style={styles.primary}><Text style={styles.primaryText}>Open capabilities</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open capabilities" onPress={() => router.replace("/customize-features")} style={styles.primary}><Text style={styles.primaryText}>Open capabilities</Text></Pressable>
     </View></SafeAreaView>;
   }
 
@@ -95,13 +95,13 @@ export default function StockTransfersScreen() {
       <Ionicons name="cube-outline" size={40} color={theme.color.brandPrimary} />
       <Text style={styles.title}>Live Product Stock is off</Text>
       <Text style={styles.sub}>Turn on Live Product Stock before moving units between shops. This keeps each transfer connected to inventory and COGS.</Text>
-      <Pressable onPress={() => router.replace("/customize-features")} style={styles.primary}><Text style={styles.primaryText}>Open capabilities</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open capabilities" onPress={() => router.replace("/customize-features")} style={styles.primary}><Text style={styles.primaryText}>Open capabilities</Text></Pressable>
     </View></SafeAreaView>;
   }
 
   return <SafeAreaView style={styles.container} edges={["top"]}>
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={23} color={theme.color.onSurface} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={23} color={theme.color.onSurface} /></Pressable>
       <View style={{ flex: 1 }}><Text style={styles.headerTitle}>Stock transfers</Text><Text style={styles.headerSub}>Posted transfers update each shop’s stock ledger.</Text></View>
     </View>
     <ScrollView contentContainerStyle={styles.content}>
@@ -109,20 +109,20 @@ export default function StockTransfersScreen() {
         <Text style={styles.sectionTitle}>Move stock</Text>
         <Text style={styles.label}>Product</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 12 }}>
-          {products.map((product: any) => <Pressable key={product.id} onPress={() => setProductId(String(product.id))} style={[styles.chip, productId === product.id && styles.selected]}>
+          {products.map((product: any) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: productId === product.id }} accessibilityLabel={`Product ${product.name}`} key={product.id} onPress={() => setProductId(String(product.id))} style={[styles.chip, productId === product.id && styles.selected]}>
             <Text style={[styles.chipText, productId === product.id && { color: theme.color.brandPrimary }]}>{product.name} · {Number(product.qty || 0)}</Text>
           </Pressable>)}
         </ScrollView>
         <Text style={styles.label}>From</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 10 }}>
-          {locations.map((location: any) => <Pressable key={location.id} onPress={() => setFromId(location.id)} style={[styles.chip, fromId === location.id && styles.selected]}><Text style={[styles.chipText, fromId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}
+          {locations.map((location: any) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: fromId === location.id }} accessibilityLabel={`From ${location.name}`} key={location.id} onPress={() => setFromId(location.id)} style={[styles.chip, fromId === location.id && styles.selected]}><Text style={[styles.chipText, fromId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}
         </ScrollView>
         <Text style={styles.label}>To</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 12 }}>
-          {locations.map((location: any) => <Pressable key={location.id} onPress={() => setToId(location.id)} style={[styles.chip, toId === location.id && styles.selected]}><Text style={[styles.chipText, toId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}
+          {locations.map((location: any) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: toId === location.id }} accessibilityLabel={`To ${location.name}`} key={location.id} onPress={() => setToId(location.id)} style={[styles.chip, toId === location.id && styles.selected]}><Text style={[styles.chipText, toId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}
         </ScrollView>
-        <View style={styles.quantityRow}><Text style={styles.label}>Quantity</Text><Pressable onPress={() => setQuantity((current) => String(Math.max(1, Number(current || 0) - 1)))} style={styles.stepper}><Text style={styles.stepperText}>−</Text></Pressable><Text style={styles.quantity}>{quantity || "0"}</Text><Pressable onPress={() => setQuantity((current) => String(Number(current || 0) + 1))} style={styles.stepper}><Text style={styles.stepperText}>+</Text></Pressable></View>
-        <Pressable onPress={create} disabled={saving || !productId || !fromId || !toId} style={[styles.primary, (saving || !productId || !fromId || !toId) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Post transfer</Text>}</Pressable>
+        <View style={styles.quantityRow}><Text style={styles.label}>Quantity</Text><Pressable accessibilityRole="button" accessibilityLabel="Decrease quantity" onPress={() => setQuantity((current) => String(Math.max(1, Number(current || 0) - 1)))} style={styles.stepper}><Text style={styles.stepperText}>−</Text></Pressable><Text style={styles.quantity}>{quantity || "0"}</Text><Pressable accessibilityRole="button" accessibilityLabel="Increase quantity" onPress={() => setQuantity((current) => String(Number(current || 0) + 1))} style={styles.stepper}><Text style={styles.stepperText}>+</Text></Pressable></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Post stock transfer" onPress={create} disabled={saving || !productId || !fromId || !toId} style={[styles.primary, (saving || !productId || !fromId || !toId) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Post transfer</Text>}</Pressable>
       </View>
       <Text style={styles.sectionTitle}>Posted transfers</Text>
       {transfers.length === 0 ? <View style={styles.empty}><Ionicons name="cube-outline" size={28} color={theme.color.muted} /><Text style={styles.emptyTitle}>No transfers yet</Text><Text style={styles.sub}>A posted transfer creates paired stock moves between the selected locations.</Text></View> : transfers.map((transfer: any) => {

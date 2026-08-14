@@ -225,9 +225,9 @@ export default function QuotesScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerBar}>
-          <Pressable onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Quotes</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back to quotes" onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Quotes</Text></Pressable>
           <Text style={styles.headerTitle}>{selected.quoteNumber}</Text>
-          <Pressable onPress={() => openEdit(selected)} disabled={isConverted}><Ionicons name="create-outline" size={22} color={isConverted ? theme.color.muted : theme.color.brandPrimary} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Edit quote" onPress={() => openEdit(selected)} disabled={isConverted}><Ionicons name="create-outline" size={22} color={isConverted ? theme.color.muted : theme.color.brandPrimary} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
           <Card>
@@ -256,21 +256,21 @@ export default function QuotesScreen() {
           {isConverted && <Text style={[styles.sub, { textAlign: "center", marginTop: 12 }]}>Already converted to an invoice ✓</Text>}
 
           <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-            <Pressable onPress={() => sharePdf(selected)} style={[styles.smBtn, { backgroundColor: theme.color.brandSecondary }]}><Ionicons name="document-outline" size={16} color="#fff" /><Text style={styles.smBtnText}>PDF</Text></Pressable>
-            {selected.clientPhone ? <Pressable onPress={() => shareWhatsApp(selected)} style={[styles.smBtn, { backgroundColor: "#25D366" }]}><Ionicons name="logo-whatsapp" size={16} color="#fff" /><Text style={styles.smBtnText}>WhatsApp</Text></Pressable> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Share quote PDF" onPress={() => sharePdf(selected)} style={[styles.smBtn, { backgroundColor: theme.color.brandSecondary }]}><Ionicons name="document-outline" size={16} color="#fff" /><Text style={styles.smBtnText}>PDF</Text></Pressable>
+            {selected.clientPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Share quote by WhatsApp" onPress={() => shareWhatsApp(selected)} style={[styles.smBtn, { backgroundColor: "#25D366" }]}><Ionicons name="logo-whatsapp" size={16} color="#fff" /><Text style={styles.smBtnText}>WhatsApp</Text></Pressable> : null}
           </View>
 
           {!isConverted && (
             <View style={styles.statusRow}>
               {["draft", "sent", "accepted", "expired"].map((st) => (
-                <Pressable key={st} onPress={() => setStatus(selected, st)} style={[styles.statusChip, selected.status === st && styles.statusChipActive]}>
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected: selected.status === st }} accessibilityLabel={`Set status ${st}`} key={st} onPress={() => setStatus(selected, st)} style={[styles.statusChip, selected.status === st && styles.statusChipActive]}>
                   <Text style={[styles.statusChipText, selected.status === st && { color: "#fff" }]}>{st}</Text>
                 </Pressable>
               ))}
             </View>
           )}
 
-          <Pressable onPress={() => remove(selected)} style={styles.deleteBtn}><Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 13 }}>Delete Quote</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Delete quote" onPress={() => remove(selected)} style={styles.deleteBtn}><Text style={{ color: theme.color.error, fontWeight: "600", fontSize: 13 }}>Delete Quote</Text></Pressable>
           <View style={{ height: 60 }} />
         </ScrollView>
       </SafeAreaView>
@@ -281,7 +281,7 @@ export default function QuotesScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Quotes / Estimates</Text>
-        <Pressable onPress={openNew}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create quote" onPress={openNew}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
         {quotes.length === 0 ? (
@@ -309,7 +309,7 @@ export default function QuotesScreen() {
           <View style={{ flex: 1, width: "100%", maxWidth: 480, backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.8)" : theme.color.surface, justifyContent: "flex-end" }}>
             <SafeAreaView style={[styles.container, { width: "100%", maxHeight: Platform.OS === "web" ? "95%" : "100%", borderTopLeftRadius: Platform.OS === "web" ? 20 : 0, borderTopRightRadius: Platform.OS === "web" ? 20 : 0, overflow: "hidden", borderWidth: Platform.OS === "web" ? 1 : 0, borderColor: theme.color.border }]} edges={["top"]}>
           <View style={styles.headerBar}>
-            <Pressable onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close quote form" onPress={() => setShowForm(false)}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
             <Text style={styles.headerTitle}>{editId ? "Edit Quote" : "New Quote"}</Text>
             <View style={{ width: 26 }} />
           </View>
@@ -338,10 +338,10 @@ export default function QuotesScreen() {
                     <TextInput value={l.description} onChangeText={(v) => updateLine(i, "description", v)} placeholder="Description" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 2 }]} />
                     <TextInput value={l.qty ? String(l.qty) : ""} onChangeText={(v) => updateLine(i, "qty", v)} placeholder="Qty" keyboardType="decimal-pad" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
                     <TextInput value={l.rate ? String(l.rate) : ""} onChangeText={(v) => updateLine(i, "rate", v)} placeholder="Rate" keyboardType="decimal-pad" placeholderTextColor={theme.color.muted} style={[styles.input, { flex: 1 }]} />
-                    {lines.length > 1 ? <Pressable onPress={() => removeLine(i)}><Ionicons name="close-circle" size={22} color={theme.color.error} /></Pressable> : null}
+                    {lines.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove line ${i + 1}`} onPress={() => removeLine(i)}><Ionicons name="close-circle" size={22} color={theme.color.error} /></Pressable> : null}
                   </View>
                 ))}
-                <Pressable onPress={addLine} style={styles.addLine}><Ionicons name="add" size={18} color={theme.color.brandPrimary} /><Text style={{ color: theme.color.brandPrimary, fontWeight: "600" }}>Add line</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Add quote line" onPress={addLine} style={styles.addLine}><Ionicons name="add" size={18} color={theme.color.brandPrimary} /><Text style={{ color: theme.color.brandPrimary, fontWeight: "600" }}>Add line</Text></Pressable>
                 <View style={styles.totalRow}><Text style={styles.totalLabel}>Total{taxRateDefault ? ` (incl. ${taxLabelDefault || "tax"} ${taxRateDefault}%)` : ""}</Text><Text style={styles.totalVal}>{currSym}{total.toFixed(2)}</Text></View>
               </Card>
 

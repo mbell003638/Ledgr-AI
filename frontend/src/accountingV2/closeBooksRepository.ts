@@ -98,7 +98,7 @@ export class V2CloseBooksRepository {
       const returns = movement('4010');
       const sales = cents(-movement('4000') - returns);
       const purchases = cents(Math.max(0, movement('1200')));
-      const expenses = cents(Math.max(0, movement('6000') + movement('6200') + movement('6300')));
+      const expenses = cents(Math.max(0, movement('6000') + movement('6200') + movement('6300') + movement(V2_ACCOUNT_CODES.POS_VARIANCE)));
       const drawings = cents(Math.max(0, movement('3100')));
       // Perpetual already posted Dr 5000 / Cr 1200 at sale time. Snapshot the
       // period's posted 5000 movement so close does not apply the periodic formula.

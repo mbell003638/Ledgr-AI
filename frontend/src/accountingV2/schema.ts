@@ -45,7 +45,7 @@ export function defaultAccounts(bookId: string): V2Account[] {
     ['2310', 'Payroll Tax Payable', 'liability'], ['2500', 'Other Liabilities', 'liability'],
     ['3000', 'Capital Accounts', 'equity'], ['3100', 'Capital Withdrawals', 'equity'], ['3200', 'Current Profit', 'equity'], ['3300', 'Retained Earnings', 'equity'], ['3400', 'Owner Contributions', 'equity'],
     ['4000', 'Sales Revenue', 'revenue'], ['4010', 'Sales Returns', 'revenue'], ['5000', 'Cost of Goods Sold', 'expense'],
-    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'],
+    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'], ['6400', 'POS Cash Variance', 'expense'],
   ];
   return defs.map(([code, name, type]) => ({ id: `${bookId}:account:${code}`, bookId, code, name, type, active: true }));
 }

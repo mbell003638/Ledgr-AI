@@ -272,6 +272,8 @@ export class V2AppService {
   transferLocationCash(input: AnyRecord) { return this.locations.transferCash(input as any); }
   transferLocationStock(input: AnyRecord) { return this.locations.transferStock(input as any); }
   listLocationStockTransfers() { return this.locations.listStockTransfers(); }
+  posSettlementPreview(input: AnyRecord) { return this.locations.posSettlementPreview(input as any); }
+  settlePosSession(input: AnyRecord) { return this.locations.settlePosSession(input as any); }
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {
