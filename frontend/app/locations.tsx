@@ -1,61 +1,222 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Alert, ActivityIndicator } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { View, Text, StyleSheet, Pressable, ScrollView, RefreshControl, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { ScreenHeader, Card } from "@/src/components/UI";
+import { FormField, FormActions } from "@/src/components/FormCard";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
+import { parseMoneyInput } from "@/src/money";
+import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
+import { getCurrencySymbol } from "@/src/utils/currency";
+import { confirmAction } from "@/src/utils/alerts";
+import { LocationPicker } from "@/src/components/LocationPicker";
+
+type Shop = { id: string; name: string };
+type Product = { id: string; name: string; qty: number };
 
 export default function LocationsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const [settings, setSettings] = useState<any>({});
-  const [locations, setLocations] = useState<any[]>([]);
+  const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [kind, setKind] = useState<"store" | "warehouse">("store");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [currency, setCurrency] = useState("$");
+
+  const [cashFrom, setCashFrom] = useState("");
+  const [cashTo, setCashTo] = useState("");
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashDate, setCashDate] = useState(localTodayIso());
+  const [stockFrom, setStockFrom] = useState("");
+  const [stockTo, setStockTo] = useState("");
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockQty, setStockQty] = useState("");
+  const [stockDate, setStockDate] = useState(localTodayIso());
+  const [stockEnabled, setStockEnabled] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [s, list] = await Promise.all([api.getSettings(), api.listLocations()]);
-      setSettings(s);
-      setLocations(list);
-    } catch (error: any) {
-      Alert.alert("Could not load locations", error?.message || "Try again.");
-    } finally { setLoading(false); }
+      const settings = await api.getSettings();
+      const on = isCapabilityEnabled(settings, "multi_location");
+      setEnabled(on);
+      setCurrency(getCurrencySymbol(settings.currency));
+      setStockEnabled(getEnabledFeatures(settings).includes("perpetualInventory"));
+      if (!on) { setShops([]); setLoading(false); setRefreshing(false); return; }
+      const rows = await api.listLocations();
+      const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
+      setShops(next);
+      const current = String(settings.activeLocationId || next[0]?.id || "");
+      setActiveId(current);
+      if (getEnabledFeatures(settings).includes("perpetualInventory")) {
+        const list = await api.listProducts(current || undefined);
+        setProducts((Array.isArray(list) ? list : []).map((p: any) => ({ id: String(p.id), name: String(p.name), qty: Number(p.qty || 0) })));
+      } else {
+        setProducts([]);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Could not load locations.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const add = async () => {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      const created = await api.createLocation({ name, code, kind });
-      setLocations((current) => [...current, created].sort((a, b) => String(a.name).localeCompare(String(b.name))));
-      setName(""); setCode("");
-    } catch (error: any) { Alert.alert("Could not add location", error?.message || "Try again."); }
-    finally { setSaving(false); }
+  const persistActive = async (id: string) => {
+    setActiveId(id);
+    const settings = await api.getSettings();
+    await api.updateSettings({ ...settings, activeLocationId: id });
   };
 
-  if (!loading && !isCapabilityEnabled(settings, "multi_location")) {
-    return <SafeAreaView style={styles.container}><View style={styles.center}><Ionicons name="storefront-outline" size={38} color={theme.color.brandPrimary} /><Text style={styles.title}>Multi-location retail is off</Text><Text style={styles.sub}>Enable this capability from Settings when you operate more than one store, warehouse, or POS point.</Text><Pressable onPress={() => router.replace("/customize-features")} style={styles.primary}><Text style={styles.primaryText}>Open capabilities</Text></Pressable></View></SafeAreaView>;
-  }
+  const addShop = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError("Enter a shop name."); return; }
+    setSaving(true); setError("");
+    try {
+      const created = await api.createLocation({ name: trimmed });
+      setName("");
+      if (!activeId && created?.id) await persistActive(created.id);
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not add this location.");
+    } finally { setSaving(false); }
+  };
 
-  return <SafeAreaView style={styles.container} edges={["top"]}>
-    <View style={styles.header}><Pressable onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={23} color={theme.color.onSurface} /></Pressable><View style={{ flex: 1 }}><Text style={styles.headerTitle}>Locations & POS</Text><Text style={styles.headerSub}>Keep each shop accountable while reporting together.</Text></View></View>
-    <ScrollView contentContainerStyle={styles.content}>
-      <View style={styles.formCard}><Text style={styles.sectionTitle}>Add a location</Text><TextInput value={name} onChangeText={setName} placeholder="Store name" placeholderTextColor={theme.color.muted} style={styles.input} /><TextInput value={code} onChangeText={setCode} placeholder="Short code (optional)" placeholderTextColor={theme.color.muted} autoCapitalize="characters" style={styles.input} /><View style={styles.kindRow}>{(["store", "warehouse"] as const).map((value) => <Pressable key={value} onPress={() => setKind(value)} style={[styles.kindButton, kind === value && styles.kindSelected]}><Ionicons name={value === "store" ? "storefront-outline" : "cube-outline"} size={16} color={kind === value ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.kindText, kind === value && { color: theme.color.brandPrimary }]}>{value === "store" ? "Store / POS" : "Warehouse"}</Text></Pressable>)}</View><Pressable onPress={add} disabled={saving || !name.trim()} style={[styles.primary, (saving || !name.trim()) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Add location</Text>}</Pressable></View>
-      <Text style={styles.sectionTitle}>Your locations <Text style={styles.count}>{locations.length}</Text></Text>
-      {locations.length === 0 ? <View style={styles.empty}><Ionicons name="map-outline" size={30} color={theme.color.muted} /><Text style={styles.emptyTitle}>No locations yet</Text><Text style={styles.sub}>Add your first store or warehouse to start assigning sales, POS sessions, and stock movement.</Text></View> : locations.map((location) => <View key={location.id} style={styles.locationCard}><View style={styles.locationIcon}><Ionicons name={location.kind === "warehouse" ? "cube-outline" : "storefront-outline"} size={22} color={theme.color.brandPrimary} /></View><View style={{ flex: 1 }}><Text style={styles.locationName}>{location.name}</Text><Text style={styles.locationSub}>{location.code || "No code"} · {location.kind === "warehouse" ? "Warehouse" : "Store / POS"}</Text></View><View style={[styles.status, { backgroundColor: location.active === false ? theme.color.border : theme.color.success + "22" }]}><Text style={{ color: location.active === false ? theme.color.muted : theme.color.success, fontSize: 10, fontWeight: "800" }}>{location.active === false ? "INACTIVE" : "ACTIVE"}</Text></View></View>)}
-      <View style={styles.info}><Ionicons name="information-circle-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.infoText}>Sales and stock records can carry a location ID without creating separate accounting books. Consolidated reports remain available.</Text></View>
-    </ScrollView>
-  </SafeAreaView>;
+  const archive = (shop: Shop) => {
+    confirmAction("Archive location?", `${shop.name} will be hidden. Past activity stays on the books.`, async () => {
+      try {
+        await api.archiveLocation(shop.id);
+        if (activeId === shop.id) {
+          const settings = await api.getSettings();
+          await api.updateSettings({ ...settings, activeLocationId: "" });
+        }
+        await load();
+      } catch (e: any) {
+        setError(e?.message || "Could not archive this location.");
+      }
+    });
+  };
+
+  const moveCash = async () => {
+    const dateIso = normalizeDateInput(cashDate);
+    const amount = parseMoneyInput(cashAmount);
+    if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the cash transfer date."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setError("Enter a cash amount to move."); return; }
+    setSaving(true); setError("");
+    try {
+      await api.transferLocationCash({ date: dateIso, fromLocationId: cashFrom, toLocationId: cashTo, amount, method: "cash" });
+      setCashAmount("");
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not transfer cash.");
+    } finally { setSaving(false); }
+  };
+
+  const moveStock = async () => {
+    const dateIso = normalizeDateInput(stockDate);
+    const qty = Number(String(stockQty).replace(",", "."));
+    if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the stock transfer date."); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { setError("Enter a quantity to move."); return; }
+    setSaving(true); setError("");
+    try {
+      await api.transferLocationStock({ date: dateIso, fromLocationId: stockFrom, toLocationId: stockTo, productId: stockProductId, qty });
+      setStockQty("");
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not transfer stock.");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScreenHeader title="Locations" subtitle="Each shop has its own cash and stock" />
+      {loading ? <ActivityIndicator style={{ marginTop: 24 }} color={theme.color.brandPrimary} /> : (
+        <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} /> } contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
+          {!enabled ? (
+            <Card>
+              <Text style={styles.guide}>Locations is optional. Turn it on in Customize Features so Shop A cash and stock stay separate from Shop B.</Text>
+              <Pressable onPress={() => router.push("/customize-features")} style={styles.link}><Text style={styles.linkText}>Customize Features</Text></Pressable>
+            </Card>
+          ) : (
+            <>
+              <Card>
+                <Text style={styles.section}>Shops</Text>
+                <FormField label="New shop" value={name} onChangeText={setName} placeholder="Shop A" />
+                <FormActions primaryLabel={saving ? "Saving…" : "Add shop"} onPrimary={addShop} primaryBusy={saving} primaryDisabled={saving} />
+                {shops.map((shop) => (
+                  <View key={shop.id} style={styles.shopRow}>
+                    <Pressable onPress={() => persistActive(shop.id)} style={{ flex: 1 }}>
+                      <Text style={styles.shopName}>{shop.name}{shop.id === activeId ? "  · current" : ""}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => archive(shop)}><Ionicons name="trash-outline" size={18} color={theme.color.muted} /></Pressable>
+                  </View>
+                ))}
+                            </Card>
+              <Card>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><View style={{ flex: 1 }}><Text style={styles.section}>POS sessions</Text><Text style={styles.guide}>Open and close each cash drawer by store and register.</Text></View><Pressable onPress={() => router.push("/pos-sessions")} style={styles.link}><Text style={styles.linkText}>Open POS</Text></Pressable></View>
+              </Card>
+              <Card>
+                <Text style={styles.section}>Move cash</Text>
+                <LocationPicker label="From" value={cashFrom} onChange={setCashFrom} />
+                <LocationPicker label="To" value={cashTo} onChange={setCashTo} />
+                <FormField label={`Amount (${currency})`} value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" />
+                <FormField label="Date" value={cashDate} onChangeText={setCashDate} />
+                <FormActions primaryLabel="Transfer cash" onPrimary={moveCash} primaryBusy={saving} primaryDisabled={saving} />
+              </Card>
+
+              {stockEnabled ? (
+                <Card>
+                  <Text style={styles.section}>Move stock</Text>
+                  <LocationPicker label="From" value={stockFrom} onChange={setStockFrom} />
+                  <LocationPicker label="To" value={stockTo} onChange={setStockTo} />
+                  <Text style={styles.hint}>Product</Text>
+                  <View style={styles.wrap}>
+                    {products.map((p) => (
+                      <Pressable key={p.id} onPress={() => setStockProductId(p.id)} style={[styles.chip, stockProductId === p.id && styles.chipOn]}>
+                        <Text style={styles.chipText}>{p.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <FormField label="Quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
+                  <FormField label="Date" value={stockDate} onChangeText={setStockDate} />
+                  <FormActions primaryLabel="Transfer stock" onPrimary={moveStock} primaryBusy={saving} primaryDisabled={saving} />
+                </Card>
+              ) : null}
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </>
+          )}
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
 }
 
-function makeStyles(theme: any) { return StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.color.surface }, center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28 }, title: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: 14, textAlign: "center" }, sub: { color: theme.color.muted, fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 7 }, header: { flexDirection: "row", alignItems: "center", gap: 10, padding: 16, borderBottomWidth: 1, borderBottomColor: theme.color.border }, back: { padding: 4 }, headerTitle: { color: theme.color.onSurface, fontSize: 18, fontWeight: "800" }, headerSub: { color: theme.color.muted, fontSize: 11, marginTop: 2 }, content: { padding: 16, paddingBottom: 40 }, formCard: { padding: 15, borderRadius: 18, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, marginBottom: 22 }, sectionTitle: { color: theme.color.onSurface, fontSize: 15, fontWeight: "800", marginBottom: 10 }, count: { color: theme.color.brandPrimary }, input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 13, padding: 12, color: theme.color.onSurface, backgroundColor: theme.color.surface, marginBottom: 9 }, kindRow: { flexDirection: "row", gap: 8, marginBottom: 12 }, kindButton: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border }, kindSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" }, kindText: { color: theme.color.muted, fontSize: 12, fontWeight: "700" }, primary: { backgroundColor: theme.color.brandPrimary, padding: 13, borderRadius: 13, alignItems: "center" }, primaryText: { color: "#fff", fontWeight: "800" }, empty: { alignItems: "center", padding: 30, borderWidth: 1, borderColor: theme.color.border, borderRadius: 18, borderStyle: "dashed" }, emptyTitle: { color: theme.color.onSurface, fontWeight: "800", marginTop: 8 }, locationCard: { flexDirection: "row", alignItems: "center", gap: 11, padding: 14, borderRadius: 16, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border, marginBottom: 9 }, locationIcon: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", backgroundColor: theme.color.brandPrimary + "14" }, locationName: { color: theme.color.onSurface, fontWeight: "800", fontSize: 14 }, locationSub: { color: theme.color.muted, fontSize: 11, marginTop: 3 }, status: { paddingHorizontal: 7, paddingVertical: 5, borderRadius: 9 }, info: { flexDirection: "row", gap: 8, marginTop: 18, padding: 12, borderRadius: 14, backgroundColor: theme.color.brandPrimary + "0D" }, infoText: { flex: 1, color: theme.color.muted, fontSize: 11, lineHeight: 16 },
-}); }
+function makeStyles(theme: ReturnType<typeof useTheme>) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.color.surface },
+    guide: { color: theme.color.muted, lineHeight: 20 },
+    link: { marginTop: 12 },
+    linkText: { color: theme.color.brandPrimary, fontWeight: "700" },
+    section: { fontWeight: "700", fontSize: 16, color: theme.color.onSurface, marginBottom: 12 },
+    shopRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.color.border },
+    shopName: { color: theme.color.onSurface, fontWeight: "600" },
+    hint: { color: theme.color.muted, fontSize: 13, fontWeight: "600", marginBottom: 8 },
+    wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+    chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border },
+    chipOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    chipText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
+    error: { color: theme.color.error, marginTop: 12 },
+  });
+}

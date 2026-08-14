@@ -8,6 +8,7 @@ import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
 import type { InvoiceDomainService } from './invoiceDomainService';
 import { ProductDomainService } from './productDomainService';
+import { resolveWriteLocationId } from './locationDomainService';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -36,6 +37,7 @@ export class SaleDomainService {
     const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
     const net = totals?.total ?? amount(input.total ?? input.amount);
     const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const result = await postCashSale(this.repo, {
         ...c,
@@ -43,6 +45,7 @@ export class SaleDomainService {
         amount: net,
         method: method(input.method),
         reference: input.reference,
+        locationId: locationId || undefined,
         metadata: {
           notes: input.notes,
           lines,
@@ -57,7 +60,7 @@ export class SaleDomainService {
       });
       if (productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
-          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines, locationId || undefined);
       }
       return result;
     });
@@ -96,6 +99,7 @@ export class SaleDomainService {
       invoiceSourceId: a.invoiceSourceId || a.invoiceId,
       amount: amount(a.amount ?? a.amountApplied),
     }));
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'customer', c.bookId);
       return postReceipt(this.repo, {
@@ -106,6 +110,7 @@ export class SaleDomainService {
         method: method(input.method),
         reference: input.reference,
         allocations,
+        locationId: locationId || undefined,
         metadata: {
           mode: input.mode,
           notes: input.notes,
@@ -136,6 +141,7 @@ export class SaleDomainService {
     const role: 'customer' | 'supplier' = input.role === 'supplier' ? 'supplier' : 'customer';
     const c = await this.getActiveContext(input.date);
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, role, c.bookId);
       const post = kind === 'credit_note' ? postCreditNote : postDebitNote;
@@ -143,6 +149,7 @@ export class SaleDomainService {
         ...c,
         date: input.date,
         partyId,
+        locationId: locationId || undefined,
         invoiceSourceId: input.invoiceId || input.invoiceSourceId || null,
         amount: amount(input.amount),
         role,
@@ -238,11 +245,12 @@ export class SaleDomainService {
     });
   }
 
-  async recordManualCash(input: { date: string; amount: number; direction: 'in' | 'out'; notes?: string }) {
+  async recordManualCash(input: { date: string; amount: number; direction: 'in' | 'out'; notes?: string; locationId?: string }) {
     const context = await this.getActiveContext(input.date);
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     const value = cents(input.amount);
     if (!Number.isFinite(value) || value <= 0) throw new Error('Cash amount must be positive');
+    const locationId = await resolveWriteLocationId(this.db, context.bookId, input.locationId);
     await this.repo.ensureDefaultAccounts(context.bookId);
     const isIn = input.direction === 'in';
     const source: any = {
@@ -250,7 +258,8 @@ export class SaleDomainService {
       bookId: context.bookId,
       type: isIn ? 'manual_cash_income' : 'manual_cash_expense',
       date: input.date,
-      metadata: { total: value, direction: input.direction, notes: input.notes || '' },
+      locationId: locationId || undefined,
+      metadata: { total: value, direction: input.direction, notes: input.notes || '', ...(locationId ? { locationId } : {}) },
     };
     const cashId = `${context.bookId}:account:${V2_ACCOUNT_CODES.CASH}`;
     const counterpartId = `${context.bookId}:account:${isIn ? V2_ACCOUNT_CODES.SALES : V2_ACCOUNT_CODES.EXPENSES}`;

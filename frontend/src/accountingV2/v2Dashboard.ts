@@ -7,15 +7,17 @@ import { localTodayIso } from '../utils/dateValidation';
 
 const cents = round2;
 
-export async function getV2Dashboard(db: SqlRunner, bookId: string) {
-  const reports = await buildPersistentV2Reports(db, { bookId });
+export async function getV2Dashboard(db: SqlRunner, bookId: string, locationId?: string) {
+  const reports = await buildPersistentV2Reports(db, { bookId, locationId });
   const configRepo = new V2BookConfigRepository(db);
   const config = await configRepo.getBookConfig(bookId);
 
   // Read sources for total sales & purchases (for headline tiles + trend only).
   const salesSources = await db.all<{ metadata: string; date: string }>(
-    "SELECT metadata, date FROM v2_sources WHERE book_id=? AND type IN ('cash_sale', 'invoice')",
-    [bookId]
+    locationId
+      ? "SELECT metadata, date FROM v2_sources WHERE book_id=? AND type IN ('cash_sale', 'invoice') AND location_id=?"
+      : "SELECT metadata, date FROM v2_sources WHERE book_id=? AND type IN ('cash_sale', 'invoice')",
+    locationId ? [bookId, locationId] : [bookId],
   );
   let totalSales = 0;
   const trendMap: Record<string, number> = {};
@@ -32,8 +34,10 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
   totalSales = cents(totalSales);
 
   const purchaseSources = await db.all<{ metadata: string }>(
-    "SELECT metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_purchase', 'credit_purchase')",
-    [bookId]
+    locationId
+      ? "SELECT metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_purchase', 'credit_purchase') AND location_id=?"
+      : "SELECT metadata FROM v2_sources WHERE book_id=? AND type IN ('cash_purchase', 'credit_purchase')",
+    locationId ? [bookId, locationId] : [bookId],
   );
   let totalPurchases = 0;
   for (const row of purchaseSources) {
@@ -90,7 +94,7 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
 
   // Real opening figures: balances as of the START of the open period (inclusive of
   // opening-balance entries dated on the start date), not aliases of current balances.
-  const opening = await openingBalances(db, bookId, periodStart);
+  const opening = await openingBalances(db, bookId, periodStart, locationId);
 
   const salesTrend = Object.entries(trendMap)
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
@@ -123,23 +127,24 @@ export async function getV2Dashboard(db: SqlRunner, bookId: string) {
 }
 
 /** Sum of account normal balances for the given codes with all postings dated on/before `asOf`. */
-async function balancesAsOf(db: SqlRunner, bookId: string, asOf: string, codes: string[]): Promise<number> {
+async function balancesAsOf(db: SqlRunner, bookId: string, asOf: string, codes: string[], locationId?: string): Promise<number> {
   const placeholders = codes.map(() => '?').join(',');
+  const locationClause = locationId ? ' AND l.location_id=?' : '';
   const row = await db.first<{ debit: number; credit: number }>(
     `SELECT COALESCE(SUM(l.debit),0) AS debit, COALESCE(SUM(l.credit),0) AS credit
      FROM v2_accounts a JOIN v2_journal_lines l ON l.account_id=a.id JOIN v2_journal_entries j ON j.id=l.journal_id
-     WHERE j.book_id=? AND j.date<=? AND a.code IN (${placeholders})`,
-    [bookId, asOf, ...codes],
+     WHERE j.book_id=? AND j.date<=? AND a.code IN (${placeholders})${locationClause}`,
+    locationId ? [bookId, asOf, ...codes, locationId] : [bookId, asOf, ...codes],
   );
   // All requested codes here are asset (debit-normal) accounts.
   return round2(Number(row?.debit || 0) - Number(row?.credit || 0));
 }
 
-async function openingBalances(db: SqlRunner, bookId: string, periodStart: string) {
-  const cash = await balancesAsOf(db, bookId, periodStart, ['1000', '1010', '1020', '1030']);
-  const inventory = await balancesAsOf(db, bookId, periodStart, ['1200']);
-  const receivable = await balancesAsOf(db, bookId, periodStart, ['1100']);
-  const otherAssets = await balancesAsOf(db, bookId, periodStart, ['1500']);
-  const fixedAssets = await balancesAsOf(db, bookId, periodStart, ['1400', '1450']);
+async function openingBalances(db: SqlRunner, bookId: string, periodStart: string, locationId?: string) {
+  const cash = await balancesAsOf(db, bookId, periodStart, ['1000', '1010', '1020', '1030'], locationId);
+  const inventory = await balancesAsOf(db, bookId, periodStart, ['1200'], locationId);
+  const receivable = await balancesAsOf(db, bookId, periodStart, ['1100'], locationId);
+  const otherAssets = await balancesAsOf(db, bookId, periodStart, ['1500'], locationId);
+  const fixedAssets = await balancesAsOf(db, bookId, periodStart, ['1400', '1450'], locationId);
   return { cash, inventory, assets: round2(cash + inventory + receivable + otherAssets + fixedAssets) };
 }

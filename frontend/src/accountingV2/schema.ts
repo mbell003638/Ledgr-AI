@@ -13,7 +13,7 @@ export type V2MemoryStore = {
   parties: V2Party[];
   accounts: V2Account[];
   journals: V2JournalEntry[];
-  sources: { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown> }[];
+  sources: { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown>; locationId?: string }[];
   allocations: { id: string; bookId: string; invoiceSourceId: string; receiptSourceId: string; amount: number; allocatedAt: string }[];
 };
 

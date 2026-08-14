@@ -4,6 +4,7 @@ import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModul
 import { V2_ACCOUNT_CODES } from '../types';
 import { mulMoney, round2 } from '../../money';
 import { localTodayIso } from '../../utils/dateValidation';
+import { qtyAtLocation, resolveWriteLocationId } from './locationDomainService';
 
 type ActiveContext = { bookId: string; periodId: string };
 type ProductRow = {
@@ -38,6 +39,7 @@ export type UpsertProductInput = {
   cost: number;
   price: number;
   openingQty?: number;
+  locationId?: string;
 };
 
 export type PurchaseProductLine = { productId: string; qty: number; unitCost: number };
@@ -68,13 +70,18 @@ export class ProductDomainService {
     private readonly getActiveContext: (date?: string) => Promise<ActiveContext | null>,
   ) {}
 
-  async listProducts(): Promise<ProductRecord[]> {
+  async listProducts(locationId?: string): Promise<ProductRecord[]> {
     const c = await this.requireContext();
     const rows = await this.db.all<ProductRow>(
       'SELECT id,book_id,sku,name,unit,cost,price,qty,archived FROM v2_products WHERE book_id=? AND archived=0 ORDER BY name,id',
       [c.bookId],
     );
-    return rows.map(mapProduct);
+    const products = rows.map(mapProduct);
+    if (!locationId || !(await isOptionalModuleEnabled(this.db, 'locations'))) return products;
+    return Promise.all(products.map(async (product) => ({
+      ...product,
+      qty: await qtyAtLocation(this.db, c.bookId, product.id, locationId),
+    })));
   }
 
   async upsertProduct(input: UpsertProductInput): Promise<ProductRecord> {
@@ -90,6 +97,9 @@ export class ProductDomainService {
     const unit = input.unit != null && String(input.unit).trim() ? String(input.unit).trim() : null;
     const openingQty = input.openingQty == null ? undefined : Number(input.openingQty);
     if (openingQty != null && !Number.isFinite(openingQty)) throw new Error('Opening quantity must be a number');
+    const locationId = openingQty
+      ? await resolveWriteLocationId(this.db, c.bookId, input.locationId)
+      : null;
 
     return this.repo.runInTransaction(async () => {
       const existing = input.id
@@ -121,7 +131,8 @@ export class ProductDomainService {
             bookId: c.bookId,
             type: 'opening_stock',
             date,
-            metadata: { productId: id, qty: openingQty, unitCost: cost, total: openingValue },
+            locationId: locationId || undefined,
+            metadata: { productId: id, qty: openingQty, unitCost: cost, total: openingValue, ...(locationId ? { locationId } : {}) },
           };
           await this.repo.ensureDefaultAccounts(c.bookId);
           await this.repo.postSourceJournal(source, {
@@ -144,6 +155,7 @@ export class ProductDomainService {
           unitCost: cost,
           kind: 'adjust',
           sourceId,
+          locationId: locationId || undefined,
         });
       }
 
@@ -166,9 +178,11 @@ export class ProductDomainService {
     date: string,
     sourceId: string,
     lines: PurchaseProductLine[],
+    locationId?: string,
   ): Promise<void> {
     if (!(await this.moduleEnabled())) return;
     if (!Array.isArray(lines) || !lines.length) return;
+    const loc = await this.resolveStockLocation(bookId, locationId);
     await this.repo.runInTransaction(async () => {
       for (const line of lines) {
         const qty = Number(line.qty);
@@ -185,6 +199,7 @@ export class ProductDomainService {
           unitCost,
           kind: 'purchase',
           sourceId,
+          locationId: loc || undefined,
         });
       }
     });
@@ -196,9 +211,11 @@ export class ProductDomainService {
     date: string,
     sourceId: string,
     lines: SaleProductLine[],
+    locationId?: string,
   ): Promise<void> {
     if (!(await this.moduleEnabled())) return;
     if (!Array.isArray(lines) || !lines.length) return;
+    const loc = await this.resolveStockLocation(bookId, locationId);
     await this.repo.runInTransaction(async () => {
       const demand = new Map<string, number>();
       for (const line of lines) {
@@ -208,7 +225,8 @@ export class ProductDomainService {
       }
       for (const [productId, needed] of demand) {
         const product = await this.loadProduct(bookId, productId);
-        if (needed > Number(product.qty)) throw new Error('Insufficient stock');
+        const available = loc ? await qtyAtLocation(this.db, bookId, productId, loc) : Number(product.qty);
+        if (needed > available) throw new Error(loc ? 'Insufficient stock at this location' : 'Insufficient stock');
       }
 
       let totalCogs = 0;
@@ -226,11 +244,12 @@ export class ProductDomainService {
           unitCost: Number(product.cost),
           kind: 'sale',
           sourceId,
+          locationId: loc || undefined,
         });
       }
 
       if (totalCogs > 0) {
-        await this.postCogs(bookId, periodId, date, sourceId, totalCogs);
+        await this.postCogs(bookId, periodId, date, sourceId, totalCogs, loc || undefined);
       }
     });
   }
@@ -247,8 +266,8 @@ export class ProductDomainService {
         const product = await this.loadProduct(bookId, move.product_id);
         const qty = Number(move.qty);
         const current = Number(product.qty);
-        const nextQty = move.kind === 'sale' ? current + qty
-          : move.kind === 'purchase' ? current - qty
+        const nextQty = move.kind === 'sale' || move.kind === 'transfer_out' ? current + qty
+          : move.kind === 'purchase' || move.kind === 'transfer_in' ? current - qty
           : current - qty;
         await this.db.run('UPDATE v2_products SET qty=? WHERE id=? AND book_id=?', [nextQty, product.id, bookId]);
       }
@@ -256,11 +275,12 @@ export class ProductDomainService {
     });
   }
 
-  async adjustQty(input: AdjustQtyInput): Promise<ProductRecord> {
+  async adjustQty(input: AdjustQtyInput & { locationId?: string }): Promise<ProductRecord> {
     await this.requireModule();
     const qtyDelta = Number(input.qtyDelta);
     if (!Number.isFinite(qtyDelta) || qtyDelta === 0) throw new Error('Quantity adjustment must be a non-zero number');
     const c = await this.requireContext(input.date);
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const product = await this.loadProduct(c.bookId, input.productId);
       const nextQty = Number(product.qty) + qtyDelta;
@@ -273,7 +293,8 @@ export class ProductDomainService {
           bookId: c.bookId,
           type: 'stock_adjust',
           date: input.date,
-          metadata: { productId: product.id, qtyDelta, notes: input.notes || '', total: value },
+          locationId: locationId || undefined,
+          metadata: { productId: product.id, qtyDelta, notes: input.notes || '', total: value, ...(locationId ? { locationId } : {}) },
         };
         const inventoryId = acct(c.bookId, V2_ACCOUNT_CODES.INVENTORY);
         const expenseId = acct(c.bookId, V2_ACCOUNT_CODES.EXPENSES);
@@ -298,16 +319,17 @@ export class ProductDomainService {
         unitCost: Number(product.cost),
         kind: 'adjust',
         sourceId,
+        locationId: locationId || undefined,
       });
       return this.getProduct(c.bookId, product.id);
     });
   }
 
-  private async postCogs(bookId: string, periodId: string, date: string, sourceId: string, totalCogs: number) {
+  private async postCogs(bookId: string, periodId: string, date: string, sourceId: string, totalCogs: number, locationId?: string) {
     await this.repo.ensureDefaultAccounts(bookId);
     const lines = [
-      { accountId: acct(bookId, V2_ACCOUNT_CODES.COGS), debit: totalCogs, credit: 0 },
-      { accountId: acct(bookId, V2_ACCOUNT_CODES.INVENTORY), debit: 0, credit: totalCogs },
+      { accountId: acct(bookId, V2_ACCOUNT_CODES.COGS), debit: totalCogs, credit: 0, locationId },
+      { accountId: acct(bookId, V2_ACCOUNT_CODES.INVENTORY), debit: 0, credit: totalCogs, locationId },
     ];
     const existing = sourceId
       ? await this.db.first('SELECT id FROM v2_sources WHERE id=? AND book_id=?', [sourceId, bookId])
@@ -321,7 +343,8 @@ export class ProductDomainService {
       bookId,
       type: 'stock_cogs',
       date,
-      metadata: { saleSourceId: sourceId, sourceId, total: totalCogs },
+      locationId,
+      metadata: { saleSourceId: sourceId, sourceId, total: totalCogs, ...(locationId ? { locationId } : {}) },
     }, { bookId, periodId, date, memo: 'Stock COGS', lines });
   }
 
@@ -333,11 +356,17 @@ export class ProductDomainService {
     unitCost: number;
     kind: 'purchase' | 'sale' | 'adjust';
     sourceId?: string | null;
+    locationId?: string | null;
   }) {
     await this.db.run(
-      'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id) VALUES(?,?,?,?,?,?,?,?)',
-      [uid('move'), input.bookId, input.productId, input.date, input.qty, input.unitCost, input.kind, input.sourceId || null],
+      'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
+      [uid('move'), input.bookId, input.productId, input.date, input.qty, input.unitCost, input.kind, input.sourceId || null, input.locationId || null],
     );
+  }
+
+  private async resolveStockLocation(bookId: string, locationId?: string): Promise<string | null> {
+    if (!(await isOptionalModuleEnabled(this.db, 'locations'))) return null;
+    return resolveWriteLocationId(this.db, bookId, locationId);
   }
 
   private async loadProduct(bookId: string, productId: string): Promise<ProductRow> {

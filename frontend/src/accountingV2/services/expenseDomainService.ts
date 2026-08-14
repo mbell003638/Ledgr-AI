@@ -7,6 +7,7 @@ import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
 import { ProductDomainService } from './productDomainService';
+import { resolveWriteLocationId } from './locationDomainService';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -28,11 +29,13 @@ export class ExpenseDomainService {
   async createExpense(input: AnyRecord) {
     const c = await this.getActiveContext(input.date);
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return postExpense(this.repo, {
       ...c,
       date: input.date,
       amount: amount(input.amount),
       method: method(input.method),
+      locationId: locationId || undefined,
       metadata: { category: input.category, notes: input.notes },
     });
   }
@@ -80,6 +83,7 @@ export class ExpenseDomainService {
     if (!c) throw new Error('No active versioned V2 book with an open accounting period');
     const cash = input.paymentType === 'cash';
     const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'supplier', c.bookId);
       const result = await postPurchase(this.repo, {
@@ -88,6 +92,7 @@ export class ExpenseDomainService {
         partyId,
         amount: amount(input.amount ?? input.total),
         method: cash ? method(input.method) : undefined,
+        locationId: locationId || undefined,
         metadata: {
           category: input.category,
           isExpense: input.isExpense,
@@ -100,7 +105,7 @@ export class ExpenseDomainService {
       const isExpense = input.isExpense === true || input.billType === 'expense';
       if (!isExpense && productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
-          .applyPurchaseLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+          .applyPurchaseLines(c.bookId, c.periodId, input.date, result.source.id, productLines, locationId || undefined);
       }
       return result;
     });
@@ -167,6 +172,7 @@ export class ExpenseDomainService {
       }
       return this.documents.drawing({ ...c, date: input.date, amount: amount(input.amount), method: method(input.method) });
     }
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'supplier', c.bookId);
       return postSupplierPayment(this.repo, {
@@ -175,6 +181,7 @@ export class ExpenseDomainService {
         partyId,
         amount: amount(input.amount),
         method: method(input.method),
+        locationId: locationId || undefined,
         metadata: { notes: input.notes },
       });
     });

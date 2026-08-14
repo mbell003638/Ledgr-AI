@@ -24,6 +24,7 @@ import { confirmAction } from "@/src/utils/alerts";
 import { ScreenHeader, Empty, Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
 import { GlowPressable } from "@/src/components/GlowPressable";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type Product = {
   id: string;
@@ -39,7 +40,7 @@ type Product = {
 type FormMode = "create" | "edit" | "adjust";
 
 type ProductClient = {
-  listProducts: () => Promise<any[]>;
+  listProducts: (locationId?: string) => Promise<any[]>;
   upsertProduct: (input: {
     id?: string;
     name: string;
@@ -103,6 +104,7 @@ export default function ProductsScreen() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [locationId, setLocationId] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -115,7 +117,7 @@ export default function ProductsScreen() {
         setProducts([]);
         return;
       }
-      const list = await productApi.listProducts();
+      const list = await productApi.listProducts(locationId || undefined);
       setProducts((Array.isArray(list) ? list : []).map(asProduct).filter((p) => p.id && !p.archived));
     } catch (e: any) {
       setError(e?.message || "Could not load products.");
@@ -123,7 +125,7 @@ export default function ProductsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [locationId]);
 
   useFocusEffect(useCallback(() => {
     load();
@@ -192,6 +194,7 @@ export default function ProductsScreen() {
       const opening = openingQty.trim() === "" ? 0 : Number(openingQty);
       if (!Number.isFinite(opening) || opening < 0) { setFormError("Enter a valid opening quantity."); return; }
       input.openingQty = opening;
+      if (locationId) (input as any).locationId = locationId;
     }
     setSaving(true);
     setFormError("");
@@ -224,6 +227,7 @@ export default function ProductsScreen() {
         date: dateIso,
         qtyDelta: delta,
         notes: notes.trim() || undefined,
+        ...(locationId ? { locationId } : {}),
       });
       resetForm();
       await load();
@@ -350,6 +354,11 @@ export default function ProductsScreen() {
           </Pressable>
         ) : undefined}
       />
+      {enabled ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          <LocationPicker value={locationId} onChange={setLocationId} />
+        </View>
+      ) : null}
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (

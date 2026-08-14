@@ -7,9 +7,9 @@ export type V2PaymentMethod = 'cash' | 'bank' | 'card' | 'mobile' | 'other';
 export type V2Book = { id: string; name: string; style: V2BookStyle; basis: V2Basis; createdAt: string };
 export type V2Party = { id: string; bookId: string; name: string; phone?: string; email?: string; roles: V2PartyRole[]; archived?: boolean };
 export type V2Account = { id: string; bookId: string; code: string; name: string; type: V2AccountType; paymentMethod?: V2PaymentMethod; active: boolean };
-export type V2JournalLine = { accountId: string; partyId?: string; debit: number; credit: number; memo?: string };
+export type V2JournalLine = { accountId: string; partyId?: string; debit: number; credit: number; memo?: string; locationId?: string };
 export type V2JournalEntry = { id: string; bookId: string; periodId: string; sourceId?: string; date: string; memo: string; lines: V2JournalLine[]; reversalOf?: string };
-export type V2Source = { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown> };
+export type V2Source = { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown>; locationId?: string };
 export type V2Period = { id: string; bookId: string; startDate: string; endDate: string; status: 'open' | 'closed'; closeSnapshot?: Record<string, unknown> };
 export type V2Member = { id: string; bookId: string; name: string; openingContribution: number; profitSharePct: number };
 export type V2Allocation = { id: string; bookId: string; invoiceSourceId: string; receiptSourceId: string; amount: number; allocatedAt: string };
@@ -21,6 +21,7 @@ export const V2_COLLECTIONS = [
   'v2_employees', 'v2_pay_runs', 'v2_payslips',
   'v2_fixed_assets', 'v2_asset_depreciation',
   'v2_products', 'v2_stock_moves',
+  'v2_locations',
 ] as const;
 export type V2Collection = typeof V2_COLLECTIONS[number];
 

@@ -8,6 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type PayType = "supplier_payment" | "drawing" | "commission_payment";
 
@@ -23,6 +24,7 @@ export default function PaymentForm() {
   const [partnerOptions, setPartnerOptions] = useState<string[]>([]);
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const [amount, setAmount] = useState("");
+  const [locationId, setLocationId] = useState("");
   const currency = "USD";
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
@@ -81,6 +83,7 @@ export default function PaymentForm() {
         supplierId: type === "supplier_payment" ? finalSupplierId : "",
         partnerName: type === "drawing" && isPartnerMode ? partnerName.trim() : "",
         method, notes,
+        ...(locationId ? { locationId } : {}),
       };
       if (editId) await api.updatePayment(editId, payload);
       else await api.createPayment(payload);
@@ -106,6 +109,7 @@ export default function PaymentForm() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
+          <LocationPicker value={locationId} onChange={setLocationId} />
           <Card>
             <Text style={styles.label}>Payment Type</Text>
             <View style={styles.segRowFull}>

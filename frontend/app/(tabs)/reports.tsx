@@ -21,6 +21,7 @@ import { partnershipDisplayFromReports } from "@/src/accountingV2/reports";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital Statement", "Capital Withdrawals", "Suppliers", "Customers", "Tax", "Sales Reg", "Receipts"] as const;
 type Seg = typeof SEGMENTS[number];
@@ -86,6 +87,8 @@ export default function ReportsScreen() {
   const [customFrom, setCustomFrom] = useState(() => rangePreset("This Month").from);
   const [customTo, setCustomTo] = useState(() => rangePreset("This Month").to);
   const [rangeNotice, setRangeNotice] = useState("");
+  const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
+  const [locationId, setLocationId] = useState("");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
   const loadRequest = useRef(0);
@@ -125,9 +128,16 @@ export default function ReportsScreen() {
     setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
+      if (isCapabilityEnabled(s, "multi_location")) {
+        const rows = await api.listLocations().catch(() => []);
+        setShops((Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
+      } else {
+        setShops([]);
+      }
+      const shopId = locationId || undefined;
       const [core, snapshotDash, pd] = await Promise.all([
-        v2Reports({ from, to }),
-        api.dashboard(),
+        v2Reports({ from, to, locationId: shopId }),
+        api.dashboard(shopId),
         api.listPeriods(),
       ]);
       if (requestId !== loadRequest.current) return;
@@ -223,7 +233,7 @@ export default function ReportsScreen() {
     } finally {
       if (requestId === loadRequest.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [from, to]);
+  }, [from, to, locationId]);
 
   const loadSection = useCallback(async (section: Seg) => {
     const key = `${from}|${to}|${section}|${bizSettings?.accountingStyle || 'standard'}`;
@@ -432,7 +442,7 @@ export default function ReportsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader 
         title="Reports" 
-        subtitle="Financial statements"
+        subtitle={locationId ? "This shop" : "All shops"}
         rightAction={
           <GlowPressable
             testID="btn-custom-report"
@@ -447,6 +457,18 @@ export default function ReportsScreen() {
           </GlowPressable>
         }
       />
+      {shops.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
+          <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+            <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
+          </Pressable>
+          {shops.map((shop) => (
+            <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+              <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {/* Report category segments */}
       <View style={styles.filterRail}>

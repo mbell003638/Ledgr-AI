@@ -10,6 +10,7 @@ import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
@@ -37,6 +38,7 @@ export default function BillForm() {
   const [products, setProducts] = useState<StockProduct[]>([]);
   const [stockProductId, setStockProductId] = useState("");
   const [stockQty, setStockQty] = useState("");
+  const [locationId, setLocationId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -175,6 +177,7 @@ export default function BillForm() {
         paymentType, invoiceNo, notes: finalNotes, photo,
         isExpense: billType === "expense",
         category: billType === "expense" ? expenseCategory : undefined,
+        ...(locationId ? { locationId } : {}),
       };
       if (editId) await api.updateBill(editId, payload);
       else await api.createBill({ ...payload, ...(productLines ? { productLines } : {}) });
@@ -207,6 +210,7 @@ export default function BillForm() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <LocationPicker value={locationId} onChange={setLocationId} />
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Pressable
               testID="btn-scan-receipt"

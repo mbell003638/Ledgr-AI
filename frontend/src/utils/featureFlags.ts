@@ -19,10 +19,11 @@ export type FeatureKey =
   | "voice"
   | "payroll"
   | "fixedAssets"
-  | "perpetualInventory";
+  | "perpetualInventory"
+  | "locations";
 
 /** Off unless the user turns them on in Customize Features. Never in persona baselines. */
-export const OPTIONAL_FEATURE_KEYS: FeatureKey[] = ["payroll", "fixedAssets", "perpetualInventory"];
+export const OPTIONAL_FEATURE_KEYS: FeatureKey[] = ["payroll", "fixedAssets", "perpetualInventory", "locations"];
 
 export interface FeatureMeta {
   key: FeatureKey;
@@ -186,6 +187,14 @@ export const ALL_FEATURES: FeatureMeta[] = [
     icon: "layers-outline",
     color: "#DCE8D4",
     description: "Each sale and purchase changes quantity on the product. Off until you enable it — periodic counts stay the default.",
+  },
+  {
+    key: "locations",
+    label: "Locations / Shops (optional)",
+    category: "accounting",
+    icon: "storefront-outline",
+    color: "#D4E0EC",
+    description: "Each shop has its own cash till and stock. Transfers move money or units between shops. Off until you enable it.",
   },
 ];
 

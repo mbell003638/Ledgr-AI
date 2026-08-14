@@ -18,7 +18,7 @@ export const COLLECTIONS = [
   'locations', 'posSessions', 'stockTransfers',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 8;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -27,6 +27,7 @@ export const V2_TABLES = [
   'v2_employees', 'v2_pay_runs', 'v2_payslips',
   'v2_fixed_assets', 'v2_asset_depreciation',
   'v2_products', 'v2_stock_moves',
+  'v2_locations',
 ] as const;
 
 export function schemaSql(): string {
@@ -58,6 +59,7 @@ export function schemaSql(): string {
     );
     CREATE TABLE IF NOT EXISTS v2_sources (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, type TEXT NOT NULL, date TEXT NOT NULL, reference TEXT, metadata TEXT,
+      location_id TEXT,
       FOREIGN KEY(book_id) REFERENCES v2_books(id)
     );
     CREATE TABLE IF NOT EXISTS v2_journal_entries (
@@ -71,6 +73,7 @@ export function schemaSql(): string {
       id INTEGER PRIMARY KEY AUTOINCREMENT, journal_id TEXT NOT NULL, account_id TEXT NOT NULL, party_id TEXT,
       debit REAL NOT NULL CHECK(typeof(debit) IN ('integer','real') AND debit >= 0),
       credit REAL NOT NULL CHECK(typeof(credit) IN ('integer','real') AND credit >= 0), memo TEXT,
+      location_id TEXT,
       CHECK((debit > 0 AND credit = 0) OR (credit > 0 AND debit = 0)),
       FOREIGN KEY(journal_id) REFERENCES v2_journal_entries(id) ON UPDATE CASCADE ON DELETE CASCADE,
       FOREIGN KEY(account_id) REFERENCES v2_accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -144,9 +147,14 @@ export function schemaSql(): string {
     CREATE TABLE IF NOT EXISTS v2_stock_moves (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, product_id TEXT NOT NULL, date TEXT NOT NULL,
       qty REAL NOT NULL, unit_cost REAL NOT NULL DEFAULT 0, kind TEXT NOT NULL, source_id TEXT,
+      location_id TEXT,
       FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
       FOREIGN KEY(product_id) REFERENCES v2_products(id) ON UPDATE CASCADE ON DELETE RESTRICT,
       FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_locations (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_v2_journals_book_date ON v2_journal_entries(book_id, date);
@@ -156,6 +164,13 @@ export function schemaSql(): string {
   `;
 }
 
+async function addColumnIfMissing(db: SqlRunner, table: string, column: string, definition: string): Promise<void> {
+  const cols = await db.all<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!cols.some((c) => c.name === column)) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec('PRAGMA foreign_keys = ON;');
   await db.exec('PRAGMA journal_mode = WAL;');
@@ -163,6 +178,11 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec('PRAGMA synchronous = NORMAL;');
   await db.exec('PRAGMA wal_autocheckpoint = 1000;');
   await db.exec(schemaSql());
+  // Schema 7: add migration-safe location dimensions without deleting existing modules.
+
+  await addColumnIfMissing(db, 'v2_sources', 'location_id', 'TEXT');
+  await addColumnIfMissing(db, 'v2_journal_lines', 'location_id', 'TEXT');
+  await addColumnIfMissing(db, 'v2_stock_moves', 'location_id', 'TEXT');
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');

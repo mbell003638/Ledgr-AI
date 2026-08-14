@@ -17,6 +17,7 @@ const V2_FACTORY_DELETE_ORDER: readonly string[] = [
   'v2_fixed_assets',
   'v2_stock_moves',
   'v2_products',
+  'v2_locations',
   'v2_journal_lines',
   'v2_invoice_allocations',
   'v2_close_books',
@@ -86,6 +87,7 @@ export async function deleteV2BookData(db: SqlRunner, bookId: string): Promise<b
     await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_sources WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_locations WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_members WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_personas WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_parties WHERE book_id=?', [bookId]);

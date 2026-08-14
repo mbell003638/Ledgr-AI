@@ -379,12 +379,12 @@ async function v2SourceDocuments(types: string[]) {
   });
 }
 
-async function v2Report(from?: string, to?: string) {
+async function v2Report(from?: string, to?: string, locationId?: string) {
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const context = await new V2AppService(runner).activeContext();
   if (!context) throw new Error('No active versioned V2 book with an open accounting period');
-  return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to });
+  return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to, locationId });
 }
 
 async function liveCommissionPct() {
@@ -556,15 +556,11 @@ export const api = {
   renameBook: async (id: string, name: string) => { const r = await beRenameBook(id, name); bumpDataVersion(); return r; },
   deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
 
-  // Multi-location retail / POS operations are stored in the active book's local collections.
-  listLocations: async () => db.listLocations(),
-  createLocation: async (input: Parameters<typeof db.createLocation>[0]) => { const r = await db.createLocation(input); bumpDataVersion(); return r; },
-  updateLocation: async (id: string, input: Parameters<typeof db.updateLocation>[1]) => { const r = await db.updateLocation(id, input); bumpDataVersion(); return r; },
+  // POS sessions remain lightweight operational records; locations and stock transfers use V2 below.
   listPosSessions: async () => db.listPosSessions(),
   createPosSession: async (input: any) => { const r = await db.createPosSession(input); bumpDataVersion(); return r; },
   closePosSession: async (id: string) => { const r = await db.closePosSession(id); bumpDataVersion(); return r; },
-  listStockTransfers: async () => db.listStockTransfers(),
-  createStockTransfer: async (input: any) => { const r = await db.createStockTransfer(input); bumpDataVersion(); return r; },
+
 
   createParty: async (p: any) => {
     const name = (p.name || '').trim();
@@ -802,12 +798,12 @@ export const api = {
   },
 
   // Dashboard & reports
-  dashboard: async () => {
+  dashboard: async (locationId?: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const ctx = await new V2AppService(runner).activeContext();
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
-    return getV2Dashboard(runner, ctx.bookId);
+    return getV2Dashboard(runner, ctx.bookId, locationId);
   },
   pnl: async () => {
     const runner = activeSqlRunner();
@@ -1031,25 +1027,33 @@ export const api = {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).yearEndPayrollSummary(year);
   },
-  listFixedAssets: async () => {
+  listProducts: async (locationId?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).listFixedAssets();
+    return new V2AppService(runner).listProducts(locationId);
   },
-  acquireFixedAsset: async (input: any) => {
+  listLocations: async () => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).acquireFixedAsset(input); bumpDataVersion(); return r;
+    return new V2AppService(runner).listLocations();
   },
-  postAssetDepreciation: async (input: any) => {
+  createLocation: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).postAssetDepreciation(input); bumpDataVersion(); return r;
+    const r = await new V2AppService(runner).createLocation(input); bumpDataVersion(); return r;
   },
-  disposeFixedAsset: async (input: any) => {
+  archiveLocation: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).disposeFixedAsset(input); bumpDataVersion(); return r;
+    const r = await new V2AppService(runner).archiveLocation(id); bumpDataVersion(); return r;
   },
-  listProducts: async () => {
+  transferLocationCash: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).listProducts();
+    const r = await new V2AppService(runner).transferLocationCash(input); bumpDataVersion(); return r;
+  },
+  transferLocationStock: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).transferLocationStock(input); bumpDataVersion(); return r;
+  },
+  listStockTransfers: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listLocationStockTransfers();
   },
   upsertProduct: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');

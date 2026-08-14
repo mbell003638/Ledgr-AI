@@ -287,8 +287,8 @@ describe('V2 UI contracts', () => {
     const reports = readApp('(tabs)/reports.tsx');
     const coreLoad = reports.slice(reports.indexOf('const load = useCallback'), reports.indexOf('const loadSection'));
 
-    expect(coreLoad).toContain('v2Reports({ from, to })');
-    expect(coreLoad).toContain('api.dashboard()');
+    expect(coreLoad).toContain('v2Reports({ from, to, locationId: shopId })');
+    expect(coreLoad).toContain('api.dashboard(shopId)');
     expect(coreLoad).not.toContain('api.balanceSheet()');
     expect(coreLoad).not.toContain('api.monthlyProfitTrend');
     expect(coreLoad).not.toContain('api.creditorsReport');

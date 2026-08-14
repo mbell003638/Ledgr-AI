@@ -85,8 +85,6 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
       await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [id]);
       await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_employees WHERE book_id=?', [id]);
-      await db.run('DELETE FROM v2_asset_depreciation WHERE asset_id IN (SELECT id FROM v2_fixed_assets WHERE book_id=?)', [id]);
-      await db.run('DELETE FROM v2_fixed_assets WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_stock_moves WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_products WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_journal_lines WHERE journal_id IN (SELECT id FROM v2_journal_entries WHERE book_id=?)', [id]);
@@ -96,6 +94,7 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
       await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_sources WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_locations WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_members WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_personas WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_parties WHERE book_id=?', [id]);

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager } from "react-native";
+import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -121,6 +121,8 @@ export default function Dashboard() {
   const [health, setHealth] = useState<any>(null);
   const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
   const [isEditingGrid, setIsEditingGrid] = useState(false);
+  const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
+  const [locationId, setLocationId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -137,15 +139,25 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [d, day, s, h] = await Promise.all([
-        api.dashboard(),
+      const s = await api.getSettings();
+      setSettings(s);
+      let shopId = locationId;
+      if (isCapabilityEnabled(s, "multi_location")) {
+        const rows = await api.listLocations().catch(() => []);
+        const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
+        setShops(next);
+        if (shopId && !next.some((shop) => shop.id === shopId)) shopId = "";
+      } else {
+        setShops([]);
+        shopId = "";
+      }
+      const [d, day, h] = await Promise.all([
+        api.dashboard(shopId || undefined),
         api.dailySummary(dailyDate),
-        api.getSettings(),
         api.bookHealth().catch(() => null),
       ]);
       setDash(d);
       setDaily(day);
-      setSettings(s);
       setHealth(h);
       loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
@@ -154,7 +166,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dailyDate]);
+  }, [dailyDate, locationId]);
 
   const visibleTiles = useMemo(() => {
     const enabled = getEnabledFeatures(settings);
@@ -347,6 +359,7 @@ export default function Dashboard() {
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 11 }}>{getEnabledCapabilities(settings).slice(0, 4).map((key) => <View key={key} style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "700" }}>{capabilityDefinition(key)?.label || key}</Text></View>)}<Text style={{ color: theme.color.brandPrimary, fontSize: 10, fontWeight: "800", paddingVertical: 5 }}>+ {Math.max(0, getEnabledCapabilities(settings).length - 4)} more</Text></View>
             </Card>
+            {shops.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}><Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>{shops.map((shop) => <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}</ScrollView> : null}
             {health?.warnings?.length ? <Card style={{ marginBottom: theme.spacing.md, padding: 13 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}><Ionicons name={health.hasRecoveryWarning ? "shield-outline" : "checkmark-circle-outline"} size={18} color={health.hasRecoveryWarning ? theme.color.warning : theme.color.success} /><Text style={{ color: theme.color.onSurface, fontSize: 13, fontWeight: "800", marginLeft: 7 }}>Book Health</Text><Text style={{ color: theme.color.muted, fontSize: 10, marginLeft: "auto" as any }}>{health.warnings.length} item{health.warnings.length === 1 ? "" : "s"}</Text></View>
               {health.warnings.slice(0, 2).map((warning: any) => <View key={warning.key} style={{ flexDirection: "row", gap: 7, marginTop: 5 }}><Ionicons name={warning.severity === "warning" ? "alert-circle-outline" : "information-circle-outline"} size={15} color={warning.severity === "warning" ? theme.color.warning : theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={{ color: theme.color.onSurface, fontSize: 11, fontWeight: "700" }}>{warning.label}</Text><Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 14 }}>{warning.detail}</Text></View></View>)}

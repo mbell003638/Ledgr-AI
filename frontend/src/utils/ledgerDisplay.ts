@@ -210,6 +210,8 @@ const NAV_MAP: Record<string, { label: string; form?: string; list: string }> = 
   payable_expense: { label: "Expense", list: "/expenses" },
   capital_injection: { label: "Capital injection", list: "/daybook" },
   profit_allocation: { label: "Profit allocation", list: "/daybook" },
+  location_cash_transfer: { label: "Location cash transfer", list: "/locations" },
+  location_stock_transfer: { label: "Location stock transfer", list: "/locations" },
 };
 
 /**

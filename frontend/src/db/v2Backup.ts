@@ -57,6 +57,7 @@ export const DELETE_ORDER: readonly string[] = [
   'v2_fixed_assets',
   'v2_stock_moves',
   'v2_products',
+  'v2_locations',
   'v2_journal_lines',
   'v2_invoice_allocations',
   'v2_close_books',
@@ -82,6 +83,8 @@ export const INSERT_ORDER: readonly string[] = [
   'v2_parties',
   'v2_accounts',
   'v2_sources',
+  'v2_fixed_assets',
+  'v2_asset_depreciation',
   'v2_journal_entries',
   'v2_journal_lines',
   'v2_invoice_allocations',
@@ -91,10 +94,9 @@ export const INSERT_ORDER: readonly string[] = [
   'v2_employees',
   'v2_pay_runs',
   'v2_payslips',
-  'v2_fixed_assets',
-  'v2_asset_depreciation',
   'v2_products',
   'v2_stock_moves',
+  'v2_locations',
 ];
 
 async function tableColumns(db: SqlRunner, table: string): Promise<string[]> {
