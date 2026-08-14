@@ -87,6 +87,7 @@ export default function ReportsScreen() {
   const [customFrom, setCustomFrom] = useState(() => rangePreset("This Month").from);
   const [customTo, setCustomTo] = useState(() => rangePreset("This Month").to);
   const [rangeNotice, setRangeNotice] = useState("");
+  const [provisionalNotice, setProvisionalNotice] = useState("");
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
@@ -146,6 +147,7 @@ export default function ReportsScreen() {
       setBizName(s.businessName || "");
       {
         const report = core.report;
+        setProvisionalNotice(report.provisionalReason || "");
         const current = snapshotDash;
         const commissionPct = Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0);
         const profit = partnershipDisplayFromReports(report, commissionPct);
@@ -469,6 +471,7 @@ export default function ReportsScreen() {
           ))}
         </ScrollView>
       ) : null}
+      {provisionalNotice && locationId ? <View accessibilityRole="alert" style={{ marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.color.warning + "66", backgroundColor: theme.color.surfaceSecondary, flexDirection: "row", gap: 8 }}><Ionicons name="information-circle-outline" size={18} color={theme.color.warning} /><Text style={{ flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 17 }}>{provisionalNotice}</Text></View> : null}
 
       {/* Report category segments */}
       <View style={styles.filterRail}>

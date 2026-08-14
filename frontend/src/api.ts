@@ -52,20 +52,24 @@ export const FACTORY_RESET_PREF_KEYS = [
   TILE_USAGE_KEY,
 ] as const;
 
+let webSessionAiKey = '';
+const isWebRuntime = typeof window !== 'undefined' && typeof document !== 'undefined';
+
 export async function getAIConfig(): Promise<AIConfig> {
   const [provider, secureKey, storedKey, model, baseUrl] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
-    storage.secureGet(AI_API_KEY_KEY, ''),
-    AsyncStorage.getItem(AI_API_KEY_KEY),
+    isWebRuntime ? Promise.resolve(webSessionAiKey) : storage.secureGet(AI_API_KEY_KEY, ''),
+    isWebRuntime ? Promise.resolve(null) : AsyncStorage.getItem(AI_API_KEY_KEY),
     AsyncStorage.getItem(AI_MODEL_KEY),
     AsyncStorage.getItem(AI_BASE_URL_KEY),
   ]);
-  const resolvedKey = secureKey || storedKey || '';
-  if (resolvedKey && !secureKey) {
-    await Promise.all([
-      storage.secureSet(AI_API_KEY_KEY, resolvedKey),
-      AsyncStorage.removeItem(AI_API_KEY_KEY),
-    ]);
+  if (isWebRuntime) await AsyncStorage.removeItem(AI_API_KEY_KEY).catch(() => {});
+  const resolvedKey = isWebRuntime ? webSessionAiKey : (secureKey || storedKey || '');
+  if (!isWebRuntime && resolvedKey && !secureKey) {
+    let migrated = false;
+    try { migrated = await storage.secureSet(AI_API_KEY_KEY, resolvedKey); } catch { migrated = false; }
+    if (migrated) await AsyncStorage.removeItem(AI_API_KEY_KEY);
+    else console.warn('[ai] Secure key migration failed; retaining legacy key for recovery.');
   }
   return {
     provider: ai.normalizeProviderId(provider),
@@ -84,8 +88,12 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   // signal. Check it explicitly and throw so the caller can alert the user. [M4]
   let secureKeyWrite: Promise<boolean> | null = null;
   if (cfg.apiKey !== undefined) {
-    secureKeyWrite = cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY);
-    ops.push(AsyncStorage.removeItem(AI_API_KEY_KEY));
+    if (isWebRuntime) {
+      webSessionAiKey = cfg.apiKey || '';
+      secureKeyWrite = AsyncStorage.removeItem(AI_API_KEY_KEY).then(() => true).catch(() => false);
+    } else {
+      secureKeyWrite = cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY);
+    }
   }
   if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
@@ -96,6 +104,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   if (secureKeyWrite && secureOk === false) {
     throw new Error('Could not securely save your API key on this device. Please try again.');
   }
+  if (secureKeyWrite && cfg.apiKey !== undefined) await AsyncStorage.removeItem(AI_API_KEY_KEY);
 }
 // Convenience aliases used by the current voice and bill screens.
 export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
@@ -526,6 +535,19 @@ export const api = {
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
     const runner = activeSqlRunner();
+    if (runner && (Array.isArray(s.enabledFeatures) || s.activeLocationId !== undefined)) {
+      const service = new V2AppService(runner);
+      const context = await service.activeContext();
+      if (context) {
+        const persona = await runner.first<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND active=1 LIMIT 1', [context.bookId]);
+        if (persona) {
+          let config: any = {}; try { config = JSON.parse(persona.config || '{}'); } catch { config = {}; }
+          if (Array.isArray(s.enabledFeatures)) config.enabledFeatures = [...new Set(s.enabledFeatures.map(String))];
+          if (s.activeLocationId !== undefined) config.activeLocationId = s.activeLocationId ? String(s.activeLocationId) : '';
+          await runner.run('UPDATE v2_personas SET config=? WHERE id=? AND book_id=?', [JSON.stringify(config), persona.id, context.bookId]);
+        }
+      }
+    }
     if (runner && s.managerCommissionPct !== undefined) {
       const service = new V2AppService(runner);
       const context = await service.activeContext();
@@ -660,7 +682,15 @@ export const api = {
     return new V2AppService(runner).listSalesAndInvoices();
   },
   // Suppliers
-  listSuppliers: async () => (await api.listParties()).filter((party: any) => party.roles.includes('supplier')).map((party: any) => ({ ...party, balance: party.payable })),
+  listSuppliers: async () => {
+    const parties = (await api.listParties()).filter((party: any) => party.roles.includes('supplier'));
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    return Promise.all(parties.map(async (party: any) => {
+      const detail: any = await service.getPartyDetail(party.id, 'supplier');
+      return { ...party, ...detail, balance: detail?.balance ?? party.payable ?? 0, payable: detail?.balance ?? party.payable ?? 0, totalBilled: detail?.billsTotal ?? 0, totalPaid: detail?.paymentsTotal ?? 0, advanceBalance: detail?.advanceBalance ?? 0 };
+    }));
+  },
   createSupplier: (s: any) => api.createParty({ ...s, roles: ['supplier'] }),
   updateSupplier: async (id: string, s: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1167,7 +1197,15 @@ export const api = {
   deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
 
   // Debtors
-  listDebtors: async () => (await api.listParties()).filter((party: any) => party.roles.includes('customer')).map((party: any) => ({ ...party, balance: party.receivable })),
+  listDebtors: async () => {
+    const parties = (await api.listParties()).filter((party: any) => party.roles.includes('customer'));
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    return Promise.all(parties.map(async (party: any) => {
+      const detail: any = await service.getPartyDetail(party.id, 'customer');
+      return { ...party, ...detail, balance: detail?.balance ?? party.receivable ?? 0, receivable: detail?.balance ?? party.receivable ?? 0, totalInvoiced: detail?.totalInvoiced ?? 0, totalPaid: detail?.totalPaid ?? 0, advanceBalance: detail?.advanceBalance ?? 0 };
+    }));
+  },
   getCustomer: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer');

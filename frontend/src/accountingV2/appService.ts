@@ -49,7 +49,7 @@ export type V2ScanTransactionImportInput = {
   date: string;
   partyName?: string;
   amount: number;
-  method?: 'cash' | 'credit';
+  method?: 'cash' | 'bank' | 'card' | 'mobile' | 'credit';
   notes?: string;
   createMissingParty?: boolean;
 };
@@ -298,29 +298,32 @@ export class V2AppService {
             const partyId = await this.parties.approvedScanParty(context.bookId, partyName, 'customer', allowCreation);
             return this.createInvoice({ ...input, partyId, clientName: partyName, total: input.amount });
           }
-          return this.createSale({ ...input, method: 'cash' });
+          return this.createSale({ ...input, method: input.method || 'cash' });
         case 'purchase_bill': {
           const partyId = await this.parties.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation);
-          return this.createBill({ ...input, partyId, supplierName: partyName, paymentType: input.method === 'credit' ? 'credit' : 'cash' });
+          return this.createBill({ ...input, partyId, supplierName: partyName, paymentType: input.method === 'credit' ? 'credit' : 'cash', method: input.method === 'credit' ? undefined : (input.method || 'cash') });
         }
         case 'receipt_in':
-          if (!partyName) return this.createSale({ ...input, method: 'cash' });
+          if (input.method === 'credit') throw new Error('Receipt imports require cash, bank, card, or mobile as the payment method.');
+          if (!partyName) return this.createSale({ ...input, method: input.method || 'cash' });
           return this.createReceipt({
             ...input,
             partyId: await this.parties.approvedScanParty(context.bookId, partyName, 'customer', allowCreation),
             clientName: partyName,
-            method: 'cash',
+            method: input.method || 'cash',
           });
         case 'payment_out':
+          if (input.method === 'credit') throw new Error('Payment imports require cash, bank, card, or mobile as the payment method.');
           return this.createPayment({
             ...input,
             partyId: await this.parties.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation),
             supplierName: partyName,
             type: 'supplier_payment',
-            method: 'cash',
+            method: input.method || 'cash',
           });
         case 'expense':
-          return this.createExpense({ ...input, method: 'cash' });
+          if (input.method === 'credit') throw new Error('Expense imports require cash, bank, card, or mobile as the payment method.');
+          return this.createExpense({ ...input, method: input.method || 'cash' });
         default:
           throw new Error('Unsupported scan transaction type');
       }

@@ -14,13 +14,22 @@ import { normalizeDateInput, isValidDateString } from '../utils/dateValidation';
 export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
 export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'];
 
+export type ScanPaymentMethod = 'cash' | 'bank' | 'card' | 'mobile' | 'credit';
+export function normalizeScanMethod(value: unknown): ScanPaymentMethod | null {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'upi') return 'mobile';
+  return (['cash', 'bank', 'card', 'mobile', 'credit'] as const).includes(normalized as ScanPaymentMethod)
+    ? normalized as ScanPaymentMethod
+    : null;
+}
+
 export type ScanTransactionRow = {
   kind: 'transaction';
   entryType: ScanEntryType;
   date: string;
   partyName: string;
   amount: number;
-  method: 'cash' | 'credit';
+  method: ScanPaymentMethod;
   notes: string;
 };
 export type ScanOpeningRow = { kind: 'opening_balances'; asOfDate: string; openingCash: number; stockValue: number };
@@ -222,13 +231,23 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       }
       date = normalized;
     }
+    const method = normalizeScanMethod(entry.method);
+    if (entry.method !== undefined && entry.method !== null && !method) {
+      flaggedRows.push({ label, reason: 'Payment method needs review: use cash, bank, card, mobile, or credit' });
+      continue;
+    }
+    const resolvedMethod: ScanPaymentMethod = method || 'cash';
+    if (['receipt_in', 'payment_out', 'expense'].includes(entry.type as string) && resolvedMethod === 'credit') {
+      flaggedRows.push({ label, reason: 'Credit is not a payment account for this transaction type; choose cash, bank, card, or mobile' });
+      continue;
+    }
     validRows.push({
       kind: 'transaction',
       entryType: entry.type as ScanEntryType,
       date,
       partyName: typeof entry.partyName === 'string' ? entry.partyName.trim() : '',
       amount: entry.amount,
-      method: entry.method === 'credit' ? 'credit' : 'cash',
+      method: resolvedMethod,
       notes: typeof entry.notes === 'string' ? entry.notes.trim() : '',
     });
   }

@@ -500,7 +500,7 @@ export default function AskBooks() {
             </View>
           )}
 
-          {messages.map((m, i) => (
+          {messages.slice(-100).map((m, i) => (
             <View key={i} style={[styles.bubble, m.role === "user" ? styles.bubbleUser : styles.bubbleAI]}>
               <Text style={[styles.bubbleText, m.role === "user" && { color: "#fff" }]}>{m.text}</Text>
             </View>

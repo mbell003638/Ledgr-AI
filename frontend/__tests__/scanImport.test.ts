@@ -21,7 +21,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     expect(schema.required).toEqual(['docType', 'summary', 'entries']);
     expect(schema.properties.docType.enum).toEqual(['receipt', 'statement', 'closing_report', 'transaction_list', 'other']);
     expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense']);
-    expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'credit']);
+    expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'bank', 'card', 'mobile', 'upi', 'credit']);
     const setup = schema.properties.setup.properties;
     for (const key of ['asOfDate', 'openingCash', 'stockValue', 'extraAssets', 'extraLiabilities', 'creditorsTotal', 'partners']) {
       expect(setup[key]).toBeDefined();
@@ -106,6 +106,20 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
 });
 
 describe('mapAnalyzedDocument', () => {
+  it('preserves stated payment methods and flags invalid credit receipt methods', () => {
+    const mapped = mapAnalyzedDocument({
+      docType: 'statement', summary: 'Payment methods',
+      entries: [
+        { type: 'receipt_in', partyName: 'Acme', amount: 10, method: 'bank' },
+        { type: 'payment_out', partyName: 'Vendor', amount: 20, method: 'card' },
+        { type: 'expense', partyName: 'Mobile', amount: 30, method: 'upi' },
+        { type: 'receipt_in', partyName: 'Ambiguous', amount: 40, method: 'credit' },
+      ],
+    });
+    expect(mapped.validRows.map((row: any) => row.method)).toEqual(['bank', 'card', 'mobile']);
+    expect(mapped.flaggedRows).toEqual([expect.objectContaining({ reason: expect.stringMatching(/Credit is not a payment account/) })]);
+  });
+
   it('builds the photographed closing report as one balanced opening composite', () => {
     const mapped = mapAnalyzedDocument({
       docType: 'closing_report',

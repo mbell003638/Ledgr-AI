@@ -609,6 +609,7 @@ export default function AdvancedSettingsScreen() {
               <AccordionRow title="AI Data & History" subtitle={aiDataMode === 'detailed' ? 'Detailed context enabled' : 'Summary only by default'} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Summary-only mode sends totals and reports. Detailed mode may include party names, open invoices, and recent entries. Conversation history is never remembered unless you enable it.</Text>
+                  <Text style={[styles.hint, { marginTop: theme.spacing.sm }]}>{Platform.OS === 'web' ? 'On web, API keys are session-only and are not stored in browser storage.' : 'On Android and iOS, API keys are stored in device secure credential storage.'}</Text>
                   <View style={styles.modeRow}>
                     <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'summary' }} onPress={() => setAiDataMode('summary')} style={[styles.modeBtn, aiDataMode === 'summary' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'summary' && styles.modeTextActive]}>Summary only</Text></Pressable>
                     <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'detailed' }} onPress={() => setAiDataMode('detailed')} style={[styles.modeBtn, aiDataMode === 'detailed' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'detailed' && styles.modeTextActive]}>Detailed context</Text></Pressable>

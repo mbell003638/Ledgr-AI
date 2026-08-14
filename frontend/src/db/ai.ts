@@ -502,7 +502,7 @@ export const ANALYZE_DOCUMENT_SCHEMA = {
           date: { type: 'string' },
           partyName: { type: 'string' },
           amount: { type: 'number' },
-          method: { type: 'string', enum: ['cash', 'credit'] },
+          method: { type: 'string', enum: ['cash', 'bank', 'card', 'mobile', 'upi', 'credit'] },
           notes: { type: 'string' },
         },
         required: ['type', 'amount'],
@@ -561,7 +561,8 @@ export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
     "- docType: classify as 'receipt', 'statement', 'closing_report', 'transaction_list', or 'other'.\n" +
     "- entries[]: individual dated transactions. type is 'sale' (revenue), 'purchase_bill' (bought from a supplier), " +
     "'receipt_in' (money received), 'payment_out' (money paid out to a supplier/party), or 'expense' (operating cost). " +
-    "Use ISO dates (YYYY-MM-DD); amounts are positive numbers; method is 'cash' or 'credit' when stated.\n" +
+         "Use ISO dates (YYYY-MM-DD); amounts are positive numbers; method is one of 'cash', 'bank', 'card', 'mobile', 'upi', or 'credit' when stated. Never silently convert a stated bank, card, or mobile method to cash.\n" +
+
     '- setup: fill ONLY for balance/closing-style documents that show point-in-time balances (opening balances, closing report, ' +
     'net worth statement). asOfDate is the statement/closing date ONLY when visibly present; otherwise omit it. Never use today or the scan date as the statement date.\n' +
     '- Cash mapping rule: SUM every cash balance row (e.g. "Cash at Shop", "Cash USD at Home", petty cash, cash in hand at any ' +

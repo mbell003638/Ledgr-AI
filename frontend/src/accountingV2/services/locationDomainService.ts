@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../../db/schema';
 import { V2SqlRepository } from '../repository';
-import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
+import { bookOptionalSettings, isOptionalModuleEnabledForBook, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { mulMoney, round2 } from '../../money';
 
@@ -52,13 +52,17 @@ export async function resolveWriteLocationId(
   bookId: string,
   requested?: unknown,
 ): Promise<string | null> {
-  if (!(await isOptionalModuleEnabled(db, 'locations'))) return null;
+  if (!(await isOptionalModuleEnabledForBook(db, bookId, 'locations'))) return null;
   const explicit = String(requested || '').trim();
   if (explicit) return requireLocation(db, bookId, explicit);
-  const row = await db.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
-  let parsed: { activeLocationId?: unknown } = {};
-  try { parsed = JSON.parse(row?.value || '{}'); } catch { parsed = {}; }
-  const fallback = String(parsed.activeLocationId || '').trim();
+  const scoped = await bookOptionalSettings(db, bookId);
+  let fallback = String(scoped.activeLocationId || '').trim();
+  if (!fallback && bookId === 'default') {
+    const row = await db.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
+    let parsed: { activeLocationId?: unknown } = {};
+    try { parsed = JSON.parse(row?.value || '{}'); } catch { parsed = {}; }
+    fallback = String(parsed.activeLocationId || '').trim();
+  }
   if (!fallback) throw new Error('Choose a location before recording this.');
   return requireLocation(db, bookId, fallback);
 }
@@ -189,11 +193,11 @@ export class LocationDomainService {
   }
 
   async transferStock(input: StockTransferInput) {
+    const c = await this.requireContext(input.date);
     await this.requireModule();
-    if (!(await isOptionalModuleEnabled(this.db, 'perpetualInventory'))) {
+    if (!(await isOptionalModuleEnabledForBook(this.db, c.bookId, 'perpetualInventory'))) {
       throw new Error('Turn on Live Product Stock in Customize Features before transferring stock.');
     }
-    const c = await this.requireContext(input.date);
     const fromId = await requireLocation(this.db, c.bookId, input.fromLocationId);
     const toId = await requireLocation(this.db, c.bookId, input.toLocationId);
     if (fromId === toId) throw new Error('Choose two different locations');
@@ -304,7 +308,7 @@ export class LocationDomainService {
   }
 
   private async requireModule() {
-    requireOptionalModule(await isOptionalModuleEnabled(this.db, 'locations'), 'locations');
+    requireOptionalModule(await isOptionalModuleEnabledForBook(this.db, (await this.getActiveContext())?.bookId || '', 'locations'), 'locations');
   }
 
   private async requireContext(date?: string): Promise<ActiveContext> {

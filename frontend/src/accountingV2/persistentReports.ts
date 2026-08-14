@@ -5,7 +5,7 @@ import { computePeriodicCogs } from './cogs';
 import { isOptionalModuleEnabled } from './optionalModules';
 import { V2_ACCOUNT_CODES } from './types';
 
-export type PersistentReportResult = { source: 'v2'; report: V2Reports };
+export type PersistentReportResult = { source: 'v2'; report: V2Reports & { provisional?: boolean; provisionalReason?: string } };
 
 /** Load reports from the sole authoritative V2 journal. */
 export async function persistentV2Reports(
@@ -48,8 +48,9 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
     sources: sourceRows.map((s) => { let metadata: any = {}; try { metadata = JSON.parse(s.metadata || '{}'); } catch { metadata = {}; } return { id: s.id, bookId: s.book_id, type: s.type, date: s.date, reference: s.reference || undefined, metadata, locationId: s.location_id || metadata.locationId || undefined }; }),
     allocations: allocationRows.map((a) => ({ id: a.id, bookId: a.book_id, invoiceSourceId: a.invoice_source_id, receiptSourceId: a.receipt_source_id, amount: Number(a.amount), allocatedAt: a.allocated_at })),
   };
-  const cogsAdjustment = await openPeriodCogsAdjustment(db, options);
-  return buildV2Reports(store, { ...options, cogsAdjustment });
+  const cogsState = await openPeriodCogsAdjustment(db, options);
+  const report = buildV2Reports(store, { ...options, cogsAdjustment: cogsState.adjustment });
+  return cogsState.provisional ? { ...report, provisional: true, provisionalReason: cogsState.provisionalReason } : report;
 }
 
 /**
@@ -58,30 +59,30 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
  * perpetualInventory is on (sale-time 5000 is already posted), there is no open
  * period, no closing count yet, or the report range excludes the open period.
  */
-async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions) {
+async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions): Promise<{ adjustment?: { cogsAccountId: string; inventoryAccountId: string; amount: number }; provisional?: boolean; provisionalReason?: string }> {
   try {
-    if (options.locationId) return undefined;
-    if (await isOptionalModuleEnabled(db, 'perpetualInventory')) return undefined;
+    if (await isOptionalModuleEnabled(db, 'perpetualInventory')) return {};
     const period = await db.first<{ start_date: string; end_date: string }>(
       "SELECT start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1",
       [options.bookId],
     );
-    if (!period) return undefined;
+    if (!period) return {};
     // Only inject when the requested range actually overlaps the open period.
-    if (options.to && options.to < period.start_date) return undefined;
-    if (options.from && options.from > period.end_date) return undefined;
+    if (options.to && options.to < period.start_date) return {};
+    if (options.from && options.from > period.end_date) return {};
+    if (options.locationId) return { provisional: true, provisionalReason: 'Shop COGS is pending period close; gross and net profit may change after the inventory count is posted.' };
     const end = options.to && options.to < period.end_date ? options.to : period.end_date;
     const { cogs, hasClosingCount } = await computePeriodicCogs(db, options.bookId, { start: period.start_date, end });
-    if (!hasClosingCount || cogs <= 0) return undefined;
+    if (!hasClosingCount || cogs <= 0) return {};
     // Resolve account ids by (book_id, code) rather than templating `${bookId}:account:${code}`.
     // If a book's ids ever diverge from that convention, a templated id would miss the report's
     // accountsById lookup and the COGS estimate would silently vanish from the P&L.
     const cogsAccountId = await accountIdByCode(db, options.bookId, V2_ACCOUNT_CODES.COGS);
     const inventoryAccountId = await accountIdByCode(db, options.bookId, V2_ACCOUNT_CODES.INVENTORY);
-    if (!cogsAccountId || !inventoryAccountId) return undefined;
-    return { cogsAccountId, inventoryAccountId, amount: cogs };
+    if (!cogsAccountId || !inventoryAccountId) return {};
+    return { adjustment: { cogsAccountId, inventoryAccountId, amount: cogs } };
   } catch {
-    return undefined; // never let the COGS estimate break report rendering
+    return {}; // never let the COGS estimate break report rendering
   }
 }
 

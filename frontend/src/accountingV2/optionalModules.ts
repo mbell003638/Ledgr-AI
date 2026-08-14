@@ -12,6 +12,25 @@ export async function isOptionalModuleEnabled(db: SqlRunner, key: OptionalModule
   return Array.isArray(parsed.enabledFeatures) && parsed.enabledFeatures.includes(key);
 }
 
+export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promise<{ enabledFeatures?: string[]; activeLocationId?: string }> {
+  const rows = await db.all<{ config: string }>('SELECT config FROM v2_personas WHERE book_id=? AND enabled=1', [bookId]);
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.config || '{}');
+      if (Array.isArray(parsed.enabledFeatures)) return { enabledFeatures: parsed.enabledFeatures.map(String), activeLocationId: parsed.activeLocationId ? String(parsed.activeLocationId) : undefined };
+    } catch { /* try the next enabled persona */ }
+  }
+  return {};
+}
+
+export async function isOptionalModuleEnabledForBook(db: SqlRunner, bookId: string, key: OptionalModuleKey): Promise<boolean> {
+  const scoped = await bookOptionalSettings(db, bookId);
+  if (scoped.enabledFeatures) return scoped.enabledFeatures.includes(key);
+  // Older books without a scoped preference record retain the legacy setting
+  // until the active-book mirroring path initializes their persona config.
+  return isOptionalModuleEnabled(db, key);
+}
+
 export function requireOptionalModule(enabled: boolean, key: FeatureKey): void {
   if (!enabled) throw new Error(`Turn on ${key} in Customize Features before using this.`);
 }
