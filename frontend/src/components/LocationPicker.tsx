@@ -31,6 +31,7 @@ export function LocationPicker({
   const theme = useTheme();
   const [enabled, setEnabled] = useState(false);
   const [locations, setLocations] = useState<ShopLocation[]>([]);
+  const [activeId, setActiveId] = useState("");
 
   useEffect(() => {
     let live = true;
@@ -38,12 +39,16 @@ export function LocationPicker({
       if (!live) return;
       setEnabled(next.enabled);
       setLocations(next.locations);
-      if (next.enabled && !value && next.activeId) onChange(next.activeId);
+      setActiveId(next.activeId);
     }).catch(() => {
       if (live) setEnabled(false);
     });
     return () => { live = false; };
   }, []);
+
+  useEffect(() => {
+    if (enabled && !value && activeId) onChange(activeId);
+  }, [enabled, value, activeId, onChange]);
 
   if (!enabled) return null;
 
