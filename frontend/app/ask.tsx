@@ -296,6 +296,7 @@ export default function AskBooks() {
   const applyingProposalRef = useRef(false);
   const [pendingProposal, setPendingProposal] = useState<ValidatedProposal | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -315,16 +316,29 @@ export default function AskBooks() {
   }, [historyKey, messages]);
 
   useEffect(() => {
-    const shown = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => {
-      setKeyboardVisible(true);
+    const applyFrame = (e?: { endCoordinates?: { height?: number } }) => {
+      const height = Math.max(0, e?.endCoordinates?.height ?? 0);
+      setKeyboardVisible(height > 0);
+      setKeyboardHeight(height);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-    });
+    };
+    const shown = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", applyFrame);
     const hidden = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => {
       setKeyboardVisible(false);
+      setKeyboardHeight(0);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     });
-    return () => { shown.remove(); hidden.remove(); };
+    const changed = Platform.OS === "android"
+      ? Keyboard.addListener("keyboardDidChangeFrame", applyFrame)
+      : { remove() {} };
+    return () => { shown.remove(); hidden.remove(); changed.remove(); };
   }, []);
+
+  // Edge-to-edge Android ignores adjustResize, so lift the composer by IME height.
+  const composerBottomPad =
+    theme.spacing.md
+    + (Platform.OS === "android" ? keyboardHeight : 0)
+    + (keyboardVisible ? 0 : insets.bottom);
 
   const clearHistory = () => {
     confirmAction(
@@ -498,7 +512,7 @@ export default function AskBooks() {
           )}
         </ScrollView>
 
-        <View style={[styles.inputBar, { paddingBottom: theme.spacing.md + (keyboardVisible ? 0 : insets.bottom) }]}>
+        <View style={[styles.inputBar, { paddingBottom: composerBottomPad }]}>
           <View style={styles.inputWrapper}>
             <Pressable
               style={styles.attachBtn}
@@ -594,10 +608,10 @@ function makeStyles(theme: any) {
     suggestLabel: { fontSize: 12, fontWeight: "700", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
     suggestChip: { padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginBottom: 8 },
     suggestText: { fontSize: 14, color: theme.color.onSurface },
-    bubble: { maxWidth: "85%", padding: theme.spacing.md, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm },
+    bubble: { maxWidth: "85%", minWidth: 0, padding: theme.spacing.md, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm },
     bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
     bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
-    bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
+    bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface, flexShrink: 1 },
     proposalCard: { width: "100%", padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, marginBottom: theme.spacing.sm },
     proposalCardDestructive: { borderColor: theme.color.error },
     proposalHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
@@ -613,7 +627,7 @@ function makeStyles(theme: any) {
     inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
     attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
     inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
-    input: { flex: 1, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
+    input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
   });

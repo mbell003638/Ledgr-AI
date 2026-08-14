@@ -15,12 +15,6 @@ import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/utils/dateValidation";
 
-const PROVIDER_MARK: Record<ProviderId, string> = {
-  gemini: "✨",
-  openai: "⚡",
-  anthropic: "💬",
-};
-
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
@@ -385,7 +379,12 @@ export default function AdvancedSettingsScreen() {
   };
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const selectedProviderTitle = PROVIDERS.find((item) => item.id === provider)?.label ?? "Google Gemini";
+  const isCustomProvider = provider !== "gemini";
+  const selectedProviderTitle = provider === "gemini"
+    ? "Google Gemini"
+    : provider === "anthropic"
+      ? "Anthropic Compatible"
+      : "OpenAI Compatible";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -529,40 +528,41 @@ export default function AdvancedSettingsScreen() {
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
               <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <View style={styles.providerTileRow}>
-                    {PROVIDERS.map((item) => {
-                      const selected = provider === item.id;
-                      return (
-                        <GlowPressable
-                          key={item.id}
-                          haptic
-                          topHighlight={false}
-                          animateBorder={false}
-                          clipSafe
-                          hoverLift={0}
-                          hoverScale={1}
-                          pressScale={0.97}
-                          restingBorderColor="transparent"
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected }}
-                          accessibilityLabel={item.label}
-                          onPress={() => chooseProvider(item.id)}
-                          style={[styles.providerTile, selected && styles.providerTileSelected]}
-                        >
-                          <Text style={styles.providerMark}>{PROVIDER_MARK[item.id]}</Text>
-                          <Text style={[styles.providerTileTitle, selected && styles.providerTileTitleSelected]} numberOfLines={2}>
-                            {item.label}
-                          </Text>
-                        </GlowPressable>
-                      );
-                    })}
+                  <View style={styles.modeRow}>
+                    <Pressable
+                      onPress={() => chooseProvider("gemini")}
+                      style={[styles.modeBtn, !isCustomProvider && styles.modeBtnActive]}
+                    >
+                      <Text style={[styles.modeText, !isCustomProvider && styles.modeTextActive]}>Google Gemini</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => { if (provider === "gemini") chooseProvider("openai"); }}
+                      style={[styles.modeBtn, isCustomProvider && styles.modeBtnActive]}
+                    >
+                      <Text style={[styles.modeText, isCustomProvider && styles.modeTextActive]}>Custom Provider</Text>
+                    </Pressable>
                   </View>
-                  <Text style={styles.hint}>OpenAI compatible covers OpenRouter, Groq, and any /v1 host. Anthropic compatible covers official Claude or a proxy.</Text>
+                  {isCustomProvider && (
+                    <View style={[styles.modeRow, { marginTop: 8 }]}>
+                      <Pressable
+                        onPress={() => chooseProvider("openai")}
+                        style={[styles.modeBtn, provider === "openai" && styles.modeBtnActive]}
+                      >
+                        <Text style={[styles.modeText, provider === "openai" && styles.modeTextActive]}>OpenAI Compatible</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => chooseProvider("anthropic")}
+                        style={[styles.modeBtn, provider === "anthropic" && styles.modeBtnActive]}
+                      >
+                        <Text style={[styles.modeText, provider === "anthropic" && styles.modeTextActive]}>Anthropic Compatible</Text>
+                      </Pressable>
+                    </View>
+                  )}
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
                   <TextInput value={modelName} onChangeText={setModelName} placeholder={PROVIDERS.find((item) => item.id === provider)?.defaultModel || "model name"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
-                  {(provider === "openai" || provider === "anthropic") && (
+                  {isCustomProvider && (
                     <>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
                       <TextInput
@@ -769,42 +769,5 @@ function makeStyles(theme: any) {
       borderWidth: 1, borderColor: theme.color.brandPrimary, marginTop: theme.spacing.md,
     },
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-    providerTileRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    providerTile: {
-      flex: 1,
-      flexDirection: "row",
-      minHeight: 40,
-      paddingVertical: 8,
-      paddingHorizontal: 8,
-      borderRadius: theme.radius.md,
-      borderWidth: 1,
-      borderColor: theme.color.border,
-      backgroundColor: theme.color.surface,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-    },
-    providerTileSelected: {
-      borderColor: theme.color.brandPrimary,
-      backgroundColor: theme.color.brandPrimary + "14",
-    },
-    providerMark: {
-      fontSize: 14,
-      lineHeight: 18,
-    },
-    providerTileTitle: {
-      flexShrink: 1,
-      fontSize: 11,
-      fontWeight: "600",
-      color: theme.color.onSurface,
-      textAlign: "left",
-      lineHeight: 14,
-    },
-    providerTileTitleSelected: {
-      color: theme.color.brandPrimary,
-    },
   });
 }

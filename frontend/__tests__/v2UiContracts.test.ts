@@ -371,7 +371,11 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('submitBehavior="submit"');
     expect(source).toContain('onSubmitEditing={() => send(input)}');
     expect(source).toContain('keyboardDismissMode="on-drag"');
+    expect(source).toContain('setKeyboardHeight(height)');
+    expect(source).toContain('composerBottomPad');
+    expect(source).toContain('Platform.OS === "android" ? keyboardHeight : 0');
     expect(appConfig.expo.android.softwareKeyboardLayoutMode).toBe('resize');
+    expect(appConfig.expo.android.edgeToEdgeEnabled).toBe(true);
   });
   it('offers scan retry controls and explains automatic transient retries', () => {
     const source = readApp('scan-import.tsx');
@@ -434,5 +438,51 @@ describe('V2 UI contracts', () => {
     expect(apiSrc).toMatch(/overdueInvoices:[\s\S]*dueDate < localTodayIso\(\)/);
     expect(apiSrc).not.toMatch(/overdueInvoices:[\s\S]*toISOString\(\)\.slice\(0,\s*10\)/);
     expect(localSrc).toMatch(/export async function overdueInvoices\(\)[\s\S]*localTodayIso\(\)/);
+  });
+
+  it('restores the Gemini / Custom AI picker with gated dialect pills and Base URL', () => {
+    const advanced = readApp('advanced-settings.tsx');
+
+    expect(advanced).toContain('Google Gemini');
+    expect(advanced).toContain('Custom Provider');
+    expect(advanced).toContain('OpenAI Compatible');
+    expect(advanced).toContain('Anthropic Compatible');
+
+    const pickerStart = advanced.indexOf('title="AI Provider"');
+    const apiKeyStart = advanced.indexOf('API Key', pickerStart);
+    const picker = advanced.slice(pickerStart, apiKeyStart);
+    expect(pickerStart).toBeGreaterThanOrEqual(0);
+    expect(apiKeyStart).toBeGreaterThan(pickerStart);
+
+    // Primary picker is two explicit pills, not PROVIDERS.map over every dialect.
+    // Unused leftover styles (providerTileRow) are allowed; the JSX must not map them.
+    expect(picker).toContain('Google Gemini');
+    expect(picker).toContain('Custom Provider');
+    expect(picker).not.toMatch(/PROVIDERS\.map\s*\(/);
+    expect(picker).not.toMatch(/PROVIDER_MARK\s*\[/);
+
+    // Dialect pills appear only for custom (openai / anthropic) providers.
+    const customClick =
+      /if\s*\(\s*provider === ["']gemini["']\s*\)\s*(?:chooseProvider|setProvider)\(\s*["']openai["']\s*\)/.test(advanced);
+    const dialectGate =
+      /isCustomProvider/.test(picker) ||
+      /provider === ["']openai["']\s*\|\|\s*provider === ["']anthropic["']/.test(picker) ||
+      /provider !== ["']gemini["']/.test(picker);
+    expect(customClick || dialectGate).toBe(true);
+    expect(picker).toContain('OpenAI Compatible');
+    expect(picker).toContain('Anthropic Compatible');
+
+    const baseUrlIdx = advanced.indexOf('Base URL', apiKeyStart);
+    expect(baseUrlIdx).toBeGreaterThan(apiKeyStart);
+    const baseUrlGate = advanced.slice(Math.max(0, baseUrlIdx - 240), baseUrlIdx);
+    expect(baseUrlGate).toMatch(
+      /isCustomProvider|provider === ["']openai["']\s*\|\|\s*provider === ["']anthropic["']|provider !== ["']gemini["']/,
+    );
+  });
+
+  it('Ask AI lifts Android by keyboard height', () => {
+    const source = readApp('ask.tsx');
+    expect(source).toContain('keyboardDidShow');
+    expect(source).toMatch(/endCoordinates|keyboardHeight/);
   });
 });
