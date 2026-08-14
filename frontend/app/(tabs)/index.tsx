@@ -62,7 +62,6 @@ const TILES = [
   { key: "inventory", label: "Stock", icon: Package, route: "/inventory-form", iconColor: "#34D399", iconBackground: "rgba(227,233,218,0.20)" },
   { key: "perpetualInventory", label: "Products", icon: Package, route: "/products", iconColor: "#4ADE80", iconBackground: "rgba(220,232,212,0.20)" },
   { key: "payroll", label: "Payroll", icon: Wallet, route: "/payroll", iconColor: "#A78BFA", iconBackground: "rgba(228,220,236,0.20)" },
-  { key: "fixedAssets", label: "Fixed Assets", icon: PieChart, route: "/fixed-assets", iconColor: "#94A3B8", iconBackground: "rgba(216,220,232,0.20)" },
   { key: "assets", label: "Assets & Liabilities", icon: PieChart, route: "/assets", iconColor: "#818CF8", iconBackground: "rgba(208,216,224,0.20)" },
   { key: "daybook", label: "Day Book", icon: BookOpen, route: "/daybook", iconColor: "#F472B6", iconBackground: "rgba(221,227,236,0.20)" },
   { key: "reports", label: "Reports", icon: BarChart2, route: "/reports", iconColor: "#FBBF24", iconBackground: "rgba(224,224,218,0.20)" },

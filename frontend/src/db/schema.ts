@@ -17,14 +17,13 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
   'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts',
   'v2_members', 'v2_close_books',
   'v2_employees', 'v2_pay_runs', 'v2_payslips',
-  'v2_fixed_assets', 'v2_asset_depreciation',
   'v2_products', 'v2_stock_moves',
 ] as const;
 
@@ -121,19 +120,6 @@ export function schemaSql(): string {
       FOREIGN KEY(pay_run_id) REFERENCES v2_pay_runs(id) ON UPDATE CASCADE ON DELETE CASCADE,
       FOREIGN KEY(employee_id) REFERENCES v2_employees(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
-    CREATE TABLE IF NOT EXISTS v2_fixed_assets (
-      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL,
-      acquired_date TEXT NOT NULL, cost REAL NOT NULL, residual REAL NOT NULL DEFAULT 0,
-      useful_life_months INTEGER NOT NULL, method TEXT NOT NULL DEFAULT 'straight_line',
-      disposed INTEGER NOT NULL DEFAULT 0, source_id TEXT,
-      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
-    );
-    CREATE TABLE IF NOT EXISTS v2_asset_depreciation (
-      id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, date TEXT NOT NULL, amount REAL NOT NULL, source_id TEXT,
-      FOREIGN KEY(asset_id) REFERENCES v2_fixed_assets(id) ON UPDATE CASCADE ON DELETE CASCADE,
-      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
-    );
     CREATE TABLE IF NOT EXISTS v2_products (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, sku TEXT, name TEXT NOT NULL, unit TEXT,
       cost REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, qty REAL NOT NULL DEFAULT 0,
@@ -162,6 +148,9 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec('PRAGMA synchronous = NORMAL;');
   await db.exec('PRAGMA wal_autocheckpoint = 1000;');
   await db.exec(schemaSql());
+  // Schema 7: drop the unused Fixed Asset Register tables. Chart accounts 1400/1450 stay.
+  await db.exec('DROP TABLE IF EXISTS v2_asset_depreciation;');
+  await db.exec('DROP TABLE IF EXISTS v2_fixed_assets;');
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');

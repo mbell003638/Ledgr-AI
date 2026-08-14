@@ -53,8 +53,6 @@ export const DELETE_ORDER: readonly string[] = [
   'v2_payslips',
   'v2_pay_runs',
   'v2_employees',
-  'v2_asset_depreciation',
-  'v2_fixed_assets',
   'v2_stock_moves',
   'v2_products',
   'v2_journal_lines',
@@ -91,8 +89,6 @@ export const INSERT_ORDER: readonly string[] = [
   'v2_employees',
   'v2_pay_runs',
   'v2_payslips',
-  'v2_fixed_assets',
-  'v2_asset_depreciation',
   'v2_products',
   'v2_stock_moves',
 ];

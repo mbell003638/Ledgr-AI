@@ -19,7 +19,6 @@ export const V2_COLLECTIONS = [
   'v2_sources', 'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations',
   'v2_inventory_counts', 'v2_members', 'v2_close_books',
   'v2_employees', 'v2_pay_runs', 'v2_payslips',
-  'v2_fixed_assets', 'v2_asset_depreciation',
   'v2_products', 'v2_stock_moves',
 ] as const;
 export type V2Collection = typeof V2_COLLECTIONS[number];

@@ -5,7 +5,7 @@ export const V2_SCHEMA_VERSION = 1;
 export function v2TableNames(): V2Collection[] { return [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
   'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
-  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_fixed_assets', 'v2_asset_depreciation', 'v2_products', 'v2_stock_moves',
+  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_products', 'v2_stock_moves',
 ]; }
 
 export type V2MemoryStore = {

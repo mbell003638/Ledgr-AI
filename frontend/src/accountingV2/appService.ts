@@ -24,7 +24,6 @@ import {
   type V2ClosingBalancesImportInput,
 } from './services/capitalDomainService';
 import { PayrollDomainService } from './services/payrollDomainService';
-import { FixedAssetDomainService } from './services/fixedAssetDomainService';
 import { ProductDomainService } from './services/productDomainService';
 import { localTodayIso } from '../utils/dateValidation';
 
@@ -69,7 +68,6 @@ export class V2AppService {
   readonly sales: SaleDomainService;
   readonly capital: CapitalDomainService;
   readonly payroll: PayrollDomainService;
-  readonly fixedAssets: FixedAssetDomainService;
   readonly products: ProductDomainService;
 
   constructor(readonly db: SqlRunner) {
@@ -104,7 +102,6 @@ export class V2AppService {
       (id) => this.sourceType(id),
     );
     this.payroll = new PayrollDomainService(this.db, this.repo, (date) => this.activeContext(date));
-    this.fixedAssets = new FixedAssetDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.products = new ProductDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.capital = new CapitalDomainService(
       this.db,
@@ -252,11 +249,6 @@ export class V2AppService {
   listPayRuns() { return this.payroll.listPayRuns(); }
   listPayslips(payRunId: string) { return this.payroll.listPayslips(payRunId); }
   yearEndPayrollSummary(year: string) { return this.payroll.yearEndSummary(year); }
-
-  listFixedAssets() { return this.fixedAssets.listAssets(); }
-  acquireFixedAsset(input: AnyRecord) { return this.fixedAssets.acquireAsset(input as any); }
-  postAssetDepreciation(input: AnyRecord) { return this.fixedAssets.postDepreciation(input as any); }
-  disposeFixedAsset(input: AnyRecord) { return this.fixedAssets.disposeAsset(input as any); }
 
   listProducts() { return this.products.listProducts(); }
   upsertProduct(input: AnyRecord) { return this.products.upsertProduct(input as any); }

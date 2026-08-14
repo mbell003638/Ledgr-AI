@@ -16,11 +16,10 @@ export type FeatureKey =
   | "ask"
   | "voice"
   | "payroll"
-  | "fixedAssets"
   | "perpetualInventory";
 
 /** Off unless the user turns them on in Customize Features. Never in persona baselines. */
-export const OPTIONAL_FEATURE_KEYS: FeatureKey[] = ["payroll", "fixedAssets", "perpetualInventory"];
+export const OPTIONAL_FEATURE_KEYS: FeatureKey[] = ["payroll", "perpetualInventory"];
 
 export interface FeatureMeta {
   key: FeatureKey;
@@ -168,14 +167,6 @@ export const ALL_FEATURES: FeatureMeta[] = [
     icon: "people-outline",
     color: "#E4DCEC",
     description: "Employees, pay runs, tax withheld, payslips, and a year-end summary. Off until you enable it.",
-  },
-  {
-    key: "fixedAssets",
-    label: "Fixed Asset Register (optional)",
-    category: "accounting",
-    icon: "car-outline",
-    color: "#D8DCE8",
-    description: "Equipment, vehicles, and computers with straight-line depreciation. Off until you enable it.",
   },
   {
     key: "perpetualInventory",
