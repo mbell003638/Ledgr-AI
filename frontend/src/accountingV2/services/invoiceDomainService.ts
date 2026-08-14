@@ -6,6 +6,7 @@ import { calculateInvoiceTotals } from '../../utils/invoiceTotals';
 import { localTodayIso } from '../../utils/dateValidation';
 import type { PartyDomainService } from './partyDomainService';
 import { ProductDomainService } from './productDomainService';
+import { resolveWriteLocationId } from './locationDomainService';
 
 type AnyRecord = Record<string, any>;
 const amount = (value: any) => Number(value);
@@ -27,6 +28,7 @@ export class InvoiceDomainService {
     const totals = lines.length ? calculateInvoiceTotals(lines, input.discount || 0, input.taxRate || 0) : null;
     const net = totals?.total ?? amount(input.total ?? input.amount);
     const productLines = Array.isArray(input.productLines) ? input.productLines : [];
+    const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const partyId = await this.parties.party(input, 'customer', c.bookId);
       const result = await postInvoice(this.repo, {
@@ -35,6 +37,7 @@ export class InvoiceDomainService {
         partyId,
         amount: net,
         reference: input.invoiceNumber || input.reference,
+        locationId: locationId || undefined,
         metadata: {
           clientPhone: input.clientPhone,
           dueDate: input.dueDate,
@@ -51,7 +54,7 @@ export class InvoiceDomainService {
       });
       if (productLines.length) {
         await new ProductDomainService(this.db, this.repo, this.getActiveContext)
-          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines);
+          .applySaleLines(c.bookId, c.periodId, input.date, result.source.id, productLines, locationId || undefined);
       }
       return result;
     });

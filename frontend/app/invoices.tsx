@@ -24,6 +24,7 @@ import { printHtml } from "@/src/utils/print";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -736,6 +737,7 @@ export default function InvoicesScreen() {
 
   // Form state
   const [clientName, setClientName] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [date, setDate] = useState(localTodayIso());
   const [dueDate, setDueDate] = useState("");
@@ -870,6 +872,7 @@ export default function InvoicesScreen() {
         tax: totals.tax,
         total: totals.total,
         ...(productLines ? { productLines } : {}),
+        ...(locationId ? { locationId } : {}),
       };
       if (editId) await api.updateInvoice(editId, payload);
       else await api.createInvoice(payload);
@@ -1203,6 +1206,7 @@ export default function InvoicesScreen() {
             </View>
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
               <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
+                <LocationPicker value={locationId} onChange={setLocationId} />
                 <Card>
                   <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
                     <Pressable onPress={scanInvoice} disabled={ocrBusy} style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: theme.color.brandPrimary, paddingVertical: 10, borderRadius: theme.radius.md }}>

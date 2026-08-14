@@ -14,6 +14,12 @@ export type V2ReconciliationError = {
 
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
+function sourceLocationId(source: V2Source): string | null {
+  const fromField = String(source.locationId || '').trim();
+  if (fromField) return fromField;
+  const fromMeta = String((source.metadata as { locationId?: unknown } | undefined)?.locationId || '').trim();
+  return fromMeta || null;
+}
 const normalized = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 let savepointSequence = 0;
 
@@ -62,8 +68,8 @@ export class V2SqlRepository {
     return this.tx(async () => {
       const id = input.id || uid('je');
       await this.validateJournal({ ...input, sourceId: source.id }, source.id);
-      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {})]);
-      return this.insertJournal(id, { ...input, sourceId: source.id });
+      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), sourceLocationId(source)]);
+      return this.insertJournal(id, { ...input, sourceId: source.id }, sourceLocationId(source));
     });
   }
 
@@ -72,8 +78,8 @@ export class V2SqlRepository {
     return this.tx(async () => {
       const id = input.id || uid('je');
       await this.validateJournal({ ...input, sourceId: source.id }, source.id);
-      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {})]);
-      const journal = await this.insertJournal(id, { ...input, sourceId: source.id });
+      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), sourceLocationId(source)]);
+      const journal = await this.insertJournal(id, { ...input, sourceId: source.id }, sourceLocationId(source));
       for (const a of allocations) await this.db.run('INSERT INTO v2_invoice_allocations(id,book_id,invoice_source_id,receipt_source_id,amount,allocated_at) VALUES(?,?,?,?,?,?)', [a.id, a.bookId, a.invoiceSourceId, a.receiptSourceId, a.amount, a.allocatedAt]);
       return journal;
     });
@@ -114,21 +120,27 @@ export class V2SqlRepository {
     }
   }
 
-  private async insertJournal(id: string, input: Omit<V2JournalEntry, 'id'>): Promise<V2JournalEntry> {
+  private async insertJournal(id: string, input: Omit<V2JournalEntry, 'id'>, fallbackLocationId?: string | null): Promise<V2JournalEntry> {
     await this.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, input.bookId, input.periodId, input.sourceId || null, input.date, input.memo, new Date().toISOString(), input.reversalOf || null]);
-    for (const line of input.lines) await this.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, line.accountId, line.partyId || null, cents(line.debit), cents(line.credit), line.memo || null]);
-    return { ...input, id, lines: input.lines.map((l) => ({ ...l, debit: cents(l.debit), credit: cents(l.credit) })) };
+    const stamped = input.lines.map((line) => ({ ...line, locationId: line.locationId || fallbackLocationId || undefined }));
+    for (const line of stamped) {
+      await this.db.run(
+        'INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo,location_id) VALUES(?,?,?,?,?,?,?)',
+        [id, line.accountId, line.partyId || null, cents(line.debit), cents(line.credit), line.memo || null, line.locationId || null],
+      );
+    }
+    return { ...input, id, lines: stamped.map((l) => ({ ...l, debit: cents(l.debit), credit: cents(l.credit) })) };
   }
 
   async reverseJournal(journalId: string, reason: string): Promise<V2JournalEntry> {
     const original = await this.db.first<{ id: string; book_id: string; period_id: string; source_id: string | null; date: string }>('SELECT id,book_id,period_id,source_id,date FROM v2_journal_entries WHERE id = ?', [journalId]);
     if (!original) throw new Error('Journal entry not found');
     if (await this.db.first('SELECT id FROM v2_journal_entries WHERE reversal_of = ?', [journalId])) throw new Error('Journal entry already reversed');
-    const lines = await this.db.all<{ account_id: string; party_id: string | null; debit: number; credit: number; memo: string | null }>('SELECT account_id,party_id,debit,credit,memo FROM v2_journal_lines WHERE journal_id = ? ORDER BY id', [journalId]);
+    const lines = await this.db.all<{ account_id: string; party_id: string | null; debit: number; credit: number; memo: string | null; location_id: string | null }>('SELECT account_id,party_id,debit,credit,memo,location_id FROM v2_journal_lines WHERE journal_id = ? ORDER BY id', [journalId]);
     return this.postJournal({
       bookId: original.book_id, periodId: original.period_id, sourceId: original.source_id || undefined,
       date: original.date, memo: reason, reversalOf: journalId,
-      lines: lines.map((line) => ({ accountId: line.account_id, partyId: line.party_id || undefined, debit: cents(line.credit), credit: cents(line.debit), memo: line.memo || undefined })),
+      lines: lines.map((line) => ({ accountId: line.account_id, partyId: line.party_id || undefined, debit: cents(line.credit), credit: cents(line.debit), memo: line.memo || undefined, locationId: line.location_id || undefined })),
     });
   }
 

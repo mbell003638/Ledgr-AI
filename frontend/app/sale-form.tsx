@@ -11,6 +11,7 @@ import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
@@ -38,6 +39,7 @@ export default function SaleForm() {
   const [products, setProducts] = useState<StockProduct[]>([]);
   const [stockProductId, setStockProductId] = useState("");
   const [stockQty, setStockQty] = useState("");
+  const [locationId, setLocationId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -127,7 +129,7 @@ export default function SaleForm() {
       const totals = calculateInvoiceTotals(formattedLines, discount, 0);
       if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
 
-      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined };
+      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined, ...(locationId ? { locationId } : {}) };
       const qty = Number(stockQty);
       const stockProduct = products.find((p) => p.id === stockProductId);
       const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
@@ -176,6 +178,7 @@ export default function SaleForm() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
+          <LocationPicker value={locationId} onChange={setLocationId} />
           {/* Cash vs Party toggle — hidden while editing an existing cash sale */}
           {!editId && (
             <Card style={{ marginBottom: theme.spacing.md }}>

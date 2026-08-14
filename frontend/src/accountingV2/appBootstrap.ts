@@ -94,6 +94,7 @@ export async function initializeV2Book(db: SqlRunner, options: V2BootstrapOption
       await db.run('UPDATE v2_journal_entries SET reversal_of=NULL WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_journal_entries WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_sources WHERE book_id=?', [id]);
+      await db.run('DELETE FROM v2_locations WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_members WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_personas WHERE book_id=?', [id]);
       await db.run('DELETE FROM v2_parties WHERE book_id=?', [id]);

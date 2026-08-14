@@ -5,7 +5,7 @@ export const V2_SCHEMA_VERSION = 1;
 export function v2TableNames(): V2Collection[] { return [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
   'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
-  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_products', 'v2_stock_moves',
+  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_products', 'v2_stock_moves', 'v2_locations',
 ]; }
 
 export type V2MemoryStore = {
@@ -13,7 +13,7 @@ export type V2MemoryStore = {
   parties: V2Party[];
   accounts: V2Account[];
   journals: V2JournalEntry[];
-  sources: { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown> }[];
+  sources: { id: string; bookId: string; type: string; date: string; reference?: string; metadata?: Record<string, unknown>; locationId?: string }[];
   allocations: { id: string; bookId: string; invoiceSourceId: string; receiptSourceId: string; amount: number; allocatedAt: string }[];
 };
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager } from "react-native";
+import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -62,6 +62,7 @@ const TILES = [
   { key: "inventory", label: "Stock", icon: Package, route: "/inventory-form", iconColor: "#34D399", iconBackground: "rgba(227,233,218,0.20)" },
   { key: "perpetualInventory", label: "Products", icon: Package, route: "/products", iconColor: "#4ADE80", iconBackground: "rgba(220,232,212,0.20)" },
   { key: "payroll", label: "Payroll", icon: Wallet, route: "/payroll", iconColor: "#A78BFA", iconBackground: "rgba(228,220,236,0.20)" },
+  { key: "locations", label: "Locations", icon: Package, route: "/locations", iconColor: "#60A5FA", iconBackground: "rgba(212,224,236,0.20)" },
   { key: "assets", label: "Assets & Liabilities", icon: PieChart, route: "/assets", iconColor: "#818CF8", iconBackground: "rgba(208,216,224,0.20)" },
   { key: "daybook", label: "Day Book", icon: BookOpen, route: "/daybook", iconColor: "#F472B6", iconBackground: "rgba(221,227,236,0.20)" },
   { key: "reports", label: "Reports", icon: BarChart2, route: "/reports", iconColor: "#FBBF24", iconBackground: "rgba(224,224,218,0.20)" },
@@ -117,6 +118,8 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<any>({});
   const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
   const [isEditingGrid, setIsEditingGrid] = useState(false);
+  const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
+  const [locationId, setLocationId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -133,14 +136,23 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [d, day, s] = await Promise.all([
-        api.dashboard(),
+      const s = await api.getSettings();
+      setSettings(s);
+      let shopId = locationId;
+      if (getEnabledFeatures(s).includes("locations")) {
+        const rows = await api.listLocations().catch(() => []);
+        const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
+        setShops(next);
+      } else {
+        setShops([]);
+        shopId = "";
+      }
+      const [d, day] = await Promise.all([
+        api.dashboard(shopId || undefined),
         api.dailySummary(dailyDate),
-        api.getSettings(),
       ]);
       setDash(d);
       setDaily(day);
-      setSettings(s);
       loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
       console.warn("dash", e);
@@ -148,7 +160,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dailyDate]);
+  }, [dailyDate, locationId]);
 
   const visibleTiles = useMemo(() => {
     const enabled = getEnabledFeatures(settings);
@@ -316,7 +328,19 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Ledgr" subtitle="Your business finances, simplified" testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
+      <ScreenHeader title="Ledgr" subtitle={locationId ? "This shop" : "Your business finances, simplified"} testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
+      {shops.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
+          <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+            <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
+          </Pressable>
+          {shops.map((shop) => (
+            <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+              <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
       <Animated.ScrollView
         ref={scrollRef}
         onScroll={scrollHandler}

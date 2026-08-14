@@ -13,6 +13,7 @@ import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -34,6 +35,7 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [locationId, setLocationId] = useState("");
 
   const load = async () => {
     const [list, settings] = await Promise.all([api.listExpenses(), api.getSettings()]);
@@ -63,7 +65,7 @@ export default function Expenses() {
     if (!category.trim()) { setError("Enter a category"); return; }
     setSaving(true); setError("");
     try {
-      const payload = { date: dateIso, category: category.trim(), amount: amt, notes };
+      const payload = { date: dateIso, category: category.trim(), amount: amt, notes, ...(locationId ? { locationId } : {}) };
       if (editing && editing !== "new") await api.updateExpense((editing as Expense).id, payload);
       else await api.createExpense(payload);
       await load();
@@ -152,6 +154,7 @@ export default function Expenses() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
             <Card>
+              <LocationPicker value={locationId} onChange={setLocationId} />
               <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
               <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Category</Text>

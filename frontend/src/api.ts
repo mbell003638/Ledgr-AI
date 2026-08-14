@@ -379,12 +379,12 @@ async function v2SourceDocuments(types: string[]) {
   });
 }
 
-async function v2Report(from?: string, to?: string) {
+async function v2Report(from?: string, to?: string, locationId?: string) {
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const context = await new V2AppService(runner).activeContext();
   if (!context) throw new Error('No active versioned V2 book with an open accounting period');
-  return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to });
+  return buildPersistentV2Reports(runner, { bookId: context.bookId, from, to, locationId });
 }
 
 async function liveCommissionPct() {
@@ -792,12 +792,12 @@ export const api = {
   },
 
   // Dashboard & reports
-  dashboard: async () => {
+  dashboard: async (locationId?: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const ctx = await new V2AppService(runner).activeContext();
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
-    return getV2Dashboard(runner, ctx.bookId);
+    return getV2Dashboard(runner, ctx.bookId, locationId);
   },
   pnl: async () => {
     const runner = activeSqlRunner();
@@ -1002,9 +1002,29 @@ export const api = {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).yearEndPayrollSummary(year);
   },
-  listProducts: async () => {
+  listProducts: async (locationId?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).listProducts();
+    return new V2AppService(runner).listProducts(locationId);
+  },
+  listLocations: async () => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    return new V2AppService(runner).listLocations();
+  },
+  createLocation: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).createLocation(input); bumpDataVersion(); return r;
+  },
+  archiveLocation: async (id: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).archiveLocation(id); bumpDataVersion(); return r;
+  },
+  transferLocationCash: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).transferLocationCash(input); bumpDataVersion(); return r;
+  },
+  transferLocationStock: async (input: any) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await new V2AppService(runner).transferLocationStock(input); bumpDataVersion(); return r;
   },
   upsertProduct: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');

@@ -242,7 +242,7 @@ export class V2DocumentService {
     const rows = await this.repo.db.all<any>('SELECT * FROM v2_journal_entries WHERE source_id=? ORDER BY posted_at,id', [id]);
     if (!rows.length) throw new Error('Receipt journal not found');
     for (const journal of rows) {
-      journal.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [journal.id]);
+      journal.lines = await this.repo.db.all<any>('SELECT account_id AS accountId,party_id AS partyId,debit,credit,memo,location_id AS locationId FROM v2_journal_lines WHERE journal_id=? ORDER BY id', [journal.id]);
     }
     return rows;
   }
@@ -287,10 +287,16 @@ export class V2DocumentService {
     assertBalanced(lines);
     const target = await this.resolvePostingTarget(source.bookId, input.periodId, source.date);
     const memo = input.memo || '';
-    await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)', [source.id, source.bookId, source.type, target.date, source.reference || null, JSON.stringify(source.metadata || {})]);
+    const sourceLoc = source.locationId || (source.metadata as { locationId?: string } | undefined)?.locationId || null;
+    await this.repo.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, target.date, source.reference || null, JSON.stringify(source.metadata || {}), sourceLoc]);
     const id = uid('je');
     await this.repo.db.run('INSERT INTO v2_journal_entries(id,book_id,period_id,source_id,date,memo,posted_at,reversal_of) VALUES(?,?,?,?,?,?,?,?)', [id, source.bookId, target.periodId, source.id, target.date, memo, new Date().toISOString(), reversalOf || null]);
-    for (const l of lines) await this.repo.db.run('INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo) VALUES(?,?,?,?,?,?)', [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null]);
+    for (const l of lines) {
+      await this.repo.db.run(
+        'INSERT INTO v2_journal_lines(journal_id,account_id,party_id,debit,credit,memo,location_id) VALUES(?,?,?,?,?,?,?)',
+        [id, l.accountId, l.partyId || null, cents(l.debit), cents(l.credit), l.memo || null, l.locationId || sourceLoc || null],
+      );
+    }
     return { id, bookId: source.bookId, periodId: target.periodId, sourceId: source.id, date: target.date, memo, lines };
   }
 
@@ -301,7 +307,23 @@ export class V2DocumentService {
     const closed = !originalPeriod || originalPeriod.status !== 'open';
     const reference = old.reference || old.id;
     const finalMemo = closed ? `${memo} — reversal of ${reference} dated ${old.date} (period closed)` : memo;
-    const source: V2Source = { id: uid('reversal'), bookId: old.book_id, type: `${old.type}_reversal`, date: old.date, metadata: { originalSourceId: old.id, originalDate: old.date, total: JSON.parse(old.metadata || '{}').total, ...(closed ? { closedPeriodReversal: true } : {}) } };
+    let priorMeta: any = {};
+    try { priorMeta = JSON.parse(old.metadata || '{}'); } catch { priorMeta = {}; }
+    const source: V2Source = {
+      id: uid('reversal'),
+      bookId: old.book_id,
+      type: `${old.type}_reversal`,
+      date: old.date,
+      locationId: old.location_id || priorMeta.locationId || undefined,
+      metadata: {
+        originalSourceId: old.id,
+        originalDate: old.date,
+        total: priorMeta.total,
+        ...(priorMeta.locationId ? { locationId: priorMeta.locationId } : {}),
+        ...(old.location_id ? { locationId: old.location_id } : {}),
+        ...(closed ? { closedPeriodReversal: true } : {}),
+      },
+    };
     const input = { bookId: old.book_id, periodId: journal.period_id, date: old.date, memo: finalMemo };
     const lines = journal.lines.map((l: any) => ({ ...l, debit: l.credit, credit: l.debit }));
     const out = await this.insertSourceJournal(source, input, lines, journal.id);

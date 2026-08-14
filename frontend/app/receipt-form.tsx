@@ -10,6 +10,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type Mode = "against_invoice" | "advance";
 type Invoice = { id: string; invoiceNumber: string; clientName: string; total: number; status: string; date: string };
@@ -43,6 +44,7 @@ export default function ReceiptFormScreen() {
   const [debtorId, setDebtorId] = useState<string | null>(null);
   const [invoiceId, setInvoiceId] = useState<string | null>(null);
   const [method, setMethod] = useState("cash");
+  const [locationId, setLocationId] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -128,7 +130,7 @@ export default function ReceiptFormScreen() {
         const party = await api.findOrCreateParty(clientName.trim(), "customer");
         if (party) finalDebtorId = party.id;
       }
-      const payload: any = { mode, date: dateIso, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId };
+      const payload: any = { mode, date: dateIso, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId, ...(locationId ? { locationId } : {}) };
       if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
       
       if (editId) {
@@ -154,6 +156,7 @@ export default function ReceiptFormScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: theme.spacing.lg }}>
+          <LocationPicker value={locationId} onChange={setLocationId} />
           <View style={styles.scanRow}>
             <Pressable onPress={scan} disabled={ocrBusy} style={[styles.scanBtn, { flex: 1 }]}>
               <Ionicons name="camera-outline" size={16} color="#fff" />

@@ -24,19 +24,19 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
   const parties = await db.all<any>('SELECT id,book_id,name,phone,email,roles,archived FROM v2_parties WHERE book_id=?', [options.bookId]);
   const entries = await db.all<any>('SELECT id,book_id,period_id,source_id,date,memo,reversal_of FROM v2_journal_entries WHERE book_id=? ORDER BY date,id', [options.bookId]);
   const lineRows = await db.all<any>(
-    'SELECT l.journal_id,l.account_id,l.party_id,l.debit,l.credit,l.memo FROM v2_journal_lines l ' +
+    'SELECT l.journal_id,l.account_id,l.party_id,l.debit,l.credit,l.memo,l.location_id FROM v2_journal_lines l ' +
     'JOIN v2_journal_entries j ON j.id=l.journal_id WHERE j.book_id=? ORDER BY j.date,j.id,l.id',
     [options.bookId],
   );
   const linesByJournal = new Map<string, any[]>();
   for (const line of lineRows) {
     const lines = linesByJournal.get(line.journal_id) || [];
-    lines.push({ accountId:line.account_id, partyId:line.party_id||undefined, debit:Number(line.debit), credit:Number(line.credit), memo:line.memo||undefined });
+    lines.push({ accountId:line.account_id, partyId:line.party_id||undefined, debit:Number(line.debit), credit:Number(line.credit), memo:line.memo||undefined, locationId:line.location_id||undefined });
     linesByJournal.set(line.journal_id, lines);
   }
   const journals = entries.map((entry) => ({ id:entry.id, bookId:entry.book_id, periodId:entry.period_id, sourceId:entry.source_id || undefined, date:entry.date, memo:entry.memo, reversalOf:entry.reversal_of || undefined, lines:linesByJournal.get(entry.id) || [] }));
   // Sources and allocations are needed for cash-basis P&L (money actually received/paid).
-  const sourceRows = await db.all<any>('SELECT id,book_id,type,date,reference,metadata FROM v2_sources WHERE book_id=?', [options.bookId]);
+  const sourceRows = await db.all<any>('SELECT id,book_id,type,date,reference,metadata,location_id FROM v2_sources WHERE book_id=?', [options.bookId]);
   const allocationRows = await db.all<any>('SELECT id,book_id,invoice_source_id,receipt_source_id,amount,allocated_at FROM v2_invoice_allocations WHERE book_id=?', [options.bookId]);
   const store: V2MemoryStore = {
     books: books.map(b=>({id:b.id,name:b.name,style:b.style,basis:b.basis,createdAt:b.created_at})),
@@ -45,7 +45,7 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
       let roles: any[] = []; try { roles = JSON.parse(party.roles || '[]'); } catch { roles = []; }
       return { id: party.id, bookId: party.book_id, name: party.name, phone: party.phone || undefined, email: party.email || undefined, roles, archived: Boolean(party.archived) };
     }),
-    sources: sourceRows.map((s) => { let metadata: any = {}; try { metadata = JSON.parse(s.metadata || '{}'); } catch { metadata = {}; } return { id: s.id, bookId: s.book_id, type: s.type, date: s.date, reference: s.reference || undefined, metadata }; }),
+    sources: sourceRows.map((s) => { let metadata: any = {}; try { metadata = JSON.parse(s.metadata || '{}'); } catch { metadata = {}; } return { id: s.id, bookId: s.book_id, type: s.type, date: s.date, reference: s.reference || undefined, metadata, locationId: s.location_id || metadata.locationId || undefined }; }),
     allocations: allocationRows.map((a) => ({ id: a.id, bookId: a.book_id, invoiceSourceId: a.invoice_source_id, receiptSourceId: a.receipt_source_id, amount: Number(a.amount), allocatedAt: a.allocated_at })),
   };
   const cogsAdjustment = await openPeriodCogsAdjustment(db, options);
@@ -60,6 +60,7 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
  */
 async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions) {
   try {
+    if (options.locationId) return undefined;
     if (await isOptionalModuleEnabled(db, 'perpetualInventory')) return undefined;
     const period = await db.first<{ start_date: string; end_date: string }>(
       "SELECT start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1",

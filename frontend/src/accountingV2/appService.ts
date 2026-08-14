@@ -25,6 +25,7 @@ import {
 } from './services/capitalDomainService';
 import { PayrollDomainService } from './services/payrollDomainService';
 import { ProductDomainService } from './services/productDomainService';
+import { LocationDomainService } from './services/locationDomainService';
 import { localTodayIso } from '../utils/dateValidation';
 
 export {
@@ -69,6 +70,7 @@ export class V2AppService {
   readonly capital: CapitalDomainService;
   readonly payroll: PayrollDomainService;
   readonly products: ProductDomainService;
+  readonly locations: LocationDomainService;
 
   constructor(readonly db: SqlRunner) {
     this.repo = new V2SqlRepository(db);
@@ -103,6 +105,7 @@ export class V2AppService {
     );
     this.payroll = new PayrollDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.products = new ProductDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.locations = new LocationDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.capital = new CapitalDomainService(
       this.db,
       this.repo,
@@ -250,10 +253,16 @@ export class V2AppService {
   listPayslips(payRunId: string) { return this.payroll.listPayslips(payRunId); }
   yearEndPayrollSummary(year: string) { return this.payroll.yearEndSummary(year); }
 
-  listProducts() { return this.products.listProducts(); }
+  listProducts(locationId?: string) { return this.products.listProducts(locationId); }
   upsertProduct(input: AnyRecord) { return this.products.upsertProduct(input as any); }
   archiveProduct(id: string) { return this.products.archiveProduct(id); }
   adjustProductQty(input: AnyRecord) { return this.products.adjustQty(input as any); }
+
+  listLocations() { return this.locations.listLocations(); }
+  createLocation(input: AnyRecord) { return this.locations.createLocation(input as any); }
+  archiveLocation(id: string) { return this.locations.archiveLocation(id); }
+  transferLocationCash(input: AnyRecord) { return this.locations.transferCash(input as any); }
+  transferLocationStock(input: AnyRecord) { return this.locations.transferStock(input as any); }
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {

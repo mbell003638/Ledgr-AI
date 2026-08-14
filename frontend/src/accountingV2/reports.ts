@@ -11,6 +11,8 @@ export type V2ReportOptions = {
   from?: string;
   /** Inclusive ISO date boundary. */
   to?: string;
+  /** When set, totals include only journal lines tagged to this location. */
+  locationId?: string;
   /**
    * Open-period periodic COGS to reflect in reports before it is posted to the GL
    * (see cogs.ts). Injected as a synthetic, non-persisted Dr COGS / Cr Inventory so
@@ -115,7 +117,11 @@ function normalBalance(type: V2AccountType, debit: number, credit: number): numb
  */
 function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) {
   const inRange = (date: string) => (!options.from || date >= options.from) && (!options.to || date <= options.to);
-  const live = store.sources.filter((s) => s.bookId === options.bookId && !(s.metadata as any)?.deleted && !(s.metadata as any)?.reversed);
+  const live = store.sources.filter((s) => {
+    if (s.bookId !== options.bookId || (s.metadata as any)?.deleted || (s.metadata as any)?.reversed) return false;
+    if (options.locationId && (s.locationId || (s.metadata as any)?.locationId) !== options.locationId) return false;
+    return true;
+  });
   const sourceById = new Map(store.sources.map((s) => [s.id, s]));
   const metaTotal = (id: string) => cents(Number((sourceById.get(id)?.metadata as any)?.total || 0));
 
@@ -192,6 +198,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       const credit = cents(line.credit);
       journalDebit += debit;
       journalCredit += credit;
+      if (options.locationId && line.locationId !== options.locationId) continue;
       totalDebit += debit;
       totalCredit += credit;
       const accountTotal = totalsById.get(line.accountId);
@@ -276,7 +283,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   totalDebit = cents(totalDebit);
   totalCredit = cents(totalCredit);
   const trialDifference = cents(totalDebit - totalCredit);
-  if (Math.abs(trialDifference) > TOLERANCE) {
+  if (!options.locationId && Math.abs(trialDifference) > TOLERANCE) {
     errors.push({
       code: 'TRIAL_BALANCE_OUT_OF_BALANCE',
       message: 'Trial balance debits and credits differ',
@@ -335,7 +342,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const equity = sumType('equity');
   const liabilitiesAndEquity = cents(liabilities + equity + ledgerCurrentEarnings);
   const balanceSheetDifference = cents(assets - liabilitiesAndEquity);
-  if (Math.abs(balanceSheetDifference) > TOLERANCE) {
+  if (!options.locationId && Math.abs(balanceSheetDifference) > TOLERANCE) {
     errors.push({
       code: 'BALANCE_SHEET_OUT_OF_BALANCE',
       message: 'Assets do not equal liabilities, equity, and current earnings',

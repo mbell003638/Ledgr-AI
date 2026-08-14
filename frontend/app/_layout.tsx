@@ -131,6 +131,7 @@ function ThemedStack() {
         <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
         <Stack.Screen name="payroll" options={{ presentation: "card" }} />
         <Stack.Screen name="products" options={{ presentation: "card" }} />
+        <Stack.Screen name="locations" options={{ presentation: "card" }} />
         </Stack.Protected>
         <Stack.Protected guard={!hasOnboarded}>
           <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
