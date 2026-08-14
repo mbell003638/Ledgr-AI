@@ -11,6 +11,7 @@ import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
@@ -38,6 +39,9 @@ export default function SaleForm() {
   const [products, setProducts] = useState<StockProduct[]>([]);
   const [stockProductId, setStockProductId] = useState("");
   const [stockQty, setStockQty] = useState("");
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [locationId, setLocationId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -45,6 +49,13 @@ export default function SaleForm() {
         const settings = await api.getSettings();
         const on = getEnabledFeatures(settings).includes("perpetualInventory");
         setStockEnabled(on);
+        const multiLocation = isCapabilityEnabled(settings, "multi_location");
+        setLocationEnabled(multiLocation);
+        if (multiLocation) {
+          const locationList = await api.listLocations();
+          setLocations(locationList.filter((item: any) => item.active !== false));
+          if (locationList[0]) setLocationId(locationList[0].id);
+        }
         if (on) {
           const list = await (api as any).listProducts();
           setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived));
@@ -127,7 +138,7 @@ export default function SaleForm() {
       const totals = calculateInvoiceTotals(formattedLines, discount, 0);
       if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
 
-      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined };
+      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined, ...(locationEnabled && locationId ? { locationId } : {}) };
       const qty = Number(stockQty);
       const stockProduct = products.find((p) => p.id === stockProductId);
       const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
@@ -228,9 +239,10 @@ export default function SaleForm() {
             </Card>
           )}
 
-          <Card>
+            <Card>
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
+            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
 
             {/* Line Items / Products (Optional) */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>
@@ -363,7 +375,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
   label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   hint: { fontSize: 12, color: theme.color.muted, marginTop: 8 },
-  input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
+      locationChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 13, borderWidth: 1, borderColor: theme.color.border },
+    locationChipSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    locationChipText: { color: theme.color.muted, fontSize: 11, fontWeight: "700" },
+    input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   segRow: { flexDirection: "row", backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md, padding: 3, marginTop: 8, gap: 4 },
   segBtn: { flex: 1, paddingHorizontal: 10, paddingVertical: 12, borderRadius: theme.radius.sm, alignItems: "center" },
   segBtnActive: { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.brandPrimary },

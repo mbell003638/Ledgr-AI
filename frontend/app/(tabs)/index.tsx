@@ -14,6 +14,8 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
+import { activePersonaFor, capabilityDefinition, getEnabledCapabilities, isCapabilityEnabled, eligibleMetrics } from "@/src/utils/capabilities";
+import { metricsFromDashboard } from "@/src/utils/metrics";
 import { showAlert } from "@/src/utils/alerts";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -116,6 +118,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const [health, setHealth] = useState<any>(null);
   const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
   const [isEditingGrid, setIsEditingGrid] = useState(false);
 
@@ -134,14 +137,16 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [d, day, s] = await Promise.all([
+      const [d, day, s, h] = await Promise.all([
         api.dashboard(),
         api.dailySummary(dailyDate),
         api.getSettings(),
+        api.bookHealth().catch(() => null),
       ]);
       setDash(d);
       setDaily(day);
       setSettings(s);
+      setHealth(h);
       loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
       console.warn("dash", e);
@@ -314,6 +319,10 @@ export default function Dashboard() {
   const displayCommission = rangeData ? rangeData.commission : (dash?.commission ?? 0);
   const displayNetProfit = rangeData ? rangeData.netProfit : (dash?.netProfit ?? 0);
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
+  const workspaceMetrics = useMemo(() => {
+    const eligible = new Set(eligibleMetrics(settings).map((metric) => metric.key));
+    return metricsFromDashboard(dash).filter((metric) => eligible.has(metric.key) && metric.value !== null && (metric.key === 'cogs' || metric.key === 'gross_margin' || metric.key === 'roe')).slice(0, 3);
+  }, [dash, settings]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -330,6 +339,18 @@ export default function Dashboard() {
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
         ) : (
           <>
+            <Card style={{ marginBottom: theme.spacing.md, padding: 14 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.brandPrimary + "18" }}><Ionicons name="sparkles-outline" size={20} color={theme.color.brandPrimary} /></View>
+                <View style={{ flex: 1, marginLeft: 11 }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, textTransform: "uppercase" }}>Focused workspace</Text><Text style={{ color: theme.color.onSurface, fontSize: 16, fontWeight: "800", marginTop: 3, textTransform: "capitalize" }}>{activePersonaFor(settings).replace(/_/g, " ")}</Text></View>
+                {isCapabilityEnabled(settings, "multi_location") ? <GlowPressable onPress={() => router.push("/locations")} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: theme.color.brandPrimary + "16" }}><Text style={{ color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800" }}>Locations</Text></GlowPressable> : null}
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 11 }}>{getEnabledCapabilities(settings).slice(0, 4).map((key) => <View key={key} style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "700" }}>{capabilityDefinition(key)?.label || key}</Text></View>)}<Text style={{ color: theme.color.brandPrimary, fontSize: 10, fontWeight: "800", paddingVertical: 5 }}>+ {Math.max(0, getEnabledCapabilities(settings).length - 4)} more</Text></View>
+            </Card>
+            {health?.warnings?.length ? <Card style={{ marginBottom: theme.spacing.md, padding: 13 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}><Ionicons name={health.hasRecoveryWarning ? "shield-outline" : "checkmark-circle-outline"} size={18} color={health.hasRecoveryWarning ? theme.color.warning : theme.color.success} /><Text style={{ color: theme.color.onSurface, fontSize: 13, fontWeight: "800", marginLeft: 7 }}>Book Health</Text><Text style={{ color: theme.color.muted, fontSize: 10, marginLeft: "auto" as any }}>{health.warnings.length} item{health.warnings.length === 1 ? "" : "s"}</Text></View>
+              {health.warnings.slice(0, 2).map((warning: any) => <View key={warning.key} style={{ flexDirection: "row", gap: 7, marginTop: 5 }}><Ionicons name={warning.severity === "warning" ? "alert-circle-outline" : "information-circle-outline"} size={15} color={warning.severity === "warning" ? theme.color.warning : theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={{ color: theme.color.onSurface, fontSize: 11, fontWeight: "700" }}>{warning.label}</Text><Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 14 }}>{warning.detail}</Text></View></View>)}
+            </Card> : <Card style={{ marginBottom: theme.spacing.md, padding: 12 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Ionicons name="checkmark-circle-outline" size={17} color={theme.color.success} /><Text style={{ color: theme.color.onSurface, fontSize: 12, fontWeight: "700" }}>Book Health looks good</Text><Text style={{ color: theme.color.muted, fontSize: 10, marginLeft: "auto" as any }}>No warnings</Text></View></Card>}
             {/* Period Filter Bar */}
             <View style={{ marginBottom: theme.spacing.md }}>
               <View style={styles.periodRow}>
@@ -458,6 +479,10 @@ export default function Dashboard() {
                 </View>
               </Card>
             ) : null}
+            {workspaceMetrics.length > 0 ? <Card style={{ marginTop: theme.spacing.md, padding: 14 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}><Text style={styles.sectionTitleInline}>Workspace metrics</Text><Text style={{ color: theme.color.muted, fontSize: 10 }}>Based on current ledger data</Text></View>
+              <View style={{ flexDirection: "row", gap: 8 }}>{workspaceMetrics.map((metric) => <View key={metric.key} style={{ flex: 1, padding: 10, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: theme.color.onSurface, fontSize: 16, fontWeight: "900", marginTop: 5 }}>{metric.unit === 'percent' ? `${metric.value}%` : fmt(metric.value || 0)}</Text><Text style={{ color: theme.color.muted, fontSize: 9, marginTop: 3 }} numberOfLines={2}>{metric.state === 'estimated' ? 'Estimated' : 'Posted inputs'}</Text></View>)}</View>
+            </Card> : null}
 
             {/* Daily quick summary — WhatsApp shareable. Same press treatment as
                 the hero card (GlowPressable, pressScale 0.972, no haptic, clipSafe,

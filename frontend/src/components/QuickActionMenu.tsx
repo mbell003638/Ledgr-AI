@@ -19,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { api } from "@/src/api";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -80,6 +81,7 @@ export default function QuickActionMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [openingModalVisible, setOpeningModalVisible] = useState(false);
   const [isPartnerMode, setIsPartnerMode] = useState(false);
+  const [settings, setSettings] = useState<any>({});
   const router = useRouter();
   const theme = useTheme();
   const { motionEnabled, hapticsEnabled } = useAnimations();
@@ -92,8 +94,10 @@ export default function QuickActionMenu() {
     Promise.all([
       api.getV2BookConfig().catch(() => null),
       api.listInvestors().catch(() => []),
-    ]).then(([config, investors]: any[]) => {
+      api.getSettings().catch(() => ({})),
+    ]).then(([config, investors, currentSettings]: any[]) => {
       setIsPartnerMode(config?.style === "retail_partnership" || investors.length > 0);
+      setSettings(currentSettings || {});
     }).catch(() => {});
   }, [isOpen]);
 
@@ -195,7 +199,7 @@ export default function QuickActionMenu() {
             style={styles.menuHighlight}
           />
           <View style={styles.menuInner}>
-            <GlowPressable
+            {isCapabilityEnabled(settings, "ai_assistant") && <GlowPressable
               prominent
               haptic
               onPress={() => navigate("/ask")}
@@ -214,39 +218,39 @@ export default function QuickActionMenu() {
               />
               <Text style={[styles.aiIcon, { textShadowColor: theme.color.brandPrimary + "80" }]}>✨</Text>
               <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
-            </GlowPressable>
+            </GlowPressable>}
 
-            <QuickActionRow
+            {isCapabilityEnabled(settings, "invoicing") && <QuickActionRow
               icon="🧾"
               iconBackground="rgba(56,189,248,0.15)"
               title="Create Invoice"
               subtitle="Bill a customer with line items & tax"
               onPress={() => navigate({ pathname: "/invoices", params: { action: "create" } })}
-            />
-            <QuickActionRow
+            />}
+            {isCapabilityEnabled(settings, "commerce") && <QuickActionRow
               icon="💰"
               iconBackground="rgba(74,222,128,0.15)"
               title="Log Sale"
               subtitle="Record a quick cash or credit sale"
               onPress={() => navigate("/sale-form")}
-            />
-            <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Log a bill or purchase" onPress={() => navigate("/bill-form")} />
-            <QuickActionRow icon="💵" iconBackground="rgba(59,130,246,0.15)" title="Receive Payment" subtitle="Log incoming funds" onPress={() => navigate("/receipt-form")} />
-            <QuickActionRow
+            />}
+            {isCapabilityEnabled(settings, "procurement") && <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Log a bill or purchase" onPress={() => navigate("/bill-form")} />}
+            {isCapabilityEnabled(settings, "customers") && <QuickActionRow icon="💵" iconBackground="rgba(59,130,246,0.15)" title="Receive Payment" subtitle="Log incoming funds" onPress={() => navigate("/receipt-form")} />}
+            {isCapabilityEnabled(settings, "customers") && <QuickActionRow
               icon="👥"
               iconBackground="rgba(168,85,247,0.15)"
               title="Add Business Account"
               subtitle={isPartnerMode ? "Customer, supplier or capital account" : "Customer or supplier"}
               onPress={() => navigate("/suppliers?action=create")}
-            />
-            <QuickActionRow
+            />}
+            {isCapabilityEnabled(settings, "reconciliation") && <QuickActionRow
               icon="📄"
               iconBackground="rgba(45,212,191,0.15)"
               title="Scan & Import"
               subtitle="AI-import a document or old report"
               onPress={() => navigate("/scan-import")}
-            />
-            <QuickActionRow
+            />}
+            {isCapabilityEnabled(settings, "core_ledger") && <QuickActionRow
               icon="⚙️"
               iconBackground="rgba(234,179,8,0.15)"
               title="Opening Balances"
@@ -255,7 +259,14 @@ export default function QuickActionMenu() {
                 closeMenu();
                 setTimeout(() => setOpeningModalVisible(true), theme.motion.fast);
               }}
-            />
+            />}
+            {isCapabilityEnabled(settings, "multi_location") && <QuickActionRow
+              icon="🏬"
+              iconBackground="rgba(45,212,191,0.15)"
+              title="Manage locations"
+              subtitle="Stores, POS sessions, and stock transfers"
+              onPress={() => navigate("/locations")}
+            />}
           </View>
         </Animated.View>
       </Modal>

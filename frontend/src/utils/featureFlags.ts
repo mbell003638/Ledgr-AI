@@ -1,3 +1,5 @@
+import { featureKeysForCapabilities } from './capabilities';
+
 export type FeatureKey =
   | "sales"
   | "bills"
@@ -288,16 +290,23 @@ export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
  *   4. "custom"                   (everything)
  */
 export function getPersonaBaselineFeatures(settings: any): FeatureKey[] {
-  const personas: string[] = Array.isArray(settings?.selectedPersonas) && settings.selectedPersonas.length
+  // Explicit capability packs and the new persona catalog use the new registry.
+  // Existing legacy persona records retain their historical feature baselines so
+  // upgrading the app cannot unexpectedly hide a workflow from an old book.
+  const rawPersonas: string[] = Array.isArray(settings?.selectedPersonas) && settings.selectedPersonas.length
     ? settings.selectedPersonas
     : [settings?.activePersona || settings?.businessType || "custom"];
+  const modernPersonas = new Set(["mobile_invoicing", "dropshipper", "marketplace_seller", "entrepreneur", "startup", "developer", "content_creator", "manufacturer", "import_export"]);
+  if (Array.isArray(settings?.enabledCapabilities) && settings.enabledCapabilities.length || rawPersonas.some((persona) => modernPersonas.has(persona))) {
+    const capabilityKeys = featureKeysForCapabilities(settings) as FeatureKey[];
+    if (capabilityKeys.length) return DEFAULT_ALL_KEYS.filter((key) => capabilityKeys.includes(key));
+  }
 
   const union = new Set<FeatureKey>();
-  for (const p of personas) {
+  for (const p of rawPersonas) {
     const set = PERSONA_DEFAULT_FEATURES[p] || DEFAULT_ALL_KEYS;
     for (const key of set) union.add(key);
   }
-  // Preserve canonical ordering.
   return DEFAULT_ALL_KEYS.filter((k) => union.has(k));
 }
 

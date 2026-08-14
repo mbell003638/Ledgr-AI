@@ -15,6 +15,7 @@ export interface SqlRunner {
 export const COLLECTIONS = [
   'suppliers', 'bills', 'sales', 'payments', 'inventoryChecks', 'periods', 'expenses',
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
+  'locations', 'posSessions', 'stockTransfers',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
 export const SCHEMA_VERSION = 6;

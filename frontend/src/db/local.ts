@@ -112,6 +112,7 @@ export async function getSettings(): Promise<Record<string, any>> {
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',
     enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
+    enabledCapabilities: Array.isArray(s.enabledCapabilities) ? s.enabledCapabilities : null,
     managerCommissionPct: Number(s.managerCommissionPct || 0),
   };
 }
@@ -262,6 +263,49 @@ function makeCrud(coll: Collection) {
 const billsCrud = makeCrud('bills');
 const salesCrud = makeCrud('sales');
 const paymentsCrud = makeCrud('payments');
+const posSessionsCrud = makeCrud('posSessions');
+const stockTransfersCrud = makeCrud('stockTransfers');
+
+export async function listLocations() {
+  return (await readColl<any>('locations')).sort((a: any, b: any) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+export async function createLocation(body: { name: string; code?: string; address?: string; phone?: string; active?: boolean; kind?: 'store' | 'warehouse' | 'office' }) {
+  return serialize(async () => {
+    const name = String(body.name || '').trim();
+    const code = String(body.code || '').trim().toUpperCase();
+    if (!name) throw new Error('Location name is required');
+    const rows = await readColl<any>('locations');
+    if (rows.some((row: any) => String(row.name || '').trim().toLowerCase() === name.toLowerCase() || (code && String(row.code || '').toUpperCase() === code))) {
+      throw new Error('A location with this name or code already exists.');
+    }
+    const item = { id: uuid(), name, code, address: String(body.address || '').trim(), phone: String(body.phone || '').trim(), kind: body.kind || 'store', active: body.active !== false, created_at: nowIso() };
+    rows.push(item);
+    await writeColl('locations', rows);
+    return item;
+  });
+}
+
+export async function updateLocation(id: string, body: Partial<{ name: string; code: string; address: string; phone: string; active: boolean; kind: 'store' | 'warehouse' | 'office' }>) {
+  return serialize(async () => {
+    const rows = await readColl<any>('locations');
+    const index = rows.findIndex((row: any) => row.id === id);
+    if (index < 0) throw new Error('Location not found');
+    const next = { ...rows[index], ...body, name: body.name === undefined ? rows[index].name : String(body.name).trim(), code: body.code === undefined ? rows[index].code : String(body.code).trim().toUpperCase() };
+    if (!next.name) throw new Error('Location name is required');
+    if (rows.some((row: any, rowIndex: number) => rowIndex !== index && (String(row.name || '').toLowerCase() === next.name.toLowerCase() || (next.code && String(row.code || '').toUpperCase() === next.code)))) throw new Error('A location with this name or code already exists.');
+    rows[index] = next;
+    await writeColl('locations', rows);
+    return next;
+  });
+}
+
+export const listPosSessions = posSessionsCrud.list;
+export const createPosSession = posSessionsCrud.create;
+export const updatePosSession = posSessionsCrud.update;
+export const closePosSession = (id: string) => posSessionsCrud.update(id, { status: 'closed', closed_at: nowIso() });
+export const listStockTransfers = stockTransfersCrud.list;
+export const createStockTransfer = stockTransfersCrud.create;
 
 export const listBills = billsCrud.list;
 export const createBill = billsCrud.create;

@@ -556,6 +556,16 @@ export const api = {
   renameBook: async (id: string, name: string) => { const r = await beRenameBook(id, name); bumpDataVersion(); return r; },
   deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
 
+  // Multi-location retail / POS operations are stored in the active book's local collections.
+  listLocations: async () => db.listLocations(),
+  createLocation: async (input: Parameters<typeof db.createLocation>[0]) => { const r = await db.createLocation(input); bumpDataVersion(); return r; },
+  updateLocation: async (id: string, input: Parameters<typeof db.updateLocation>[1]) => { const r = await db.updateLocation(id, input); bumpDataVersion(); return r; },
+  listPosSessions: async () => db.listPosSessions(),
+  createPosSession: async (input: any) => { const r = await db.createPosSession(input); bumpDataVersion(); return r; },
+  closePosSession: async (id: string) => { const r = await db.closePosSession(id); bumpDataVersion(); return r; },
+  listStockTransfers: async () => db.listStockTransfers(),
+  createStockTransfer: async (input: any) => { const r = await db.createStockTransfer(input); bumpDataVersion(); return r; },
+
   createParty: async (p: any) => {
     const name = (p.name || '').trim();
     if (!name) throw new Error('Business account name is required');
@@ -942,11 +952,30 @@ export const api = {
     };
   },
 
+  // Book health keeps trust signals visible without changing the authoritative ledger.
+  bookHealth: async () => {
+    const [settings, invoices, bills, sessions, locations] = await Promise.all([
+      api.getSettings(), db.listInvoices(), api.listBills(), db.listPosSessions(), db.listLocations(),
+    ]);
+    const warnings: { key: string; severity: 'info' | 'warning'; label: string; detail: string }[] = [];
+    if (!settings.businessName) warnings.push({ key: 'business_name', severity: 'warning', label: 'Business profile incomplete', detail: 'Add your business name before sharing documents.' });
+    const draftCount = invoices.filter((item: any) => String(item.status || '').toLowerCase() === 'draft').length;
+    if (draftCount) warnings.push({ key: 'drafts', severity: 'info', label: `${draftCount} invoice draft${draftCount === 1 ? '' : 's'} waiting`, detail: 'Review and post drafts before relying on receivables.' });
+    const missingDates = [...invoices, ...bills].filter((item: any) => !item.date).length;
+    if (missingDates) warnings.push({ key: 'missing_dates', severity: 'warning', label: 'Entries missing dates', detail: 'Add dates so reports and periods remain reliable.' });
+    const openSessions = sessions.filter((item: any) => item.status !== 'closed').length;
+    if (openSessions) warnings.push({ key: 'open_pos', severity: 'info', label: `${openSessions} POS session${openSessions === 1 ? '' : 's'} open`, detail: 'Close drawers at the end of each trading day.' });
+    const lastBackup = await AsyncStorage.getItem('ledgr:last_backup_at');
+    if (!lastBackup) warnings.push({ key: 'backup', severity: 'warning', label: 'No recent backup recorded', detail: 'Export a JSON backup after important bookkeeping work.' });
+    return { warnings, lastBackupAt: lastBackup, locationCount: locations.length, openPosSessions: openSessions, draftCount, hasRecoveryWarning: !lastBackup };
+  },
+
   // Backup + danger
   exportBackup: async () => {
     const data: any = await db.exportBackup();
     // Include model name so it carries over to other devices
     data.geminiModel = await getGeminiModel();
+    await AsyncStorage.setItem('ledgr:last_backup_at', new Date().toISOString());
     return data;
   },
   importBackup: async (payload: any) => {

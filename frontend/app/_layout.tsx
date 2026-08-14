@@ -12,6 +12,8 @@ import { OnboardingGateProvider, useOnboardingGate } from "@/src/context/Onboard
 import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
 import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
+import { api } from "@/src/api";
+import { isCapabilityEnabled, type CapabilityKey } from "@/src/utils/capabilities";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -80,7 +82,13 @@ function ThemedStack() {
   const theme = useTheme();
   const { effective } = useThemeMode();
   const { ready: onboardingReady, hasOnboarded } = useOnboardingGate();
+  const [settings, setSettings] = useState<any>(null);
   const { width } = useWindowDimensions();
+  useEffect(() => {
+    if (!hasOnboarded) { setSettings(null); return; }
+    api.getSettings().then(setSettings).catch(() => setSettings({}));
+  }, [hasOnboarded]);
+  const canOpen = (key: CapabilityKey) => settings == null || isCapabilityEnabled(settings, key);
   const isWideWeb = Platform.OS === "web" && width >= 768;
   if (!onboardingReady) return <AppOpeningSplashScreen />;
   return (
@@ -101,37 +109,55 @@ function ThemedStack() {
         >
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.surface } }}>
         <Stack.Protected guard={hasOnboarded}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
-        <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
-        <Stack.Screen name="bill-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="party-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="sale-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="sales" options={{ presentation: "card" }} />
-        <Stack.Screen name="cashbook" options={{ presentation: "card" }} />
-        <Stack.Screen name="assets" options={{ presentation: "card" }} />
-        <Stack.Screen name="payment-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="receipt-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="payments" options={{ presentation: "card" }} />
-        <Stack.Screen name="inventory-form" options={{ presentation: "modal" }} />
-        <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
-        <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
-        <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
-        <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
-        <Stack.Screen name="scan-import" options={{ presentation: "card" }} />
-        <Stack.Screen name="invoices" options={{ presentation: "card" }} />
-        <Stack.Screen name="quotes" options={{ presentation: "card" }} />
-        <Stack.Screen name="delivery-notes" options={{ presentation: "card" }} />
-        <Stack.Screen name="receipts" options={{ presentation: "card" }} />
-        <Stack.Screen name="expenses" options={{ presentation: "card" }} />
-        <Stack.Screen name="customer/[id]" options={{ presentation: "card" }} />
-        <Stack.Screen name="debtors" options={{ presentation: "card" }} />
-        <Stack.Screen name="daybook" options={{ presentation: "card" }} />
-        <Stack.Screen name="ask" options={{ presentation: "card" }} />
-        <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
-        <Stack.Screen name="payroll" options={{ presentation: "card" }} />
-        <Stack.Screen name="fixed-assets" options={{ presentation: "card" }} />
-        <Stack.Screen name="products" options={{ presentation: "card" }} />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
+          <Stack.Screen name="advanced-settings" options={{ presentation: "card" }} />
+          <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
+          <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
+          <Stack.Screen name="party-form" options={{ presentation: "modal" }} />
+          <Stack.Screen name="assets" options={{ presentation: "card" }} />
+          <Stack.Screen name="daybook" options={{ presentation: "card" }} />
+          <Stack.Protected guard={canOpen("core_ledger")}><Stack.Screen name="expenses" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("commerce")}>
+            <Stack.Screen name="sale-form" options={{ presentation: "modal" }} />
+            <Stack.Screen name="sales" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("procurement")}>
+            <Stack.Screen name="bill-form" options={{ presentation: "modal" }} />
+            <Stack.Screen name="payment-form" options={{ presentation: "modal" }} />
+            <Stack.Screen name="payments" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("cashbook")}><Stack.Screen name="cashbook" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("invoicing")}>
+            <Stack.Screen name="invoices" options={{ presentation: "card" }} />
+            <Stack.Screen name="quotes" options={{ presentation: "card" }} />
+            <Stack.Screen name="receipts" options={{ presentation: "card" }} />
+            <Stack.Screen name="receipt-form" options={{ presentation: "modal" }} />
+            <Stack.Screen name="customer/[id]" options={{ presentation: "card" }} />
+            <Stack.Screen name="debtors" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("inventory")}>
+            <Stack.Screen name="inventory-form" options={{ presentation: "modal" }} />
+            <Stack.Screen name="products" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("shipping_returns")}><Stack.Screen name="delivery-notes" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("reporting")}>
+            <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
+            <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("reconciliation")}><Stack.Screen name="reconcile" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("ai_assistant")}>
+            <Stack.Screen name="ask" options={{ presentation: "card" }} />
+            <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
+            <Stack.Screen name="scan-import" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("payroll")}><Stack.Screen name="payroll" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("fixed_assets")}><Stack.Screen name="fixed-assets" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("multi_location")}>
+            <Stack.Screen name="locations" options={{ presentation: "card" }} />
+            <Stack.Screen name="pos-sessions" options={{ presentation: "card" }} />
+            <Stack.Screen name="stock-transfers" options={{ presentation: "card" }} />
+          </Stack.Protected>
         </Stack.Protected>
         <Stack.Protected guard={!hasOnboarded}>
           <Stack.Screen name="onboarding" options={{ presentation: "card", gestureEnabled: false }} />
