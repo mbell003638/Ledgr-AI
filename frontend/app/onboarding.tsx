@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -50,6 +50,22 @@ export default function Onboarding() {
     });
     return () => subscription.remove();
   }, []));
+
+  const toggleLock = async () => {
+    if (lockEnabled) {
+      setLockEnabled(false);
+      return;
+    }
+    if (Platform.OS === "web") {
+      Alert.alert("App Lock is device-only", "Enable App Lock from the Android app after setting a device PIN, fingerprint, or face unlock.");
+      return;
+    }
+    if (!(await deviceHasLock())) {
+      Alert.alert("Set up device security first", "Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
+      return;
+    }
+    setLockEnabled(true);
+  };
 
   const finish = async () => {
     const finalPersona = persona || "entrepreneur";
@@ -153,7 +169,7 @@ export default function Onboarding() {
               <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export a JSON backup from Settings after important work and keep a copy somewhere safe.</Text></View>
             </View>
             {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text></View><Pressable onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
-            <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>Protect sensitive actions</Text><Text style={styles.lockDesc}>Use your phone PIN, fingerprint, or face unlock before deleting or resetting data.</Text></View><Pressable onPress={() => setLockEnabled((value) => !value)} style={[styles.toggle, lockEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: lockEnabled }}><View style={[styles.toggleThumb, lockEnabled && styles.toggleThumbOn]} /></Pressable></View>
+            <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>Protect sensitive actions</Text><Text style={styles.lockDesc}>Use your phone PIN, fingerprint, or face unlock before deleting or resetting data.</Text></View><Pressable onPress={toggleLock} style={[styles.toggle, lockEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: lockEnabled }} accessibilityLabel="Protect sensitive actions with App Lock"><View style={[styles.toggleThumb, lockEnabled && styles.toggleThumbOn]} /></Pressable></View>
           </View>
         )}
       </ScrollView>
