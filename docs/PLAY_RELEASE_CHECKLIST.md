@@ -25,6 +25,18 @@ This checklist is for the current Codex Android application. An APK sideload tes
 - [ ] Enroll in Play App Signing and retain upload-key recovery information.
 - [ ] Ensure versionCode exceeds every artifact previously uploaded for this application ID.
 
+## Automated QA gate
+
+From `frontend/`:
+
+```
+npm run qa:release
+```
+
+That command is the Play-release software gate: Android package / backup / permission checks, ESLint, Expo Doctor, production `npm audit`, TypeScript, and the full Jest suite. Ansible is not used; this is a Node gate, not server provisioning.
+
+A green gate is necessary and not sufficient. Device smoke, a signed AAB, and Play Internal testing remain owner steps below.
+
 ## Build and binary verification
 
 - [ ] Manually dispatch Build Ledgr AI Android when ready.

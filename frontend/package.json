@@ -12,7 +12,8 @@
     "lint": "expo lint",
     "lint:ci": "expo lint --no-cache --max-warnings 0",
     "audit:ci": "node ./scripts/audit-ci.js",
-    "test": "jest"
+    "test": "jest",
+    "qa:release": "node ./scripts/qa-release.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "6.1.2",
