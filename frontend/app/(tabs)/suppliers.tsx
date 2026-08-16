@@ -11,6 +11,7 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { ActionSheetModal, ActionSheetItem } from "@/src/components/ActionSheetModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
+import { isCapabilityEnabled, workspaceLabelsFor } from "@/src/utils/capabilities";
 
 type PartyRow = { id: string; name: string; phone?: string; role: "customer"|"supplier"|"partner"|"both"; receivable: number; payable: number; capitalBalance?: number };
 
@@ -22,6 +23,15 @@ export default function PartiesScreen() {
   const [filter, setFilter] = useState<'all'|'customer'|'supplier'|'partner'>('all');
   const [partyPromptVisible, setPartyPromptVisible] = useState(false);
   const [investorModalVisible, setInvestorModalVisible] = useState(false);
+  const [workspaceSettings, setWorkspaceSettings] = useState<any>({});
+  useEffect(() => {
+    let active = true;
+    api.getSettings().then((value) => { if (active) setWorkspaceSettings(value || {}); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const workspaceLabels = useMemo(() => workspaceLabelsFor(workspaceSettings), [workspaceSettings]);
+  const customersEnabled = isCapabilityEnabled(workspaceSettings, "customers");
+  const procurementEnabled = isCapabilityEnabled(workspaceSettings, "procurement");
 
   const loader = useCallback(async (): Promise<{ items: PartyRow[]; isPartnerMode: boolean }> => {
     const config: any = await api.getV2BookConfig().catch(() => null);
@@ -104,12 +114,16 @@ export default function PartiesScreen() {
   }, [params.action, router]);
 
   const visible = useMemo(() => items.filter((x) => {
+    if (x.role === 'partner') return filter === 'all' || filter === 'partner';
+    if (x.role === 'customer' && !customersEnabled) return false;
+    if (x.role === 'supplier' && !procurementEnabled) return false;
+    if (x.role === 'both' && !customersEnabled && !procurementEnabled) return false;
     if (filter === 'all') return true;
-    if (filter === 'customer') return x.role === 'customer' || x.role === 'both';
-    if (filter === 'supplier') return x.role === 'supplier' || x.role === 'both';
-    if (filter === 'partner') return x.role === 'partner';
+    if (filter === 'customer') return customersEnabled && (x.role === 'customer' || x.role === 'both');
+    if (filter === 'supplier') return procurementEnabled && (x.role === 'supplier' || x.role === 'both');
+    if (filter === 'partner') return false;
     return true;
-  }), [items, filter]);
+  }), [customersEnabled, filter, items, procurementEnabled]);
 
   const open = (p: PartyRow) => {
     if (p.role === 'partner') {
@@ -118,24 +132,23 @@ export default function PartiesScreen() {
     }
     const cId = p.id.includes('|') ? p.id.split('|')[1] : p.id;
     const sId = p.id.includes('|') ? p.id.split('|')[0] : p.id;
-    if (p.role === 'customer' || p.role === 'both') router.push(`/customer/${cId}` as any);
+    if ((p.role === 'customer' || p.role === 'both') && customersEnabled) router.push(`/customer/${cId}` as any);
     else router.push(`/supplier/${sId}` as any);
   };
 
-  const createActions: ActionSheetItem[] = [
-    {
-      id: "customer",
-      label: "Create Customer",
-      icon: "person-outline",
-      onPress: () => router.push('/party-form?type=customer' as any),
-    },
-    {
-      id: "supplier",
-      label: "Create Supplier",
-      icon: "business-outline",
-      onPress: () => router.push('/party-form?type=supplier' as any),
-    },
-  ];
+  const createActions: ActionSheetItem[] = [];
+  if (customersEnabled) createActions.push({
+    id: "customer",
+    label: `Create ${workspaceLabels.customerLabel.replace(/s$/, "")}`,
+    icon: "person-outline",
+    onPress: () => router.push('/party-form?type=customer' as any),
+  });
+  if (procurementEnabled) createActions.push({
+    id: "supplier",
+    label: `Create ${workspaceLabels.supplierLabel.replace(/s$/, "")}`,
+    icon: "business-outline",
+    onPress: () => router.push('/party-form?type=supplier' as any),
+  });
 
   if (isPartnerMode) {
     createActions.push({
@@ -146,21 +159,28 @@ export default function PartiesScreen() {
     });
   }
 
-  const availableFilters: ('all' | 'customer' | 'supplier' | 'partner')[] = isPartnerMode
-    ? ['all', 'customer', 'supplier', 'partner']
-    : ['all', 'customer', 'supplier'];
+  // Filter vocabulary remains ['all', 'customer', 'supplier', 'partner']; persona capabilities decide which options are shown.
+  const availableFilters = useMemo<('all' | 'customer' | 'supplier' | 'partner')[]>(() => [
+    'all',
+    ...(customersEnabled ? ['customer' as const] : []),
+    ...(procurementEnabled ? ['supplier' as const] : []),
+    ...(isPartnerMode ? ['partner' as const] : []),
+  ], [customersEnabled, isPartnerMode, procurementEnabled]);
+  useEffect(() => {
+    if (!availableFilters.includes(filter)) setFilter('all');
+  }, [availableFilters, filter]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader
-        title="Business Accounts"
+        title={workspaceLabels.accountsTitle}
         subtitle={`${items.length} account${items.length === 1 ? '' : 's'}`}
         rightAction={
           <Pressable
             testID="btn-add-party"
             onPress={() => {
-              if (filter === 'customer') router.push('/party-form?type=customer' as any);
-              else if (filter === 'supplier') router.push('/party-form?type=supplier' as any);
+              if (filter === 'customer' && customersEnabled) router.push('/party-form?type=customer' as any);
+              else if (filter === 'supplier' && procurementEnabled) router.push('/party-form?type=supplier' as any);
               else if (filter === 'partner') setInvestorModalVisible(true);
               else setPartyPromptVisible(true);
             }}
@@ -204,8 +224,8 @@ export default function PartiesScreen() {
           ListEmptyComponent={
             <Empty
               icon={<Ionicons name="people-outline" size={40} color={theme.color.muted} />}
-              title="No business accounts found"
-              hint="Add a customer, supplier, or capital account."
+              title={`No ${workspaceLabels.accountsTitle.toLowerCase()} found`}
+              hint={workspaceLabels.emptyAccountsHint}
             />
           }
           renderItem={({ item }) => (
@@ -223,7 +243,7 @@ export default function PartiesScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.sub}>{item.phone || 'No phone'} • {item.role === 'both' ? 'Customer & Supplier' : item.role === 'partner' ? 'Capital Account' : item.role === 'customer' ? 'Customer' : 'Supplier'}</Text>
+                <Text style={styles.sub}>{item.phone || 'No phone'} • {item.role === 'both' ? `${workspaceLabels.customerLabel} & ${workspaceLabels.supplierLabel}` : item.role === 'partner' ? 'Capital Account' : item.role === 'customer' ? workspaceLabels.customerLabel : workspaceLabels.supplierLabel}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 {item.receivable !== 0 ? <Text style={[styles.balance, { color: theme.color.success }]}>Receive {fmt(item.receivable)}</Text> : null}

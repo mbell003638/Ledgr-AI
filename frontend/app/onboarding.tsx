@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -26,13 +26,6 @@ export default function Onboarding() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
-  const { width: viewportWidth } = useWindowDimensions();
-  const [personaGridWidth, setPersonaGridWidth] = useState(0);
-  const compactOnboarding = personaGridWidth > 0 ? personaGridWidth < 600 : viewportWidth < 600;
-  const onboardingHorizontalPadding = compactOnboarding ? 14 : theme.spacing.lg;
-  const fallbackGridWidth = Math.max(0, Math.min(viewportWidth, 1040) - onboardingHorizontalPadding * 2);
-  const measuredGridWidth = personaGridWidth || fallbackGridWidth;
-  const personaCardWidth = Math.max(96, (measuredGridWidth - 16) / 3);
   const [step, setStep] = useState(0);
   const [persona, setPersona] = useState<PersonaId | null>(null);
   const [bizName, setBizName] = useState("");
@@ -41,6 +34,7 @@ export default function Onboarding() {
   const [multiLocation, setMultiLocation] = useState(false);
   const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
   const [showCustomize, setShowCustomize] = useState(false);
+  const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const LAST_STEP = 3;
   const selectedPersona = PERSONAS.find((item) => item.id === persona);
@@ -143,46 +137,51 @@ export default function Onboarding() {
       </View>
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: onboardingHorizontalPadding }]} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
         {step === 0 && (
           <View>
             <Text style={styles.title}>What best describes your work?</Text>
-            <Text style={styles.sub}>Choose one primary workspace. You can add more capabilities later without cluttering your Home screen.</Text>
-            <Text style={styles.groupLabel}>Recommended workspaces</Text>
-            <View style={styles.personaGrid} onLayout={(event) => {
-              const measured = event.nativeEvent.layout.width;
-              if (measured > 0 && Math.abs(measured - personaGridWidth) > 1) setPersonaGridWidth(measured);
-            }}>
-              {recommendedPersonas.map((item) => {
-                const selected = persona === item.id;
-                return (
-                  <Pressable key={item.id} onPress={() => choosePersona(item.id)} style={[styles.personaCard, compactOnboarding && styles.personaCardCompact, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
-                    <View style={[styles.iconCircle, compactOnboarding && styles.iconCircleCompact, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={compactOnboarding ? 18 : 23} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View>
-                    <Text style={[styles.personaLabel, compactOnboarding && styles.personaLabelCompact, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text>
-                    <Text style={[styles.personaDesc, compactOnboarding && styles.personaDescCompact]} numberOfLines={3}>{item.description}</Text>
-                    {selected && <Ionicons name="checkmark-circle" size={20} color={theme.color.brandPrimary} style={styles.check} />}
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={styles.groupLabel}>Other business types</Text>
-            <View style={styles.personaGrid} onLayout={(event) => {
-              const measured = event.nativeEvent.layout.width;
-              if (measured > 0 && Math.abs(measured - personaGridWidth) > 1) setPersonaGridWidth(measured);
-            }}>
-              {otherPersonas.map((item) => {
-                const selected = persona === item.id;
-                return (
-                  <Pressable key={item.id} onPress={() => choosePersona(item.id)} style={[styles.personaCard, compactOnboarding && styles.personaCardCompact, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
-                    <View style={[styles.iconCircle, compactOnboarding && styles.iconCircleCompact, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={compactOnboarding ? 18 : 23} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View>
-                    <Text style={[styles.personaLabel, compactOnboarding && styles.personaLabelCompact, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text>
-                    <Text style={[styles.personaDesc, compactOnboarding && styles.personaDescCompact]} numberOfLines={3}>{item.description}</Text>
-                    {selected && <Ionicons name="checkmark-circle" size={20} color={theme.color.brandPrimary} style={styles.check} />}
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={styles.note}>Your selection changes the starting accounting workflows and Home tools. You can fine-tune them before opening the workspace.</Text>
+            <Text style={styles.sub}>Choose one primary workspace. Ledgr will tailor the app, reports, accounts, and workflows around it.</Text>
+            <Pressable
+              onPress={() => setShowPersonaPicker(true)}
+              style={[styles.personaSelector, persona && styles.personaSelectorSelected]}
+              accessibilityRole="button"
+              accessibilityLabel={selectedPersona ? `Selected workspace: ${selectedPersona.label}` : "Choose a primary workspace"}
+              accessibilityHint="Opens the list of business types"
+            >
+              <View style={[styles.iconCircle, persona && styles.iconCircleSelected]}>
+                <Ionicons name={(PERSONA_ICON[persona || "custom"] || "options-outline") as any} size={22} color={persona ? theme.color.brandPrimary : theme.color.muted} />
+              </View>
+              <View style={styles.personaSelectorCopy}>
+                <Text style={styles.selectorKicker}>{persona ? "SELECTED WORKSPACE" : "PRIMARY WORKSPACE"}</Text>
+                <Text style={[styles.selectorTitle, persona && { color: theme.color.brandPrimary }]}>{selectedPersona?.label || "Choose a business type"}</Text>
+                <Text style={styles.selectorDescription} numberOfLines={2}>{selectedPersona?.description || "Retail, dropshipping, startups, developers, creators, manufacturing, trading, and more."}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={22} color={theme.color.muted} />
+            </Pressable>
+            <Text style={styles.note}>This choice controls the starting chart-of-accounts pack, visible workflows, reports, metrics, and Home shortcuts. You can fine-tune capabilities on the next step.</Text>
+            <Modal visible={showPersonaPicker} transparent animationType="slide" onRequestClose={() => setShowPersonaPicker(false)}>
+              <View style={styles.modalBackdrop}>
+                <View style={styles.personaModal}>
+                  <View style={styles.modalHeader}>
+                    <View><Text style={styles.modalTitle}>Choose your workspace</Text><Text style={styles.modalSub}>Select the business model that best matches how you earn and spend.</Text></View>
+                    <Pressable onPress={() => setShowPersonaPicker(false)} accessibilityRole="button" accessibilityLabel="Close workspace picker" style={styles.modalClose}><Ionicons name="close" size={22} color={theme.color.onSurface} /></Pressable>
+                  </View>
+                  <ScrollView contentContainerStyle={styles.personaOptions} keyboardShouldPersistTaps="handled">
+                    <Text style={styles.modalGroupLabel}>Recommended workspaces</Text>
+                    {recommendedPersonas.map((item) => {
+                      const selected = persona === item.id;
+                      return <Pressable key={item.id} onPress={() => { choosePersona(item.id); setShowPersonaPicker(false); }} style={[styles.personaOption, selected && styles.personaOptionSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}><View style={[styles.optionIcon, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={20} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View><View style={styles.optionCopy}><Text style={[styles.optionTitle, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text><Text style={styles.optionDescription} numberOfLines={2}>{item.description}</Text></View>{selected ? <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} /> : null}</Pressable>;
+                    })}
+                    <Text style={styles.modalGroupLabel}>Other business types</Text>
+                    {otherPersonas.map((item) => {
+                      const selected = persona === item.id;
+                      return <Pressable key={item.id} onPress={() => { choosePersona(item.id); setShowPersonaPicker(false); }} style={[styles.personaOption, selected && styles.personaOptionSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}><View style={[styles.optionIcon, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={20} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View><View style={styles.optionCopy}><Text style={[styles.optionTitle, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text><Text style={styles.optionDescription} numberOfLines={2}>{item.description}</Text></View>{selected ? <Ionicons name="checkmark-circle" size={22} color={theme.color.brandPrimary} /> : null}</Pressable>;
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+            </Modal>
           </View>
         )}
 
@@ -258,6 +257,26 @@ function makeStyles(theme: any) {
     personaDescCompact: { fontSize: 9, lineHeight: 11, marginTop: 3 },
     check: { position: "absolute", top: 9, right: 9 },
     note: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 14 },
+    personaSelector: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: theme.spacing.xl, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    personaSelectorSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "08" },
+    personaSelectorCopy: { flex: 1 },
+    selectorKicker: { color: theme.color.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
+    selectorTitle: { color: theme.color.onSurface, fontSize: 16, lineHeight: 20, fontWeight: "800", marginTop: 3 },
+    selectorDescription: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 3 },
+    modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.42)" },
+    personaModal: { maxHeight: "88%", borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: theme.color.surface, paddingTop: 18, paddingBottom: 10 },
+    modalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12, paddingHorizontal: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.color.border },
+    modalTitle: { color: theme.color.onSurface, fontSize: 18, fontWeight: "900" },
+    modalSub: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 4, maxWidth: 290 },
+    modalClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18, backgroundColor: theme.color.surfaceSecondary },
+    personaOptions: { paddingHorizontal: 14, paddingBottom: 22 },
+    modalGroupLabel: { color: theme.color.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginTop: 16, marginBottom: 7, paddingHorizontal: 4, textTransform: "uppercase" },
+    personaOption: { flexDirection: "row", alignItems: "center", gap: 11, padding: 11, minHeight: 66, borderRadius: 15, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginBottom: 8 },
+    personaOptionSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10" },
+    optionIcon: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 17, backgroundColor: theme.color.surface },
+    optionCopy: { flex: 1 },
+    optionTitle: { color: theme.color.onSurface, fontSize: 13, fontWeight: "800" },
+    optionDescription: { color: theme.color.muted, fontSize: 10, lineHeight: 13, marginTop: 2 },
     customizeButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10", marginTop: theme.spacing.md },
     customizeButtonText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
     customizePanel: { marginTop: theme.spacing.md, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },

@@ -21,10 +21,10 @@ import { partnershipDisplayFromReports } from "@/src/accountingV2/reports";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
-import { isCapabilityEnabled } from "@/src/utils/capabilities";
+import { eligibleMetrics, isCapabilityEnabled, reportSegmentsFor, type ReportSegmentKey } from "@/src/utils/capabilities";
+import { metricsFromDashboard } from "@/src/utils/metrics";
 
-const SEGMENTS = ["Summary", "P&L", "Balance", "Trial", "Capital Statement", "Capital Withdrawals", "Suppliers", "Customers", "Tax", "Sales Reg", "Receipts"] as const;
-type Seg = typeof SEGMENTS[number];
+type Seg = ReportSegmentKey;
 
 const PIE_COLORS = ["#4F8EF7", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#5AC8FA", "#FFCC00"];
 
@@ -92,6 +92,14 @@ export default function ReportsScreen() {
   const [locationId, setLocationId] = useState("");
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
+  const visibleSegments = useMemo(() => reportSegmentsFor(bizSettings), [bizSettings]);
+  const workspaceMetrics = useMemo(() => {
+    const enabled = new Set(eligibleMetrics(bizSettings).map((metric) => metric.key));
+    return metricsFromDashboard(dash).filter((metric) => enabled.has(metric.key));
+  }, [bizSettings, dash]);
+  useEffect(() => {
+    if (!visibleSegments.includes(seg)) setSeg("Summary");
+  }, [seg, visibleSegments]);
   const loadRequest = useRef(0);
   const sectionRequest = useRef(0);
   const loadedVersion = useRef(-1);
@@ -477,7 +485,7 @@ export default function ReportsScreen() {
       <View style={styles.filterRail}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.segScroll} contentContainerStyle={styles.segRow}
           scrollEventThrottle={16} onScroll={(event) => updateRailEdges(event, setSegmentEdges)}>
-          {(bizSettings?.accountingStyle === 'retail_partnership' ? SEGMENTS : SEGMENTS.filter(s => s !== "Capital Statement" && s !== "Capital Withdrawals")).map((s) => (
+          {visibleSegments.map((s) => (
             <GlowPressable
               key={s}
               testID={`report-seg-${s}`}
@@ -576,6 +584,14 @@ export default function ReportsScreen() {
                 <View style={styles.divider} />
                 <RowKV label="Net Profit" value={fmt(dash.netProfit)} strong big theme={theme} styles={styles} />
               </Card>
+
+              {workspaceMetrics.length > 0 && <Card style={{ marginTop: theme.spacing.md }} testID="report-workspace-metrics">
+                <Text style={styles.rTitle}>Workspace metrics</Text>
+                <Text style={styles.hint}>Metrics remain visible even when more inputs are needed.</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 10 }}>
+                  {workspaceMetrics.map((metric) => <View key={metric.key} style={{ width: 126, padding: 10, borderRadius: 12, backgroundColor: theme.color.surfaceSecondary }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: metric.value === null ? theme.color.muted : theme.color.onSurface, fontSize: 16, fontWeight: "900", marginTop: 4 }}>{metric.value === null ? "—" : metric.unit === "percent" ? `${metric.value}%` : metric.unit === "ratio" ? String(metric.value) : fmt(metric.value)}</Text><Text style={{ color: metric.value === null ? theme.color.warning : theme.color.muted, fontSize: 9, lineHeight: 12, marginTop: 3 }} numberOfLines={3}>{metric.value === null ? metric.explanation : metric.state === "estimated" ? "Estimated" : "Posted inputs"}</Text></View>)}
+                </ScrollView>
+              </Card>}
 
               <View style={{ flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md }}>
                 <View style={{ flex: 1 }}>

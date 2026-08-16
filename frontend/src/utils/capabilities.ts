@@ -80,8 +80,8 @@ export const CAPABILITIES: CapabilityDefinition[] = [
 
 const PERSONA_DEFAULTS: Record<PersonaId, CapabilityKey[]> = {
   mobile_invoicing: ['core_ledger', 'invoicing', 'customers', 'commerce', 'reconciliation', 'ai_assistant'],
-  dropshipper: ['core_ledger', 'commerce', 'procurement', 'inventory', 'marketplace', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
-  marketplace_seller: ['core_ledger', 'commerce', 'procurement', 'inventory', 'marketplace', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  dropshipper: ['core_ledger', 'commerce', 'procurement', 'inventory', 'marketplace', 'shipping_returns', 'cogs_margin', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  marketplace_seller: ['core_ledger', 'commerce', 'procurement', 'inventory', 'marketplace', 'shipping_returns', 'cogs_margin', 'growth_analytics', 'reconciliation', 'ai_assistant'],
   entrepreneur: ['core_ledger', 'invoicing', 'commerce', 'customers', 'growth_analytics', 'reconciliation', 'ai_assistant'],
   startup: ['core_ledger', 'invoicing', 'commerce', 'customers', 'growth_analytics', 'reconciliation', 'ai_assistant'],
   developer: ['core_ledger', 'invoicing', 'customers', 'projects', 'growth_analytics', 'reconciliation', 'ai_assistant'],
@@ -182,4 +182,75 @@ export function featureKeysForCapabilities(settings: any): string[] {
     for (const featureKey of capability.featureKeys) keys.add(featureKey);
   }
   return [...keys];
+}
+
+export type ReportSegmentKey = 'Summary' | 'P&L' | 'Balance' | 'Trial' | 'Capital Statement' | 'Capital Withdrawals' | 'Suppliers' | 'Customers' | 'Tax' | 'Sales Reg' | 'Receipts';
+
+const BASE_REPORT_SEGMENTS: ReportSegmentKey[] = ['Summary', 'P&L', 'Balance', 'Trial', 'Tax', 'Sales Reg', 'Receipts'];
+
+export function reportSegmentsFor(settings: any): ReportSegmentKey[] {
+  const enabled = new Set(getEnabledCapabilities(settings));
+  const segments = [...BASE_REPORT_SEGMENTS];
+  if (enabled.has('customers') || enabled.has('invoicing') || enabled.has('commerce')) segments.push('Customers');
+  if (enabled.has('procurement')) segments.push('Suppliers');
+  if (enabled.has('core_ledger') && settings?.accountingStyle === 'retail_partnership') segments.push('Capital Statement', 'Capital Withdrawals');
+  return segments;
+}
+
+export type WorkspaceLabels = {
+  accountsTitle: string;
+  customerLabel: string;
+  supplierLabel: string;
+  emptyAccountsHint: string;
+};
+
+export function workspaceLabelsFor(settings: any): WorkspaceLabels {
+  switch (activePersonaFor(settings)) {
+    case 'developer':
+    case 'it_freelancer':
+    case 'professional_service':
+      return { accountsTitle: 'Clients', customerLabel: 'Clients', supplierLabel: 'Vendors', emptyAccountsHint: 'Add a client or vendor to track invoices, payments, and project balances.' };
+    case 'content_creator':
+      return { accountsTitle: 'Partners & Platforms', customerLabel: 'Brands & Platforms', supplierLabel: 'Vendors', emptyAccountsHint: 'Add a brand, platform, or vendor to track payouts, invoices, and expenses.' };
+    case 'startup':
+      return { accountsTitle: 'Business Accounts', customerLabel: 'Customers', supplierLabel: 'Vendors', emptyAccountsHint: 'Add customers or enable procurement when you need supplier balances.' };
+    case 'dropshipper':
+    case 'marketplace_seller':
+    case 'retail':
+    case 'wholesale':
+    case 'vendor':
+    case 'manufacturer':
+    case 'import_export':
+      return { accountsTitle: 'Customers & Suppliers', customerLabel: 'Customers', supplierLabel: 'Suppliers', emptyAccountsHint: 'Add a customer or supplier to track receivables, payables, and trade balances.' };
+    default:
+      return { accountsTitle: 'Business Accounts', customerLabel: 'Customers', supplierLabel: 'Suppliers', emptyAccountsHint: 'Add a customer, supplier, or business account.' };
+  }
+}
+
+export function workspaceTileLabelsFor(settings: any): Partial<Record<string, string>> {
+  switch (activePersonaFor(settings)) {
+    case 'developer':
+    case 'it_freelancer':
+    case 'professional_service':
+      return { sales: 'Client Work', invoices: 'Client Invoices', quotes: 'Estimates', expenses: 'Project Costs', reports: 'Project Reports', monthly: 'Monthly Review' };
+    case 'content_creator':
+      return { sales: 'Brand Deals', invoices: 'Brand Invoices', receipts: 'Platform Payouts', quotes: 'Proposals', expenses: 'Campaign Costs', reports: 'Creator Analytics', monthly: 'Monthly Payouts' };
+    case 'startup':
+      return { bills: 'Vendor Bills', sales: 'Revenue', invoices: 'Customer Invoices', expenses: 'Burn & Expenses', reports: 'Growth Reports', monthly: 'Monthly Burn' };
+    case 'dropshipper':
+      return { bills: 'Supplier Orders', sales: 'Customer Orders', receipts: 'Marketplace Payouts', payments: 'Supplier Payments', invoices: 'Customer Invoices', delivery: 'Shipping & RTO', expenses: 'Ads & Operating Costs', reports: 'Unit Economics', monthly: 'Monthly Margin' };
+    case 'marketplace_seller':
+      return { bills: 'Supplier Purchases', sales: 'Marketplace Orders', receipts: 'Platform Payouts', payments: 'Marketplace Fees', invoices: 'Customer Invoices', expenses: 'Ads & Seller Costs', reports: 'Marketplace Reports', monthly: 'Monthly Settlement' };
+    case 'manufacturer':
+      return { bills: 'Materials Purchases', sales: 'Finished-Goods Sales', inventory: 'Materials & Stock', perpetualInventory: 'Products & BOM', expenses: 'Factory Overhead', reports: 'Production Reports', monthly: 'Monthly Costing' };
+    case 'import_export':
+      return { bills: 'Import Purchases', sales: 'Trade Sales', delivery: 'Shipments', expenses: 'Freight & Duties', reports: 'Trade Margin', monthly: 'Monthly Landed Cost' };
+    case 'retail':
+      return { bills: 'Store Purchases', sales: 'POS Sales', receipts: 'Customer Receipts', payments: 'Supplier Payments', inventory: 'Stock Counts', perpetualInventory: 'Products', reports: 'Retail Reports', monthly: 'Monthly Store P&L' };
+    case 'wholesale':
+    case 'vendor':
+      return { bills: 'Bulk Purchases', sales: 'Wholesale Sales', receipts: 'Customer Receipts', expenses: 'Trade Expenses', reports: 'Wholesale Reports', monthly: 'Monthly Trading' };
+    default:
+      return {};
+  }
 }

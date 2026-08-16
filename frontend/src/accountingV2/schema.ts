@@ -45,7 +45,7 @@ export function defaultAccounts(bookId: string): V2Account[] {
     ['2310', 'Payroll Tax Payable', 'liability'], ['2500', 'Other Liabilities', 'liability'],
     ['3000', 'Capital Accounts', 'equity'], ['3100', 'Capital Withdrawals', 'equity'], ['3200', 'Current Profit', 'equity'], ['3300', 'Retained Earnings', 'equity'], ['3400', 'Owner Contributions', 'equity'],
     ['4000', 'Sales Revenue', 'revenue'], ['4010', 'Sales Returns', 'revenue'], ['5000', 'Cost of Goods Sold', 'expense'],
-    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'], ['6400', 'POS Cash Variance', 'expense'],
+    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'], ['6400', 'POS Cash Variance', 'expense'], ['6500', 'Advertising & Acquisition', 'expense'], ['6510', 'Shipping & Fulfilment', 'expense'], ['6520', 'Returns & RTO', 'expense'], ['6530', 'Marketplace & Payment Fees', 'expense'], ['6540', 'Software & Cloud', 'expense'], ['6550', 'Creator Production Costs', 'expense'], ['6560', 'Freight & Inbound Logistics', 'expense'], ['6570', 'Duties & Customs', 'expense'], ['6580', 'Manufacturing Overhead', 'expense'],
   ];
   return defs.map(([code, name, type]) => ({ id: `${bookId}:account:${code}`, bookId, code, name, type, active: true }));
 }

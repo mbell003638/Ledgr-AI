@@ -8,6 +8,7 @@ import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
 import { ProductDomainService } from './productDomainService';
 import { resolveWriteLocationId } from './locationDomainService';
+import { accountCodeForExpenseCategory } from '../expenseCategories';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -36,7 +37,7 @@ export class ExpenseDomainService {
       amount: amount(input.amount),
       method: method(input.method),
       locationId: locationId || undefined,
-      metadata: { category: input.category, notes: input.notes },
+      metadata: { category: input.category, accountCode: accountCodeForExpenseCategory(String(input.category || '')), notes: input.notes },
     });
   }
 

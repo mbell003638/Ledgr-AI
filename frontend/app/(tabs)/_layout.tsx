@@ -11,7 +11,7 @@ import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
 import { api } from "@/src/api";
-import { isCapabilityEnabled } from "@/src/utils/capabilities";
+import { isCapabilityEnabled, workspaceLabelsFor } from "@/src/utils/capabilities";
 
 const TAB_ICON_SIZE = 22;
 
@@ -133,7 +133,8 @@ export default function TabsLayout() {
     return () => { active = false; };
   }, []);
   const reportingEnabled = settings != null && isCapabilityEnabled(settings, "reporting");
-  const accountsEnabled = settings != null && (isCapabilityEnabled(settings, "invoicing") || isCapabilityEnabled(settings, "procurement"));
+  const accountsEnabled = settings != null && (isCapabilityEnabled(settings, "customers") || isCapabilityEnabled(settings, "procurement") || isCapabilityEnabled(settings, "invoicing"));
+  const workspaceLabels = workspaceLabelsFor(settings || {});
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.surface }}>
@@ -185,7 +186,7 @@ export default function TabsLayout() {
           name="suppliers"
           options={{
             href: settings == null || accountsEnabled ? undefined : null,
-            title: "Accounts",
+            title: workspaceLabels.accountsTitle,
             tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={Users} color={color} focused={focused} />,
             tabBarButtonTestID: "tab-suppliers",
           }}

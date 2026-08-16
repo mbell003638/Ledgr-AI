@@ -14,7 +14,7 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
-import { isCapabilityEnabled, eligibleMetrics } from "@/src/utils/capabilities";
+import { isCapabilityEnabled, eligibleMetrics, workspaceTileLabelsFor } from "@/src/utils/capabilities";
 import { metricsFromDashboard } from "@/src/utils/metrics";
 import { showAlert } from "@/src/utils/alerts";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
@@ -170,10 +170,11 @@ export default function Dashboard() {
 
   const visibleTiles = useMemo(() => {
     const enabled = getEnabledFeatures(settings);
-    const filtered = TILES.filter((t) => enabled.includes(t.key as any));
+    const labels = workspaceTileLabelsFor(settings);
+    const filtered = TILES.filter((t) => enabled.includes(t.key as any)).map((tile) => ({ ...tile, label: labels[tile.key] || tile.label }));
     if (!customTileOrder.length) return filtered;
-    const map = new Map<string, (typeof TILES)[number]>(filtered.map((t) => [t.key, t]));
-    const ordered: (typeof TILES)[number][] = [];
+    const map = new Map<string, (typeof filtered)[number]>(filtered.map((t) => [t.key, t]));
+    const ordered: (typeof filtered)[number][] = [];
     for (const k of customTileOrder) {
       if (map.has(k)) {
         ordered.push(map.get(k)!);
@@ -333,7 +334,7 @@ export default function Dashboard() {
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
   const workspaceMetrics = useMemo(() => {
     const eligible = new Set(eligibleMetrics(settings).map((metric) => metric.key));
-    return metricsFromDashboard(dash).filter((metric) => eligible.has(metric.key) && metric.value !== null && (metric.key === 'cogs' || metric.key === 'gross_margin' || metric.key === 'roe')).slice(0, 3);
+    return metricsFromDashboard(dash).filter((metric) => eligible.has(metric.key));
   }, [dash, settings]);
 
   return (
@@ -486,8 +487,15 @@ export default function Dashboard() {
               </Card>
             ) : null}
             {workspaceMetrics.length > 0 ? <Card style={{ marginTop: theme.spacing.md, padding: 14 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}><Text style={styles.sectionTitleInline}>Workspace metrics</Text><Text style={{ color: theme.color.muted, fontSize: 10 }}>Based on current ledger data</Text></View>
-              <View style={{ flexDirection: "row", gap: 8 }}>{workspaceMetrics.map((metric) => <View key={metric.key} style={{ flex: 1, padding: 10, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: theme.color.onSurface, fontSize: 16, fontWeight: "900", marginTop: 5 }}>{metric.unit === 'percent' ? `${metric.value}%` : fmt(metric.value || 0)}</Text><Text style={{ color: theme.color.muted, fontSize: 9, marginTop: 3 }} numberOfLines={2}>{metric.state === 'estimated' ? 'Estimated' : 'Posted inputs'}</Text></View>)}</View>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}><Text style={styles.sectionTitleInline}>Workspace metrics</Text><Text style={{ color: theme.color.muted, fontSize: 10 }}>Based on your workspace</Text></View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {workspaceMetrics.map((metric) => {
+                  const hasValue = metric.value !== null;
+                  const value = hasValue ? (metric.unit === 'percent' ? `${metric.value}%` : metric.unit === 'ratio' ? String(metric.value) : fmt(metric.value || 0)) : '—';
+                  const status = metric.state === 'estimated' ? 'Estimated' : hasValue ? 'Posted inputs' : 'Needs inputs';
+                  return <View key={metric.key} style={{ width: 118, minHeight: 86, padding: 10, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: hasValue ? theme.color.onSurface : theme.color.muted, fontSize: 16, fontWeight: "900", marginTop: 5 }}>{value}</Text><Text style={{ color: hasValue ? theme.color.muted : theme.color.warning, fontSize: 9, marginTop: 3 }} numberOfLines={2}>{status}</Text><Text style={{ color: theme.color.muted, fontSize: 9, lineHeight: 12, marginTop: 2 }} numberOfLines={2}>{metric.explanation}</Text></View>;
+                })}
+              </ScrollView>
             </Card> : null}
 
             {/* Daily quick summary — WhatsApp shareable. Same press treatment as

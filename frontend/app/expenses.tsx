@@ -14,6 +14,8 @@ import { printTransaction, shareTransaction } from "@/src/utils/transactionActio
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { LocationPicker } from "@/src/components/LocationPicker";
+import { activePersonaFor } from "@/src/utils/capabilities";
+import { expenseCategoryOptionsForPersona, type ExpenseCategoryOption } from "@/src/accountingV2/expenseCategories";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -36,11 +38,13 @@ export default function Expenses() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [locationId, setLocationId] = useState("");
+  const [categoryOptions, setCategoryOptions] = useState<ExpenseCategoryOption[]>([]);
 
   const load = async () => {
     const [list, settings] = await Promise.all([api.listExpenses(), api.getSettings()]);
     setExpenses([...list].sort((a: Expense, b: Expense) => b.date.localeCompare(a.date)));
     setCurrencySymbol(getCurrencySymbol(settings.currency));
+    setCategoryOptions(expenseCategoryOptionsForPersona(activePersonaFor(settings)));
   };
 
   useEffect(() => { load(); }, []);
@@ -158,7 +162,11 @@ export default function Expenses() {
               <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
               <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Category</Text>
-              <TextInput value={category} onChangeText={setCategory} placeholder="Rent / Electricity / Transport / Other" placeholderTextColor={theme.color.muted} style={styles.input} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
+                {categoryOptions.map((option) => <Pressable key={`${option.label}:${option.accountCode}`} onPress={() => setCategory(option.label)} style={[styles.categoryChip, category === option.label && styles.categoryChipSelected]} accessibilityRole="radio" accessibilityState={{ selected: category === option.label }} accessibilityLabel={`${option.label}. ${option.description}`}><Text style={[styles.categoryChipText, category === option.label && styles.categoryChipTextSelected]}>{option.label}</Text></Pressable>)}
+              </ScrollView>
+              <TextInput value={category} onChangeText={setCategory} placeholder="Choose a category or type a custom one" placeholderTextColor={theme.color.muted} style={styles.input} accessibilityLabel="Expense category" />
+              <Text style={styles.categoryHint}>Selected business categories post to their dedicated accounting account and remain visible in reports.</Text>
               <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
               <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
@@ -216,6 +224,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
   label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
+  categoryRail: { gap: 8, paddingVertical: 8 },
+  categoryChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+  categoryChipSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+  categoryChipText: { color: theme.color.onSurface, fontSize: 11, fontWeight: "700" },
+  categoryChipTextSelected: { color: theme.color.brandPrimary },
+  categoryHint: { color: theme.color.muted, fontSize: 10, lineHeight: 14, marginTop: 5 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
 }); }
