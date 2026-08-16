@@ -339,6 +339,15 @@ export async function clearColl(c: CollectionName): Promise<void> {
  * AsyncStorage for non-accounting preferences and surfaces no V2 runner.
  */
 export async function initStorage(): Promise<{ mode: StorageMode; error?: string }> {
+  // Expo SQLite is the Android/iOS accounting authority. The web runtime does
+  // not provide the native SQLite adapter, so select the existing AsyncStorage
+  // fallback immediately instead of awaiting a never-resolving dynamic import.
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    mode = 'async';
+    runner = null;
+    try { await loadActiveBook(); } catch { /* retain default */ }
+    return { mode, error: 'SQLite is unavailable in the web runtime; using local fallback storage.' };
+  }
   // Restore which book (account) was last active before touching storage.
   try { await loadActiveBook(); } catch { /* stay on default */ }
   try {
