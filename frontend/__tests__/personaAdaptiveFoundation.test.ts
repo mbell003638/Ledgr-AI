@@ -2,6 +2,7 @@ import { eligibleMetrics, getPersonaCapabilityDefaults, reportSegmentsFor, works
 import { accountCodeForExpenseCategory, expenseCategoryOptionsForPersona } from '@/src/accountingV2/expenseCategories';
 import { metricsFromDashboard } from '@/src/utils/metrics';
 import { V2_ACCOUNT_CODES } from '@/src/accountingV2/types';
+import { workspacePackFor } from '@/src/utils/workspacePacks';
 
 describe('persona-adaptive accounting foundation', () => {
   it('gives startup the growth metrics that were previously hidden on Home', () => {
@@ -44,6 +45,18 @@ describe('persona-adaptive accounting foundation', () => {
     expect(results.find((metric) => metric.key === 'rto')).toMatchObject({ value: 10, state: 'ready' });
     expect(results.find((metric) => metric.key === 'roi')).toMatchObject({ value: 50, state: 'ready' });
     expect(results.find((metric) => metric.key === 'peg')).toMatchObject({ value: 0.6, state: 'ready' });
+  });
+
+  it('centralizes persona workflow packs and account requirements', () => {
+    const dropshipper = workspacePackFor({ activePersona: 'dropshipper' });
+    expect(dropshipper.title).toBe('Dropshipper');
+    expect(dropshipper.metricInputs).toEqual(expect.arrayContaining(['acquisitionSpend', 'newCustomers', 'returnedOrders', 'shippedOrders']));
+    expect(dropshipper.accounts).toContain(V2_ACCOUNT_CODES.ADVERTISING_EXPENSE);
+    expect(dropshipper.accounts).toContain(V2_ACCOUNT_CODES.RETURNS_EXPENSE);
+    const developer = workspacePackFor({ activePersona: 'developer' });
+    expect(developer.homeLabels.sales).toBe('Client Work');
+    expect(developer.reportSegments).toContain('Customers');
+    expect(developer.reportSegments).not.toContain('Suppliers');
   });
 
   it('maps business expense categories to dedicated validated V2 accounts', () => {

@@ -14,8 +14,8 @@ import { printTransaction, shareTransaction } from "@/src/utils/transactionActio
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { LocationPicker } from "@/src/components/LocationPicker";
-import { activePersonaFor } from "@/src/utils/capabilities";
-import { expenseCategoryOptionsForPersona, type ExpenseCategoryOption } from "@/src/accountingV2/expenseCategories";
+import { workspacePackFor } from "@/src/utils/workspacePacks";
+import type { ExpenseCategoryOption } from "@/src/accountingV2/expenseCategories";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -44,7 +44,7 @@ export default function Expenses() {
     const [list, settings] = await Promise.all([api.listExpenses(), api.getSettings()]);
     setExpenses([...list].sort((a: Expense, b: Expense) => b.date.localeCompare(a.date)));
     setCurrencySymbol(getCurrencySymbol(settings.currency));
-    setCategoryOptions(expenseCategoryOptionsForPersona(activePersonaFor(settings)));
+    setCategoryOptions(workspacePackFor(settings).expenseCategories);
   };
 
   useEffect(() => { load(); }, []);
