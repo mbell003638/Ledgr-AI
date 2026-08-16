@@ -535,16 +535,30 @@ export const api = {
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
     const runner = activeSqlRunner();
-    if (runner && (Array.isArray(s.enabledFeatures) || s.activeLocationId !== undefined)) {
+    if (runner && (Array.isArray(s.enabledFeatures) || Array.isArray(s.enabledCapabilities) || s.activeLocationId !== undefined || s.activePersona !== undefined || s.businessType !== undefined)) {
       const service = new V2AppService(runner);
       const context = await service.activeContext();
       if (context) {
-        const persona = await runner.first<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND active=1 LIMIT 1', [context.bookId]);
-        if (persona) {
-          let config: any = {}; try { config = JSON.parse(persona.config || '{}'); } catch { config = {}; }
-          if (Array.isArray(s.enabledFeatures)) config.enabledFeatures = [...new Set(s.enabledFeatures.map(String))];
-          if (s.activeLocationId !== undefined) config.activeLocationId = s.activeLocationId ? String(s.activeLocationId) : '';
-          await runner.run('UPDATE v2_personas SET config=? WHERE id=? AND book_id=?', [JSON.stringify(config), persona.id, context.bookId]);
+        const personaRow = await runner.first<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND active=1 LIMIT 1', [context.bookId]);
+        if (personaRow) {
+          let personaConfig: any = {}; try { personaConfig = JSON.parse(personaRow.config || '{}'); } catch { personaConfig = {}; }
+          if (Array.isArray(s.enabledFeatures)) personaConfig.enabledFeatures = [...new Set(s.enabledFeatures.map(String))];
+          if (Array.isArray(s.enabledCapabilities)) personaConfig.enabledCapabilities = [...new Set(s.enabledCapabilities.map(String))];
+          if (s.activeLocationId !== undefined) personaConfig.activeLocationId = s.activeLocationId ? String(s.activeLocationId) : '';
+          await runner.run('UPDATE v2_personas SET config=? WHERE id=? AND book_id=?', [JSON.stringify(personaConfig), personaRow.id, context.bookId]);
+        }
+        if (Array.isArray(s.selectedPersonas) || s.activePersona !== undefined || s.businessType !== undefined) {
+          const current = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
+          const requestedPersonas = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas : (s.businessType ? [s.businessType] : current.selectedPersonas);
+          const nextActivePersona = s.activePersona || s.businessType || current.activePersona;
+          const update: V2BookConfigUpdate = {
+            style: current.style,
+            basis: current.basis,
+            selectedPersonas: [...new Set(requestedPersonas.map(String))] as PersonaId[],
+            activePersona: String(nextActivePersona) as PersonaId,
+            retailPartnership: current.retailPartnership,
+          };
+          await new V2BookConfigRepository(runner).updateBookConfig(context.bookId, update);
         }
       }
     }

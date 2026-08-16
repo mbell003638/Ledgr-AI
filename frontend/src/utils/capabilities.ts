@@ -75,7 +75,7 @@ export const CAPABILITIES: CapabilityDefinition[] = [
   { key: 'ai_assistant', label: 'AI assistance', description: 'Reviewable voice, OCR, reconciliation suggestions, and finance questions.', featureKeys: ['ask', 'voice'], routes: ['/ask', '/voice', '/scan-import'] },
   { key: 'payroll', label: 'Payroll', description: 'Employees, pay runs, payslips, and payroll reporting.', featureKeys: ['payroll'], routes: ['/payroll'] },
   { key: 'fixed_assets', label: 'Fixed assets', description: 'Equipment, vehicles, depreciation, and asset register.', featureKeys: ['fixedAssets'], routes: ['/fixed-assets'], metrics: ['roe'] },
-  { key: 'multi_location', label: 'Multi-location retail', description: 'Stores, POS sessions, location-level sales, stock transfers, and consolidated reports.', featureKeys: ['sales', 'inventory', 'cashbook', 'reports'], routes: ['/locations', '/pos-sessions', '/stock-transfers'], metrics: ['cogs', 'gross_margin', 'roi'] },
+  { key: 'multi_location', label: 'Multi-location retail', description: 'Stores, POS sessions, location-level sales, stock transfers, and consolidated reports.', featureKeys: ['sales', 'inventory', 'cashbook', 'reports', 'locations'], routes: ['/locations', '/pos-sessions', '/stock-transfers'], metrics: ['cogs', 'gross_margin', 'roi'] },
 ];
 
 const PERSONA_DEFAULTS: Record<PersonaId, CapabilityKey[]> = {

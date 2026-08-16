@@ -8,9 +8,11 @@ import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
-import { CAPABILITIES, getPersonaCapabilityDefaults } from "@/src/utils/capabilities";
+import { CAPABILITIES, CORE_CAPABILITIES, getPersonaCapabilityDefaults, type CapabilityKey } from "@/src/utils/capabilities";
 
 const CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED", "CAD", "AUD", "NGN", "KES", "ZAR", "BDT", "PKR", "PHP", "MXN", "BRL"];
+const RECOMMENDED_PERSONA_IDS: PersonaId[] = ["mobile_invoicing", "dropshipper", "marketplace_seller", "entrepreneur", "startup", "developer", "content_creator", "manufacturer", "import_export", "retail"];
+
 const PERSONA_ICON: Record<string, string> = {
   mobile_invoicing: "document-text-outline", dropshipper: "paper-plane-outline", marketplace_seller: "storefront-outline",
   entrepreneur: "briefcase-outline", startup: "rocket-outline", developer: "code-slash-outline", content_creator: "videocam-outline",
@@ -32,18 +34,36 @@ export default function Onboarding() {
   const [currency, setCurrency] = useState("USD");
   const [lockEnabled, setLockEnabled] = useState(false);
   const [multiLocation, setMultiLocation] = useState(false);
+  const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
+  const [showCustomize, setShowCustomize] = useState(false);
   const [saving, setSaving] = useState(false);
   const LAST_STEP = 3;
   const selectedPersona = PERSONAS.find((item) => item.id === persona);
+  const personaCapabilities = useMemo(() => persona ? getPersonaCapabilityDefaults({ activePersona: persona, selectedPersonas: [persona] }) : [], [persona]);
   const selectedCapabilities = useMemo(() => {
-    const base = persona ? getPersonaCapabilityDefaults({ activePersona: persona, selectedPersonas: [persona] }) : [];
-    return multiLocation ? [...new Set([...base, "multi_location" as const])] : base;
-  }, [persona, multiLocation]);
+    const base = customCapabilities || personaCapabilities;
+    return multiLocation ? [...new Set([...base, "multi_location" as const])] : base.filter((key) => key !== "multi_location");
+  }, [customCapabilities, multiLocation, personaCapabilities]);
+  const recommendedPersonas = PERSONAS.filter((item) => RECOMMENDED_PERSONA_IDS.includes(item.id));
+  const otherPersonas = PERSONAS.filter((item) => !RECOMMENDED_PERSONA_IDS.includes(item.id));
   const multiLocationEligible = ["retail", "wholesale", "vendor", "marketplace_seller", "dropshipper"].includes(persona || "");
   const selectedCapabilityLabels = selectedCapabilities
     .map((key) => CAPABILITIES.find((item) => item.key === key)?.label)
-    .filter(Boolean)
-    .slice(0, 5) as string[];
+    .filter(Boolean) as string[];
+
+  const choosePersona = (nextPersona: PersonaId) => {
+    setPersona(nextPersona);
+    setCustomCapabilities(null);
+    setShowCustomize(false);
+    if (!RECOMMENDED_PERSONA_IDS.includes(nextPersona)) setMultiLocation(false);
+  };
+
+  const toggleCapability = (key: CapabilityKey) => {
+    if (CORE_CAPABILITIES.includes(key)) return;
+    const current = new Set(customCapabilities || personaCapabilities);
+    if (current.has(key)) current.delete(key); else current.add(key);
+    setCustomCapabilities([...current]);
+  };
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -123,11 +143,12 @@ export default function Onboarding() {
           <View>
             <Text style={styles.title}>What best describes your work?</Text>
             <Text style={styles.sub}>Choose one primary workspace. You can add more capabilities later without cluttering your Home screen.</Text>
+            <Text style={styles.groupLabel}>Recommended workspaces</Text>
             <View style={styles.personaGrid}>
-              {PERSONAS.slice(0, 9).map((item) => {
+              {recommendedPersonas.map((item) => {
                 const selected = persona === item.id;
                 return (
-                  <Pressable key={item.id} onPress={() => setPersona(item.id)} style={[styles.personaCard, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
+                  <Pressable key={item.id} onPress={() => choosePersona(item.id)} style={[styles.personaCard, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
                     <View style={[styles.iconCircle, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={23} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View>
                     <Text style={[styles.personaLabel, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text>
                     <Text style={styles.personaDesc} numberOfLines={3}>{item.description}</Text>
@@ -136,7 +157,21 @@ export default function Onboarding() {
                 );
               })}
             </View>
-            <Text style={styles.note}>Legacy business types remain available through existing books and settings.</Text>
+            <Text style={styles.groupLabel}>Other business types</Text>
+            <View style={styles.personaGrid}>
+              {otherPersonas.map((item) => {
+                const selected = persona === item.id;
+                return (
+                  <Pressable key={item.id} onPress={() => choosePersona(item.id)} style={[styles.personaCard, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
+                    <View style={[styles.iconCircle, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={23} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View>
+                    <Text style={[styles.personaLabel, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text>
+                    <Text style={styles.personaDesc} numberOfLines={3}>{item.description}</Text>
+                    {selected && <Ionicons name="checkmark-circle" size={20} color={theme.color.brandPrimary} style={styles.check} />}
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.note}>Your selection changes the starting accounting workflows and Home tools. You can fine-tune them before opening the workspace.</Text>
           </View>
         )}
 
@@ -166,8 +201,10 @@ export default function Onboarding() {
             <View style={styles.previewCard}>
               <View style={styles.previewHeader}><View style={styles.iconCircleSelected}><Ionicons name={(PERSONA_ICON[persona || "entrepreneur"] || "briefcase-outline") as any} size={22} color={theme.color.brandPrimary} /></View><View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.previewTitle}>{selectedPersona?.label || "Entrepreneur"}</Text><Text style={styles.previewSub}>{bizName.trim() || "My Business"} · {currency}</Text></View></View>
               <Text style={styles.previewKicker}>STARTING CAPABILITIES</Text>
-              <View style={styles.chipWrap}>{selectedCapabilityLabels.map((label) => <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{label}</Text></View>)}</View>
-              <Text style={styles.previewHint}>Add capabilities anytime from Settings. Your data stays safe when a capability is hidden.</Text>
+              <View style={styles.chipWrap}>{selectedCapabilityLabels.slice(0, 6).map((label) => <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{label}</Text></View>)}</View>
+              <Text style={styles.previewHint}>{selectedCapabilities.length} workflows are enabled for this workspace. Hidden workflows do not appear on Home but can be restored later.</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide workspace customization" : "Customize workspace capabilities"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide customization" : "Customize workspace"}</Text></Pressable>
+              {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, and financial reporting always stay available.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key)).map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
               <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export a JSON backup from Settings after important work and keep a copy somewhere safe.</Text></View>
             </View>
             {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text></View><Pressable onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
@@ -196,6 +233,7 @@ function makeStyles(theme: any) {
     content: { padding: theme.spacing.lg, paddingBottom: 30, flexGrow: 1 },
     title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.xl },
     sub: { fontSize: 14, lineHeight: 20, color: theme.color.muted, marginTop: 8 },
+    groupLabel: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginTop: theme.spacing.lg },
     personaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: theme.spacing.lg },
     personaCard: { minHeight: 154, padding: 13, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     cardSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12", borderWidth: 1.5 },
@@ -205,6 +243,15 @@ function makeStyles(theme: any) {
     personaDesc: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 4 },
     check: { position: "absolute", top: 9, right: 9 },
     note: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 14 },
+    customizeButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10", marginTop: theme.spacing.md },
+    customizeButtonText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
+    customizePanel: { marginTop: theme.spacing.md, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    customizeTitle: { color: theme.color.onSurface, fontSize: 13, fontWeight: "800" },
+    customizeHint: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 4, marginBottom: 8 },
+    customizeRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.color.border },
+    customizeRowEnabled: { backgroundColor: theme.color.brandPrimary + "08" },
+    customizeRowTitle: { color: theme.color.onSurface, fontSize: 12, fontWeight: "800" },
+    customizeRowDesc: { color: theme.color.muted, fontSize: 10, lineHeight: 14, marginTop: 2 },
     input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.xl },
     tipCard: { flexDirection: "row", gap: 10, padding: 14, marginTop: 16, borderRadius: 16, backgroundColor: theme.color.brandPrimary + "10", borderWidth: 1, borderColor: theme.color.brandPrimary + "30" },
     tipText: { flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 18 },
