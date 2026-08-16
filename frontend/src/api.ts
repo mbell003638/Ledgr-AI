@@ -9,7 +9,7 @@ import type { AIConfig } from '@/src/db/ai';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
-import { readV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
+import { ensureV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { partnershipDisplayFromReports } from './accountingV2/reports';
@@ -251,7 +251,7 @@ async function preferenceSettings() {
   const context = await service.activeContext();
   if (!context) return settings;
   const config = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
-  const prefs = await readV2BookPrefs(runner, context.bookId);
+  const prefs = await ensureV2BookPrefs(runner, context.bookId);
   return {
     ...settings,
     accountingStyle: config.style,
@@ -1171,13 +1171,13 @@ export const api = {
       netProfit: display.netProfit,
     };
   },
-  creditorsReport: async (_from?: string, _to?: string) => {
+  creditorsReport: async (from?: string, to?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     const parties = await api.listSuppliers();
     const rows = [];
     for (const party of parties) {
-      const detail: any = await service.getPartyDetail(party.id, 'supplier');
+      const detail: any = await service.getPartyDetail(party.id, 'supplier', { from, to });
       if (!detail) continue;
       rows.push({
         id: detail.id,
@@ -1193,13 +1193,13 @@ export const api = {
     }
     return rows;
   },
-  debtorsReport: async (_from?: string, _to?: string) => {
+  debtorsReport: async (from?: string, to?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     const parties = await api.listDebtors();
     const rows = [];
     for (const party of parties) {
-      const detail: any = await service.getPartyDetail(party.id, 'customer');
+      const detail: any = await service.getPartyDetail(party.id, 'customer', { from, to });
       if (!detail) continue;
       rows.push({
         id: detail.id,
@@ -1310,10 +1310,13 @@ export const api = {
       const invoiceById = new Map(invoices.map((row: any) => [row.id, row]));
       for (const rec of (liveReceipts as any[]).filter(inRange)) {
         const allocs = Array.isArray(rec.allocations) ? rec.allocations : [];
+        const recTotal = Number(rec.total || rec.amount || 0);
+        let allocated = 0;
         if (allocs.length) {
           for (const alloc of allocs) {
             const inv = invoiceById.get(alloc.invoiceId || alloc.invoiceSourceId);
             const take = Number(alloc.amountApplied ?? alloc.amount ?? 0);
+            allocated += take;
             const invTotal = Number(inv?.total || inv?.amount || 0);
             const invTax = inv ? rowTaxAmount(inv) : 0;
             if (inv && invTotal > 0 && invTax) {
@@ -1324,11 +1327,18 @@ export const api = {
               outputBase += take;
             }
           }
-        } else {
-          const total = Number(rec.total || rec.amount || 0);
+        }
+        const remainder = Math.round((recTotal - allocated) * 100) / 100;
+        if (!allocs.length) {
           const rowTax = rowTaxAmount(rec);
           outputTax += rowTax;
-          outputBase += total - rowTax;
+          outputBase += recTotal - rowTax;
+        } else if (remainder > 0.005) {
+          // Unallocated remainder is an advance: tax only if the receipt itself carries tax.
+          const recTax = rowTaxAmount(rec);
+          const remTax = recTotal > 0 && recTax ? recTax * (remainder / recTotal) : 0;
+          outputTax += remTax;
+          outputBase += remainder - remTax;
         }
       }
     }
@@ -1338,15 +1348,36 @@ export const api = {
     const debitNoteTax = noteTax(debitNotes);
     const netOutputTax = Math.max(0, Math.round((outputTax - creditNoteTax + debitNoteTax) * 100) / 100);
 
-    const inputRows = bills.filter(inRange);
     let inputBase = 0;
     let inputTax = 0;
-    for (const row of inputRows) {
-      const total = Number(row.amount || row.total || 0);
-      const rowTax = Number(row.tax ?? row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
-      const base = Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
-      inputBase += base;
-      inputTax += rowTax;
+    if (basis === 'accrual') {
+      for (const row of bills.filter(inRange)) {
+        const total = Number(row.amount || row.total || 0);
+        const rowTax = rowTaxAmount(row);
+        inputBase += Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
+        inputTax += rowTax;
+      }
+    } else {
+      for (const row of bills.filter(inRange).filter((row: any) => row.type === 'cash_purchase')) {
+        const total = Number(row.amount || row.total || 0);
+        const rowTax = rowTaxAmount(row);
+        inputBase += Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
+        inputTax += rowTax;
+      }
+      const payments = (await v2SourceDocuments(['supplier_payment'])).filter(inRange);
+      const creditBills = bills.filter((row: any) => row.type === 'credit_purchase');
+      for (const pay of payments) {
+        const settled = Math.max(0, Number(pay.total || pay.amount || 0) - Number(pay.metadata?.supplierAdvance || 0));
+        if (settled <= 0.005) continue;
+        const partyBills = creditBills.filter((row: any) => row.partyId && row.partyId === pay.partyId);
+        const billTotal = partyBills.reduce((sum: number, row: any) => sum + Number(row.total || row.amount || 0), 0);
+        const billTax = partyBills.reduce((sum: number, row: any) => sum + rowTaxAmount(row), 0);
+        if (billTotal > 0 && billTax) {
+          const share = Math.min(1, settled / billTotal);
+          inputTax += billTax * share;
+          inputBase += (billTotal - billTax) * share;
+        }
+      }
     }
     inputBase = Math.round(inputBase * 100) / 100;
     inputTax = Math.round(inputTax * 100) / 100;
@@ -1357,7 +1388,13 @@ export const api = {
     const glTaxPayable = glTaxAccount ? glTaxAccount.normalBalance : 0;
     const netTaxPayable = (basis === 'accrual' && glTaxAccount) ? glTaxPayable : Math.round((netOutputTax - inputTax) * 100) / 100;
 
-    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable };
+    return {
+      from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis,
+      outputBase, outputTax, creditNoteTax, debitNoteTax, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable,
+      cashBasisPolicy: basis === 'cash'
+        ? 'Input tax is recognized when cash is paid. Advances are taxed only if the receipt itself carries tax.'
+        : undefined,
+    };
   },
   salesRegister: async (from: string, to: string) => {
     const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));

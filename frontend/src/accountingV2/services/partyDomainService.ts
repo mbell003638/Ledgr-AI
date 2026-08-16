@@ -218,7 +218,7 @@ export class PartyDomainService {
     });
   }
 
-  async getPartyDetail(id: string, role: 'customer' | 'supplier') {
+  async getPartyDetail(id: string, role: 'customer' | 'supplier', range?: { from?: string; to?: string }) {
     const context = await this.getActiveContext(); if (!context) return null;
     await this.repairPartyIdentities(context.bookId);
     const party = await this.db.first<any>('SELECT id,name,phone,email,roles FROM v2_parties WHERE id=? AND book_id=? AND archived=0', [id, context.bookId]);
@@ -241,6 +241,8 @@ export class PartyDomainService {
       )) AND s.type IN (${placeholders})
       GROUP BY s.id,s.type,s.date,s.reference,s.metadata ORDER BY s.date,s.id`, [id, context.bookId, id, id, ...sourceTypes]);
     const active = rows.flatMap((row) => { let metadata: AnyRecord = {}; try { metadata = JSON.parse(row.metadata || '{}'); } catch { return []; } return metadata.deleted || metadata.reversed ? [] : [{ ...row, metadata }]; });
+    const inRange = (date: string) => (!range?.from || date >= range.from) && (!range?.to || date <= range.to);
+    const period = range?.from || range?.to ? active.filter((row) => inRange(row.date)) : active;
     if (role === 'customer') {
       let running = 0;
       const ledger = active.map((row) => {
@@ -249,16 +251,16 @@ export class PartyDomainService {
         running = cents(running + debit - credit);
         return { id: row.id, kind: row.type, date: row.date, ref: row.reference, reason: row.metadata.reason || '', notes: row.metadata.notes || '', amount: Number(row.metadata.total || debit || credit || 0), debit, credit, balance: running };
       });
-      const totalInvoiced = cents(active.filter((row) => row.type === 'invoice').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
-      const totalPaid = cents(active.filter((row) => row.type === 'receipt').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
+      const totalInvoiced = cents(period.filter((row) => row.type === 'invoice').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
+      const totalPaid = cents(period.filter((row) => row.type === 'receipt').reduce((sum, row) => sum + Number(row.metadata.total || 0), 0));
       const advanceBalance = cents(Math.max(0, active.reduce((sum, row) => sum + Number(row.advance_credit), 0)));
       return { id: party.id, name: party.name, phone: party.phone || '', email: party.email || '', roles,
         payments: active.filter((row) => row.type === 'receipt').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '' })),
         totalInvoiced, totalPaid, balance: running, advanceBalance, statement: { ledger: ledger.slice().reverse(), balance: running, advanceBalance } };
     }
-    const bills = active.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
-    const notes = active.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), reason: row.metadata.reason || '', notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
-    const payments = active.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
+    const bills = period.filter((row) => row.type === 'cash_purchase' || row.type === 'credit_purchase').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), invoiceNo: row.metadata.invoiceNo || row.reference || '', notes: row.metadata.notes || '', paymentType: row.type === 'cash_purchase' ? 'cash' : 'credit' }));
+    const notes = period.filter((row) => row.type === 'credit_note' || row.type === 'debit_note').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), reason: row.metadata.reason || '', notes: row.metadata.notes || '', reference: row.reference || '', kind: row.type === 'credit_note' ? 'credit_note' : 'debit_note' }));
+    const payments = period.filter((row) => row.type === 'supplier_payment').map((row) => ({ id: row.id, date: row.date, amount: Number(row.metadata.total || 0), notes: row.metadata.notes || '', reference: row.reference || '' }));
     const billsTotal = cents(bills.reduce((sum, row) => sum + row.amount, 0)); const paymentsTotal = cents(payments.reduce((sum, row) => sum + row.amount, 0));
     const advanceBalance = cents(Math.max(0, active.reduce((sum, row) => sum + Number(row.supplier_prepayment), 0)));
     const balance = cents(active.reduce((sum, row) => sum + Number(row.ap_balance) - Number(row.supplier_prepayment), 0));

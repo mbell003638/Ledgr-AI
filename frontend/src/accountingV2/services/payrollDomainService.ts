@@ -117,9 +117,9 @@ export class PayrollDomainService {
   }
 
   async upsertEmployee(input: PayrollEmployeeInput): Promise<PayrollEmployee> {
-    await this.requirePayroll();
     const context = await this.getActiveContext();
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    await this.requirePayroll(context.bookId);
     const name = String(input.name || '').trim();
     if (!name) throw new Error('Employee name is required');
     const payRate = cents(input.payRate);
@@ -162,9 +162,9 @@ export class PayrollDomainService {
   }
 
   async archiveEmployee(id: string): Promise<PayrollEmployee> {
-    await this.requirePayroll();
     const context = await this.getActiveContext();
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    await this.requirePayroll(context.bookId);
     const existing = await this.db.first<EmployeeRow>(
       'SELECT id,book_id,name,role,pay_rate,tax_withhold_pct,start_date,archived FROM v2_employees WHERE id=? AND book_id=?',
       [id, context.bookId],
@@ -180,9 +180,9 @@ export class PayrollDomainService {
     source: V2Source;
     journal: V2JournalEntry;
   }> {
-    await this.requirePayroll();
     const context = await this.getActiveContext(input.date);
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    await this.requirePayroll(context.bookId);
     if (input.method !== 'cash' && input.method !== 'bank') throw new Error('Payroll method must be cash or bank');
 
     const employees = await this.loadEmployeesForRun(context.bookId, input.date, input.employeeIds);
@@ -340,8 +340,8 @@ export class PayrollDomainService {
     };
   }
 
-  private async requirePayroll() {
-    requireOptionalModule(await isOptionalModuleEnabled(this.db, 'payroll'), 'payroll');
+  private async requirePayroll(bookId: string) {
+    requireOptionalModule(await isOptionalModuleEnabled(this.db, 'payroll', bookId), 'payroll');
   }
 
   private async loadEmployeesForRun(bookId: string, payDate: string, employeeIds?: string[]) {

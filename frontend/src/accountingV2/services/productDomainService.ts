@@ -77,7 +77,7 @@ export class ProductDomainService {
       [c.bookId],
     );
     const products = rows.map(mapProduct);
-    if (!locationId || !(await isOptionalModuleEnabled(this.db, 'locations'))) return products;
+    if (!locationId || !(await isOptionalModuleEnabled(this.db, 'locations', c.bookId))) return products;
     return Promise.all(products.map(async (product) => ({
       ...product,
       qty: await qtyAtLocation(this.db, c.bookId, product.id, locationId),
@@ -85,8 +85,8 @@ export class ProductDomainService {
   }
 
   async upsertProduct(input: UpsertProductInput): Promise<ProductRecord> {
-    await this.requireModule();
     const c = await this.requireContext();
+    await this.requireModule(c.bookId);
     const name = String(input.name || '').trim();
     if (!name) throw new Error('Product name is required');
     const cost = Number(input.cost);
@@ -164,8 +164,8 @@ export class ProductDomainService {
   }
 
   async archiveProduct(id: string): Promise<ProductRecord> {
-    await this.requireModule();
     const c = await this.requireContext();
+    await this.requireModule(c.bookId);
     const product = await this.db.first<ProductRow>('SELECT id FROM v2_products WHERE id=? AND book_id=?', [id, c.bookId]);
     if (!product) throw new Error('Product not found');
     await this.db.run('UPDATE v2_products SET archived=1 WHERE id=? AND book_id=?', [id, c.bookId]);
@@ -180,7 +180,7 @@ export class ProductDomainService {
     lines: PurchaseProductLine[],
     locationId?: string,
   ): Promise<void> {
-    if (!(await this.moduleEnabled())) return;
+    if (!(await this.moduleEnabled(bookId))) return;
     if (!Array.isArray(lines) || !lines.length) return;
     const loc = await this.resolveStockLocation(bookId, locationId);
     await this.repo.runInTransaction(async () => {
@@ -213,7 +213,7 @@ export class ProductDomainService {
     lines: SaleProductLine[],
     locationId?: string,
   ): Promise<void> {
-    if (!(await this.moduleEnabled())) return;
+    if (!(await this.moduleEnabled(bookId))) return;
     if (!Array.isArray(lines) || !lines.length) return;
     const loc = await this.resolveStockLocation(bookId, locationId);
     await this.repo.runInTransaction(async () => {
@@ -255,7 +255,7 @@ export class ProductDomainService {
   }
 
   async reverseMovesForSource(bookId: string, sourceId: string): Promise<void> {
-    if (!(await this.moduleEnabled())) return;
+    if (!(await this.moduleEnabled(bookId))) return;
     await this.repo.runInTransaction(async () => {
       const moves = await this.db.all<{ id: string; product_id: string; qty: number; kind: string }>(
         'SELECT id,product_id,qty,kind FROM v2_stock_moves WHERE book_id=? AND source_id=?',
@@ -276,10 +276,10 @@ export class ProductDomainService {
   }
 
   async adjustQty(input: AdjustQtyInput & { locationId?: string }): Promise<ProductRecord> {
-    await this.requireModule();
+    const c = await this.requireContext(input.date);
+    await this.requireModule(c.bookId);
     const qtyDelta = Number(input.qtyDelta);
     if (!Number.isFinite(qtyDelta) || qtyDelta === 0) throw new Error('Quantity adjustment must be a non-zero number');
-    const c = await this.requireContext(input.date);
     const locationId = await resolveWriteLocationId(this.db, c.bookId, input.locationId);
     return this.repo.runInTransaction(async () => {
       const product = await this.loadProduct(c.bookId, input.productId);
@@ -365,7 +365,7 @@ export class ProductDomainService {
   }
 
   private async resolveStockLocation(bookId: string, locationId?: string): Promise<string | null> {
-    if (!(await isOptionalModuleEnabled(this.db, 'locations'))) return null;
+    if (!(await isOptionalModuleEnabled(this.db, 'locations', bookId))) return null;
     return resolveWriteLocationId(this.db, bookId, locationId);
   }
 
@@ -382,12 +382,12 @@ export class ProductDomainService {
     return mapProduct(await this.loadProduct(bookId, id));
   }
 
-  private async moduleEnabled() {
-    return isOptionalModuleEnabled(this.db, 'perpetualInventory');
+  private async moduleEnabled(bookId?: string) {
+    return isOptionalModuleEnabled(this.db, 'perpetualInventory', bookId);
   }
 
-  private async requireModule() {
-    requireOptionalModule(await this.moduleEnabled(), 'perpetualInventory');
+  private async requireModule(bookId?: string) {
+    requireOptionalModule(await this.moduleEnabled(bookId), 'perpetualInventory');
   }
 
   private async requireContext(date?: string): Promise<ActiveContext> {

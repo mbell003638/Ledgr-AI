@@ -196,7 +196,9 @@ export class V2AppService {
   async preflightScanParties(requests: V2ScanPartyRequest[]) { return this.parties.preflightScanParties(requests); }
   async ensureParty(name: string, role: V2PartyRole, details: { phone?: string; email?: string } = {}) { return this.parties.ensureParty(name, role, details); }
   async listParties() { return this.parties.listParties(); }
-  async getPartyDetail(id: string, role: 'customer' | 'supplier') { return this.parties.getPartyDetail(id, role); }
+  async getPartyDetail(id: string, role: 'customer' | 'supplier', range?: { from?: string; to?: string }) {
+    return this.parties.getPartyDetail(id, role, range);
+  }
   async updateParty(id: string, patch: AnyRecord) { return this.parties.updateParty(id, patch); }
   async archiveParty(id: string) { return this.parties.archiveParty(id); }
 

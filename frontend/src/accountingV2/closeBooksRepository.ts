@@ -77,7 +77,7 @@ export class V2CloseBooksRepository {
       // which made a mid-period count show COGS in the live report but throw at close.
       const cogsResult = await computePeriodicCogs(this.db, input.bookId, { start: period.start_date, end: input.date });
       const { openingInventory, closingInventory } = cogsResult;
-      const perpetualInventory = await isOptionalModuleEnabled(this.db, 'perpetualInventory');
+      const perpetualInventory = await isOptionalModuleEnabled(this.db, 'perpetualInventory', input.bookId);
       // The close can only proceed with a known closing inventory. When the book has inventory
       // activity in the period (a recorded count or inventory purchases) but no distinct closing
       // count is derivable, periodic COGS is undefined — surface a clear, actionable error rather

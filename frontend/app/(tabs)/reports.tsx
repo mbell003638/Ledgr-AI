@@ -325,7 +325,7 @@ export default function ReportsScreen() {
       body = [
         `— PROFIT (LIVE)`,
         line("Sales", dash.totalSales),
-        line("Purchases", dash.totalPurchases),
+        line("Expenses", dash.totalPurchases),
         line("Gross Profit", dash.grossProfit),
         line("Net Profit", dash.netProfit),
         ``,
@@ -771,8 +771,8 @@ export default function ReportsScreen() {
                     <Text style={[styles.kvLabel, { fontWeight: "700", color: theme.color.onSurface }]}>{c.name}</Text>
                     <Text style={[styles.kvValue, { color: c.balance > 0 ? theme.color.error : theme.color.success, fontWeight: "700" }]}>{fmt(c.balance)}</Text>
                   </View>
-                  <RowKV label="Total Billed" value={fmt(c.totalBilled)} theme={theme} styles={styles} />
-                  <RowKV label="Total Paid" value={fmt(c.totalPaid)} theme={theme} styles={styles} />
+                  <RowKV label="Billed in period" value={fmt(c.totalBilled)} theme={theme} styles={styles} />
+                  <RowKV label="Paid in period" value={fmt(c.totalPaid)} theme={theme} styles={styles} />
                   <View style={styles.reminderRow}>
                     {c.phone ? (
                       <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${String(c.phone).replace(/\D/g, "")}&text=${encodeURIComponent(`Hi ${c.name}, your outstanding balance is ${fmt(c.balance)}. Please arrange payment.`)}`)}>
@@ -803,8 +803,8 @@ export default function ReportsScreen() {
                     <Text style={[styles.kvLabel, { fontWeight: "700", color: theme.color.onSurface }]}>{d.name}</Text>
                     <Text style={[styles.kvValue, { color: d.balance > 0 ? theme.color.error : theme.color.success, fontWeight: "700" }]}>{fmt(d.balance)}</Text>
                   </View>
-                  <RowKV label="Total Invoiced" value={fmt(d.totalInvoiced)} theme={theme} styles={styles} />
-                  <RowKV label="Total Paid" value={fmt(d.totalPaid)} theme={theme} styles={styles} />
+                  <RowKV label="Invoiced in period" value={fmt(d.totalInvoiced)} theme={theme} styles={styles} />
+                  <RowKV label="Paid in period" value={fmt(d.totalPaid)} theme={theme} styles={styles} />
                   <View style={styles.reminderRow}>
                     {d.phone ? (
                       <Pressable onPress={() => Linking.openURL(`whatsapp://send?phone=${String(d.phone).replace(/\D/g, "")}&text=${encodeURIComponent(`Hi ${d.name}, your outstanding balance is ${fmt(d.balance)}. Please arrange payment. Thank you.`)}`)}>

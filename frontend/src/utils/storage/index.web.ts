@@ -8,6 +8,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
 
+const sessionSecure = new Map<string, StorageItemValue>();
+
 export class Storage extends StorageBase {
   // General KV — backed by AsyncStorage (its built-in web shim uses IndexedDB).
   async getItem<Fallback extends StorageItemValue>(
@@ -46,23 +48,26 @@ export class Storage extends StorageBase {
     }
   }
 
-  // Browsers have no Keychain — secure* helpers fall through to AsyncStorage.
+  // Session-only: browsers have no keychain. Do not persist API keys in IndexedDB.
   async secureGet<Fallback extends StorageItemValue>(
     key: string,
     fallback: Fallback,
   ): Promise<Fallback | null> {
-    return this.getItem(key, fallback);
+    if (sessionSecure.has(key)) return sessionSecure.get(key) as Fallback;
+    return fallback;
   }
 
   async secureSet<Value extends StorageItemValue>(
     key: string,
     value: Value,
   ): Promise<boolean> {
-    return this.setItem(key, value);
+    sessionSecure.set(key, value);
+    return true;
   }
 
   async secureRemove(key: string): Promise<boolean> {
-    return this.removeItem(key);
+    sessionSecure.delete(key);
+    return true;
   }
 }
 

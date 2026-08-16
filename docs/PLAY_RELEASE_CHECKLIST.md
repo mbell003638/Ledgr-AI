@@ -9,6 +9,7 @@ This checklist is for the current Codex Android application. An APK sideload tes
 - [x] Expo SDK 54 / React Native 0.81 targets and compiles against Android API 36.
 - [x] Android OS backup is disabled.
 - [x] Configured permissions are camera, microphone/audio support and internet; no location, contacts, SMS, call-log or broad-storage permission is configured.
+- [x] Expo `blockedPermissions` strips READ/WRITE_EXTERNAL_STORAGE and SYSTEM_ALERT_WINDOW from the merged manifest. Confirm the signed AAB in App Bundle Explorer.
 - [x] Camera, gallery and microphone access is requested when the related feature is invoked.
 - [x] Build workflow is manual-only.
 - [x] An AAB is created only when all permanent signing secrets are present.

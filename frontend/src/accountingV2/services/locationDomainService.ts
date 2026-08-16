@@ -176,7 +176,7 @@ export class LocationDomainService {
 
   async transferStock(input: StockTransferInput) {
     await this.requireModule();
-    if (!(await isOptionalModuleEnabled(this.db, 'perpetualInventory'))) {
+    if (!(await isOptionalModuleEnabled(this.db, 'perpetualInventory', (await this.requireContext(input.date)).bookId))) {
       throw new Error('Turn on Live Product Stock in Customize Features before transferring stock.');
     }
     const c = await this.requireContext(input.date);
@@ -226,8 +226,9 @@ export class LocationDomainService {
     return round2(Number(row?.bal || 0));
   }
 
-  private async requireModule() {
-    requireOptionalModule(await isOptionalModuleEnabled(this.db, 'locations'), 'locations');
+  private async requireModule(bookId?: string) {
+    const id = bookId || (await this.requireContext()).bookId;
+    requireOptionalModule(await isOptionalModuleEnabled(this.db, 'locations', id), 'locations');
   }
 
   private async requireContext(date?: string): Promise<ActiveContext> {

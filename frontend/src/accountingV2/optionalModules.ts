@@ -38,24 +38,43 @@ async function resolveBookId(db: SqlRunner, bookId?: string): Promise<string | n
   return active?.value || null;
 }
 
-async function mainSettingsFeatures(db: SqlRunner): Promise<string[] | null> {
+async function mainSettingsBlob(db: SqlRunner): Promise<V2BookPrefs> {
   const row = await db.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
-  if (!row?.value) return null;
-  const parsed = parsePrefs(row.value);
-  return Array.isArray(parsed?.enabledFeatures) ? parsed!.enabledFeatures! : null;
+  return parsePrefs(row?.value) || {};
 }
 
-/** True only when the user explicitly enabled the module for this book. */
+/**
+ * Create per-book prefs if missing.
+ * First migration: the active book inherits legacy `settings.main` so Customize Features stay on.
+ * Any other book without a row starts with optional modules off.
+ */
+export async function ensureV2BookPrefs(db: SqlRunner, bookId: string): Promise<V2BookPrefs> {
+  const existing = await readV2BookPrefs(db, bookId);
+  if (existing && Array.isArray(existing.enabledFeatures)) return existing;
+
+  const others = await db.first<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM settings WHERE key LIKE 'v2_prefs:%' AND key<>?",
+    [v2PrefsKey(bookId)],
+  );
+  const active = await db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+  const main = await mainSettingsBlob(db);
+  const inheritMain = Number(others?.n || 0) === 0 && active?.value === bookId;
+  const seed: V2BookPrefs = inheritMain
+    ? {
+        enabledFeatures: Array.isArray(main.enabledFeatures) ? main.enabledFeatures : [],
+        activeLocationId: String(main.activeLocationId || ''),
+      }
+    : { enabledFeatures: [], activeLocationId: '' };
+  await writeV2BookPrefs(db, bookId, seed);
+  return (await readV2BookPrefs(db, bookId)) || seed;
+}
+
+/** True only when this book has the module on. Never reads another book's flags. */
 export async function isOptionalModuleEnabled(db: SqlRunner, key: OptionalModuleKey, bookId?: string): Promise<boolean> {
   const resolved = await resolveBookId(db, bookId);
-  if (resolved) {
-    const prefs = await readV2BookPrefs(db, resolved);
-    if (prefs && Array.isArray(prefs.enabledFeatures)) {
-      return prefs.enabledFeatures.includes(key);
-    }
-  }
-  const fallback = await mainSettingsFeatures(db);
-  return Boolean(fallback && fallback.includes(key));
+  if (!resolved) return false;
+  const prefs = await ensureV2BookPrefs(db, resolved);
+  return Array.isArray(prefs.enabledFeatures) && prefs.enabledFeatures.includes(key);
 }
 
 export function requireOptionalModule(enabled: boolean, key: FeatureKey): void {

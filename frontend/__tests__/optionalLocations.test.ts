@@ -124,4 +124,19 @@ describe('optional locations', () => {
       await expect(resolveWriteLocationId(runner, 'book-b')).rejects.toThrow(/Location not found|Choose a location/i);
     } finally { close(); }
   });
+
+  it('does not inherit main optional flags onto a second book that has no prefs row', async () => {
+    const { runner, close } = await setup(['payroll', 'perpetualInventory', 'locations']);
+    try {
+      const { isOptionalModuleEnabled } = await import('../src/accountingV2/optionalModules');
+      await initializeV2Book(runner, {
+        book: { id: 'book-b', name: 'Other Co' },
+        period: { id: 'book-b:period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      expect(await isOptionalModuleEnabled(runner, 'payroll', BOOK)).toBe(true);
+      expect(await isOptionalModuleEnabled(runner, 'payroll', 'book-b')).toBe(false);
+      expect(await isOptionalModuleEnabled(runner, 'perpetualInventory', 'book-b')).toBe(false);
+      expect(await isOptionalModuleEnabled(runner, 'locations', 'book-b')).toBe(false);
+    } finally { close(); }
+  });
 });
