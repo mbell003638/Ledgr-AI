@@ -89,6 +89,7 @@ export default function ReportsScreen() {
   const [rangeNotice, setRangeNotice] = useState("");
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
+  const [shopCogsNotice, setShopCogsNotice] = useState(false);
   const [segmentEdges, setSegmentEdges] = useState({ left: false, right: true });
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
   const loadRequest = useRef(0);
@@ -146,6 +147,7 @@ export default function ReportsScreen() {
       setBizName(s.businessName || "");
       {
         const report = core.report;
+        setShopCogsNotice(Boolean(report.provisionalShopCogs));
         const current = snapshotDash;
         const commissionPct = Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0);
         const profit = partnershipDisplayFromReports(report, commissionPct);
@@ -457,6 +459,11 @@ export default function ReportsScreen() {
           </GlowPressable>
         }
       />
+      {shopCogsNotice ? (
+        <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.color.warning, fontSize: 13 }}>
+          Shop COGS is pending period close; gross and net profit may change after the inventory count is posted.
+        </Text>
+      ) : null}
       {shops.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
           <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>

@@ -48,10 +48,15 @@ export type V2ScanTransactionImportInput = {
   date: string;
   partyName?: string;
   amount: number;
-  method?: 'cash' | 'credit';
+  method?: 'cash' | 'credit' | 'bank' | 'card' | 'mobile';
   notes?: string;
   createMissingParty?: boolean;
 };
+
+function scanPaymentMethod(value?: string): 'cash' | 'bank' | 'card' | 'mobile' {
+  if (value === 'bank' || value === 'card' || value === 'mobile') return value;
+  return 'cash';
+}
 type PeriodRow = { id: string; start_date: string; end_date: string };
 
 const validIsoDate = (value: unknown): value is string => {
@@ -287,18 +292,18 @@ export class V2AppService {
             const partyId = await this.parties.approvedScanParty(context.bookId, partyName, 'customer', allowCreation);
             return this.createInvoice({ ...input, partyId, clientName: partyName, total: input.amount });
           }
-          return this.createSale({ ...input, method: 'cash' });
+          return this.createSale({ ...input, method: scanPaymentMethod(input.method) });
         case 'purchase_bill': {
           const partyId = await this.parties.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation);
-          return this.createBill({ ...input, partyId, supplierName: partyName, paymentType: input.method === 'credit' ? 'credit' : 'cash' });
+          return this.createBill({ ...input, partyId, supplierName: partyName, paymentType: input.method === 'credit' ? 'credit' : 'cash', method: scanPaymentMethod(input.method) });
         }
         case 'receipt_in':
-          if (!partyName) return this.createSale({ ...input, method: 'cash' });
+          if (!partyName) return this.createSale({ ...input, method: scanPaymentMethod(input.method) });
           return this.createReceipt({
             ...input,
             partyId: await this.parties.approvedScanParty(context.bookId, partyName, 'customer', allowCreation),
             clientName: partyName,
-            method: 'cash',
+            method: scanPaymentMethod(input.method),
           });
         case 'payment_out':
           return this.createPayment({
@@ -306,10 +311,10 @@ export class V2AppService {
             partyId: await this.parties.approvedScanParty(context.bookId, partyName, 'supplier', allowCreation),
             supplierName: partyName,
             type: 'supplier_payment',
-            method: 'cash',
+            method: scanPaymentMethod(input.method),
           });
         case 'expense':
-          return this.createExpense({ ...input, method: 'cash' });
+          return this.createExpense({ ...input, method: scanPaymentMethod(input.method) });
         default:
           throw new Error('Unsupported scan transaction type');
       }

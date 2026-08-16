@@ -9,6 +9,7 @@ import type { AIConfig } from '@/src/db/ai';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
+import { readV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { partnershipDisplayFromReports } from './accountingV2/reports';
@@ -62,10 +63,8 @@ export async function getAIConfig(): Promise<AIConfig> {
   ]);
   const resolvedKey = secureKey || storedKey || '';
   if (resolvedKey && !secureKey) {
-    await Promise.all([
-      storage.secureSet(AI_API_KEY_KEY, resolvedKey),
-      AsyncStorage.removeItem(AI_API_KEY_KEY),
-    ]);
+    const migrated = await storage.secureSet(AI_API_KEY_KEY, resolvedKey);
+    if (migrated) await AsyncStorage.removeItem(AI_API_KEY_KEY);
   }
   return {
     provider: ai.normalizeProviderId(provider),
@@ -82,20 +81,18 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   // the storage wrapper returns false (never throws) on failure, and the
   // original code discarded that result — a lost API key would vanish with no
   // signal. Check it explicitly and throw so the caller can alert the user. [M4]
-  let secureKeyWrite: Promise<boolean> | null = null;
   if (cfg.apiKey !== undefined) {
-    secureKeyWrite = cfg.apiKey ? storage.secureSet(AI_API_KEY_KEY, cfg.apiKey) : storage.secureRemove(AI_API_KEY_KEY);
+    const secureOk = cfg.apiKey
+      ? await storage.secureSet(AI_API_KEY_KEY, cfg.apiKey)
+      : await storage.secureRemove(AI_API_KEY_KEY);
+    if (secureOk === false) {
+      throw new Error('Could not securely save your API key on this device. Please try again.');
+    }
     ops.push(AsyncStorage.removeItem(AI_API_KEY_KEY));
   }
   if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
-  const [secureOk] = await Promise.all([
-    secureKeyWrite ?? Promise.resolve(true),
-    ...ops,
-  ]);
-  if (secureKeyWrite && secureOk === false) {
-    throw new Error('Could not securely save your API key on this device. Please try again.');
-  }
+  await Promise.all(ops);
 }
 // Convenience aliases used by the current voice and bill screens.
 export async function getGeminiKey(): Promise<string> { return (await getAIConfig()).apiKey; }
@@ -254,6 +251,7 @@ async function preferenceSettings() {
   const context = await service.activeContext();
   if (!context) return settings;
   const config = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
+  const prefs = await readV2BookPrefs(runner, context.bookId);
   return {
     ...settings,
     accountingStyle: config.style,
@@ -261,6 +259,8 @@ async function preferenceSettings() {
     selectedPersonas: config.selectedPersonas,
     activePersona: config.activePersona,
     managerCommissionPct: config.retailPartnership?.commissionPct ?? settings.managerCommissionPct ?? 0,
+    ...(prefs?.enabledFeatures ? { enabledFeatures: prefs.enabledFeatures } : {}),
+    ...(prefs && prefs.activeLocationId !== undefined ? { activeLocationId: prefs.activeLocationId } : {}),
   };
 }
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
@@ -523,22 +523,30 @@ export const api = {
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
     const runner = activeSqlRunner();
-    if (runner && s.managerCommissionPct !== undefined) {
+    if (runner) {
       const service = new V2AppService(runner);
       const context = await service.activeContext();
       if (context) {
-        const repo = new V2BookConfigRepository(runner);
-        const config = await repo.getBookConfig(context.bookId);
-        await repo.updateBookConfig(context.bookId, {
-          style: config.style,
-          basis: config.basis,
-          selectedPersonas: config.selectedPersonas,
-          activePersona: config.activePersona,
-          retailPartnership: {
-            ...config.retailPartnership,
-            commissionPct: Number(s.managerCommissionPct || 0),
-          },
-        });
+        if (s.managerCommissionPct !== undefined) {
+          const repo = new V2BookConfigRepository(runner);
+          const config = await repo.getBookConfig(context.bookId);
+          await repo.updateBookConfig(context.bookId, {
+            style: config.style,
+            basis: config.basis,
+            selectedPersonas: config.selectedPersonas,
+            activePersona: config.activePersona,
+            retailPartnership: {
+              ...config.retailPartnership,
+              commissionPct: Number(s.managerCommissionPct || 0),
+            },
+          });
+        }
+        if (s.enabledFeatures !== undefined || s.activeLocationId !== undefined) {
+          await writeV2BookPrefs(runner, context.bookId, {
+            enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : undefined,
+            activeLocationId: s.activeLocationId !== undefined ? String(s.activeLocationId || '') : undefined,
+          });
+        }
       }
     }
     const r = await db.updateSettings(s);
@@ -1163,8 +1171,49 @@ export const api = {
       netProfit: display.netProfit,
     };
   },
-  creditorsReport: async (_from?: string, _to?: string) => (await api.listSuppliers()).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0 })),
-  debtorsReport: async (_from?: string, _to?: string) => (await api.listDebtors()).map((party: any) => ({ id: party.id, name: party.name, balance: party.receivable || party.balance || 0 })),
+  creditorsReport: async (_from?: string, _to?: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    const parties = await api.listSuppliers();
+    const rows = [];
+    for (const party of parties) {
+      const detail: any = await service.getPartyDetail(party.id, 'supplier');
+      if (!detail) continue;
+      rows.push({
+        id: detail.id,
+        supplierId: detail.id,
+        name: detail.name,
+        phone: detail.phone || '',
+        email: detail.email || '',
+        balance: Number(detail.balance || 0),
+        totalBilled: Number(detail.billsTotal || 0),
+        totalPaid: Number(detail.paymentsTotal || 0),
+        advanceBalance: Number(detail.advanceBalance || 0),
+      });
+    }
+    return rows;
+  },
+  debtorsReport: async (_from?: string, _to?: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const service = new V2AppService(runner);
+    const parties = await api.listDebtors();
+    const rows = [];
+    for (const party of parties) {
+      const detail: any = await service.getPartyDetail(party.id, 'customer');
+      if (!detail) continue;
+      rows.push({
+        id: detail.id,
+        name: detail.name,
+        phone: detail.phone || '',
+        email: detail.email || '',
+        balance: Number(detail.balance || 0),
+        totalInvoiced: Number(detail.totalInvoiced || 0),
+        totalPaid: Number(detail.totalPaid || 0),
+        advanceBalance: Number(detail.advanceBalance || 0),
+      });
+    }
+    return rows;
+  },
 
   // Invoices
   listInvoices: async () => {
@@ -1228,11 +1277,15 @@ export const api = {
 
   // Enhanced reports
   taxReport: async (from: string, to: string) => {
-    const [settings, config, invoices, cashSales, receipts, bills, creditNotes, report] = await Promise.all([
-      api.getSettings(), api.getV2BookConfig(), v2SourceDocuments(['invoice']), v2SourceDocuments(['cash_sale']), v2SourceDocuments(['receipt']), v2SourceDocuments(['cash_purchase','credit_purchase']), v2SourceDocuments(['credit_note']), v2Report(from, to).catch(() => null),
+    const [settings, config, invoices, cashSales, bills, creditNotes, debitNotes, liveReceipts, report] = await Promise.all([
+      api.getSettings(), api.getV2BookConfig(), v2SourceDocuments(['invoice']), v2SourceDocuments(['cash_sale']), v2SourceDocuments(['cash_purchase','credit_purchase']), v2SourceDocuments(['credit_note']), v2SourceDocuments(['debit_note']), api.listReceipts(), v2Report(from, to).catch(() => null),
     ]);
     const inRange = (row: any) => row.date >= from && row.date <= to;
     const taxOf = (gross: number, rate: number) => rate > 0 ? Math.round((gross - gross / (1 + rate / 100)) * 100) / 100 : 0;
+    const rowTaxAmount = (row: any) => {
+      const total = Number(row.total || row.amount || 0);
+      return Number(row.tax ?? row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+    };
     const basis = config?.basis === 'cash' ? 'cash' : 'accrual';
     const rate = Number(settings.taxRate || 0);
 
@@ -1242,28 +1295,48 @@ export const api = {
       const salesRows = [...invoices, ...cashSales].filter(inRange);
       for (const row of salesRows) {
         const total = Number(row.total || row.amount || 0);
-        const rowTax = Number(row.tax ?? row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
+        const rowTax = rowTaxAmount(row);
         const base = Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
         outputBase += base;
         outputTax += rowTax;
       }
     } else {
-      const cashRows = [...cashSales, ...receipts].filter(inRange);
-      for (const row of cashRows) {
+      for (const row of cashSales.filter(inRange)) {
         const total = Number(row.total || row.amount || 0);
-        const rowTax = Number(row.tax ?? row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
-        const base = Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
-        outputBase += base;
+        const rowTax = rowTaxAmount(row);
         outputTax += rowTax;
+        outputBase += Number(row.subtotal ?? row.metadata?.subtotal ?? (total - rowTax));
+      }
+      const invoiceById = new Map(invoices.map((row: any) => [row.id, row]));
+      for (const rec of (liveReceipts as any[]).filter(inRange)) {
+        const allocs = Array.isArray(rec.allocations) ? rec.allocations : [];
+        if (allocs.length) {
+          for (const alloc of allocs) {
+            const inv = invoiceById.get(alloc.invoiceId || alloc.invoiceSourceId);
+            const take = Number(alloc.amountApplied ?? alloc.amount ?? 0);
+            const invTotal = Number(inv?.total || inv?.amount || 0);
+            const invTax = inv ? rowTaxAmount(inv) : 0;
+            if (inv && invTotal > 0 && invTax) {
+              const share = take / invTotal;
+              outputTax += invTax * share;
+              outputBase += (invTotal - invTax) * share;
+            } else {
+              outputBase += take;
+            }
+          }
+        } else {
+          const total = Number(rec.total || rec.amount || 0);
+          const rowTax = rowTaxAmount(rec);
+          outputTax += rowTax;
+          outputBase += total - rowTax;
+        }
       }
     }
 
-    const cnRows = creditNotes.filter(inRange);
-    const creditNoteTax = cnRows.reduce((sum: number, row: any) => {
-      const total = Number(row.total || row.amount || 0);
-      return sum + Number(row.tax ?? row.metadata?.tax ?? (row.taxRate ? taxOf(total, Number(row.taxRate)) : 0));
-    }, 0);
-    const netOutputTax = Math.max(0, Math.round((outputTax - creditNoteTax) * 100) / 100);
+    const noteTax = (rows: any[]) => rows.filter(inRange).reduce((sum: number, row: any) => sum + rowTaxAmount(row), 0);
+    const creditNoteTax = noteTax(creditNotes);
+    const debitNoteTax = noteTax(debitNotes);
+    const netOutputTax = Math.max(0, Math.round((outputTax - creditNoteTax + debitNoteTax) * 100) / 100);
 
     const inputRows = bills.filter(inRange);
     let inputBase = 0;
@@ -1284,7 +1357,7 @@ export const api = {
     const glTaxPayable = glTaxAccount ? glTaxAccount.normalBalance : 0;
     const netTaxPayable = (basis === 'accrual' && glTaxAccount) ? glTaxPayable : Math.round((netOutputTax - inputTax) * 100) / 100;
 
-    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax: 0, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable };
+    return { from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis, outputBase, outputTax, creditNoteTax, debitNoteTax, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable };
   },
   salesRegister: async (from: string, to: string) => {
     const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));

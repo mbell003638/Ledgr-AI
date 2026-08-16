@@ -91,6 +91,8 @@ export async function createBook(name: string, businessType?: string): Promise<B
   if (runner) {
     const year = new Date().getFullYear();
     await initializeV2Book(runner, { book: { id, name: meta.name, style: 'standard', basis: 'accrual' }, period: { id: `${id}:period:${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` }, personas: ['custom'] });
+    const { writeV2BookPrefs } = await import('../accountingV2/optionalModules');
+    await writeV2BookPrefs(runner, id, { enabledFeatures: [], activeLocationId: '' });
   }
   return meta;
 }

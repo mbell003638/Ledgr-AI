@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../../db/schema';
 import { V2SqlRepository } from '../repository';
-import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
+import { isOptionalModuleEnabled, readV2BookPrefs, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { mulMoney, round2 } from '../../money';
 
@@ -52,15 +52,24 @@ export async function resolveWriteLocationId(
   bookId: string,
   requested?: unknown,
 ): Promise<string | null> {
-  if (!(await isOptionalModuleEnabled(db, 'locations'))) return null;
+  if (!(await isOptionalModuleEnabled(db, 'locations', bookId))) return null;
   const explicit = String(requested || '').trim();
   if (explicit) return requireLocation(db, bookId, explicit);
+  const prefs = await readV2BookPrefs(db, bookId);
+  const fromPrefs = String(prefs?.activeLocationId || '').trim();
+  if (fromPrefs) return requireLocation(db, bookId, fromPrefs);
   const row = await db.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
   let parsed: { activeLocationId?: unknown } = {};
   try { parsed = JSON.parse(row?.value || '{}'); } catch { parsed = {}; }
   const fallback = String(parsed.activeLocationId || '').trim();
-  if (!fallback) throw new Error('Choose a location before recording this.');
-  return requireLocation(db, bookId, fallback);
+  if (fallback) {
+    const owned = await db.first<{ id: string; archived: number }>(
+      'SELECT id,archived FROM v2_locations WHERE id=? AND book_id=?',
+      [fallback, bookId],
+    );
+    if (owned && !owned.archived) return owned.id;
+  }
+  throw new Error('Choose a location before recording this.');
 }
 
 export async function requireLocation(db: SqlRunner, bookId: string, locationId: string): Promise<string> {

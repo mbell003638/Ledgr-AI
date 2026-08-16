@@ -499,7 +499,7 @@ export const ANALYZE_DOCUMENT_SCHEMA = {
           date: { type: 'string' },
           partyName: { type: 'string' },
           amount: { type: 'number' },
-          method: { type: 'string', enum: ['cash', 'credit'] },
+          method: { type: 'string', enum: ['cash', 'credit', 'bank', 'card', 'mobile'] },
           notes: { type: 'string' },
         },
         required: ['type', 'amount'],

@@ -560,6 +560,7 @@ export default function AdvancedSettingsScreen() {
                   )}
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
+                  <Text style={[styles.hint, { marginTop: 6 }]}>{Platform.OS === "web" ? "On web this key is stored in the browser, not a device keychain." : "Stored in this device's secure credential storage."}</Text>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
                   <TextInput value={modelName} onChangeText={setModelName} placeholder={PROVIDERS.find((item) => item.id === provider)?.defaultModel || "model name"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
                   {isCustomProvider && (

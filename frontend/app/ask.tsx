@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ScrollView,
+  View, Text, StyleSheet, TextInput, Pressable, FlatList,
   ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -285,7 +285,7 @@ export default function AskBooks() {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<Msg>>(null);
   const historyKey = useMemo(() => askHistoryStorageKey(api.activeBookId()), []);
   const historyLoaded = useRef(false);
 
@@ -456,16 +456,17 @@ export default function AskBooks() {
         style={styles.body}
         keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
-        <ScrollView
+        <FlatList
           ref={scrollRef}
           style={{ flex: 1 }}
+          data={messages}
+          keyExtractor={(_, i) => String(i)}
           contentContainerStyle={styles.messageContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
           onContentSizeChange={() => messages.length > 0 && scrollRef.current?.scrollToEnd({ animated: false })}
-        >
-          {messages.length === 0 && (
+          ListHeaderComponent={messages.length === 0 ? (
             <View>
               <View style={styles.welcome}>
                 <Ionicons name="sparkles-outline" size={32} color={theme.color.brandPrimary} />
@@ -478,39 +479,40 @@ export default function AskBooks() {
                 </Pressable>
               ))}
             </View>
-          )}
-
-          {messages.map((m, i) => (
-            <View key={i} style={[styles.bubble, m.role === "user" ? styles.bubbleUser : styles.bubbleAI]}>
+          ) : null}
+          renderItem={({ item: m }) => (
+            <View style={[styles.bubble, m.role === "user" ? styles.bubbleUser : styles.bubbleAI]}>
               <Text style={[styles.bubbleText, m.role === "user" && { color: "#fff" }]}>{m.text}</Text>
             </View>
-          ))}
-
-          {pendingProposal && (
-            <View testID="ask-pending-action-card" style={[styles.proposalCard, pendingProposal.action.isDestructive && styles.proposalCardDestructive]}>
-              <View style={styles.proposalHeader}>
-                <Ionicons name={pendingProposal.action.isDestructive ? "warning-outline" : "checkmark-circle-outline"} size={20} color={pendingProposal.action.isDestructive ? theme.color.error : theme.color.brandPrimary} />
-                <Text style={styles.proposalTitle}>{pendingProposal.action.isDestructive ? "Review reversal" : "Review Ledgr change"}</Text>
-              </View>
-              <Text style={styles.proposalPreview}>{pendingProposal.action.confirmation.preview}</Text>
-              <Text style={styles.proposalHint}>Nothing changes until you tap Apply.</Text>
-              <View style={styles.proposalButtons}>
-                <Pressable testID="ask-proposal-cancel" disabled={applyingProposal} onPress={() => cancelPendingProposal()} style={styles.proposalCancel}>
-                  <Text style={styles.proposalCancelText}>Cancel</Text>
-                </Pressable>
-                <Pressable testID="ask-proposal-apply" disabled={applyingProposal} onPress={applyPendingProposal} style={[styles.proposalApply, pendingProposal.action.isDestructive && styles.proposalApplyDestructive, applyingProposal && { opacity: 0.6 }]}>
-                  {applyingProposal ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.proposalApplyText}>{pendingProposal.action.isDestructive ? "Reverse / Delete" : "Apply"}</Text>}
-                </Pressable>
-              </View>
-            </View>
           )}
-
-          {loading && (
-            <View style={[styles.bubble, styles.bubbleAI]}>
-              <ActivityIndicator color={theme.color.brandPrimary} />
-            </View>
-          )}
-        </ScrollView>
+          ListFooterComponent={
+            <>
+              {pendingProposal ? (
+                <View testID="ask-pending-action-card" style={[styles.proposalCard, pendingProposal.action.isDestructive && styles.proposalCardDestructive]}>
+                  <View style={styles.proposalHeader}>
+                    <Ionicons name={pendingProposal.action.isDestructive ? "warning-outline" : "checkmark-circle-outline"} size={20} color={pendingProposal.action.isDestructive ? theme.color.error : theme.color.brandPrimary} />
+                    <Text style={styles.proposalTitle}>{pendingProposal.action.isDestructive ? "Review reversal" : "Review Ledgr change"}</Text>
+                  </View>
+                  <Text style={styles.proposalPreview}>{pendingProposal.action.confirmation.preview}</Text>
+                  <Text style={styles.proposalHint}>Nothing changes until you tap Apply.</Text>
+                  <View style={styles.proposalButtons}>
+                    <Pressable testID="ask-proposal-cancel" disabled={applyingProposal} onPress={() => cancelPendingProposal()} style={styles.proposalCancel}>
+                      <Text style={styles.proposalCancelText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable testID="ask-proposal-apply" disabled={applyingProposal} onPress={applyPendingProposal} style={[styles.proposalApply, pendingProposal.action.isDestructive && styles.proposalApplyDestructive, applyingProposal && { opacity: 0.6 }]}>
+                      {applyingProposal ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.proposalApplyText}>{pendingProposal.action.isDestructive ? "Reverse / Delete" : "Apply"}</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+              {loading ? (
+                <View style={[styles.bubble, styles.bubbleAI]}>
+                  <ActivityIndicator color={theme.color.brandPrimary} />
+                </View>
+              ) : null}
+            </>
+          }
+        />
 
         <View style={[styles.inputBar, { paddingBottom: composerBottomPad }]}>
           <View style={styles.inputWrapper}>

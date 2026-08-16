@@ -85,6 +85,9 @@ export type V2Reports = {
     ok: boolean;
     errors: V2ReconciliationError[];
   };
+  locationId?: string;
+  /** Shop view skipped open-period periodic COGS because counts are company-wide. */
+  provisionalShopCogs?: boolean;
 };
 
 export class V2ReportError extends Error {
@@ -133,15 +136,21 @@ function cashBasisProfitAndLoss(store: V2MemoryStore, options: V2ReportOptions) 
     .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.total || 0)), 0);
   const revenue = Math.max(0, cents(cashSales + receipts - cashReturns));
 
-  // COGS (cash basis): the cost of inventory bought for cash in the period. Kept out of the
-  // expense total below so grossProfit and netProfit derive from disjoint buckets.
-  const cogs = live.filter((s) => s.type === 'cash_purchase' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+  // COGS (cash basis): cash inventory purchases plus supplier settlements tagged as
+  // inventory (credit stock bills). Expense-coded cash bills stay in OpEx.
+  const isExpenseBill = (s: (typeof live)[number]) => Boolean((s.metadata as any)?.isExpense === true || (s.metadata as any)?.billType === 'expense');
+  const cogs = live.filter((s) => inRange(s.date) && (
+    (s.type === 'cash_purchase' && !isExpenseBill(s))
+    || (s.type === 'supplier_payment' && Number((s.metadata as any)?.inventorySettlement || 0) > 0)
+  )).reduce((sum, s) => cents(sum + (s.type === 'supplier_payment' ? Number((s.metadata as any)?.inventorySettlement || 0) : metaTotal(s.id))), 0);
 
-  // Expenses: cash-paid operating expenses + cash paid to settle supplier payables (excluding 1210 prepayments).
-  const cashExpenses = live.filter((s) => s.type === 'expense' && inRange(s.date)).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
+  // Expenses: cash-paid operating expenses + cash paid to settle non-inventory payables.
+  const cashExpenses = live.filter((s) => (
+    (s.type === 'expense' || (s.type === 'cash_purchase' && isExpenseBill(s))) && inRange(s.date)
+  )).reduce((sum, s) => cents(sum + metaTotal(s.id)), 0);
   const supplierPayments = live
     .filter((s) => s.type === 'supplier_payment' && inRange(s.date))
-    .reduce((sum, s) => cents(sum + Math.max(0, metaTotal(s.id) - Number((s.metadata as any)?.supplierAdvance || 0))), 0);
+    .reduce((sum, s) => cents(sum + Math.max(0, metaTotal(s.id) - Number((s.metadata as any)?.supplierAdvance || 0) - Number((s.metadata as any)?.inventorySettlement || 0))), 0);
   const payrollCash = live
     .filter((s) => s.type === 'pay_run' && inRange(s.date))
     .reduce((sum, s) => cents(sum + Number((s.metadata as any)?.totalNet || 0)), 0);
@@ -354,6 +363,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     bookId: options.bookId,
     from: options.from,
     to: options.to,
+    locationId: options.locationId,
     journalCount: journals.length,
     details,
     trialBalance: {

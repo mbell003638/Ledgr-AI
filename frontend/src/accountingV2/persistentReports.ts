@@ -48,8 +48,10 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
     sources: sourceRows.map((s) => { let metadata: any = {}; try { metadata = JSON.parse(s.metadata || '{}'); } catch { metadata = {}; } return { id: s.id, bookId: s.book_id, type: s.type, date: s.date, reference: s.reference || undefined, metadata, locationId: s.location_id || metadata.locationId || undefined }; }),
     allocations: allocationRows.map((a) => ({ id: a.id, bookId: a.book_id, invoiceSourceId: a.invoice_source_id, receiptSourceId: a.receipt_source_id, amount: Number(a.amount), allocatedAt: a.allocated_at })),
   };
+  const skippedShopCogs = Boolean(options.locationId) && !(await isOptionalModuleEnabled(db, 'perpetualInventory', options.bookId));
   const cogsAdjustment = await openPeriodCogsAdjustment(db, options);
-  return buildV2Reports(store, { ...options, cogsAdjustment });
+  const report = buildV2Reports(store, { ...options, cogsAdjustment });
+  return { ...report, provisionalShopCogs: skippedShopCogs && !cogsAdjustment };
 }
 
 /**
@@ -61,7 +63,7 @@ export async function buildPersistentV2Reports(db: SqlRunner, options: V2ReportO
 async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions) {
   try {
     if (options.locationId) return undefined;
-    if (await isOptionalModuleEnabled(db, 'perpetualInventory')) return undefined;
+    if (await isOptionalModuleEnabled(db, 'perpetualInventory', options.bookId)) return undefined;
     const period = await db.first<{ start_date: string; end_date: string }>(
       "SELECT start_date,end_date FROM v2_periods WHERE book_id=? AND status='open' ORDER BY start_date LIMIT 1",
       [options.bookId],

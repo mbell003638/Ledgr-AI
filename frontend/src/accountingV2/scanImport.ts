@@ -14,13 +14,23 @@ import { normalizeDateInput, isValidDateString } from '../utils/dateValidation';
 export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
 export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'];
 
+export type ScanPaymentMethod = 'cash' | 'credit' | 'bank' | 'card' | 'mobile';
+export const SCAN_PAYMENT_METHODS: ScanPaymentMethod[] = ['cash', 'credit', 'bank', 'card', 'mobile'];
+
+export function normalizeScanMethod(value: unknown): ScanPaymentMethod | null {
+  if (value == null || String(value).trim() === '') return 'cash';
+  const method = String(value).trim().toLowerCase();
+  if (method === 'upi') return 'mobile';
+  return (SCAN_PAYMENT_METHODS as string[]).includes(method) ? method as ScanPaymentMethod : null;
+}
+
 export type ScanTransactionRow = {
   kind: 'transaction';
   entryType: ScanEntryType;
   date: string;
   partyName: string;
   amount: number;
-  method: 'cash' | 'credit';
+  method: ScanPaymentMethod;
   notes: string;
 };
 export type ScanOpeningRow = { kind: 'opening_balances'; asOfDate: string; openingCash: number; stockValue: number };
@@ -222,13 +232,18 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       }
       date = normalized;
     }
+    const method = normalizeScanMethod(entry.method);
+    if (!method) {
+      flaggedRows.push({ label, reason: 'Payment method needs review' });
+      continue;
+    }
     validRows.push({
       kind: 'transaction',
       entryType: entry.type as ScanEntryType,
       date,
       partyName: typeof entry.partyName === 'string' ? entry.partyName.trim() : '',
       amount: entry.amount,
-      method: entry.method === 'credit' ? 'credit' : 'cash',
+      method,
       notes: typeof entry.notes === 'string' ? entry.notes.trim() : '',
     });
   }

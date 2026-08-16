@@ -101,4 +101,27 @@ describe('optional locations', () => {
       expect(dashB.totalSales).toBeCloseTo(0, 2);
     } finally { close(); }
   });
+
+  it('does not let Book A active location or flags apply to Book B', async () => {
+    const { runner, close, locations } = await setup(['locations']);
+    try {
+      const { writeV2BookPrefs, isOptionalModuleEnabled } = await import('../src/accountingV2/optionalModules');
+      const { resolveWriteLocationId } = await import('../src/accountingV2/services/locationDomainService');
+      await initializeV2Book(runner, {
+        book: { id: 'book-b', name: 'Other Co' },
+        period: { id: 'book-b:period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      const shopA = await locations.createLocation({ name: 'Shop A' });
+      await writeV2BookPrefs(runner, BOOK, { enabledFeatures: ['locations'], activeLocationId: shopA.id });
+      await writeV2BookPrefs(runner, 'book-b', { enabledFeatures: [], activeLocationId: shopA.id });
+
+      expect(await isOptionalModuleEnabled(runner, 'locations', BOOK)).toBe(true);
+      expect(await isOptionalModuleEnabled(runner, 'locations', 'book-b')).toBe(false);
+      expect(await resolveWriteLocationId(runner, 'book-b', shopA.id)).toBeNull();
+      expect(await resolveWriteLocationId(runner, BOOK)).toBe(shopA.id);
+
+      await writeV2BookPrefs(runner, 'book-b', { enabledFeatures: ['locations'], activeLocationId: shopA.id });
+      await expect(resolveWriteLocationId(runner, 'book-b')).rejects.toThrow(/Location not found|Choose a location/i);
+    } finally { close(); }
+  });
 });

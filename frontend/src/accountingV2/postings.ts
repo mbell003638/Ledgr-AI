@@ -182,7 +182,20 @@ export async function postSupplierPayment(repo:V2SqlRepository,input:{bookId:str
   const payable = Math.max(0, cents(Number(apRow?.balance || 0)));
   const toAP = cents(Math.min(amount, payable));
   const advance = cents(amount - toAP);
-  const source: V2Source = { id: uid('supplier_payment'), bookId: input.bookId, type: 'supplier_payment', date: input.date, locationId: input.locationId, metadata: withLocation({ ...(input.metadata || {}), partyId: input.partyId, total: amount, method: input.method, ...(advance > 0 ? { supplierAdvance: advance } : {}) }, input.locationId) };
+  const bills = await repo.db.all<{ metadata: string }>(
+    "SELECT metadata FROM v2_sources WHERE book_id=? AND type='credit_purchase' AND json_extract(metadata,'$.partyId')=? AND (json_extract(metadata,'$.reversed') IS NULL OR json_extract(metadata,'$.reversed')=0) AND (json_extract(metadata,'$.deleted') IS NULL OR json_extract(metadata,'$.deleted')=0)",
+    [input.bookId, input.partyId],
+  );
+  let hasInventory = false;
+  let hasExpense = false;
+  for (const bill of bills) {
+    let meta: any = {};
+    try { meta = JSON.parse(bill.metadata || '{}'); } catch { meta = {}; }
+    if (meta.isExpense === true || meta.billType === 'expense') hasExpense = true;
+    else hasInventory = true;
+  }
+  const inventorySettlement = hasInventory && !hasExpense ? toAP : 0;
+  const source: V2Source = { id: uid('supplier_payment'), bookId: input.bookId, type: 'supplier_payment', date: input.date, locationId: input.locationId, metadata: withLocation({ ...(input.metadata || {}), partyId: input.partyId, total: amount, method: input.method, ...(advance > 0 ? { supplierAdvance: advance } : {}), ...(inventorySettlement > 0 ? { inventorySettlement } : {}) }, input.locationId) };
   const lines: any[] = [];
   if (toAP > 0.005) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AP}`, partyId: input.partyId, debit: toAP, credit: 0 });
   if (advance > 0.005) lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SUPPLIER_ADVANCES}`, partyId: input.partyId, debit: advance, credit: 0 });

@@ -96,4 +96,16 @@ describe('V2 Scan & Import — creation approval boundary', () => {
       expect(await count(runner, 'v2_journal_entries')).toBe(0);
     } finally { close(); }
   });
+
+  it('posts a scanned bank receipt to the bank account, not cash', async () => {
+    const { runner, close, service } = await setup();
+    try {
+      await service.importScanTransaction({
+        entryType: 'receipt_in', date: '2026-08-10', partyName: 'Bank Customer', amount: 80,
+        method: 'bank', createMissingParty: true,
+      });
+      expect(await service.repo.accountBalance(BOOK, `${BOOK}:account:1010`)).toBe(80);
+      expect(await service.repo.accountBalance(BOOK, `${BOOK}:account:1000`)).toBe(0);
+    } finally { close(); }
+  });
 });

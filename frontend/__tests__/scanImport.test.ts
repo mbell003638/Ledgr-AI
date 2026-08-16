@@ -21,7 +21,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     expect(schema.required).toEqual(['docType', 'summary', 'entries']);
     expect(schema.properties.docType.enum).toEqual(['receipt', 'statement', 'closing_report', 'transaction_list', 'other']);
     expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense']);
-    expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'credit']);
+    expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'credit', 'bank', 'card', 'mobile']);
     const setup = schema.properties.setup.properties;
     for (const key of ['asOfDate', 'openingCash', 'stockValue', 'extraAssets', 'extraLiabilities', 'creditorsTotal', 'partners']) {
       expect(setup[key]).toBeDefined();
@@ -276,6 +276,22 @@ describe('mapAnalyzedDocument', () => {
     expect(mapped.validRows).toHaveLength(0);
     expect(mapped.flaggedRows).toHaveLength(1);
     expect(mapped.flaggedRows[0].reason).toBe(AMOUNT_BOUNDS_REASON);
+  });
+
+  it('preserves bank/card/mobile methods and flags unknown ones', async () => {
+    const { mapAnalyzedDocument: mapDoc } = await import('../src/accountingV2/scanImport');
+    const bank = mapDoc({
+      docType: 'statement', summary: '',
+      entries: [{ type: 'receipt_in', date: '2026-08-01', partyName: 'Ada', amount: 40, method: 'bank' }],
+    });
+    expect(bank.flaggedRows).toHaveLength(0);
+    expect((bank.validRows[0] as any).method).toBe('bank');
+    const bad = mapDoc({
+      docType: 'statement', summary: '',
+      entries: [{ type: 'expense', date: '2026-08-01', amount: 10, method: 'bitcoin' }],
+    });
+    expect(bad.validRows).toHaveLength(0);
+    expect(bad.flaggedRows[0].reason).toMatch(/Payment method needs review/i);
   });
 
   it('flags a pre-2000 date instead of importing it', () => {

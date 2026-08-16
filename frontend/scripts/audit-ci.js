@@ -12,6 +12,12 @@ const ALLOWED_FINDINGS = new Set([
   "image-size:GHSA-5p2g-fcmc-qvqq",
   "nanoid:GHSA-2v37-7h3g-55p8",
 ]);
+// Metro-chain only. Owner: Ledgr maintainers. Review or remove after Expo SDK upgrade; expires 2026-11-15.
+const ALLOWLIST_EXPIRES = "2026-11-15";
+if (new Date() > new Date(`${ALLOWLIST_EXPIRES}T00:00:00.000Z`)) {
+  console.error(`npm audit allowlist expired on ${ALLOWLIST_EXPIRES}. Re-evaluate Metro advisories or upgrade Expo.`);
+  process.exit(1);
+}
 
 const npmCli = process.env.npm_execpath;
 if (!npmCli) {

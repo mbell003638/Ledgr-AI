@@ -112,8 +112,9 @@ describe('2nd Audit Comprehensive Fixes', () => {
       from: '2026-06-01',
       to: '2026-06-30',
     });
-    // Operating expense settled is $80; the $20 is a balance sheet asset prepayment
-    expect(reports.profitAndLoss.expenses).toEqual(80);
+    // Credit stock bill settlement is cash-basis COGS; the $20 advance stays off the P&L.
+    expect(reports.profitAndLoss.cogs).toEqual(80);
+    expect(reports.profitAndLoss.expenses).toEqual(0);
   });
 
   it('Section 6.3: Mixed receipt (part 1100 AR, part 2100 advance) preserved on invoice edit', async () => {
