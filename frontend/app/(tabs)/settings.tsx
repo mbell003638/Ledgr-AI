@@ -377,7 +377,7 @@ export default function SettingsScreen() {
               haptic
               accessibilityRole="link"
               accessibilityLabel="Open Ledgr privacy policy"
-              onPress={() => Linking.openURL("https://github.com/mbell003638/Ledgr-AI/blob/codex-sol/docs/PRIVACY_POLICY.md")}
+              onPress={() => Linking.openURL("https://github.com/mbell003638/Ledgr-AI/blob/Manus/docs/PRIVACY_POLICY.md")}
               style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20 }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
