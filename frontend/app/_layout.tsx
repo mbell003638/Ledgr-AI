@@ -185,8 +185,8 @@ function AppOpeningSplashScreen() {
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(opacityAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 50, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 350, useNativeDriver: Platform.OS !== "web" }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 50, useNativeDriver: Platform.OS !== "web" }),
     ]).start();
   }, [opacityAnim, scaleAnim]);
 

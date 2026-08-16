@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -24,6 +24,8 @@ export default function Onboarding() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
+  const { width: viewportWidth } = useWindowDimensions();
+  const personaCardWidth = viewportWidth >= 600 ? "31.8%" : "47.5%";
   const [step, setStep] = useState(0);
   const [persona, setPersona] = useState<PersonaId | null>(null);
   const [bizName, setBizName] = useState("");
@@ -125,10 +127,10 @@ export default function Onboarding() {
               {PERSONAS.slice(0, 9).map((item) => {
                 const selected = persona === item.id;
                 return (
-                  <Pressable key={item.id} onPress={() => setPersona(item.id)} style={[styles.personaCard, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }}>
+                  <Pressable key={item.id} onPress={() => setPersona(item.id)} style={[styles.personaCard, { width: personaCardWidth }, selected && styles.cardSelected]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${item.label}: ${item.description}`}>
                     <View style={[styles.iconCircle, selected && styles.iconCircleSelected]}><Ionicons name={(PERSONA_ICON[item.id] || "briefcase-outline") as any} size={23} color={selected ? theme.color.brandPrimary : theme.color.muted} /></View>
                     <Text style={[styles.personaLabel, selected && { color: theme.color.brandPrimary }]}>{item.label}</Text>
-                    <Text style={styles.personaDesc} numberOfLines={2}>{item.description}</Text>
+                    <Text style={styles.personaDesc} numberOfLines={3}>{item.description}</Text>
                     {selected && <Ionicons name="checkmark-circle" size={20} color={theme.color.brandPrimary} style={styles.check} />}
                   </Pressable>
                 );
@@ -195,12 +197,12 @@ function makeStyles(theme: any) {
     title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.xl },
     sub: { fontSize: 14, lineHeight: 20, color: theme.color.muted, marginTop: 8 },
     personaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: theme.spacing.lg },
-    personaCard: { width: "31.8%", minHeight: 148, padding: 11, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    personaCard: { minHeight: 154, padding: 13, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     cardSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12", borderWidth: 1.5 },
     iconCircle: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", backgroundColor: theme.color.surface },
     iconCircleSelected: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", backgroundColor: theme.color.brandPrimary + "1A" },
-    personaLabel: { color: theme.color.onSurface, fontSize: 12, lineHeight: 16, fontWeight: "800", marginTop: 9 },
-    personaDesc: { color: theme.color.muted, fontSize: 10, lineHeight: 13, marginTop: 3 },
+    personaLabel: { color: theme.color.onSurface, fontSize: 13, lineHeight: 17, fontWeight: "800", marginTop: 10 },
+    personaDesc: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 4 },
     check: { position: "absolute", top: 9, right: 9 },
     note: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 14 },
     input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.xl },
@@ -226,10 +228,10 @@ function makeStyles(theme: any) {
     toggleOn: { backgroundColor: theme.color.brandPrimary },
     toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#fff" },
     toggleThumbOn: { alignSelf: "flex-end" },
-    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.color.border },
-    backBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 13, paddingHorizontal: 8 },
-    backText: { color: theme.color.onSurface, fontWeight: "700" },
-    nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, padding: 15, borderRadius: 15, alignItems: "center", maxWidth: 280 },
+    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
+    backBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 13, paddingHorizontal: 8, minWidth: 76 },
+    backText: { color: theme.color.onSurface, fontWeight: "700", fontSize: 14 },
+    nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, alignItems: "center", maxWidth: 320, minHeight: 50 },
     nextText: { color: "#fff", fontWeight: "800", fontSize: 15 },
   });
 }

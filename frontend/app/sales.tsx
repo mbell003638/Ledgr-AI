@@ -100,7 +100,7 @@ export default function SalesScreen() {
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerRow}><Pressable onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Sales</Text></Pressable></View>
+      <View style={styles.headerRow}><Pressable accessibilityRole="button" accessibilityLabel="Back to sales" onPress={() => setSelected(null)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /><Text style={{ fontSize: 18, fontWeight: "700", color: theme.color.onSurface }}>Sales</Text></Pressable></View>
       <ScrollView contentContainerStyle={styles.list}>
         <TransactionDetail
           title={fmt(selected.amount, currSym)}
@@ -160,6 +160,9 @@ export default function SalesScreen() {
         rightAction={
           <Pressable
             testID="btn-add-sale"
+            accessibilityRole="button"
+            accessibilityLabel="Create sale"
+            accessibilityHint="Opens the new sale form"
             onPress={() => router.push("/sale-form")}
             style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.85 }]}
           >

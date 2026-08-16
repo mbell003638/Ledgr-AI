@@ -393,6 +393,10 @@ function ReorderableWorkspaceTile({
       >
         <AnimatedPressable
           testID={`tile-${tile.key}`}
+          accessibilityRole="button"
+          accessibilityLabel={tile.label}
+          accessibilityHint={editing ? "Drag to reorder this workspace" : `Opens ${tile.label}`}
+          accessibilityState={{ disabled: editing }}
           onHoverIn={() => animateHover(1)}
           onHoverOut={() => animateHover(0)}
           onPressIn={() => {

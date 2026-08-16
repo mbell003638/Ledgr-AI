@@ -71,6 +71,9 @@ export function KpiTile({ label, value, hint, icon, valueColor, testID, onPress 
     return (
       <GlowPressable
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${value}`}
+        accessibilityHint="Opens the related accounting view"
         haptic
         topHighlight
         clipSafe={false}

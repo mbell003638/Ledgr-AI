@@ -87,7 +87,7 @@ export default function ReceiptsScreen() {
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerBar}><Pressable onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable><Text style={styles.headerTitle}>Receipt</Text><View style={{ width: 26 }} /></View>
+      <View style={styles.headerBar}><Pressable accessibilityRole="button" accessibilityLabel="Back to receipts" onPress={() => setSelected(null)}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable><Text style={styles.headerTitle}>Receipt</Text><View style={{ width: 26 }} /></View>
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
         <TransactionDetail
           title={selected.receiptNumber}
@@ -143,7 +143,7 @@ export default function ReceiptsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Receipts</Text>
-        <Pressable onPress={() => router.push("/receipt-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create receipt" accessibilityHint="Opens the new receipt form" onPress={() => router.push("/receipt-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
       <View style={styles.summaryCard}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -164,7 +164,7 @@ export default function ReceiptsScreen() {
         windowSize={7}
         removeClippedSubviews
         renderItem={({ item }) => (
-          <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
+          <GlowPressable accessibilityRole="button" accessibilityLabel={`Open receipt ${item.receiptNumber}`} accessibilityHint="Opens receipt details. Use the delete button to reverse this receipt." onPress={() => setSelected(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.mode === "cash_sale" ? "#DCE8DC" : item.mode === "advance" ? "#F0E4D0" : "#D8E4F0" }]}>
               <Ionicons name={item.mode === "cash_sale" ? "cart-outline" : item.mode === "advance" ? "arrow-down-circle-outline" : "document-text-outline"} size={18} color={theme.color.brandPrimary} />
             </View>
@@ -173,6 +173,9 @@ export default function ReceiptsScreen() {
               <Text style={styles.rowSub}>{item.clientName || "Walk-in"} · {shortDate(item.date)}{item.method ? ` · ${item.method}` : ""}</Text>
             </View>
             <Text style={styles.rowAmount}>{currSym}{Number(item.amount).toFixed(2)}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Delete receipt ${item.receiptNumber}`} accessibilityHint="Reverses this receipt after confirmation" hitSlop={8} onPress={() => remove(item)} style={styles.rowDelete}>
+              <Ionicons name="trash-outline" size={18} color={theme.color.error} />
+            </Pressable>
           </GlowPressable>
         )}
       />
@@ -196,6 +199,7 @@ function makeStyles(theme: any) {
     rowTitle: { fontSize: 14, fontWeight: "700", color: theme.color.onSurface },
     rowSub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
     rowAmount: { fontSize: 15, fontWeight: "700", color: theme.color.success },
+    rowDelete: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.error + "12" },
     modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
     modalBox: { backgroundColor: theme.color.surfaceSecondary, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: theme.spacing.lg, maxHeight: "88%", width: "100%", maxWidth: 480, alignSelf: "center" },
     modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.md },

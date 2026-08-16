@@ -175,7 +175,7 @@ export default function VoiceModal() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-voice" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable testID="btn-close-voice" accessibilityRole="button" accessibilityLabel="Close voice assistant" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
@@ -188,7 +188,7 @@ export default function VoiceModal() {
 
           <View style={styles.micArea}>
             {phase === "recording" ? (
-              <Pressable testID="btn-stop-voice" onPress={stopAndProcess} style={[styles.micBtn, styles.micRecording]}>
+              <Pressable testID="btn-stop-voice" accessibilityRole="button" accessibilityLabel="Stop recording and process voice note" onPress={stopAndProcess} style={[styles.micBtn, styles.micRecording]}>
                 <Ionicons name="stop" size={40} color="#fff" />
               </Pressable>
             ) : phase === "processing" ? (
@@ -196,7 +196,7 @@ export default function VoiceModal() {
                 <ActivityIndicator color="#fff" size="large" />
               </View>
             ) : (
-              <Pressable testID="btn-start-voice" onPress={start} style={styles.micBtn}>
+              <Pressable testID="btn-start-voice" accessibilityRole="button" accessibilityLabel="Start voice recording" accessibilityHint="Records a transaction description for review" onPress={start} style={styles.micBtn}>
                 <Ionicons name="mic" size={40} color="#fff" />
               </Pressable>
             )}
@@ -238,10 +238,10 @@ export default function VoiceModal() {
                 </View>
               ) : null}
               <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                <Pressable testID="btn-voice-cancel" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                <Pressable testID="btn-voice-cancel" accessibilityRole="button" accessibilityLabel="Discard draft and try again" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                   <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Try Again</Text>
                 </Pressable>
-                <Pressable testID="btn-voice-confirm" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
+                <Pressable testID="btn-voice-confirm" accessibilityRole="button" accessibilityLabel={isDestructive ? "Confirm close books" : "Confirm and save transaction"} accessibilityHint={isDestructive ? "Permanently closes the accounting period" : "Posts the reviewed transaction to the ledger"} onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
                   {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>{isDestructive ? "Close Books" : "Confirm & Save"}</Text>}
                 </Pressable>
               </View>

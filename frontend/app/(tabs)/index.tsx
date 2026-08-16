@@ -355,11 +355,11 @@ export default function Dashboard() {
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.brandPrimary + "18" }}><Ionicons name="sparkles-outline" size={20} color={theme.color.brandPrimary} /></View>
                 <View style={{ flex: 1, marginLeft: 11 }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, textTransform: "uppercase" }}>Focused workspace</Text><Text style={{ color: theme.color.onSurface, fontSize: 16, fontWeight: "800", marginTop: 3, textTransform: "capitalize" }}>{activePersonaFor(settings).replace(/_/g, " ")}</Text></View>
-                {isCapabilityEnabled(settings, "multi_location") ? <GlowPressable onPress={() => router.push("/locations")} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: theme.color.brandPrimary + "16" }}><Text style={{ color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800" }}>Locations</Text></GlowPressable> : null}
+                {isCapabilityEnabled(settings, "multi_location") ? <GlowPressable accessibilityRole="button" accessibilityLabel="Manage locations" accessibilityHint="Opens store and POS location management" onPress={() => router.push("/locations")} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: theme.color.brandPrimary + "16" }}><Text style={{ color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800" }}>Locations</Text></GlowPressable> : null}
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 11 }}>{getEnabledCapabilities(settings).slice(0, 4).map((key) => <View key={key} style={{ paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "700" }}>{capabilityDefinition(key)?.label || key}</Text></View>)}<Text style={{ color: theme.color.brandPrimary, fontSize: 10, fontWeight: "800", paddingVertical: 5 }}>+ {Math.max(0, getEnabledCapabilities(settings).length - 4)} more</Text></View>
             </Card>
-            {shops.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}><Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>{shops.map((shop) => <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}</ScrollView> : null}
+            {shops.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}><Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>{shops.map((shop) => <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}</ScrollView> : null}
             {health?.warnings?.length ? <Card style={{ marginBottom: theme.spacing.md, padding: 13 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}><Ionicons name={health.hasRecoveryWarning ? "shield-outline" : "checkmark-circle-outline"} size={18} color={health.hasRecoveryWarning ? theme.color.warning : theme.color.success} /><Text style={{ color: theme.color.onSurface, fontSize: 13, fontWeight: "800", marginLeft: 7 }}>Book Health</Text><Text style={{ color: theme.color.muted, fontSize: 10, marginLeft: "auto" as any }}>{health.warnings.length} item{health.warnings.length === 1 ? "" : "s"}</Text></View>
               {health.hasRecoveryWarning && <View style={{ flexDirection: "row", gap: 7, marginTop: 5 }}><Ionicons name="cloud-offline-outline" size={15} color={theme.color.warning} /><View style={{ flex: 1 }}><Text style={{ color: theme.color.onSurface, fontSize: 11, fontWeight: "700" }}>Protect this book with a JSON backup</Text><Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 14 }}>Device backup is not guaranteed. Export from Advanced Settings after important bookkeeping work.</Text></View></View>}
@@ -526,15 +526,15 @@ export default function Dashboard() {
                   </Text>
                 </View>
                 <View style={styles.dailyNav}>
-                  <GlowPressable testID="btn-day-prev" onPress={() => shiftDay(-1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
+                  <GlowPressable testID="btn-day-prev" accessibilityRole="button" accessibilityLabel="Previous day" onPress={() => shiftDay(-1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-back" size={18} color={theme.color.onSurface} />
                   </GlowPressable>
                   {!isToday ? (
-                    <GlowPressable testID="btn-day-today" onPress={jumpToToday} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={[styles.dailyNavBtn, { paddingHorizontal: 10, width: undefined }]}>
+                    <GlowPressable testID="btn-day-today" accessibilityRole="button" accessibilityLabel="Return to today" onPress={jumpToToday} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={[styles.dailyNavBtn, { paddingHorizontal: 10, width: undefined }]}>
                       <Text style={{ color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 }}>Today</Text>
                     </GlowPressable>
                   ) : null}
-                  <GlowPressable testID="btn-day-next" onPress={() => shiftDay(1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
+                  <GlowPressable testID="btn-day-next" accessibilityRole="button" accessibilityLabel="Next day" onPress={() => shiftDay(1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-forward" size={18} color={theme.color.onSurface} />
                   </GlowPressable>
                 </View>
@@ -578,6 +578,8 @@ export default function Dashboard() {
               </View>
               {isEditingGrid ? (
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Done organizing quick workspaces"
                   onPress={() => setIsEditingGrid(false)}
                   style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 }}
                 >
@@ -597,24 +599,32 @@ export default function Dashboard() {
                 </Text>
                 <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Sort quick workspaces by most recent"
                     onPress={() => sortTilesByPreset("recent")}
                     style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
                     <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>⚡ Most Recent</Text>
                   </Pressable>
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Sort quick workspaces by frequently used"
                     onPress={() => sortTilesByPreset("frequent")}
                     style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
                     <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔥 Frequently Used</Text>
                   </Pressable>
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Sort quick workspaces alphabetically"
                     onPress={() => sortTilesByPreset("alphabetical")}
                     style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
                     <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔤 A - Z</Text>
                   </Pressable>
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Reset quick workspace order"
                     onPress={() => sortTilesByPreset("default")}
                     style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
                   >
