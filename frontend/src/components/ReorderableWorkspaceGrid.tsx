@@ -42,15 +42,16 @@ type ReorderableWorkspaceGridProps = {
   onTilePress: (tile: WorkspaceTileItem) => void;
 };
 
+const COLUMNS = 2;
 const GAP = 12;
 const TILE_HEIGHT = 115;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-function slotPosition(index: number, tileWidth: number, columns: number) {
+function slotPosition(index: number, tileWidth: number) {
   "worklet";
   return {
-    x: (index % columns) * (tileWidth + GAP),
-    y: Math.floor(index / columns) * (TILE_HEIGHT + GAP),
+    x: (index % COLUMNS) * (tileWidth + GAP),
+    y: Math.floor(index / COLUMNS) * (TILE_HEIGHT + GAP),
   };
 }
 
@@ -66,9 +67,8 @@ export function ReorderableWorkspaceGrid({
   const theme = useTheme();
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const columns = windowWidth >= 600 ? 3 : 2;
   const [gridWidth, setGridWidth] = useState(Math.max(0, Math.min(windowWidth, 1080) - 36));
-  const tileWidth = (gridWidth - GAP * (columns - 1)) / columns;
+  const tileWidth = (gridWidth - GAP) / COLUMNS;
 
   const activeIndex = useSharedValue(-1);
   const targetIndex = useSharedValue(-1);
@@ -128,7 +128,6 @@ export function ReorderableWorkspaceGrid({
           itemCount={items.length}
           editing={editing}
           tileWidth={tileWidth}
-          columns={columns}
           windowHeight={windowHeight}
           scrollRef={scrollRef}
           scrollY={scrollY}
@@ -154,7 +153,6 @@ type ReorderableWorkspaceTileProps = {
   itemCount: number;
   editing: boolean;
   tileWidth: number;
-  columns: number;
   windowHeight: number;
   scrollRef: any;
   scrollY: SharedValue<number>;
@@ -176,7 +174,6 @@ function ReorderableWorkspaceTile({
   itemCount,
   editing,
   tileWidth,
-  columns,
   windowHeight,
   scrollRef,
   scrollY,
@@ -288,12 +285,12 @@ function ReorderableWorkspaceTile({
       dragX.value = event.translationX;
       dragY.value = event.translationY + scrollCompensation;
 
-      const origin = slotPosition(index, tileWidth, columns);
+      const origin = slotPosition(index, tileWidth);
       const centerX = origin.x + tileWidth / 2 + dragX.value;
       const centerY = origin.y + TILE_HEIGHT / 2 + dragY.value;
-      const column = Math.max(0, Math.min(columns - 1, Math.round(centerX / (tileWidth + GAP))));
+      const column = Math.max(0, Math.min(COLUMNS - 1, Math.round(centerX / (tileWidth + GAP))));
       const row = Math.max(0, Math.round(centerY / (TILE_HEIGHT + GAP)));
-      const nextTarget = Math.max(0, Math.min(itemCount - 1, row * columns + column));
+      const nextTarget = Math.max(0, Math.min(itemCount - 1, row * COLUMNS + column));
 
       if (nextTarget !== targetIndex.value) {
         targetIndex.value = nextTarget;
@@ -311,8 +308,8 @@ function ReorderableWorkspaceTile({
     .onEnd(() => {
       if (activeIndex.value !== index) return;
       const finalTarget = targetIndex.value < 0 ? index : targetIndex.value;
-      const origin = slotPosition(index, tileWidth, columns);
-      const destination = slotPosition(finalTarget, tileWidth, columns);
+      const origin = slotPosition(index, tileWidth);
+      const destination = slotPosition(finalTarget, tileWidth);
       dragX.value = reduceMotion
         ? destination.x - origin.x
         : withSpring(destination.x - origin.x, theme.motion.spring);
@@ -345,7 +342,6 @@ function ReorderableWorkspaceTile({
       theme.motion.spring,
       tileWidth,
       windowHeight,
-      columns,
     ]);
 
   const dragStyle = useAnimatedStyle(() => {
@@ -359,13 +355,13 @@ function ReorderableWorkspaceTile({
       translateX = dragX.value;
       translateY = dragY.value;
     } else if (from >= 0 && to >= 0 && from < to && index > from && index <= to) {
-      const current = slotPosition(index, tileWidth, columns);
-      const destination = slotPosition(index - 1, tileWidth, columns);
+      const current = slotPosition(index, tileWidth);
+      const destination = slotPosition(index - 1, tileWidth);
       translateX = destination.x - current.x;
       translateY = destination.y - current.y;
     } else if (from >= 0 && to >= 0 && from > to && index >= to && index < from) {
-      const current = slotPosition(index, tileWidth, columns);
-      const destination = slotPosition(index + 1, tileWidth, columns);
+      const current = slotPosition(index, tileWidth);
+      const destination = slotPosition(index + 1, tileWidth);
       translateX = destination.x - current.x;
       translateY = destination.y - current.y;
     }
@@ -387,7 +383,7 @@ function ReorderableWorkspaceTile({
       shadowRadius: isWeb && active ? theme.effects.strongGlowRadius : 0,
       elevation: isWeb && active ? 18 : 0,
     };
-  }, [columns, index, isWeb, reduceMotion, theme, tileWidth]);
+  }, [index, isWeb, reduceMotion, theme, tileWidth]);
 
   return (
     <GestureDetector gesture={gesture}>
