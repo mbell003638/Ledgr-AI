@@ -671,7 +671,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   homeHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
   homeHeaderTitle: { fontSize: 28, fontWeight: "700", letterSpacing: -0.5 },
   homeHeaderSubtitle: { fontSize: 14, marginTop: 4 },
-  scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl },
+  scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, width: "100%", maxWidth: 1160, alignSelf: "center" },
   periodRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" },
   periodPill: {
     paddingVertical: 6,

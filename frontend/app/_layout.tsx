@@ -109,7 +109,7 @@ function ThemedStack() {
         style={{
           flex: 1,
           width: "100%",
-          maxWidth: isWideWeb ? 440 : undefined,
+          maxWidth: isWideWeb ? 1180 : undefined,
           backgroundColor: theme.color.surface,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 0 },
