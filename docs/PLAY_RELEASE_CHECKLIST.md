@@ -1,10 +1,10 @@
 # Google Play Release Checklist
 
-This checklist is for the current Codex Android application. An APK sideload test is not proof that the Play AAB is ready.
+This checklist is for the current Ledgr Android application. An APK sideload test is not proof that the Play AAB is ready.
 
 ## Repository-verified configuration
 
-- [x] Android ID is com.ahem.ledgrai.codexsol, separate from Fable5-Opus.
+- [x] Android ID is com.ahem.ledgrai, the confirmed permanent Manus package identity.
 - [x] Display version is 1.0.0 and Android versionCode is 1.
 - [x] Expo SDK 54 / React Native 0.81 targets and compiles against Android API 36.
 - [x] Android OS backup is disabled.
@@ -18,7 +18,7 @@ This checklist is for the current Codex Android application. An APK sideload tes
 
 ## Owner action: identity, account and signing
 
-- [ ] Confirm com.ahem.ledgrai.codexsol and Ledgr Codex are permanent.
+- [x] Confirm com.ahem.ledgrai and Ledgr are the permanent package identity and product name.
 - [ ] Complete Play Console identity verification and any Android developer verification registration required for the account.
 - [ ] Create one permanent upload keystore and archive it and its passwords in at least two secure locations.
 - [ ] Add RELEASE_KEYSTORE_B64, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD and RELEASE_KEY_PASSWORD as GitHub Actions secrets.

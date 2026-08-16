@@ -25,7 +25,7 @@
       },
       "edgeToEdgeEnabled": true,
       "allowBackup": false,
-      "package": "com.ahem.ledgrai.codexsol",
+      "package": "com.ahem.ledgrai",
       "versionCode": 1,
       "permissions": [
         "CAMERA",
