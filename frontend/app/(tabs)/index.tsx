@@ -334,7 +334,7 @@ export default function Dashboard() {
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
   const workspaceMetrics = useMemo(() => {
     const eligible = new Set(eligibleMetrics(settings).map((metric) => metric.key));
-    return metricsFromDashboard(dash).filter((metric) => eligible.has(metric.key));
+    return metricsFromDashboard(dash, settings?.workspaceMetricInputs || {}).filter((metric) => eligible.has(metric.key));
   }, [dash, settings]);
 
   return (

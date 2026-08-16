@@ -1,5 +1,6 @@
-import { eligibleMetrics, getPersonaCapabilityDefaults, reportSegmentsFor, workspaceLabelsFor } from '@/src/utils/capabilities';
+import { eligibleMetrics, getPersonaCapabilityDefaults, reportSegmentsFor, workspaceLabelsFor, workspaceTileLabelsFor } from '@/src/utils/capabilities';
 import { accountCodeForExpenseCategory, expenseCategoryOptionsForPersona } from '@/src/accountingV2/expenseCategories';
+import { metricsFromDashboard } from '@/src/utils/metrics';
 import { V2_ACCOUNT_CODES } from '@/src/accountingV2/types';
 
 describe('persona-adaptive accounting foundation', () => {
@@ -28,6 +29,21 @@ describe('persona-adaptive accounting foundation', () => {
     expect(workspaceLabelsFor({ activePersona: 'developer' }).accountsTitle).toBe('Clients');
     expect(workspaceLabelsFor({ activePersona: 'content_creator' }).accountsTitle).toBe('Partners & Platforms');
     expect(workspaceLabelsFor({ activePersona: 'retail' }).accountsTitle).toBe('Customers & Suppliers');
+  });
+
+  it('adapts Home workflow vocabulary to the selected persona', () => {
+    expect(workspaceTileLabelsFor({ activePersona: 'dropshipper' })).toMatchObject({ sales: 'Customer Orders', delivery: 'Shipping & RTO', expenses: 'Ads & Operating Costs' });
+    expect(workspaceTileLabelsFor({ activePersona: 'content_creator' })).toMatchObject({ sales: 'Brand Deals', receipts: 'Platform Payouts' });
+    expect(workspaceTileLabelsFor({ activePersona: 'manufacturer' })).toMatchObject({ inventory: 'Materials & Stock', reports: 'Production Reports' });
+    expect(workspaceTileLabelsFor({ activePersona: 'developer' })).toMatchObject({ sales: 'Client Work', quotes: 'Estimates' });
+  });
+
+  it('calculates optional metrics from persisted operational inputs', () => {
+    const results = metricsFromDashboard({ totalSales: 1000, totalPurchases: 400, netProfit: 250, openingCapital: 500, netWorth: 750 }, { acquisitionSpend: 200, newCustomers: 10, returnedOrders: 2, shippedOrders: 20, investmentReturn: 150, investmentCost: 100, priceToEarnings: 12, expectedGrowthPercent: 20 });
+    expect(results.find((metric) => metric.key === 'cac')).toMatchObject({ value: 20, state: 'ready' });
+    expect(results.find((metric) => metric.key === 'rto')).toMatchObject({ value: 10, state: 'ready' });
+    expect(results.find((metric) => metric.key === 'roi')).toMatchObject({ value: 50, state: 'ready' });
+    expect(results.find((metric) => metric.key === 'peg')).toMatchObject({ value: 0.6, state: 'ready' });
   });
 
   it('maps business expense categories to dedicated validated V2 accounts', () => {

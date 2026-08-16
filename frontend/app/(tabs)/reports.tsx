@@ -95,7 +95,7 @@ export default function ReportsScreen() {
   const visibleSegments = useMemo(() => reportSegmentsFor(bizSettings), [bizSettings]);
   const workspaceMetrics = useMemo(() => {
     const enabled = new Set(eligibleMetrics(bizSettings).map((metric) => metric.key));
-    return metricsFromDashboard(dash).filter((metric) => enabled.has(metric.key));
+    return metricsFromDashboard(dash, bizSettings?.workspaceMetricInputs || {}).filter((metric) => enabled.has(metric.key));
   }, [bizSettings, dash]);
   useEffect(() => {
     if (!visibleSegments.includes(seg)) setSeg("Summary");
