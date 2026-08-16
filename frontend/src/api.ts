@@ -602,6 +602,30 @@ export const api = {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).posSettlementPreview(input);
   },
+  createMarketplaceOrder: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createMarketplaceOrder(input); },
+  recordMarketplaceRefund: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).recordMarketplaceRefund(input); },
+  recordMarketplaceRto: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).recordMarketplaceRto(input); },
+  createMarketplaceSettlement: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createMarketplaceSettlement(input); },
+  listMarketplaceOrders: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listMarketplaceOrders(); },
+  listMarketplaceSettlements: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listMarketplaceSettlements(); },
+  reconcileMarketplaceSettlement: async (platform: string, settlementId: string) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).reconcileMarketplaceSettlement(platform, settlementId); },
+  createProject: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createProject(input); },
+  addProjectTime: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).addProjectTime(input); },
+  recordProjectCost: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).recordProjectCost(input); },
+  listProjects: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listProjects(); },
+  createCreatorContract: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createCreatorContract(input); },
+  recordCreatorPayout: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).recordCreatorPayout(input); },
+  listCreatorContracts: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listCreatorContracts(); },
+  createBom: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createBom(input); },
+  addBomLine: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).addBomLine(input); },
+  createProductionOrder: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createProductionOrder(input); },
+  listBoms: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listBoms(); },
+  listProductionOrders: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listProductionOrders(); },
+  createTradeShipment: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).createTradeShipment(input); },
+  addTradeLandedCost: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).addTradeLandedCost(input); },
+  recordFxRemeasurement: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).recordFxRemeasurement(input); },
+  listTradeShipments: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listTradeShipments(); },
+  listTradeCosts: async (shipmentId?: string) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listTradeCosts(shipmentId); },
   settlePosSession: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const result = await new V2AppService(runner).settlePosSession(input);

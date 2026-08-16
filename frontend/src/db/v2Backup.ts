@@ -50,6 +50,17 @@ export type V2ImportResult = {
  * links are nulled before the journal rows are deleted.
  */
 export const DELETE_ORDER: readonly string[] = [
+  'v2_trade_costs',
+  'v2_production_orders',
+  'v2_bom_lines',
+  'v2_creator_payouts',
+  'v2_project_entries',
+  'v2_creator_contracts',
+  'v2_boms',
+  'v2_marketplace_settlements',
+  'v2_marketplace_orders',
+  'v2_projects',
+  'v2_trade_shipments',
   'v2_payslips',
   'v2_pay_runs',
   'v2_employees',
@@ -97,6 +108,17 @@ export const INSERT_ORDER: readonly string[] = [
   'v2_products',
   'v2_stock_moves',
   'v2_locations',
+  'v2_trade_shipments',
+  'v2_boms',
+  'v2_bom_lines',
+  'v2_marketplace_orders',
+  'v2_marketplace_settlements',
+  'v2_projects',
+  'v2_project_entries',
+  'v2_creator_contracts',
+  'v2_creator_payouts',
+  'v2_production_orders',
+  'v2_trade_costs',
 ];
 
 async function tableColumns(db: SqlRunner, table: string): Promise<string[]> {

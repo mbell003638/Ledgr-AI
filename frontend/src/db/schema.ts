@@ -27,7 +27,8 @@ export const V2_TABLES = [
   'v2_employees', 'v2_pay_runs', 'v2_payslips',
   'v2_fixed_assets', 'v2_asset_depreciation',
   'v2_products', 'v2_stock_moves',
-  'v2_locations',
+  'v2_locations', 'v2_marketplace_orders', 'v2_marketplace_settlements', 'v2_projects', 'v2_project_entries', 'v2_creator_contracts', 'v2_creator_payouts',
+  'v2_boms', 'v2_bom_lines', 'v2_production_orders', 'v2_trade_shipments', 'v2_trade_costs',
 ] as const;
 
 export function schemaSql(): string {
@@ -156,6 +157,100 @@ export function schemaSql(): string {
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
+    CREATE TABLE IF NOT EXISTS v2_marketplace_orders (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, platform TEXT NOT NULL, external_order_id TEXT NOT NULL,
+      date TEXT NOT NULL, status TEXT NOT NULL, gross REAL NOT NULL DEFAULT 0, tax REAL NOT NULL DEFAULT 0,
+      marketplace_fee REAL NOT NULL DEFAULT 0, shipping_fee REAL NOT NULL DEFAULT 0, refund REAL NOT NULL DEFAULT 0,
+      rto_fee REAL NOT NULL DEFAULT 0, net REAL NOT NULL DEFAULT 0, currency TEXT NOT NULL, exchange_rate REAL NOT NULL DEFAULT 1,
+      source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      UNIQUE(book_id, platform, external_order_id),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_marketplace_settlements (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, platform TEXT NOT NULL, settlement_id TEXT NOT NULL,
+      date TEXT NOT NULL, payout REAL NOT NULL, currency TEXT NOT NULL, exchange_rate REAL NOT NULL DEFAULT 1,
+      settlement_account_id TEXT NOT NULL, source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      UNIQUE(book_id, platform, settlement_id),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(settlement_account_id) REFERENCES v2_accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_v2_marketplace_orders_book_date ON v2_marketplace_orders(book_id, date);
+    CREATE INDEX IF NOT EXISTS idx_v2_marketplace_settlements_book_date ON v2_marketplace_settlements(book_id, date);
+    CREATE TABLE IF NOT EXISTS v2_projects (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, party_id TEXT, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+      budget REAL NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD', created_at TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(party_id) REFERENCES v2_parties(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_project_entries (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, book_id TEXT NOT NULL, date TEXT NOT NULL,
+      kind TEXT NOT NULL, hours REAL NOT NULL DEFAULT 0, rate REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0,
+      description TEXT, source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(project_id) REFERENCES v2_projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_creator_contracts (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, party_id TEXT, brand TEXT NOT NULL, campaign TEXT NOT NULL,
+      agreed_amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', due_date TEXT, status TEXT NOT NULL DEFAULT 'draft',
+      source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(party_id) REFERENCES v2_parties(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_creator_payouts (
+      id TEXT PRIMARY KEY, contract_id TEXT NOT NULL, book_id TEXT NOT NULL, date TEXT NOT NULL,
+      amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', method TEXT NOT NULL DEFAULT 'bank', source_id TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(contract_id) REFERENCES v2_creator_contracts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_v2_projects_book ON v2_projects(book_id);
+    CREATE INDEX IF NOT EXISTS idx_v2_project_entries_project_date ON v2_project_entries(project_id,date);
+    CREATE INDEX IF NOT EXISTS idx_v2_creator_contracts_book ON v2_creator_contracts(book_id);
+    CREATE INDEX IF NOT EXISTS idx_v2_creator_payouts_contract_date ON v2_creator_payouts(contract_id,date);
+    CREATE TABLE IF NOT EXISTS v2_boms (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, product_id TEXT NOT NULL, name TEXT NOT NULL, version TEXT NOT NULL DEFAULT '1',
+      status TEXT NOT NULL DEFAULT 'active', metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(product_id) REFERENCES v2_products(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_bom_lines (
+      id TEXT PRIMARY KEY, bom_id TEXT NOT NULL, component_product_id TEXT NOT NULL, quantity REAL NOT NULL,
+      unit_cost REAL NOT NULL DEFAULT 0, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(bom_id) REFERENCES v2_boms(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(component_product_id) REFERENCES v2_products(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_production_orders (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, bom_id TEXT NOT NULL, date TEXT NOT NULL, quantity REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed', total_cost REAL NOT NULL DEFAULT 0, source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(bom_id) REFERENCES v2_boms(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_trade_shipments (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, reference TEXT NOT NULL, date TEXT NOT NULL, direction TEXT NOT NULL,
+      supplier_id TEXT, customer_id TEXT, currency TEXT NOT NULL DEFAULT 'USD', exchange_rate REAL NOT NULL DEFAULT 1,
+      goods_value REAL NOT NULL DEFAULT 0, landed_cost REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(supplier_id) REFERENCES v2_parties(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(customer_id) REFERENCES v2_parties(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_trade_costs (
+      id TEXT PRIMARY KEY, shipment_id TEXT NOT NULL, book_id TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL,
+      amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', exchange_rate REAL NOT NULL DEFAULT 1, capitalized INTEGER NOT NULL DEFAULT 1,
+      source_id TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(shipment_id) REFERENCES v2_trade_shipments(id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_v2_boms_product ON v2_boms(product_id);
+    CREATE INDEX IF NOT EXISTS idx_v2_production_orders_book_date ON v2_production_orders(book_id,date);
+    CREATE INDEX IF NOT EXISTS idx_v2_trade_shipments_book_date ON v2_trade_shipments(book_id,date);
+    CREATE INDEX IF NOT EXISTS idx_v2_trade_costs_shipment ON v2_trade_costs(shipment_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_v2_journals_book_date ON v2_journal_entries(book_id, date);
     CREATE INDEX IF NOT EXISTS idx_v2_journal_lines_journal ON v2_journal_lines(journal_id);

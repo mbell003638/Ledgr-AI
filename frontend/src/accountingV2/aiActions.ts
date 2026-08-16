@@ -141,7 +141,7 @@ export function validateV2AiAction(input: unknown): V2AiValidationResult {
 }
 
 export type AssistantEntryEntity = 'expense' | 'sale' | 'bill' | 'supplier_payment' | 'receipt' | 'invoice' | 'quote' | 'customer' | 'supplier' | 'delivery_note' | 'note' | 'inventory_count' | 'capital' | 'drawing' | 'cash_entry';
-export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_supplier' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'add_capital' | 'record_inventory' | 'update_entry' | 'delete_entry' | 'log_personal_expense';
+export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'add_debtor' | 'add_supplier' | 'add_debtor_payment' | 'create_invoice' | 'create_receipt' | 'create_quote' | 'create_supplier_payment' | 'create_drawing' | 'add_capital' | 'record_inventory' | 'update_entry' | 'delete_entry' | 'log_personal_expense' | 'create_marketplace_order' | 'record_marketplace_refund' | 'record_marketplace_rto' | 'create_marketplace_settlement' | 'create_project' | 'add_project_time' | 'record_project_cost' | 'create_creator_contract' | 'record_creator_payout' | 'create_bom' | 'add_bom_line' | 'create_production_order' | 'create_trade_shipment' | 'add_trade_landed_cost' | 'record_fx_remeasurement';
 // isDestructive mirrors the V2 write flag so confirm UIs can react uniformly.
 // All current assistant proposals are additive, so this stays false/undefined;
 // it exists so a destructive proposal (if ever added) is rendered with a
@@ -149,7 +149,7 @@ export type AssistantProposalType = 'add_expense' | 'add_sale' | 'add_bill' | 'a
 export type AssistantProposal = { source: V2ActionSource; type: AssistantProposalType; params: Record<string, unknown>; confirmation: V2Confirmation; isDestructive?: boolean };
 export type AssistantProposalValidationResult = { ok: true; action: AssistantProposal } | { ok: false; errors: string[] };
 
-const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry', 'log_personal_expense'];
+const ASSISTANT_PROPOSAL_TYPES: AssistantProposalType[] = ['add_expense', 'add_sale', 'add_bill', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_supplier_payment', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry', 'log_personal_expense', 'create_marketplace_order', 'record_marketplace_refund', 'record_marketplace_rto', 'create_marketplace_settlement', 'create_project', 'add_project_time', 'record_project_cost', 'create_creator_contract', 'record_creator_payout', 'create_bom', 'add_bom_line', 'create_production_order', 'create_trade_shipment', 'add_trade_landed_cost', 'record_fx_remeasurement'];
 const ASSISTANT_ENTRY_ENTITIES: AssistantEntryEntity[] = ['expense', 'sale', 'bill', 'supplier_payment', 'receipt', 'invoice', 'quote', 'customer', 'supplier', 'delivery_note', 'note', 'inventory_count', 'capital', 'drawing', 'cash_entry'];
 const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> = {
   expense: ['amount', 'date', 'category', 'method', 'notes'],
@@ -172,6 +172,17 @@ const assistantAmount = (value: unknown) => {
   const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[^0-9.-]/g, '')) : NaN;
   return Number.isFinite(amount) ? amount : NaN;
 };
+const DOMAIN_ASSISTANT_TYPES = new Set<AssistantProposalType>([
+  'create_marketplace_order', 'record_marketplace_refund', 'record_marketplace_rto', 'create_marketplace_settlement',
+  'create_project', 'add_project_time', 'record_project_cost', 'create_creator_contract', 'record_creator_payout',
+  'create_bom', 'add_bom_line', 'create_production_order', 'create_trade_shipment', 'add_trade_landed_cost', 'record_fx_remeasurement',
+]);
+const boundedMoney = (value: unknown, label: string, allowZero = false): string | null => {
+  const amount = assistantAmount(value);
+  if (!Number.isFinite(amount) || amount > MAX_AI_AMOUNT || (allowZero ? amount < 0 : amount <= 0)) return `${label} must be ${allowZero ? 'a non-negative' : 'a positive'} number no greater than ${MAX_AI_AMOUNT.toLocaleString()}`;
+  return null;
+};
+const requiredParam = (params: Record<string, unknown>, key: string): string | null => text(params[key]) ? null : `${key} is required`;
 
 /** Validates the exact AI-proposed app action before the confirmation dialog is shown. */
 export function validateAssistantProposal(input: unknown, source: V2ActionSource): AssistantProposalValidationResult {
@@ -180,6 +191,41 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
   const params = record(value.params) || {};
   if (JSON.stringify(params).length > 20_000) return { ok: false, errors: ['AI action is too large'] };
   const type = value.type as AssistantProposalType;
+  if (DOMAIN_ASSISTANT_TYPES.has(type)) {
+    const normalized: Record<string, unknown> = { ...params };
+    const dateValue = params.date === undefined ? localTodayIso() : params.date;
+    if (!date(dateValue)) return { ok: false, errors: [`date must be a valid YYYY-MM-DD date between ${MIN_AI_YEAR} and ${MAX_AI_YEAR}`] };
+    normalized.date = dateValue;
+    const requiredKeys: Partial<Record<AssistantProposalType, string[]>> = {
+      create_marketplace_order: ['platform', 'externalOrderId'], record_marketplace_refund: ['orderId'], record_marketplace_rto: ['orderId'], create_marketplace_settlement: ['platform', 'settlementId'],
+      create_project: ['name'], add_project_time: ['projectId'], record_project_cost: ['projectId'], create_creator_contract: ['brand', 'campaign'], record_creator_payout: ['contractId'],
+      create_bom: ['productId', 'name'], add_bom_line: ['bomId', 'componentProductId'], create_production_order: ['bomId'], create_trade_shipment: ['reference'], add_trade_landed_cost: ['shipmentId', 'kind'], record_fx_remeasurement: ['gainLoss'],
+    };
+    for (const key of requiredKeys[type] || []) { const error = requiredParam(params, key); if (error) return { ok: false, errors: [error] }; }
+    const amountKeys: Partial<Record<AssistantProposalType, [string, boolean][]>> = {
+      create_marketplace_order: [['gross', false], ['tax', true], ['marketplaceFee', true], ['shippingFee', true], ['refund', true], ['rtoFee', true]], record_marketplace_refund: [['amount', false]], record_marketplace_rto: [['fee', false]], create_marketplace_settlement: [['payout', false]],
+      create_project: [['budget', true]], add_project_time: [['hours', false], ['rate', true]], record_project_cost: [['amount', false]], create_creator_contract: [['agreedAmount', false]], record_creator_payout: [['amount', false]],
+      create_bom: [], add_bom_line: [['quantity', false], ['unitCost', true]], create_production_order: [['quantity', false]], create_trade_shipment: [['goodsValue', true]], add_trade_landed_cost: [['amount', false]], record_fx_remeasurement: [['amount', false]],
+    };
+    for (const [key, allowZero] of amountKeys[type] || []) {
+      if (params[key] === undefined && allowZero) continue;
+      const error = boundedMoney(params[key], key, allowZero); if (error) return { ok: false, errors: [error] };
+      normalized[key] = assistantAmount(params[key]);
+    }
+    if (type === 'create_marketplace_order' && params.status !== undefined && !['paid', 'shipped', 'delivered', 'refunded', 'rto'].includes(String(params.status))) return { ok: false, errors: ['marketplace order status is invalid'] };
+    if (type === 'create_trade_shipment' && !['import', 'export'].includes(String(params.direction || 'import'))) return { ok: false, errors: ['trade shipment direction must be import or export'] };
+    if (type === 'add_trade_landed_cost' && params.method !== undefined && !['cash', 'bank', 'ap'].includes(String(params.method))) return { ok: false, errors: ['landed cost settlement method is invalid'] };
+    if (type === 'record_fx_remeasurement' && !['gain', 'loss'].includes(String(params.gainLoss))) return { ok: false, errors: ['gainLoss must be gain or loss'] };
+    if (params.exchangeRate !== undefined) {
+      const error = boundedMoney(params.exchangeRate, 'exchangeRate');
+      if (error) return { ok: false, errors: [error] };
+      normalized.exchangeRate = assistantAmount(params.exchangeRate);
+    }
+    const displayAmount = ['gross', 'payout', 'agreedAmount', 'amount', 'fee', 'totalCost', 'budget'].map((key) => normalized[key]).find((value) => value !== undefined);
+    const amountSummary = displayAmount === undefined ? '' : ` of ${Number(displayAmount).toFixed(2)}`;
+    const identity = String(params.externalOrderId || params.settlementId || params.name || params.reference || params.brand || params.projectId || params.bomId || params.shipmentId || '').trim();
+    return { ok: true, action: { source, type, params: normalized, confirmation: { required: true, preview: `Confirm ${type.replace(/_/g, ' ')}${amountSummary}${identity ? ` (${identity})` : ''} on ${dateValue}` } } };
+  }
   if (type === 'update_entry' || type === 'delete_entry') {
     const entity = String(params.entity || '') as AssistantEntryEntity;
     const id = String(params.id || '').trim();

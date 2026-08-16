@@ -164,6 +164,51 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
     case "record_inventory":
       await api.recordV2InventoryCount({ date: p.date || today, value: Number(p.amount), notes: tagNote(p.notes) });
       return "Inventory count recorded ✓";
+    case "create_marketplace_order":
+      await api.createMarketplaceOrder({ platform: p.platform, externalOrderId: p.externalOrderId, date: p.date || today, status: p.status, gross: p.gross, tax: p.tax, marketplaceFee: p.marketplaceFee, shippingFee: p.shippingFee, refund: p.refund, rtoFee: p.rtoFee, currency: p.currency, exchangeRate: p.exchangeRate, settlementId: p.settlementId, notes: tagNote(p.notes) });
+      return `Marketplace order ${p.externalOrderId} recorded ✓`;
+    case "record_marketplace_refund":
+      await api.recordMarketplaceRefund({ orderId: p.orderId, date: p.date || today, amount: p.amount, notes: tagNote(p.notes) });
+      return "Marketplace refund recorded ✓";
+    case "record_marketplace_rto":
+      await api.recordMarketplaceRto({ orderId: p.orderId, date: p.date || today, fee: p.fee, notes: tagNote(p.notes) });
+      return "Marketplace RTO recorded ✓";
+    case "create_marketplace_settlement":
+      await api.createMarketplaceSettlement({ platform: p.platform, settlementId: p.settlementId, date: p.date || today, payout: p.payout, currency: p.currency, exchangeRate: p.exchangeRate, settlementAccountCode: p.settlementAccountCode, notes: tagNote(p.notes) });
+      return `Marketplace settlement ${p.settlementId} recorded ✓`;
+    case "create_project":
+      await api.createProject({ name: p.name, partyId: p.partyId, budget: p.budget, currency: p.currency, metadata: { source: "ai" } });
+      return `Project "${p.name}" created ✓`;
+    case "add_project_time":
+      await api.addProjectTime({ projectId: p.projectId, date: p.date || today, hours: p.hours, rate: p.rate, description: tagNote(p.description || p.notes) });
+      return "Project time recorded ✓";
+    case "record_project_cost":
+      await api.recordProjectCost({ projectId: p.projectId, date: p.date || today, amount: p.amount, description: tagNote(p.description || p.notes), accountCode: p.accountCode, method: p.method || "cash" });
+      return "Project cost recorded ✓";
+    case "create_creator_contract":
+      await api.createCreatorContract({ brand: p.brand, campaign: p.campaign, agreedAmount: p.agreedAmount, partyId: p.partyId, currency: p.currency, dueDate: p.dueDate, metadata: { source: "ai" } });
+      return `Creator contract for ${p.brand} created ✓`;
+    case "record_creator_payout":
+      await api.recordCreatorPayout({ contractId: p.contractId, date: p.date || today, amount: p.amount, currency: p.currency, method: p.method || "bank", notes: tagNote(p.notes) });
+      return "Creator payout recorded ✓";
+    case "create_bom":
+      await api.createBom({ productId: p.productId, name: p.name, version: p.version, metadata: { source: "ai" } });
+      return `BOM "${p.name}" created ✓`;
+    case "add_bom_line":
+      await api.addBomLine({ bomId: p.bomId, componentProductId: p.componentProductId, quantity: p.quantity, unitCost: p.unitCost, metadata: { source: "ai" } });
+      return "BOM component added ✓";
+    case "create_production_order":
+      await api.createProductionOrder({ bomId: p.bomId, date: p.date || today, quantity: p.quantity, status: p.status || "completed", notes: tagNote(p.notes) });
+      return "Production order recorded ✓";
+    case "create_trade_shipment":
+      await api.createTradeShipment({ reference: p.reference, date: p.date || today, direction: p.direction || "import", supplierId: p.supplierId, customerId: p.customerId, currency: p.currency, exchangeRate: p.exchangeRate, goodsValue: p.goodsValue, notes: tagNote(p.notes) });
+      return `Trade shipment ${p.reference} created ✓`;
+    case "add_trade_landed_cost":
+      await api.addTradeLandedCost({ shipmentId: p.shipmentId, date: p.date || today, kind: p.kind, amount: p.amount, currency: p.currency, exchangeRate: p.exchangeRate, capitalized: p.capitalized !== false, method: p.method || "cash", notes: tagNote(p.notes) });
+      return "Trade landed cost recorded ✓";
+    case "record_fx_remeasurement":
+      await api.recordFxRemeasurement({ date: p.date || today, accountCode: p.accountCode, amount: p.amount, gainLoss: p.gainLoss, currency: p.currency, exchangeRate: p.exchangeRate, reference: p.reference, notes: tagNote(p.notes) });
+      return `FX ${p.gainLoss} recorded ✓`;
     case "update_entry": {
       const changes = p.changes || {};
       switch (p.entity) {

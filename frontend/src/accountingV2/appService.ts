@@ -27,6 +27,10 @@ import { PayrollDomainService } from './services/payrollDomainService';
 import { FixedAssetDomainService } from './services/fixedAssetDomainService';
 import { ProductDomainService } from './services/productDomainService';
 import { LocationDomainService } from './services/locationDomainService';
+import { MarketplaceDomainService } from './services/marketplaceDomainService';
+import { ProjectCreatorDomainService } from './services/projectCreatorDomainService';
+import { ManufacturingDomainService } from './services/manufacturingDomainService';
+import { TradeDomainService } from './services/tradeDomainService';
 import { localTodayIso } from '../utils/dateValidation';
 
 export {
@@ -73,6 +77,10 @@ export class V2AppService {
   readonly fixedAssets: FixedAssetDomainService;
   readonly products: ProductDomainService;
   readonly locations: LocationDomainService;
+  readonly marketplace: MarketplaceDomainService;
+  readonly projectCreator: ProjectCreatorDomainService;
+  readonly manufacturing: ManufacturingDomainService;
+  readonly trade: TradeDomainService;
 
   constructor(readonly db: SqlRunner) {
     this.repo = new V2SqlRepository(db);
@@ -109,6 +117,10 @@ export class V2AppService {
     this.fixedAssets = new FixedAssetDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.products = new ProductDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.locations = new LocationDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.marketplace = new MarketplaceDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.projectCreator = new ProjectCreatorDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.manufacturing = new ManufacturingDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.trade = new TradeDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.capital = new CapitalDomainService(
       this.db,
       this.repo,
@@ -274,6 +286,32 @@ export class V2AppService {
   listLocationStockTransfers() { return this.locations.listStockTransfers(); }
   posSettlementPreview(input: AnyRecord) { return this.locations.posSettlementPreview(input as any); }
   settlePosSession(input: AnyRecord) { return this.locations.settlePosSession(input as any); }
+
+  createMarketplaceOrder(input: AnyRecord) { return this.marketplace.createOrder(input as any); }
+  recordMarketplaceRefund(input: AnyRecord) { return this.marketplace.recordRefund(input as any); }
+  recordMarketplaceRto(input: AnyRecord) { return this.marketplace.recordRto(input as any); }
+  createMarketplaceSettlement(input: AnyRecord) { return this.marketplace.createSettlement(input as any); }
+  listMarketplaceOrders() { return this.marketplace.listOrders(); }
+  listMarketplaceSettlements() { return this.marketplace.listSettlements(); }
+  reconcileMarketplaceSettlement(platform: string, settlementId: string) { return this.marketplace.reconcileSettlement(platform, settlementId); }
+
+  createProject(input: AnyRecord) { return this.projectCreator.createProject(input as any); }
+  addProjectTime(input: AnyRecord) { return this.projectCreator.addTime(input as any); }
+  recordProjectCost(input: AnyRecord) { return this.projectCreator.recordCost(input as any); }
+  createCreatorContract(input: AnyRecord) { return this.projectCreator.createContract(input as any); }
+  recordCreatorPayout(input: AnyRecord) { return this.projectCreator.recordPayout(input as any); }
+  listProjects() { return this.projectCreator.listProjects(); }
+  listCreatorContracts() { return this.projectCreator.listContracts(); }
+  createBom(input: AnyRecord) { return this.manufacturing.createBom(input as any); }
+  addBomLine(input: AnyRecord) { return this.manufacturing.addBomLine(input as any); }
+  createProductionOrder(input: AnyRecord) { return this.manufacturing.createProductionOrder(input as any); }
+  listBoms() { return this.manufacturing.listBoms(); }
+  listProductionOrders() { return this.manufacturing.listProductionOrders(); }
+  createTradeShipment(input: AnyRecord) { return this.trade.createShipment(input as any); }
+  addTradeLandedCost(input: AnyRecord) { return this.trade.addLandedCost(input as any); }
+  recordFxRemeasurement(input: AnyRecord) { return this.trade.recordFxRemeasurement(input as any); }
+  listTradeShipments() { return this.trade.listShipments(); }
+  listTradeCosts(shipmentId?: string) { return this.trade.listTradeCosts(shipmentId); }
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {

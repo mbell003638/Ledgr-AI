@@ -10,6 +10,17 @@ const yearEnd = (date: string) => `${date.slice(0, 4)}-12-31`;
  * without being added here.
  */
 const V2_FACTORY_DELETE_ORDER: readonly string[] = [
+  'v2_trade_costs',
+  'v2_production_orders',
+  'v2_bom_lines',
+  'v2_creator_payouts',
+  'v2_project_entries',
+  'v2_creator_contracts',
+  'v2_boms',
+  'v2_marketplace_settlements',
+  'v2_marketplace_orders',
+  'v2_projects',
+  'v2_trade_shipments',
   'v2_payslips',
   'v2_pay_runs',
   'v2_employees',
@@ -73,6 +84,17 @@ export async function deleteV2BookData(db: SqlRunner, bookId: string): Promise<b
 
   await db.exec('SAVEPOINT v2_delete_book');
   try {
+    await db.run('DELETE FROM v2_trade_costs WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_production_orders WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_bom_lines WHERE bom_id IN (SELECT id FROM v2_boms WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_creator_payouts WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_project_entries WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_creator_contracts WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_boms WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_marketplace_settlements WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_marketplace_orders WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_projects WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_trade_shipments WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [bookId]);
     await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_employees WHERE book_id=?', [bookId]);
@@ -120,6 +142,17 @@ export async function resetV2AccountingData(db: SqlRunner, bookId: string, perio
 
   await db.exec('SAVEPOINT v2_reset_book');
   try {
+    await db.run('DELETE FROM v2_trade_costs WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_production_orders WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_bom_lines WHERE bom_id IN (SELECT id FROM v2_boms WHERE book_id=?)', [bookId]);
+    await db.run('DELETE FROM v2_creator_payouts WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_project_entries WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_creator_contracts WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_boms WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_marketplace_settlements WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_marketplace_orders WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_projects WHERE book_id=?', [bookId]);
+    await db.run('DELETE FROM v2_trade_shipments WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_payslips WHERE pay_run_id IN (SELECT id FROM v2_pay_runs WHERE book_id=?)', [bookId]);
     await db.run('DELETE FROM v2_pay_runs WHERE book_id=?', [bookId]);
     await db.run('DELETE FROM v2_employees WHERE book_id=?', [bookId]);

@@ -643,6 +643,8 @@ const APP_GUIDE =
   "- Expenses: day-to-day costs by category.\n" +
   "- Inventory: stock counts. Profit uses periodic inventory: COGS = opening stock + purchases - closing stock.\n" +
   "- Reports: Profit & Loss, Balance Sheet, Trial Balance, Partner Capital, Drawings, with date-range filters and charts.\n" +
+  "- Persona workspaces: Ledgr adapts labels, expense categories, account vocabulary, reports, metrics, and shortcuts for commerce, SaaS, ecommerce, agencies, practices, creators, manufacturing, trade, restaurants, healthcare, education, legal, nonprofit, real estate, construction, agriculture, automotive, hospitality, retail, and service businesses.\n" +
+  "- Industry modules: Marketplace orders and settlements; projects and time/costs; creator contracts and payouts; BOMs, production, WIP, and finished goods; trade shipments, landed costs, and FX remeasurement.\n" +
   "- Day Book: every transaction in date order.\n" +
   "- Reconcile: photograph or upload a supplier statement/PDF; AI compares it to your ledger.\n" +
   "- Voice/Camera entry: speak an entry or snap a receipt; AI fills the form (you confirm before saving).\n" +
@@ -673,6 +675,23 @@ const ACTION_SPEC =
   "- create_drawing: { partnerName, amount, date?, notes? }\n" +
   "- add_capital: { partnerName, amount, date?, notes? }\n" +
   "- record_inventory: { amount, date?, notes? }\n" +
+  "INDUSTRY ACTIONS (always propose only a structured draft; Ledgr validates IDs, dates, amounts, accounts, and journal balance before applying):\n" +
+  "- create_marketplace_order: { platform, externalOrderId, gross, tax?, marketplaceFee?, shippingFee?, refund?, rtoFee?, date?, currency?, exchangeRate?, settlementId?, notes? }\n" +
+  "- record_marketplace_refund: { orderId, amount, date?, notes? }\n" +
+  "- record_marketplace_rto: { orderId, fee, date?, notes? }\n" +
+  "- create_marketplace_settlement: { platform, settlementId, payout, date?, currency?, exchangeRate?, notes? }\n" +
+  "- create_project: { name, partyId?, budget?, currency? }\n" +
+  "- add_project_time: { projectId, hours, rate, date?, description? }\n" +
+  "- record_project_cost: { projectId, amount, date?, accountCode?, method? ('cash'|'bank'), description? }\n" +
+  "- create_creator_contract: { brand, campaign, agreedAmount, partyId?, currency?, dueDate? }\n" +
+  "- record_creator_payout: { contractId, amount, date?, currency?, method? ('cash'|'bank'), notes? }\n" +
+  "- create_bom: { productId, name, version? }\n" +
+  "- add_bom_line: { bomId, componentProductId, quantity, unitCost? }\n" +
+  "- create_production_order: { bomId, quantity, date?, status? ('completed'|'draft'), notes? }\n" +
+  "- create_trade_shipment: { reference, direction ('import'|'export'), date?, supplierId?, customerId?, goodsValue?, currency?, exchangeRate?, notes? }\n" +
+  "- add_trade_landed_cost: { shipmentId, kind, amount, date?, currency?, exchangeRate?, capitalized?, method? ('cash'|'bank'|'ap'), notes? }\n" +
+  "- record_fx_remeasurement: { accountCode?, amount, gainLoss ('gain'|'loss'), date?, currency?, exchangeRate?, reference?, notes? }\n" +
+  "The user must explicitly ask to record or create a business action; do not create domain records from a question about what a feature means.\n" +
   "CHANGE ACTIONS (the exact target must exist in recentEntries/parties):\n" +
   "- update_entry: { entity, id, memberId?, changes }\n" +
   "- delete_entry: { entity, id, memberId? }\n" +
@@ -686,14 +705,14 @@ const ACTION_SPEC =
 export function isExplicitBookMutationRequest(question: string): boolean {
   const q = question.toLowerCase();
   const changeVerb = /\b(add|record|create|enter|save|post|log|register|edit|update|change|correct|delete|remove|reverse|void|cancel)\b/.test(q);
-  const accountingObject = /\b(expense|sale|bill|purchase|customer|debtor|supplier|creditor|payment|invoice|receipt|quote|transaction|entry|capital|drawing|inventory|stock|note)\b/.test(q);
+  const accountingObject = /\b(expense|sale|bill|purchase|customer|debtor|supplier|creditor|payment|invoice|receipt|quote|transaction|entry|capital|drawing|inventory|stock|note|order|settlement|marketplace|project|time|creator|payout|contract|bom|production|shipment|landed cost|fx|foreign exchange)\b/.test(q);
   const statedMoneyMovement = /\b(paid|received|sold|bought|purchased|spent)\b/.test(q) && /\d/.test(q);
   return (changeVerb && accountingObject) || statedMoneyMovement;
 }
 
 export function isClearlyExternalQuestion(question: string): boolean {
   const q = question.toLowerCase();
-  const ledgrContext = /\b(my|our|ledgr|book|books|business|expense|sale|bill|purchase|customer|debtor|supplier|creditor|payment|invoice|receipt|quote|transaction|entry|capital|drawing|inventory|stock|profit|loss|cash|balance|report|tax)\b/.test(q);
+  const ledgrContext = /\b(my|our|ledgr|book|books|business|expense|sale|bill|purchase|customer|debtor|supplier|creditor|payment|invoice|receipt|quote|transaction|entry|capital|drawing|inventory|stock|profit|loss|cash|balance|report|tax|order|settlement|marketplace|project|creator|payout|contract|bom|production|shipment|landed cost|fx|foreign exchange)\b/.test(q);
   const externalTopic = /\b(nifty|sensex|stock price|share price|market price|crypto|bitcoin|weather|news|headline|sports score|exchange rate|current price)\b/.test(q);
   return externalTopic && !ledgrContext;
 }
@@ -725,7 +744,7 @@ const ASK_SCHEMA = {
       properties: {
         type: {
           type: 'string',
-          enum: ['add_expense', 'log_personal_expense', 'add_sale', 'add_bill', 'create_supplier_payment', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry'],
+          enum: ['add_expense', 'log_personal_expense', 'add_sale', 'add_bill', 'create_supplier_payment', 'add_debtor', 'add_supplier', 'add_debtor_payment', 'create_invoice', 'create_receipt', 'create_quote', 'create_drawing', 'add_capital', 'record_inventory', 'update_entry', 'delete_entry', 'create_marketplace_order', 'record_marketplace_refund', 'record_marketplace_rto', 'create_marketplace_settlement', 'create_project', 'add_project_time', 'record_project_cost', 'create_creator_contract', 'record_creator_payout', 'create_bom', 'add_bom_line', 'create_production_order', 'create_trade_shipment', 'add_trade_landed_cost', 'record_fx_remeasurement'],
         },
         params: { type: 'object' },
         confirm: { type: 'string' }, // one-line human summary to show before applying

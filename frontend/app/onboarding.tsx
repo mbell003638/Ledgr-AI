@@ -18,7 +18,7 @@ const PERSONA_ICON: Record<string, string> = {
   entrepreneur: "briefcase-outline", startup: "rocket-outline", developer: "code-slash-outline", content_creator: "videocam-outline",
   manufacturer: "construct-outline", import_export: "boat-outline", personal: "person-outline", retail: "storefront-outline",
   wholesale: "cube-outline", salon: "cut-outline", handyman: "hammer-outline", professional_service: "briefcase-outline",
-  it_freelancer: "laptop-outline", vendor: "cart-outline", custom: "options-outline",
+  it_freelancer: "laptop-outline", vendor: "cart-outline", saas: "cloud-outline", ecommerce: "cart-outline", agency: "megaphone-outline", accounting_practice: "calculator-outline", small_business: "business-outline", solo_founder: "person-outline", restaurant: "restaurant-outline", healthcare: "medkit-outline", education: "school-outline", legal: "briefcase-outline", nonprofit: "heart-outline", real_estate: "home-outline", construction: "hammer-outline", agriculture: "leaf-outline", automotive: "car-outline", hospitality: "bed-outline", custom: "options-outline",
 };
 
 export default function Onboarding() {

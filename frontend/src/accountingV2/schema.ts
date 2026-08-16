@@ -5,7 +5,7 @@ export const V2_SCHEMA_VERSION = 1;
 export function v2TableNames(): V2Collection[] { return [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
   'v2_journal_entries', 'v2_journal_lines', 'v2_invoice_allocations', 'v2_inventory_counts', 'v2_members', 'v2_close_books',
-  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_fixed_assets', 'v2_asset_depreciation', 'v2_products', 'v2_stock_moves',
+  'v2_employees', 'v2_pay_runs', 'v2_payslips', 'v2_fixed_assets', 'v2_asset_depreciation',   'v2_products', 'v2_stock_moves', 'v2_marketplace_orders', 'v2_marketplace_settlements', 'v2_projects', 'v2_project_entries', 'v2_creator_contracts', 'v2_creator_payouts', 'v2_boms', 'v2_bom_lines', 'v2_production_orders', 'v2_trade_shipments', 'v2_trade_costs',
 ]; }
 
 export type V2MemoryStore = {
@@ -38,14 +38,14 @@ export function isBalanced(lines: V2JournalLine[], tolerance = 0.005): boolean {
 export function defaultAccounts(bookId: string): V2Account[] {
   const defs: [string, string, V2AccountType][] = [
     ['1000', 'Cash in Hand', 'asset'], ['1010', 'Bank', 'asset'], ['1020', 'Card Clearing', 'asset'], ['1030', 'Mobile Payments', 'asset'],
-    ['1100', 'Accounts Receivable', 'asset'], ['1200', 'Inventory', 'asset'], ['1210', 'Supplier Advances', 'asset'],
+    ['1100', 'Accounts Receivable', 'asset'], ['1200', 'Inventory', 'asset'], ['1210', 'Supplier Advances', 'asset'], ['1220', 'Work in Progress Inventory', 'asset'], ['1230', 'Finished Goods Inventory', 'asset'],
     ['1400', 'Fixed Assets', 'asset'], ['1450', 'Accumulated Depreciation', 'asset'], ['1500', 'Other Assets & Deposits', 'asset'],
     ['2000', 'Accounts Payable', 'liability'],
     ['2100', 'Customer Advances', 'liability'], ['2200', 'Commission Payable', 'liability'], ['2300', 'Sales Tax / VAT Payable', 'liability'],
     ['2310', 'Payroll Tax Payable', 'liability'], ['2500', 'Other Liabilities', 'liability'],
     ['3000', 'Capital Accounts', 'equity'], ['3100', 'Capital Withdrawals', 'equity'], ['3200', 'Current Profit', 'equity'], ['3300', 'Retained Earnings', 'equity'], ['3400', 'Owner Contributions', 'equity'],
     ['4000', 'Sales Revenue', 'revenue'], ['4010', 'Sales Returns', 'revenue'], ['5000', 'Cost of Goods Sold', 'expense'],
-    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'], ['6400', 'POS Cash Variance', 'expense'], ['6500', 'Advertising & Acquisition', 'expense'], ['6510', 'Shipping & Fulfilment', 'expense'], ['6520', 'Returns & RTO', 'expense'], ['6530', 'Marketplace & Payment Fees', 'expense'], ['6540', 'Software & Cloud', 'expense'], ['6550', 'Creator Production Costs', 'expense'], ['6560', 'Freight & Inbound Logistics', 'expense'], ['6570', 'Duties & Customs', 'expense'], ['6580', 'Manufacturing Overhead', 'expense'],
+    ['6000', 'Operating Expenses', 'expense'], ['6100', 'Commission Expense', 'expense'], ['6200', 'Wages Expense', 'expense'], ['6300', 'Depreciation Expense', 'expense'], ['6400', 'POS Cash Variance', 'expense'], ['6500', 'Advertising & Acquisition', 'expense'], ['6510', 'Shipping & Fulfilment', 'expense'], ['6520', 'Returns & RTO', 'expense'], ['6530', 'Marketplace & Payment Fees', 'expense'], ['6540', 'Software & Cloud', 'expense'], ['6550', 'Creator Production Costs', 'expense'], ['6560', 'Freight & Inbound Logistics', 'expense'], ['6570', 'Duties & Customs', 'expense'], ['6580', 'Manufacturing Overhead', 'expense'], ['6590', 'Foreign Exchange Gain / Loss', 'expense'],
   ];
   return defs.map(([code, name, type]) => ({ id: `${bookId}:account:${code}`, bookId, code, name, type, active: true }));
 }

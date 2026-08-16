@@ -73,6 +73,10 @@ const TILES = [
   { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
 ] as const;
 
+const MARKETPLACE_TILE = { key: "marketplace", label: "Marketplace Operations", icon: Receipt, route: "/marketplace", iconColor: "#A78BFA", iconBackground: "rgba(224,220,240,0.20)" } as const;
+const PROJECTS_TILE = { key: "projects", label: "Projects & Profitability", icon: FileText, route: "/projects", iconColor: "#38BDF8", iconBackground: "rgba(216,228,240,0.20)" } as const;
+const CREATOR_TILE = { key: "creator_revenue", label: "Creator Contracts", icon: Tag, route: "/projects", iconColor: "#F472B6", iconBackground: "rgba(240,220,232,0.20)" } as const;
+
 // Persona-driven tile visibility is derived centrally in
 // src/utils/featureFlags.ts (getEnabledFeatures). The dashboard grid filters
 // TILES through that helper below (see `visibleTiles`), so onboarding persona
@@ -171,7 +175,9 @@ export default function Dashboard() {
   const visibleTiles = useMemo(() => {
     const enabled = getEnabledFeatures(settings);
     const labels = workspaceTileLabelsFor(settings);
-    const filtered = TILES.filter((t) => enabled.includes(t.key as any)).map((tile) => ({ ...tile, label: labels[tile.key] || tile.label }));
+    const baseTiles = TILES.filter((t) => enabled.includes(t.key as any));
+    const availableTiles = [...baseTiles, ...(isCapabilityEnabled(settings, "marketplace") ? [MARKETPLACE_TILE] : []), ...(isCapabilityEnabled(settings, "projects") ? [PROJECTS_TILE] : []), ...(isCapabilityEnabled(settings, "creator_revenue") ? [CREATOR_TILE] : [])];
+    const filtered = availableTiles.map((tile) => ({ ...tile, label: labels[tile.key] || tile.label }));
     if (!customTileOrder.length) return filtered;
     const map = new Map<string, (typeof filtered)[number]>(filtered.map((t) => [t.key, t]));
     const ordered: (typeof filtered)[number][] = [];
@@ -219,7 +225,9 @@ export default function Dashboard() {
 
   const sortTilesByPreset = async (preset: "alphabetical" | "frequent" | "recent" | "default") => {
     const enabled = getEnabledFeatures(settings);
-    const filtered = TILES.filter((t) => enabled.includes(t.key as any));
+    const baseTiles = TILES.filter((t) => enabled.includes(t.key as any));
+    const availableTiles = [...baseTiles, ...(isCapabilityEnabled(settings, "marketplace") ? [MARKETPLACE_TILE] : []), ...(isCapabilityEnabled(settings, "projects") ? [PROJECTS_TILE] : []), ...(isCapabilityEnabled(settings, "creator_revenue") ? [CREATOR_TILE] : [])];
+    const filtered = availableTiles;
 
     if (preset === "default") {
       setCustomTileOrder([]);

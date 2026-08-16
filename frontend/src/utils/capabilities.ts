@@ -8,6 +8,22 @@ export type PersonaId =
   | 'content_creator'
   | 'manufacturer'
   | 'import_export'
+  | 'saas'
+  | 'ecommerce'
+  | 'agency'
+  | 'accounting_practice'
+  | 'small_business'
+  | 'solo_founder'
+  | 'restaurant'
+  | 'healthcare'
+  | 'education'
+  | 'legal'
+  | 'nonprofit'
+  | 'real_estate'
+  | 'construction'
+  | 'agriculture'
+  | 'automotive'
+  | 'hospitality'
   | 'personal'
   | 'retail'
   | 'wholesale'
@@ -61,10 +77,10 @@ export const CAPABILITIES: CapabilityDefinition[] = [
   { key: 'procurement', label: 'Purchases and suppliers', description: 'Supplier bills, purchase payments, and payable tracking.', featureKeys: ['bills', 'payments'], routes: ['/bills', '/payments'] },
   { key: 'customers', label: 'Customer accounts', description: 'Customer records, receivables, and collection history.', featureKeys: ['receipts'], routes: ['/suppliers', '/debtors'] },
   { key: 'inventory', label: 'Inventory and products', description: 'Stock counts, products, stock value, and inventory controls.', featureKeys: ['inventory', 'perpetualInventory'], routes: ['/inventory-form', '/products'], metrics: ['cogs', 'gross_margin'] },
-  { key: 'marketplace', label: 'Marketplace operations', description: 'Marketplace orders, fees, settlement payouts, and refunds.', featureKeys: ['sales', 'invoices', 'receipts'], routes: ['/sales', '/reconcile'], metrics: ['cogs', 'gross_margin', 'rto', 'roi'] },
+  { key: 'marketplace', label: 'Marketplace operations', description: 'Marketplace orders, fees, settlement payouts, and refunds.', featureKeys: ['sales', 'invoices', 'receipts'], routes: ['/sales', '/reconcile', '/marketplace'], metrics: ['cogs', 'gross_margin', 'rto', 'roi'] },
   { key: 'shipping_returns', label: 'Shipping and returns', description: 'Dispatch, delivery, returns, and return-to-origin tracking.', featureKeys: ['delivery'], routes: ['/delivery-notes'], metrics: ['rto'] },
-  { key: 'projects', label: 'Projects and billable work', description: 'Client projects, billable work, estimates, and project profitability.', featureKeys: ['invoices', 'quotes', 'expenses'], routes: ['/invoices', '/quotes'], metrics: ['roi', 'gross_margin'] },
-  { key: 'creator_revenue', label: 'Creator revenue', description: 'Brand deals, sponsorship invoices, platform payouts, and campaign costs.', featureKeys: ['invoices', 'receipts', 'expenses'], routes: ['/invoices', '/receipts'], metrics: ['roi'] },
+  { key: 'projects', label: 'Projects and billable work', description: 'Client projects, billable work, estimates, and project profitability.', featureKeys: ['invoices', 'quotes', 'expenses'], routes: ['/invoices', '/quotes', '/projects'], metrics: ['roi', 'gross_margin'] },
+  { key: 'creator_revenue', label: 'Creator revenue', description: 'Brand deals, sponsorship invoices, platform payouts, and campaign costs.', featureKeys: ['invoices', 'receipts', 'expenses'], routes: ['/invoices', '/receipts', '/projects'], metrics: ['roi'] },
   { key: 'manufacturing', label: 'Manufacturing', description: 'Materials, production work, finished goods, and unit-cost tracking.', featureKeys: ['inventory', 'perpetualInventory', 'bills'], routes: ['/inventory-form', '/products', '/bills'], metrics: ['cogs', 'gross_margin', 'roi', 'roe'] },
   { key: 'trade_landed_cost', label: 'Import and export trade', description: 'Shipments, freight, duties, foreign currency, and landed cost.', featureKeys: ['bills', 'inventory', 'invoices', 'delivery'], routes: ['/bills', '/inventory-form', '/invoices', '/delivery-notes'], metrics: ['cogs', 'gross_margin', 'rto', 'roi', 'roe'] },
   { key: 'cogs_margin', label: 'COGS and gross margin', description: 'Cost of goods sold, gross profit, and margin by period or workflow.', featureKeys: ['inventory', 'reports', 'monthly'], routes: ['/reports', '/monthly-summary'], metrics: ['cogs', 'gross_margin'] },
@@ -88,6 +104,22 @@ const PERSONA_DEFAULTS: Record<PersonaId, CapabilityKey[]> = {
   content_creator: ['core_ledger', 'invoicing', 'customers', 'creator_revenue', 'growth_analytics', 'reconciliation', 'ai_assistant'],
   manufacturer: ['core_ledger', 'commerce', 'procurement', 'inventory', 'manufacturing', 'cogs_margin', 'reconciliation', 'fixed_assets', 'ai_assistant'],
   import_export: ['core_ledger', 'invoicing', 'commerce', 'procurement', 'inventory', 'trade_landed_cost', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  saas: ['core_ledger', 'invoicing', 'commerce', 'customers', 'projects', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  ecommerce: ['core_ledger', 'commerce', 'procurement', 'inventory', 'marketplace', 'shipping_returns', 'cogs_margin', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  agency: ['core_ledger', 'invoicing', 'customers', 'projects', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  accounting_practice: ['core_ledger', 'invoicing', 'customers', 'projects', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  small_business: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'customers', 'payroll', 'fixed_assets', 'reconciliation', 'ai_assistant'],
+  solo_founder: ['core_ledger', 'invoicing', 'commerce', 'customers', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  restaurant: ['core_ledger', 'commerce', 'procurement', 'inventory', 'manufacturing', 'cogs_margin', 'payroll', 'reconciliation', 'ai_assistant'],
+  healthcare: ['core_ledger', 'invoicing', 'customers', 'procurement', 'payroll', 'fixed_assets', 'reconciliation', 'ai_assistant'],
+  education: ['core_ledger', 'invoicing', 'customers', 'payroll', 'reporting', 'reconciliation', 'ai_assistant'],
+  legal: ['core_ledger', 'invoicing', 'customers', 'projects', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  nonprofit: ['core_ledger', 'invoicing', 'customers', 'growth_analytics', 'reporting', 'reconciliation', 'ai_assistant'],
+  real_estate: ['core_ledger', 'invoicing', 'customers', 'fixed_assets', 'growth_analytics', 'reconciliation', 'ai_assistant'],
+  construction: ['core_ledger', 'commerce', 'procurement', 'inventory', 'projects', 'fixed_assets', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  agriculture: ['core_ledger', 'procurement', 'inventory', 'fixed_assets', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  automotive: ['core_ledger', 'commerce', 'procurement', 'inventory', 'projects', 'fixed_assets', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  hospitality: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'inventory', 'payroll', 'reconciliation', 'ai_assistant'],
   personal: ['core_ledger', 'cashbook', 'reporting', 'ai_assistant'],
   retail: ['core_ledger', 'commerce', 'procurement', 'inventory', 'cogs_margin', 'reconciliation', 'ai_assistant'],
   wholesale: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'inventory', 'cogs_margin', 'reconciliation', 'ai_assistant'],
@@ -213,14 +245,22 @@ export function workspaceLabelsFor(settings: any): WorkspaceLabels {
     case 'content_creator':
       return { accountsTitle: 'Partners & Platforms', customerLabel: 'Brands & Platforms', supplierLabel: 'Vendors', emptyAccountsHint: 'Add a brand, platform, or vendor to track payouts, invoices, and expenses.' };
     case 'startup':
+    case 'saas':
+    case 'solo_founder':
       return { accountsTitle: 'Business Accounts', customerLabel: 'Customers', supplierLabel: 'Vendors', emptyAccountsHint: 'Add customers or enable procurement when you need supplier balances.' };
     case 'dropshipper':
     case 'marketplace_seller':
+    case 'ecommerce':
     case 'retail':
     case 'wholesale':
     case 'vendor':
     case 'manufacturer':
     case 'import_export':
+    case 'restaurant':
+    case 'construction':
+    case 'agriculture':
+    case 'automotive':
+    case 'hospitality':
       return { accountsTitle: 'Customers & Suppliers', customerLabel: 'Customers', supplierLabel: 'Suppliers', emptyAccountsHint: 'Add a customer or supplier to track receivables, payables, and trade balances.' };
     default:
       return { accountsTitle: 'Business Accounts', customerLabel: 'Customers', supplierLabel: 'Suppliers', emptyAccountsHint: 'Add a customer, supplier, or business account.' };
@@ -232,19 +272,43 @@ export function workspaceTileLabelsFor(settings: any): Partial<Record<string, st
     case 'developer':
     case 'it_freelancer':
     case 'professional_service':
+    case 'agency':
+    case 'accounting_practice':
+    case 'legal':
       return { sales: 'Client Work', invoices: 'Client Invoices', quotes: 'Estimates', expenses: 'Project Costs', reports: 'Project Reports', monthly: 'Monthly Review' };
     case 'content_creator':
       return { sales: 'Brand Deals', invoices: 'Brand Invoices', receipts: 'Platform Payouts', quotes: 'Proposals', expenses: 'Campaign Costs', reports: 'Creator Analytics', monthly: 'Monthly Payouts' };
     case 'startup':
-      return { bills: 'Vendor Bills', sales: 'Revenue', invoices: 'Customer Invoices', expenses: 'Burn & Expenses', reports: 'Growth Reports', monthly: 'Monthly Burn' };
+    case 'saas':
+    case 'solo_founder':
+      return { bills: 'Vendor Bills', sales: 'Revenue', invoices: 'Subscriptions & Invoices', expenses: 'Burn & Expenses', reports: 'Growth Reports', monthly: 'Monthly Burn' };
     case 'dropshipper':
+    case 'ecommerce':
       return { bills: 'Supplier Orders', sales: 'Customer Orders', receipts: 'Marketplace Payouts', payments: 'Supplier Payments', invoices: 'Customer Invoices', delivery: 'Shipping & RTO', expenses: 'Ads & Operating Costs', reports: 'Unit Economics', monthly: 'Monthly Margin' };
     case 'marketplace_seller':
       return { bills: 'Supplier Purchases', sales: 'Marketplace Orders', receipts: 'Platform Payouts', payments: 'Marketplace Fees', invoices: 'Customer Invoices', expenses: 'Ads & Seller Costs', reports: 'Marketplace Reports', monthly: 'Monthly Settlement' };
     case 'manufacturer':
       return { bills: 'Materials Purchases', sales: 'Finished-Goods Sales', inventory: 'Materials & Stock', perpetualInventory: 'Products & BOM', expenses: 'Factory Overhead', reports: 'Production Reports', monthly: 'Monthly Costing' };
+    case 'restaurant':
+      return { bills: 'Ingredient Purchases', sales: 'Daily Sales', inventory: 'Ingredients & Stock', expenses: 'Food & Labour Costs', reports: 'Food Cost Reports', monthly: 'Monthly Store P&L' };
+    case 'construction':
+      return { bills: 'Subcontractors & Materials', sales: 'Progress Billing', inventory: 'Job Materials', expenses: 'Job Costs', reports: 'Job Cost Reports', monthly: 'Monthly Job Margin' };
+    case 'agriculture':
+      return { bills: 'Farm Inputs', sales: 'Harvest Sales', inventory: 'Inputs & Harvest', expenses: 'Field Costs', reports: 'Seasonal Reports', monthly: 'Monthly Farm Review' };
+    case 'automotive':
+      return { bills: 'Parts Purchases', sales: 'Service Orders', inventory: 'Parts Inventory', expenses: 'Workshop Costs', reports: 'Repair Margin', monthly: 'Monthly Workshop' };
+    case 'hospitality':
+      return { bills: 'Hospitality Supplies', sales: 'Room & POS Sales', invoices: 'Guest Billing', expenses: 'Housekeeping Costs', reports: 'Occupancy Reports', monthly: 'Monthly Property P&L' };
     case 'import_export':
       return { bills: 'Import Purchases', sales: 'Trade Sales', delivery: 'Shipments', expenses: 'Freight & Duties', reports: 'Trade Margin', monthly: 'Monthly Landed Cost' };
+    case 'healthcare':
+      return { invoices: 'Patient Billing', receipts: 'Claims & Receipts', expenses: 'Clinical Supplies', reports: 'Practice Reports', monthly: 'Monthly Practice P&L' };
+    case 'education':
+      return { invoices: 'Tuition Billing', receipts: 'Fee Receipts', expenses: 'Programs & Grants', reports: 'Education Reports', monthly: 'Monthly Program Review' };
+    case 'nonprofit':
+      return { sales: 'Donations', invoices: 'Grant Billing', receipts: 'Donor Receipts', expenses: 'Program Costs', reports: 'Fund Reports', monthly: 'Monthly Fund Review' };
+    case 'real_estate':
+      return { sales: 'Property Income', invoices: 'Rent & Leases', receipts: 'Tenant Receipts', expenses: 'Maintenance', reports: 'Property Reports', monthly: 'Monthly Property P&L' };
     case 'retail':
       return { bills: 'Store Purchases', sales: 'POS Sales', receipts: 'Customer Receipts', payments: 'Supplier Payments', inventory: 'Stock Counts', perpetualInventory: 'Products', reports: 'Retail Reports', monthly: 'Monthly Store P&L' };
     case 'wholesale':
