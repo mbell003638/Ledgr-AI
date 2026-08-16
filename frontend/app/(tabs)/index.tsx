@@ -15,6 +15,7 @@ import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import { isCapabilityEnabled, eligibleMetrics, workspaceTileLabelsFor } from "@/src/utils/capabilities";
+import { workspacePackFor } from "@/src/utils/workspacePacks";
 import { metricsFromDashboard } from "@/src/utils/metrics";
 import { showAlert } from "@/src/utils/alerts";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
@@ -127,6 +128,7 @@ export default function Dashboard() {
   const [isEditingGrid, setIsEditingGrid] = useState(false);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
+  const workspacePack = useMemo(() => workspacePackFor(settings), [settings]);
 
   useEffect(() => {
     (async () => {
@@ -641,6 +643,34 @@ export default function Dashboard() {
                 </View>
               </Card>
             ) : null}
+
+            <Card style={{ marginTop: theme.spacing.lg, paddingVertical: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitleInline}>Featured tools</Text>
+                  <Text style={{ fontSize: 11, color: theme.color.muted }}>Built for {workspacePack.title}; advanced tools stay available when you need them.</Text>
+                </View>
+                {workspacePack.advancedModules.length ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Open all business tools" onPress={() => router.push("/modules" as any)}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary }}>All tools</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {workspacePack.featuredModules.map((module) => (
+                  <Pressable
+                    key={module.key}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${module.label}`}
+                    onPress={() => router.push(module.routes[0] as any)}
+                    style={{ minWidth: 92, maxWidth: 142, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }}
+                  >
+                    <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", color: theme.color.onSurface }}>{module.shortLabel}</Text>
+                    <Text numberOfLines={2} style={{ fontSize: 10, color: theme.color.muted, marginTop: 3 }}>{module.description}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </Card>
 
             {/* Quick Workspaces — continuous One UI-style drag grid */}
             <ReorderableWorkspaceGrid

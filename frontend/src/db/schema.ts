@@ -18,7 +18,7 @@ export const COLLECTIONS = [
   'locations', 'posSessions', 'stockTransfers',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -29,6 +29,7 @@ export const V2_TABLES = [
   'v2_products', 'v2_stock_moves',
   'v2_locations', 'v2_marketplace_orders', 'v2_marketplace_settlements', 'v2_projects', 'v2_project_entries', 'v2_creator_contracts', 'v2_creator_payouts',
   'v2_boms', 'v2_bom_lines', 'v2_production_orders', 'v2_trade_shipments', 'v2_trade_costs',
+  'v2_workflows', 'v2_audit_events', 'v2_sync_queue', 'v2_integrations', 'v2_tax_profiles', 'v2_budgets', 'v2_budget_lines', 'v2_recurring_templates', 'v2_bank_feed_entries',
 ] as const;
 
 export function schemaSql(): string {
@@ -251,6 +252,67 @@ export function schemaSql(): string {
     CREATE INDEX IF NOT EXISTS idx_v2_production_orders_book_date ON v2_production_orders(book_id,date);
     CREATE INDEX IF NOT EXISTS idx_v2_trade_shipments_book_date ON v2_trade_shipments(book_id,date);
     CREATE INDEX IF NOT EXISTS idx_v2_trade_costs_shipment ON v2_trade_costs(shipment_id);
+    CREATE TABLE IF NOT EXISTS v2_workflows (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, action_type TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft', payload TEXT NOT NULL DEFAULT '{}', preview TEXT NOT NULL,
+      requested_by TEXT NOT NULL DEFAULT 'user', confidence REAL, created_at TEXT NOT NULL, submitted_at TEXT,
+      approved_at TEXT, posted_at TEXT, rejected_at TEXT, source_id TEXT, error TEXT,
+      UNIQUE(book_id, idempotency_key),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_audit_events (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, workflow_id TEXT, event_type TEXT NOT NULL,
+      actor TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(workflow_id) REFERENCES v2_workflows(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_sync_queue (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(book_id, provider, idempotency_key),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_integrations (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, provider TEXT NOT NULL, kind TEXT NOT NULL, display_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0, config TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(book_id, provider, kind),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_tax_profiles (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, country_code TEXT NOT NULL, tax_label TEXT NOT NULL,
+      default_rate REAL NOT NULL DEFAULT 0, registration TEXT, config TEXT NOT NULL DEFAULT '{}', active INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_budgets (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft', metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_budget_lines (
+      id TEXT PRIMARY KEY, budget_id TEXT NOT NULL, account_code TEXT NOT NULL, location_id TEXT, amount REAL NOT NULL DEFAULT 0,
+      FOREIGN KEY(budget_id) REFERENCES v2_budgets(id) ON UPDATE CASCADE ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS v2_recurring_templates (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, action_type TEXT NOT NULL, frequency TEXT NOT NULL,
+      next_date TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1,
+      last_run_at TEXT, idempotency_key TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE TABLE IF NOT EXISTS v2_bank_feed_entries (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, provider TEXT NOT NULL, external_id TEXT NOT NULL,
+      date TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL DEFAULT 'USD', description TEXT,
+      status TEXT NOT NULL DEFAULT 'unmatched', matched_source_id TEXT, raw_metadata TEXT NOT NULL DEFAULT '{}',
+      UNIQUE(book_id, provider, external_id),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(matched_source_id) REFERENCES v2_sources(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_v2_workflows_book_status ON v2_workflows(book_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_v2_audit_events_book_created ON v2_audit_events(book_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_v2_sync_queue_pending ON v2_sync_queue(book_id,status,next_attempt_at);
+    CREATE INDEX IF NOT EXISTS idx_v2_budget_lines_budget ON v2_budget_lines(budget_id);
+    CREATE INDEX IF NOT EXISTS idx_v2_bank_feed_book_date ON v2_bank_feed_entries(book_id,date);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_v2_journals_book_date ON v2_journal_entries(book_id, date);
     CREATE INDEX IF NOT EXISTS idx_v2_journal_lines_journal ON v2_journal_lines(journal_id);

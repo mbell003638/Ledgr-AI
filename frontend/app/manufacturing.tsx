@@ -1,0 +1,31 @@
+import React, { useCallback, useState } from 'react';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenHeader, Card } from '@/src/components/UI';
+import { useTheme } from '@/src/context/ThemeContext';
+import { api } from '@/src/api';
+import { showAlert } from '@/src/utils/alerts';
+
+const today = () => new Date().toISOString().slice(0, 10);
+function Field({ label, value, onChangeText, placeholder, keyboardType = 'default' }: any) {
+  return <View style={{ marginBottom: 9 }}><Text style={{ fontSize: 11, fontWeight: '700', marginBottom: 4 }}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} style={{ borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9, fontSize: 13 }} /></View>;
+}
+
+export default function ManufacturingScreen() {
+  const theme = useTheme();
+  const [productId, setProductId] = useState(''); const [bomName, setBomName] = useState(''); const [version, setVersion] = useState('1');
+  const [bomId, setBomId] = useState(''); const [componentId, setComponentId] = useState(''); const [componentQty, setComponentQty] = useState('1'); const [unitCost, setUnitCost] = useState(''); const [productionQty, setProductionQty] = useState('1');
+  const [boms, setBoms] = useState<any[]>([]); const [orders, setOrders] = useState<any[]>([]); const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { try { const [nextBoms, nextOrders] = await Promise.all([api.listBoms(), api.listProductionOrders()]); setBoms(nextBoms as any[]); setOrders(nextOrders as any[]); } catch { /* no active book yet */ } }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const run = async (work: () => Promise<any>, success: string) => { setBusy(true); try { await work(); await load(); showAlert('Saved', success); } catch (error: any) { showAlert('Could not save', error?.message || 'Please review the fields.'); } finally { setBusy(false); } };
+
+  return <SafeAreaView style={{ flex: 1, backgroundColor: theme.color.surface }}><ScreenHeader title="Manufacturing" subtitle="BOM, WIP, production, and finished goods" /><ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+    <Card style={{ padding: 14, marginBottom: 14 }}><Text style={{ color: theme.color.brandPrimary, fontWeight: '800', fontSize: 11, textTransform: 'uppercase' }}>1 · Create BOM</Text><Text style={{ color: theme.color.muted, fontSize: 11, marginVertical: 8 }}>Use the product ID from your catalog as the finished-good product.</Text><Field label="Finished product ID" value={productId} onChangeText={setProductId} placeholder="e.g. product-fg-1" /><Field label="BOM name" value={bomName} onChangeText={setBomName} placeholder="e.g. Standard chair" /><Field label="Version" value={version} onChangeText={setVersion} placeholder="1" /><Pressable disabled={busy} onPress={() => run(() => api.createBom({ productId, name: bomName, version }), 'BOM created. Add components next.')} style={{ backgroundColor: theme.color.brandPrimary, borderRadius: 10, padding: 11 }}><Text style={{ color: '#fff', textAlign: 'center', fontWeight: '800' }}>Create BOM</Text></Pressable></Card>
+    <Card style={{ padding: 14, marginBottom: 14 }}><Text style={{ color: theme.color.brandPrimary, fontWeight: '800', fontSize: 11, textTransform: 'uppercase' }}>2 · Add component</Text><Field label="BOM ID" value={bomId} onChangeText={setBomId} placeholder="Paste the created BOM ID" /><Field label="Component product ID" value={componentId} onChangeText={setComponentId} placeholder="e.g. product-raw-1" /><Field label="Quantity per finished unit" value={componentQty} onChangeText={setComponentQty} keyboardType="decimal-pad" placeholder="1" /><Field label="Unit cost (optional)" value={unitCost} onChangeText={setUnitCost} keyboardType="decimal-pad" placeholder="Uses catalog cost if blank" /><Pressable disabled={busy} onPress={() => run(() => api.addBomLine({ bomId, componentProductId: componentId, quantity: Number(componentQty), unitCost: unitCost ? Number(unitCost) : undefined }), 'Component added to the BOM.')} style={{ backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.brandPrimary, borderRadius: 10, padding: 11 }}><Text style={{ color: theme.color.brandPrimary, textAlign: 'center', fontWeight: '800' }}>Add component</Text></Pressable></Card>
+    <Card style={{ padding: 14, marginBottom: 14 }}><Text style={{ color: theme.color.brandPrimary, fontWeight: '800', fontSize: 11, textTransform: 'uppercase' }}>3 · Produce</Text><Field label="BOM ID" value={bomId} onChangeText={setBomId} placeholder="Paste the BOM ID" /><Field label="Production quantity" value={productionQty} onChangeText={setProductionQty} keyboardType="decimal-pad" placeholder="1" /><Pressable disabled={busy} onPress={() => run(() => api.createProductionOrder({ bomId, date: today(), quantity: Number(productionQty) }), 'Production posted through WIP into finished goods.')} style={{ backgroundColor: theme.color.success, borderRadius: 10, padding: 11 }}><Text style={{ color: '#fff', textAlign: 'center', fontWeight: '800' }}>Post production</Text></Pressable></Card>
+    <Text style={{ fontSize: 17, fontWeight: '800', marginBottom: 8 }}>BOMs</Text>{boms.map((bom) => <Card key={bom.id} style={{ padding: 11, marginBottom: 8 }}><Text style={{ fontWeight: '800' }}>{bom.name} · v{bom.version}</Text><Text style={{ color: theme.color.muted, fontSize: 11, marginTop: 3 }}>ID: {bom.id} · {bom.product_name} · {bom.component_count} component(s)</Text></Card>)}
+    <Text style={{ fontSize: 17, fontWeight: '800', marginTop: 10, marginBottom: 8 }}>Production orders</Text>{orders.map((order) => <Card key={order.id} style={{ padding: 11, marginBottom: 8 }}><Text style={{ fontWeight: '800' }}>{order.product_name} × {order.quantity}</Text><Text style={{ color: theme.color.muted, fontSize: 11, marginTop: 3 }}>{order.date} · Cost {Number(order.total_cost).toFixed(2)} · {order.status}</Text></Card>)}
+  </ScrollView></SafeAreaView>;
+}

@@ -431,7 +431,26 @@ export default function AskBooks() {
     applyingProposalRef.current = true;
     setApplyingProposal(true);
     try {
-      const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
+      const workflow = await api.createWorkflowDraft({
+        actionType: proposal.action.type,
+        idempotencyKey: `ai:${proposal.action.type}:${JSON.stringify(proposal.action.params)}`,
+        payload: proposal.action.params,
+        preview: proposal.action.confirmation.preview,
+        requestedBy: "ai",
+      });
+      let result: string;
+      if (workflow.status === "posted") {
+        result = "That exact AI action was already applied earlier; I did not create a duplicate.";
+      } else {
+        await api.approveWorkflow(workflow.id, "user");
+        try {
+          result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
+          await api.markWorkflowPosted(workflow.id, undefined, "system");
+        } catch (error: any) {
+          await api.markWorkflowFailed(workflow.id, error?.message || "AI action failed", "system");
+          throw error;
+        }
+      }
       setPendingProposal(null);
       setMessages((m) => [...m, { role: "assistant", text: String(result) }]);
     } catch (err: any) {

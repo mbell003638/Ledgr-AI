@@ -2,6 +2,7 @@ import type { PersonaId } from '@/src/accountingV2/config';
 import { V2_ACCOUNT_CODES } from '@/src/accountingV2/types';
 import { activePersonaFor, getPersonaCapabilityDefaults, reportSegmentsFor, workspaceLabelsFor, workspaceTileLabelsFor, type CapabilityKey, type ReportSegmentKey } from './capabilities';
 import { expenseCategoryOptionsForPersona } from '@/src/accountingV2/expenseCategories';
+import { advancedOperationalModulesFor, featuredOperationalModulesFor, type OperationalModule } from './operationalModules';
 
 export type WorkspaceMetricInputKey = 'acquisitionSpend' | 'newCustomers' | 'returnedOrders' | 'shippedOrders' | 'investmentReturn' | 'investmentCost' | 'priceToEarnings' | 'expectedGrowthPercent';
 export type WorkspacePack = {
@@ -14,6 +15,8 @@ export type WorkspacePack = {
   accounts: string[];
   metricInputs: WorkspaceMetricInputKey[];
   expenseCategories: ReturnType<typeof expenseCategoryOptionsForPersona>;
+  featuredModules: OperationalModule[];
+  advancedModules: OperationalModule[];
 };
 
 const BASE_ACCOUNT_CODES = [
@@ -88,6 +91,8 @@ export function workspacePackFor(settings: any): WorkspacePack {
     accounts,
     metricInputs,
     expenseCategories,
+    featuredModules: featuredOperationalModulesFor(settings),
+    advancedModules: advancedOperationalModulesFor(settings),
   };
 }
 

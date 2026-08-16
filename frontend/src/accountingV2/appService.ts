@@ -31,6 +31,7 @@ import { MarketplaceDomainService } from './services/marketplaceDomainService';
 import { ProjectCreatorDomainService } from './services/projectCreatorDomainService';
 import { ManufacturingDomainService } from './services/manufacturingDomainService';
 import { TradeDomainService } from './services/tradeDomainService';
+import { ControlDomainService } from './services/controlDomainService';
 import { localTodayIso } from '../utils/dateValidation';
 
 export {
@@ -81,6 +82,7 @@ export class V2AppService {
   readonly projectCreator: ProjectCreatorDomainService;
   readonly manufacturing: ManufacturingDomainService;
   readonly trade: TradeDomainService;
+  readonly controls: ControlDomainService;
 
   constructor(readonly db: SqlRunner) {
     this.repo = new V2SqlRepository(db);
@@ -121,6 +123,7 @@ export class V2AppService {
     this.projectCreator = new ProjectCreatorDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.manufacturing = new ManufacturingDomainService(this.db, this.repo, (date) => this.activeContext(date));
     this.trade = new TradeDomainService(this.db, this.repo, (date) => this.activeContext(date));
+    this.controls = new ControlDomainService(this.db, (date) => this.activeContext(date));
     this.capital = new CapitalDomainService(
       this.db,
       this.repo,
@@ -312,6 +315,29 @@ export class V2AppService {
   recordFxRemeasurement(input: AnyRecord) { return this.trade.recordFxRemeasurement(input as any); }
   listTradeShipments() { return this.trade.listShipments(); }
   listTradeCosts(shipmentId?: string) { return this.trade.listTradeCosts(shipmentId); }
+  createWorkflowDraft(input: AnyRecord) { return this.controls.createDraft(input as any); }
+  submitWorkflow(id: string, actor?: string) { return this.controls.submit(id, actor); }
+  approveWorkflow(id: string, actor?: string) { return this.controls.approve(id, actor); }
+  rejectWorkflow(id: string, actor?: string, reason?: string) { return this.controls.reject(id, actor, reason); }
+  markWorkflowPosted(id: string, sourceId?: string, actor?: string) { return this.controls.markPosted(id, sourceId, actor); }
+  markWorkflowFailed(id: string, error: string, actor?: string) { return this.controls.markFailed(id, error, actor); }
+  getWorkflow(id: string) { return this.controls.getWorkflow(id); }
+  listWorkflows(status?: any) { return this.controls.listWorkflows(status); }
+  listAuditEvents(workflowId?: string) { return this.controls.auditEvents(workflowId); }
+  enqueueSync(input: AnyRecord) { return this.controls.enqueueSync(input as any); }
+  listPendingSync() { return this.controls.listPendingSync(); }
+  upsertIntegration(input: AnyRecord) { return this.controls.upsertIntegration(input as any); }
+  listIntegrations() { return this.controls.listIntegrations(); }
+  upsertTaxProfile(input: AnyRecord) { return this.controls.upsertTaxProfile(input as any); }
+  listTaxProfiles() { return this.controls.listTaxProfiles(); }
+  importBankFeedRows(provider: string, rows: AnyRecord[]) { return this.controls.importBankFeedRows(provider, rows as any); }
+  listBankFeedEntries(status?: string) { return this.controls.listBankFeedEntries(status); }
+  createBudget(input: AnyRecord) { return this.controls.createBudget(input as any); }
+  addBudgetLine(input: AnyRecord) { return this.controls.addBudgetLine(input as any); }
+  listBudgets() { return this.controls.listBudgets(); }
+  budgetVariance(id: string) { return this.controls.budgetVariance(id); }
+  createRecurringTemplate(input: AnyRecord) { return this.controls.createRecurringTemplate(input as any); }
+  listRecurringTemplates() { return this.controls.listRecurringTemplates(); }
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {
