@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
@@ -24,7 +24,7 @@ import { printHtml } from "@/src/utils/print";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { calculateInvoiceTotals } from "@/src/utils/invoiceTotals";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
-import { LocationPicker } from "@/src/components/LocationPicker";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 
 type InvoiceLine = { description: string; qty: number; rate: number; unit?: string };
 type Invoice = {
@@ -768,12 +768,7 @@ export default function InvoicesScreen() {
       setBiz(s);
       const on = getEnabledFeatures(s).includes("perpetualInventory");
       setStockEnabled(on);
-      if (on) {
-        const list = await api.listProducts().catch(() => []);
-        setProducts((Array.isArray(list) ? list : []).filter((p: any) => p?.id && !p.archived));
-      } else {
-        setProducts([]);
-      }
+      if (!on) setProducts([]);
       loadedVersion.current = getDataVersion();
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
@@ -784,6 +779,13 @@ export default function InvoicesScreen() {
     const task = InteractionManager.runAfterInteractions(() => { load(); });
     return () => task.cancel();
   }, [load]));
+
+  useEffect(() => {
+    if (!stockEnabled) { setProducts([]); return; }
+    api.listProducts(locationId || undefined)
+      .then((list: any[]) => setProducts((Array.isArray(list) ? list : []).filter((p: any) => p?.id && !p.archived)))
+      .catch(() => setProducts([]));
+  }, [stockEnabled, locationId]);
 
   const applyTaxFromSettings = (settings: any) => {
     const defLabel = settings?.taxLabel && settings.taxLabel !== "None"
@@ -798,7 +800,7 @@ export default function InvoicesScreen() {
     setSelected(null);
     setEditId(null);
     setClientName(""); setClientPhone(""); setDate(localTodayIso());
-    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setFormError("");
+    setDueDate(""); setLines([{ description: "", qty: 1, rate: 0 }]); setNotes(""); setTerms(""); setDiscountInput(""); setLocationId(""); setFormError("");
     applyTaxFromSettings(s);
     setStockProductId("");
     setStockQty("");
@@ -832,6 +834,7 @@ export default function InvoicesScreen() {
     setTaxLabelInput(inv.taxLabel || "");
     setTaxRateInput(inv.taxRate ? String(inv.taxRate) : "");
     setDiscountInput(inv.discount ? String(inv.discount) : "");
+    setLocationId((inv as any).locationId || (inv as any).location_id || "");
     setShowForm(true); setSelected(null);
   };
 
@@ -844,6 +847,11 @@ export default function InvoicesScreen() {
     if (dueDateIso !== dueDate) setDueDate(dueDateIso);
     if (!clientName.trim()) { setFormError("Client name is required"); return; }
     if (lines.every((l) => !l.description.trim())) { setFormError("Add at least one line item"); return; }
+    const locationContext = await loadLocationsIfEnabled();
+    const finalLocationId = locationId || locationContext.activeId;
+    if (locationContext.enabled && locationContext.locations.length === 0) { setFormError("Add a shop in Locations before saving this invoice"); return; }
+    if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) { setFormError("Choose the shop / location before saving this invoice"); return; }
+    if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
     setSaving(true); setFormError("");
     try {
       // Do not create a party on invoice edit — allocated renames must throw without an insert.
@@ -872,7 +880,7 @@ export default function InvoicesScreen() {
         tax: totals.tax,
         total: totals.total,
         ...(productLines ? { productLines } : {}),
-        ...(locationId ? { locationId } : {}),
+        ...(finalLocationId ? { locationId: finalLocationId } : {}),
       };
       if (editId) await api.updateInvoice(editId, payload);
       else await api.createInvoice(payload);

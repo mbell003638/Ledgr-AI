@@ -16,11 +16,12 @@ import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 
 type Item = { description: string; qty: number };
 type DeliveryNote = {
   id: string; noteNumber: string; clientName: string; clientPhone?: string;
-  date: string; items: Item[]; vehicleNo?: string; status: string; notes?: string;
+  date: string; items: Item[]; vehicleNo?: string; status: string; notes?: string; locationId?: string;
 };
 
 function escapeHtml(v: any): string {
@@ -81,6 +82,7 @@ export default function DeliveryNotesScreen() {
 
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [date, setDate] = useState(localTodayIso());
   const [vehicleNo, setVehicleNo] = useState("");
   const [items, setItems] = useState<Item[]>([{ description: "", qty: 1 }]);
@@ -105,11 +107,11 @@ export default function DeliveryNotesScreen() {
   }, [load]));
 
   const openNew = () => {
-    setEditId(null); setClientName(""); setClientPhone(""); setDate(localTodayIso());
+    setEditId(null); setClientName(""); setClientPhone(""); setLocationId(""); setDate(localTodayIso());
     setVehicleNo(""); setItems([{ description: "", qty: 1 }]); setNoteText(""); setErr(""); setShowForm(true);
   };
   const openEdit = (n: DeliveryNote) => {
-    setEditId(n.id); setClientName(n.clientName); setClientPhone(n.clientPhone || "");
+    setEditId(n.id); setClientName(n.clientName); setClientPhone(n.clientPhone || ""); setLocationId(n.locationId || "");
     setDate(n.date); setVehicleNo(n.vehicleNo || ""); setItems(n.items.length ? n.items : [{ description: "", qty: 1 }]);
     setNoteText(n.notes || ""); setErr(""); setShowForm(true); setSelected(null);
   };
@@ -129,10 +131,15 @@ export default function DeliveryNotesScreen() {
     const clean = items.filter((it) => it.description.trim() || it.qty > 0);
     setSaving(true);
     try {
+      const locationContext = await loadLocationsIfEnabled();
+      const finalLocationId = locationId || locationContext.activeId;
+      if (locationContext.enabled && locationContext.locations.length === 0) throw new Error("Add a shop in Locations before saving this delivery note.");
+      if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) throw new Error("Choose the shop / location before saving this delivery note.");
+      if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
       if (clientName.trim()) {
         await api.findOrCreateParty(clientName.trim(), "customer", { phone: clientPhone.trim() });
       }
-      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim() };
+      const payload = { clientName: clientName.trim(), clientPhone: clientPhone.trim(), date: dateIso, vehicleNo: vehicleNo.trim(), items: clean, notes: noteText.trim(), ...(finalLocationId ? { locationId: finalLocationId } : {}) };
       if (editId) await api.updateDeliveryNote(editId, payload);
       else await api.createDeliveryNote(payload);
       setShowForm(false);
@@ -258,6 +265,7 @@ export default function DeliveryNotesScreen() {
                 />
                 <Text style={[styles.label, { marginTop: 12 }]}>Customer Phone</Text>
                 <TextInput value={clientPhone} onChangeText={setClientPhone} placeholder="+1 555 000 0000" placeholderTextColor={theme.color.muted} keyboardType="phone-pad" style={styles.input} />
+                <LocationPicker value={locationId} onChange={setLocationId} label="Shop / location" />
                 <Text style={[styles.label, { marginTop: 12 }]}>Date</Text>
                 <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
                 <Text style={[styles.label, { marginTop: 12 }]}>Vehicle No.</Text>

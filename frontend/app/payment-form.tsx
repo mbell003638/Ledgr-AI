@@ -8,7 +8,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
-import { LocationPicker } from "@/src/components/LocationPicker";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 
 type PayType = "supplier_payment" | "drawing" | "commission_payment";
 
@@ -49,6 +49,8 @@ export default function PaymentForm() {
             setPartnerName(it.partnerName || "");
             setAmount(String(it.amount)); 
             setMethod(it.method || "cash"); setNotes(it.notes || ""); setDate(it.date);
+            const persistedLocationId = it.locationId || it.location_id;
+            if (persistedLocationId) setLocationId(String(persistedLocationId));
             if (it.supplierId && s.length) {
               const match = s.find((x: any) => x.id === it.supplierId);
               if (match) setSupplierName(match.name);
@@ -76,6 +78,11 @@ export default function PaymentForm() {
       if (!finalSupplierId) { setError("Select or enter a supplier"); return; }
     }
     if (type === "drawing" && isPartnerMode && !partnerName.trim()) { setError("Select a capital account"); return; }
+    const locationContext = await loadLocationsIfEnabled();
+    const finalLocationId = locationId || locationContext.activeId;
+    if (locationContext.enabled && locationContext.locations.length === 0) { setError("Add a shop in Locations before saving this payment"); return; }
+    if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) { setError("Choose the shop / location before saving this payment"); return; }
+    if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
     setSaving(true); setError("");
     try {
       const payload = {
@@ -83,7 +90,7 @@ export default function PaymentForm() {
         supplierId: type === "supplier_payment" ? finalSupplierId : "",
         partnerName: type === "drawing" && isPartnerMode ? partnerName.trim() : "",
         method, notes,
-        ...(locationId ? { locationId } : {}),
+        ...(finalLocationId ? { locationId: finalLocationId } : {}),
       };
       if (editId) await api.updatePayment(editId, payload);
       else await api.createPayment(payload);

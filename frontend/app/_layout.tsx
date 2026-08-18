@@ -124,9 +124,11 @@ function ThemedStack() {
           <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
           <Stack.Screen name="modules" options={{ presentation: "card" }} />
           <Stack.Screen name="advanced-settings" options={{ presentation: "card" }} />
-          <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
-          <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
-          <Stack.Screen name="party-form" options={{ presentation: "modal" }} />
+          <Stack.Protected guard={canOpen("customers") || canOpen("procurement") || canOpen("invoicing")}>
+            <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
+            <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
+            <Stack.Screen name="party-form" options={{ presentation: "modal" }} />
+          </Stack.Protected>
           <Stack.Screen name="assets" options={{ presentation: "card" }} />
           <Stack.Screen name="daybook" options={{ presentation: "card" }} />
           <Stack.Protected guard={canOpen("core_ledger")}><Stack.Screen name="expenses" options={{ presentation: "card" }} /></Stack.Protected>

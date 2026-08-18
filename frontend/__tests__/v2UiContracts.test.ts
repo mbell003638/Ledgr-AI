@@ -201,6 +201,21 @@ describe('V2 UI contracts', () => {
     expect(source).not.toContain('ReorderableWorkspaceGrid');
   });
 
+  it('all location-aware financial forms preserve location context across edit and save', () => {
+    const forms = ['sale-form.tsx', 'bill-form.tsx', 'invoices.tsx', 'payment-form.tsx', 'receipt-form.tsx', 'expenses.tsx'];
+    for (const form of forms) {
+      const source = readApp(form);
+      if (form === 'sale-form.tsx') expect(source).toContain('Location / POS');
+      else expect(source).toContain('LocationPicker');
+      expect(source).toContain('locationId');
+      expect(source).toMatch(/setLocationId\([\s\S]*locationId/);
+      expect(source).toMatch(/(?:finalLocationId\s*\?\s*\{[\s\S]*locationId|locationEnabled\s*&&\s*locationId\s*\?\s*\{\s*locationId)/);
+    }
+    const picker = readSource('src/components/LocationPicker.tsx');
+    expect(picker).toContain('locations.length === 1');
+    expect(picker).toContain('Choose a location before saving this entry.');
+  });
+
   it('dashboard daily-summary card and KPI tiles share the hero GlowPressable press treatment', () => {
     const dashboard = readApp('(tabs)/index.tsx');
     const ui = readSource('src/components/UI.tsx');
@@ -490,5 +505,23 @@ describe('V2 UI contracts', () => {
     const source = readApp('ask.tsx');
     expect(source).toContain('keyboardDidShow');
     expect(source).toMatch(/endCoordinates|keyboardHeight/);
+  });
+
+  it('remaining operational entry points preserve capability and location context', () => {
+    const voice = readSource('src/components/VoiceFab.tsx');
+    const transfers = readApp('stock-transfers.tsx');
+    const delivery = readApp('delivery-notes.tsx');
+    const quick = readSource('src/components/QuickActionMenu.tsx');
+    const rootLayout = readApp('_layout.tsx');
+
+    expect(voice).toContain('loadLocationsIfEnabled');
+    expect(voice).toContain('locationFields');
+    expect(voice).toContain('Voice inventory counts are book-level');
+    expect(transfers).not.toContain('activeLocations[0]?.id');
+    expect(transfers).not.toContain('activeLocations[1]?.id');
+    expect(delivery).toContain('LocationPicker');
+    expect(delivery).toContain('finalLocationId');
+    expect(quick).toContain('isCapabilityEnabled(settings, "ai_assistant") && <QuickActionRow');
+    expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
   });
 });

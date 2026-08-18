@@ -13,7 +13,7 @@ import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
-import { LocationPicker } from "@/src/components/LocationPicker";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { workspacePackFor } from "@/src/utils/workspacePacks";
 import type { ExpenseCategoryOption } from "@/src/accountingV2/expenseCategories";
 
@@ -51,12 +51,12 @@ export default function Expenses() {
 
   const openNew = () => {
     setDate(localTodayIso());
-    setCategory(""); setAmount(""); setNotes(""); setError("");
+    setCategory(""); setAmount(""); setNotes(""); setLocationId(""); setError("");
     setEditing("new");
   };
 
   const openEdit = (e: Expense) => {
-    setDate(e.date); setCategory(e.category); setAmount(String(e.amount)); setNotes(e.notes || ""); setError("");
+    setDate(e.date); setCategory(e.category); setAmount(String(e.amount)); setNotes(e.notes || ""); setLocationId((e as any).locationId || (e as any).location_id || ""); setError("");
     setEditing(e);
   };
 
@@ -67,9 +67,14 @@ export default function Expenses() {
     if (dateIso !== date) setDate(dateIso);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     if (!category.trim()) { setError("Enter a category"); return; }
+    const locationContext = await loadLocationsIfEnabled();
+    const finalLocationId = locationId || locationContext.activeId;
+    if (locationContext.enabled && locationContext.locations.length === 0) { setError("Add a shop in Locations before saving this expense"); return; }
+    if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) { setError("Choose the shop / location before saving this expense"); return; }
+    if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
     setSaving(true); setError("");
     try {
-      const payload = { date: dateIso, category: category.trim(), amount: amt, notes, ...(locationId ? { locationId } : {}) };
+      const payload = { date: dateIso, category: category.trim(), amount: amt, notes, ...(finalLocationId ? { locationId: finalLocationId } : {}) };
       if (editing && editing !== "new") await api.updateExpense((editing as Expense).id, payload);
       else await api.createExpense(payload);
       await load();

@@ -30,8 +30,8 @@ export default function StockTransfersScreen() {
       setSettings(s);
       setLocations(activeLocations);
       setTransfers(Array.isArray(t) ? t : []);
-      const nextFrom = fromId && activeLocations.some((item) => item.id === fromId) ? fromId : String(activeLocations[0]?.id || "");
-      const nextTo = toId && activeLocations.some((item) => item.id === toId) ? toId : String(activeLocations[1]?.id || "");
+      const nextFrom = fromId && activeLocations.some((item) => item.id === fromId) ? fromId : "";
+      const nextTo = toId && activeLocations.some((item) => item.id === toId) ? toId : "";
       setFromId(nextFrom);
       setToId(nextTo);
       if (getEnabledFeatures(s).includes("perpetualInventory")) {

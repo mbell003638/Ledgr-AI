@@ -10,7 +10,7 @@ import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
-import { LocationPicker } from "@/src/components/LocationPicker";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 
 type StockProduct = { id: string; name: string; sku?: string; cost?: number; archived?: boolean };
 
@@ -44,17 +44,19 @@ export default function BillForm() {
     (async () => {
       try {
         const settings = await api.getSettings();
-        const on = getEnabledFeatures(settings).includes("perpetualInventory");
-        setStockEnabled(on);
-        if (on) {
-          const list = await (api as any).listProducts();
-          setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived));
-        }
+        setStockEnabled(getEnabledFeatures(settings).includes("perpetualInventory"));
       } catch {
         setStockEnabled(false);
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!stockEnabled) { setProducts([]); return; }
+    (api as any).listProducts(locationId || undefined)
+      .then((list: any[]) => setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived)))
+      .catch(() => setProducts([]));
+  }, [stockEnabled, locationId]);
 
   useEffect(() => {
     (async () => {
@@ -73,6 +75,8 @@ export default function BillForm() {
           setNotes(b.notes || "");
           setDate(b.date);
           setPhoto(b.photo || "");
+          const persistedLocationId = (b as any).locationId || (b as any).location_id;
+          if (persistedLocationId) setLocationId(String(persistedLocationId));
         }
       }
     })();
@@ -157,6 +161,11 @@ export default function BillForm() {
       }
     }
     if (!finalSupplierId) { setError("Enter or select a supplier"); return; }
+    const locationContext = await loadLocationsIfEnabled();
+    const finalLocationId = locationId || locationContext.activeId;
+    if (locationContext.enabled && locationContext.locations.length === 0) { setError("Add a shop in Locations before saving this purchase"); return; }
+    if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) { setError("Choose the shop / location before saving this purchase"); return; }
+    if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { setError("Enter a valid amount"); return; }
     setSaving(true);
@@ -177,7 +186,7 @@ export default function BillForm() {
         paymentType, invoiceNo, notes: finalNotes, photo,
         isExpense: billType === "expense",
         category: billType === "expense" ? expenseCategory : undefined,
-        ...(locationId ? { locationId } : {}),
+        ...(finalLocationId ? { locationId: finalLocationId } : {}),
       };
       if (editId) await api.updateBill(editId, payload);
       else await api.createBill({ ...payload, ...(productLines ? { productLines } : {}) });

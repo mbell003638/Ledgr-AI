@@ -245,7 +245,7 @@ export default function QuickActionMenu() {
               subtitle={isPartnerMode ? "Customer, supplier or capital account" : "Customer or supplier account"}
               onPress={() => navigate("/suppliers?action=create")}
             />}
-            {isCapabilityEnabled(settings, "reconciliation") && <QuickActionRow
+            {isCapabilityEnabled(settings, "ai_assistant") && <QuickActionRow
               icon="📄"
               iconBackground="rgba(45,212,191,0.15)"
               title="Scan & Import"

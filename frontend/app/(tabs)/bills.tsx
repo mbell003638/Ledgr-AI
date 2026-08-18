@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -11,6 +11,7 @@ import { ScreenHeader, Empty } from "@/src/components/UI";
 import { TransactionDetail } from "@/src/components/TransactionDetail";
 import { printTransaction, shareTransaction } from "@/src/utils/transactionActions";
 import { confirmAction } from "@/src/utils/alerts";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -56,6 +57,9 @@ export default function BillsScreen() {
   const router = useRouter();
   const [selected, setSelected] = useState<any | null>(null);
   const [moreModalVisible, setMoreModalVisible] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
+
+  useEffect(() => { api.getSettings().then(setSettings).catch(() => setSettings({})); }, []);
 
   const loader = useCallback(async (): Promise<BillsData> => {
     const [b, s] = await Promise.all([api.listBills(), api.listSuppliers()]);
@@ -71,6 +75,8 @@ export default function BillsScreen() {
   const bills = data?.bills ?? [];
   const suppliers = useMemo(() => data?.suppliers ?? {}, [data?.suppliers]);
   const load = reload;
+
+  const procurementDisabled = Boolean(settings && !isCapabilityEnabled(settings, "procurement"));
 
   const onRowPress = useCallback((item: any) => setSelected(item), []);
   const renderItem = useCallback(
@@ -90,6 +96,8 @@ export default function BillsScreen() {
     async () => { await api.deleteBill(bill.id); setSelected(null); await load(); },
     "Reverse / Delete"
   );
+
+  if (procurementDisabled) return <SafeAreaView style={styles.container}><View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: theme.spacing.lg }}><Text style={{ color: theme.color.onSurface, fontSize: 19, fontWeight: "800" }}>Purchases are off</Text><Text style={{ color: theme.color.muted, fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 8 }}>Enable Purchases and suppliers from workspace capabilities to view vendor bills.</Text><GlowPressable onPress={() => router.replace("/customize-features")} style={{ marginTop: 18, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: theme.color.brandPrimary }}><Text style={{ color: "#fff", fontWeight: "800" }}>Open capabilities</Text></GlowPressable></View></SafeAreaView>;
 
   if (selected) return (
     <SafeAreaView style={styles.container} edges={["top"]}>

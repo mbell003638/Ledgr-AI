@@ -42,6 +42,8 @@ export default function SaleForm() {
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [locations, setLocations] = useState<any[]>([]);
   const [locationId, setLocationId] = useState("");
+  const [posSessions, setPosSessions] = useState<any[]>([]);
+  const [posSessionId, setPosSessionId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -52,19 +54,34 @@ export default function SaleForm() {
         const multiLocation = isCapabilityEnabled(settings, "multi_location");
         setLocationEnabled(multiLocation);
         if (multiLocation) {
-          const locationList = await api.listLocations();
-          setLocations(locationList.filter((item: any) => item.active !== false));
-          if (locationList.length === 1) setLocationId(locationList[0].id);
+          const [locationList, sessionList] = await Promise.all([api.listLocations(), api.listPosSessions().catch(() => [])]);
+          const activeLocations = locationList.filter((item: any) => item.active !== false);
+          const openSessions = (Array.isArray(sessionList) ? sessionList : []).filter((item: any) => item.status !== "closed");
+          setLocations(activeLocations);
+          setPosSessions(openSessions);
+          if (activeLocations.length === 1) setLocationId(activeLocations[0].id);
+          if (openSessions.length === 1) setPosSessionId(String(openSessions[0].id));
         }
-        if (on) {
-          const list = await (api as any).listProducts();
-          setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived));
-        }
+        if (!on) setProducts([]);
       } catch {
         setStockEnabled(false);
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!stockEnabled) { setProducts([]); return; }
+    (api as any).listProducts(locationId || undefined)
+      .then((list: any[]) => setProducts((Array.isArray(list) ? list : []).filter((p: StockProduct) => p?.id && !p.archived)))
+      .catch(() => setProducts([]));
+  }, [stockEnabled, locationId]);
+
+  useEffect(() => {
+    if (!locationId) return;
+    const sessionsAtLocation = posSessions.filter((session: any) => String(session.locationId) === String(locationId));
+    if (sessionsAtLocation.length === 1) setPosSessionId((current) => current || String(sessionsAtLocation[0].id));
+    else if (posSessionId && !sessionsAtLocation.some((session: any) => String(session.id) === String(posSessionId))) setPosSessionId("");
+  }, [locationId, posSessions, posSessionId]);
 
   useEffect(() => {
     (async () => {
@@ -79,6 +96,8 @@ export default function SaleForm() {
           if (it.date) setDate(it.date);
           const persistedLocationId = (it as any).locationId || (it as any).location_id;
           if (persistedLocationId) setLocationId(String(persistedLocationId));
+          const persistedPosSessionId = (it as any).posSessionId || (it as any).pos_session_id;
+          if (persistedPosSessionId) setPosSessionId(String(persistedPosSessionId));
           if (it.type === "invoice" || it.clientName || it.partyId || (it.notes && it.notes.toLowerCase().includes("credit sale"))) {
             setSaleType("party");
             setCustomerName(it.clientName || it.partyId || "");
@@ -125,6 +144,11 @@ export default function SaleForm() {
       setError("Choose the shop / POS location before saving this sale");
       return;
     }
+    const sessionsAtLocation = posSessions.filter((session: any) => !locationId || String(session.locationId) === String(locationId));
+    if (sessionsAtLocation.length > 1 && !posSessionId) {
+      setError("Choose the POS register before saving this sale");
+      return;
+    }
     const dateIso = normalizeDateInput(date);
     if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
     if (dateIso !== date) setDate(dateIso);
@@ -144,7 +168,7 @@ export default function SaleForm() {
       const totals = calculateInvoiceTotals(formattedLines, discount, 0);
       if (totals.total <= 0) throw new Error("Total after discount must be greater than zero");
 
-      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined, ...(locationEnabled && locationId ? { locationId } : {}) };
+      const common = { date: dateIso, lines: formattedLines, subtotal: totals.subtotal, discount: totals.discount, total: totals.total, amount: totals.total, taxRate: 0, notes: notes.trim() || undefined, ...(locationEnabled && locationId ? { locationId } : {}), ...(posSessionId ? { posSessionId } : {}) };
       const qty = Number(stockQty);
       const stockProduct = products.find((p) => p.id === stockProductId);
       const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
@@ -250,7 +274,7 @@ export default function SaleForm() {
             <Card>
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
-            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS{locations.length > 1 ? " *" : ""}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: locationId === location.id }} accessibilityLabel={`Use location ${location.name}`} key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
+            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS{locations.length > 1 ? " *" : ""}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: locationId === location.id }} accessibilityLabel={`Use location ${location.name}`} key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView>{posSessions.filter((session: any) => !locationId || String(session.locationId) === String(locationId)).length > 0 ? <><Text style={[styles.label, { marginTop: 10 }]}>Open POS register{posSessions.filter((session: any) => !locationId || String(session.locationId) === String(locationId)).length > 1 ? " *" : ""}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{posSessions.filter((session: any) => !locationId || String(session.locationId) === String(locationId)).map((session: any) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: posSessionId === String(session.id) }} accessibilityLabel={`Use register ${session.registerName || session.id}`} key={session.id} onPress={() => { setPosSessionId(String(session.id)); if (session.locationId) setLocationId(String(session.locationId)); }} style={[styles.locationChip, posSessionId === String(session.id) && styles.locationChipSelected]}><Ionicons name="cash-outline" size={14} color={posSessionId === String(session.id) ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, posSessionId === String(session.id) && { color: theme.color.brandPrimary }]}>{session.registerName || "Register"}</Text></Pressable>)}</ScrollView></> : null}</View> : null}
 
             {/* Line Items / Products (Optional) */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>

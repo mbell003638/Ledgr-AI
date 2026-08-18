@@ -10,7 +10,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { Card } from "@/src/components/UI";
 import { PartyAutocompleteInput } from "@/src/components/PartyAutocompleteInput";
-import { LocationPicker } from "@/src/components/LocationPicker";
+import { LocationPicker, loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 
 type Mode = "against_invoice" | "advance";
 type Invoice = { id: string; invoiceNumber: string; clientName: string; total: number; status: string; date: string };
@@ -64,6 +64,8 @@ export default function ReceiptFormScreen() {
         if (r) {
           setMode(r.mode === "cash_sale" ? "advance" : r.mode); setAmount(String(r.amount)); setDate(r.date); setClientName(r.clientName || "");
           setDebtorId(r.debtorId || null); setMethod(r.method || "cash"); setNotes(r.notes || "");
+          const persistedLocationId = r.locationId || r.location_id;
+          if (persistedLocationId) setLocationId(String(persistedLocationId));
           if (r.allocations && r.allocations.length > 0) {
             setInvoiceId(r.allocations[0].invoiceId);
           }
@@ -123,6 +125,11 @@ export default function ReceiptFormScreen() {
     if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter a valid amount."); return; }
     if (!clientName.trim()) { setErr("Customer account name is required."); return; }
     if (mode === "against_invoice" && !invoiceId) { setErr("Pick an invoice to settle."); return; }
+    const locationContext = await loadLocationsIfEnabled();
+    const finalLocationId = locationId || locationContext.activeId;
+    if (locationContext.enabled && locationContext.locations.length === 0) { setErr("Add a shop in Locations before saving this receipt"); return; }
+    if (locationContext.enabled && locationContext.locations.length > 1 && !finalLocationId) { setErr("Choose the shop / location before saving this receipt"); return; }
+    if (finalLocationId && finalLocationId !== locationId) setLocationId(finalLocationId);
     setSaving(true);
     try {
       let finalDebtorId = debtorId;
@@ -130,7 +137,7 @@ export default function ReceiptFormScreen() {
         const party = await api.findOrCreateParty(clientName.trim(), "customer");
         if (party) finalDebtorId = party.id;
       }
-      const payload: any = { mode, date: dateIso, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId, ...(locationId ? { locationId } : {}) };
+      const payload: any = { mode, date: dateIso, amount: amt, method, notes, clientName: clientName.trim(), debtorId: finalDebtorId, ...(finalLocationId ? { locationId: finalLocationId } : {}) };
       if (mode === "against_invoice" && invoiceId) payload.allocations = [{ invoiceId, amountApplied: amt }];
       
       if (editId) {

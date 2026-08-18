@@ -5,6 +5,7 @@ import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } fr
 import * as FileSystem from "expo-file-system/legacy";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
+import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { BlurView } from "expo-blur";
@@ -128,11 +129,17 @@ export default function VoiceFab() {
     try {
       const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
+      const locationContext = await loadLocationsIfEnabled();
+      const locationId = locationContext.activeId;
+      if (locationContext.enabled && locationContext.locations.length === 0) throw new Error("Add a shop in Locations before saving this voice entry.");
+      if (locationContext.enabled && locationContext.locations.length > 1 && !locationId) throw new Error("Choose the active shop in Locations before saving this voice entry.");
+      if (parsed.intent === "inventory" && locationContext.enabled && locationContext.locations.length > 1) throw new Error("Voice inventory counts are book-level. Enter a shop count from the Inventory workflow instead.");
+      const locationFields = locationId ? { locationId } : {};
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
         if (parsed.intent === "expense") {
-          await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash" });
+          await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash", ...locationFields });
         } else if (parsed.intent === "bill") {
           const list = await api.listSuppliers();
           const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
@@ -141,14 +148,15 @@ export default function VoiceFab() {
             supplierId: match[0].id, date, amount: parsed.amount, currency,
             paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
             notes: parsed.notes || parsed.summary,
+            ...locationFields,
           });
         } else if (parsed.intent === "sale") {
-          await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary });
+          await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, ...locationFields });
         } else if (parsed.intent === "receipt") {
           const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
           const method = parsed.method || "cash";
           if (!parsed.customerName || mode === "cash_sale") {
-            await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, method });
+            await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, method, ...locationFields });
           } else {
             let debtorId: string | null = null;
             let allocations: { invoiceId: string; amountApplied: number }[] = [];
@@ -165,7 +173,9 @@ export default function VoiceFab() {
             await api.createReceipt({
               mode, date, amount: parsed.amount, method,
               debtorId, clientName: parsed.customerName,
-              allocations, notes: parsed.notes || parsed.summary,
+                            allocations,
+              notes: parsed.notes || parsed.summary,
+              ...locationFields,
             });
           }
         } else if (parsed.intent === "supplier_payment") {
@@ -176,12 +186,13 @@ export default function VoiceFab() {
             date, amount: parsed.amount, currency,
             type: "supplier_payment", supplierId: match[0].id,
             method: parsed.method || "cash", notes: parsed.notes || parsed.summary,
+            ...locationFields,
           });
         } else if (parsed.intent === "drawing") {
           const members = await api.listInvestors();
           const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
           if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
-          await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: parsed.notes || parsed.summary });
+          await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: parsed.notes || parsed.summary, ...locationFields });
         } else if (parsed.intent === "inventory") {
           await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary });
         } else {
