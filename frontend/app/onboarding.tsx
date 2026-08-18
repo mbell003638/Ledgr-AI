@@ -114,6 +114,7 @@ export default function Onboarding() {
         lockEnabled,
         hasOnboarded: true,
         businessType: finalPersona,
+        enabledFeatures: null,
         enabledCapabilities: selectedCapabilities,
       });
       markOnboarded();

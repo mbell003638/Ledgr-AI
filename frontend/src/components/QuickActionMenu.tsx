@@ -82,6 +82,7 @@ export default function QuickActionMenu() {
   const [openingModalVisible, setOpeningModalVisible] = useState(false);
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const accountsEnabled = isCapabilityEnabled(settings, "customers") || isCapabilityEnabled(settings, "procurement") || isCapabilityEnabled(settings, "invoicing");
   const router = useRouter();
   const theme = useTheme();
   const { motionEnabled, hapticsEnabled } = useAnimations();
@@ -234,13 +235,14 @@ export default function QuickActionMenu() {
               subtitle="Record a quick cash or credit sale"
               onPress={() => navigate("/sale-form")}
             />}
-            {isCapabilityEnabled(settings, "procurement") && <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Log a bill or purchase" onPress={() => navigate("/bill-form")} />}
+            {isCapabilityEnabled(settings, "core_ledger") && <QuickActionRow icon="💸" iconBackground="rgba(239,68,68,0.15)" title="Add Expense" subtitle="Record a business expense" onPress={() => navigate("/expenses")} />}
+            {isCapabilityEnabled(settings, "procurement") && <QuickActionRow icon="🛒" iconBackground="rgba(248,113,113,0.15)" title="Add Purchase" subtitle="Log a supplier bill or purchase" onPress={() => navigate("/bill-form")} />}
             {isCapabilityEnabled(settings, "customers") && <QuickActionRow icon="💵" iconBackground="rgba(59,130,246,0.15)" title="Receive Payment" subtitle="Log incoming funds" onPress={() => navigate("/receipt-form")} />}
-            {isCapabilityEnabled(settings, "customers") && <QuickActionRow
+            {accountsEnabled && <QuickActionRow
               icon="👥"
               iconBackground="rgba(168,85,247,0.15)"
-              title="Add Business Account"
-              subtitle={isPartnerMode ? "Customer, supplier or capital account" : "Customer or supplier"}
+              title="Add Account"
+              subtitle={isPartnerMode ? "Customer, supplier or capital account" : "Customer or supplier account"}
               onPress={() => navigate("/suppliers?action=create")}
             />}
             {isCapabilityEnabled(settings, "reconciliation") && <QuickActionRow

@@ -122,6 +122,7 @@ function ThemedStack() {
         <Stack.Protected guard={hasOnboarded}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
+          <Stack.Screen name="modules" options={{ presentation: "card" }} />
           <Stack.Screen name="advanced-settings" options={{ presentation: "card" }} />
           <Stack.Screen name="supplier/[id]" options={{ presentation: "card" }} />
           <Stack.Screen name="investor/[id]" options={{ presentation: "card" }} />
@@ -139,11 +140,13 @@ function ThemedStack() {
             <Stack.Screen name="payments" options={{ presentation: "card" }} />
           </Stack.Protected>
           <Stack.Protected guard={canOpen("cashbook")}><Stack.Screen name="cashbook" options={{ presentation: "card" }} /></Stack.Protected>
-          <Stack.Protected guard={canOpen("invoicing")}>
-            <Stack.Screen name="invoices" options={{ presentation: "card" }} />
-            <Stack.Screen name="quotes" options={{ presentation: "card" }} />
-            <Stack.Screen name="receipts" options={{ presentation: "card" }} />
-            <Stack.Screen name="receipt-form" options={{ presentation: "modal" }} />
+          <Stack.Protected guard={canOpen("invoicing") || canOpen("customers")}>
+            {canOpen("invoicing") ? <>
+              <Stack.Screen name="invoices" options={{ presentation: "card" }} />
+              <Stack.Screen name="quotes" options={{ presentation: "card" }} />
+              <Stack.Screen name="receipts" options={{ presentation: "card" }} />
+              <Stack.Screen name="receipt-form" options={{ presentation: "modal" }} />
+            </> : null}
             <Stack.Screen name="customer/[id]" options={{ presentation: "card" }} />
             <Stack.Screen name="debtors" options={{ presentation: "card" }} />
           </Stack.Protected>
@@ -152,11 +155,22 @@ function ThemedStack() {
             <Stack.Screen name="products" options={{ presentation: "card" }} />
           </Stack.Protected>
           <Stack.Protected guard={canOpen("shipping_returns")}><Stack.Screen name="delivery-notes" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("marketplace")}><Stack.Screen name="marketplace" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("projects") || canOpen("creator_revenue")}><Stack.Screen name="projects" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("manufacturing")}><Stack.Screen name="manufacturing" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("trade_landed_cost")}><Stack.Screen name="trade" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("reporting")}>
+            <Stack.Screen name="planning" options={{ presentation: "card" }} />
+            <Stack.Screen name="metric-inputs" options={{ presentation: "card" }} />
+          </Stack.Protected>
           <Stack.Protected guard={canOpen("reporting")}>
             <Stack.Screen name="monthly-summary" options={{ presentation: "card" }} />
             <Stack.Screen name="custom-report" options={{ presentation: "card" }} />
           </Stack.Protected>
-          <Stack.Protected guard={canOpen("reconciliation")}><Stack.Screen name="reconcile" options={{ presentation: "card" }} /></Stack.Protected>
+          <Stack.Protected guard={canOpen("reconciliation")}>
+            <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
+            <Stack.Screen name="integrations" options={{ presentation: "card" }} />
+          </Stack.Protected>
           <Stack.Protected guard={canOpen("ai_assistant")}>
             <Stack.Screen name="ask" options={{ presentation: "card" }} />
             <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />

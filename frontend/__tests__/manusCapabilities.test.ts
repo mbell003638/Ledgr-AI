@@ -2,6 +2,7 @@ import {
   activePersonaFor,
   getEnabledCapabilities,
   getPersonaCapabilityDefaults,
+  featureKeysForCapabilities,
   isCapabilityEnabled,
 } from '../src/utils/capabilities';
 import {
@@ -29,6 +30,15 @@ describe('Manus persona capabilities', () => {
     expect(defaults).not.toContain('multi_location');
     expect(defaults).toContain('core_ledger');
     expect(getEnabledCapabilities({ ...settings, enabledCapabilities: ['invoicing', 'multi_location'] })).toEqual(expect.arrayContaining(['core_ledger', 'cashbook', 'reporting', 'invoicing', 'multi_location']));
+  });
+
+  it('maps capability-derived entry points to the selected business model', () => {
+    const retailFeatures = featureKeysForCapabilities({ activePersona: 'retail' });
+    expect(retailFeatures).toEqual(expect.arrayContaining(['sales', 'invoices', 'receipts', 'quotes', 'bills', 'payments', 'expenses', 'inventory', 'delivery']));
+    const saasFeatures = featureKeysForCapabilities({ activePersona: 'saas' });
+    expect(saasFeatures).toEqual(expect.arrayContaining(['invoices', 'receipts', 'quotes', 'expenses', 'reports', 'monthly']));
+    expect(saasFeatures).not.toContain('inventory');
+    expect(saasFeatures).not.toContain('bills');
   });
 
   it('maps legacy business types to safe modern personas', () => {

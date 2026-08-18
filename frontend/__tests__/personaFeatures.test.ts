@@ -7,6 +7,7 @@ import {
   OPTIONAL_FEATURE_KEYS,
   type FeatureKey,
 } from "../src/utils/featureFlags";
+import { PERSONA_CAPABILITY_DEFAULTS, featureKeysForCapabilities } from "../src/utils/capabilities";
 
 const ALL_KEYS = ALL_FEATURES.map((f) => f.key).filter((key) => !OPTIONAL_FEATURE_KEYS.includes(key));
 
@@ -27,6 +28,17 @@ describe("persona → dashboard tiles mapping", () => {
       expect(PERSONA_DEFAULT_FEATURES[id]).toBeDefined();
       expect(PERSONA_DEFAULT_FEATURES[id].length).toBeGreaterThan(0);
     }
+  });
+
+  it("every canonical industry persona resolves through the capability registry", () => {
+    for (const persona of Object.keys(PERSONA_CAPABILITY_DEFAULTS).filter((id) => id !== "custom")) {
+      const enabled = getEnabledFeatures({ activePersona: persona });
+      const expected = featureKeysForCapabilities({ activePersona: persona }).filter((key) => ALL_KEYS.includes(key as FeatureKey));
+      expect(new Set(enabled)).toEqual(new Set(expected));
+    }
+    expect(getEnabledFeatures({ activePersona: "saas" })).not.toContain("inventory");
+    expect(getEnabledFeatures({ activePersona: "saas" })).not.toContain("bills");
+    expect(getEnabledFeatures({ activePersona: "restaurant" })).toContain("inventory");
   });
 
   it("retail / wholesale / vendor personas get the full tile set (they hold stock)", () => {
@@ -134,9 +146,9 @@ describe("persona → dashboard tiles mapping", () => {
 
     it("an empty enabledFeatures array is ignored and falls back to the persona baseline", () => {
       const enabled = getEnabledFeatures({ activePersona: "salon", enabledFeatures: [] });
-      // Baseline is order-normalized to the canonical ALL_FEATURES ordering,
-      // so compare as sets against the salon default.
-      expect(new Set(enabled)).toEqual(new Set(PERSONA_DEFAULT_FEATURES.salon));
+      // The canonical persona registry is authoritative for modern onboarding settings.
+      const expected = featureKeysForCapabilities({ activePersona: "salon" }).filter((key) => ALL_KEYS.includes(key as FeatureKey));
+      expect(new Set(enabled)).toEqual(new Set(expected));
     });
   });
 });

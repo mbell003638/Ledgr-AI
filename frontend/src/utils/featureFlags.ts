@@ -1,4 +1,4 @@
-import { featureKeysForCapabilities } from './capabilities';
+import { featureKeysForCapabilities, PERSONA_CAPABILITY_DEFAULTS } from './capabilities';
 
 export type FeatureKey =
   | "sales"
@@ -305,8 +305,8 @@ export function getPersonaBaselineFeatures(settings: any): FeatureKey[] {
   const rawPersonas: string[] = Array.isArray(settings?.selectedPersonas) && settings.selectedPersonas.length
     ? settings.selectedPersonas
     : [settings?.activePersona || settings?.businessType || "custom"];
-  const modernPersonas = new Set(["mobile_invoicing", "dropshipper", "marketplace_seller", "entrepreneur", "startup", "developer", "content_creator", "manufacturer", "import_export"]);
-  if (Array.isArray(settings?.enabledCapabilities) && settings.enabledCapabilities.length || rawPersonas.some((persona) => modernPersonas.has(persona))) {
+  const modernPersonas = new Set(Object.keys(PERSONA_CAPABILITY_DEFAULTS).filter((persona) => persona !== "custom"));
+  if ((Array.isArray(settings?.enabledCapabilities) && settings.enabledCapabilities.length) || rawPersonas.some((persona) => modernPersonas.has(persona))) {
     const capabilityKeys = featureKeysForCapabilities(settings) as FeatureKey[];
     if (capabilityKeys.length) return DEFAULT_ALL_KEYS.filter((key) => capabilityKeys.includes(key));
   }

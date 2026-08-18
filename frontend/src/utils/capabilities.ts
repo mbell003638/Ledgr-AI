@@ -121,13 +121,13 @@ const PERSONA_DEFAULTS: Record<PersonaId, CapabilityKey[]> = {
   automotive: ['core_ledger', 'commerce', 'procurement', 'inventory', 'projects', 'fixed_assets', 'cogs_margin', 'reconciliation', 'ai_assistant'],
   hospitality: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'inventory', 'payroll', 'reconciliation', 'ai_assistant'],
   personal: ['core_ledger', 'cashbook', 'reporting', 'ai_assistant'],
-  retail: ['core_ledger', 'commerce', 'procurement', 'inventory', 'cogs_margin', 'reconciliation', 'ai_assistant'],
-  wholesale: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'inventory', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  retail: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'customers', 'inventory', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  wholesale: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'customers', 'inventory', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
   salon: ['core_ledger', 'invoicing', 'commerce', 'customers', 'reconciliation', 'ai_assistant'],
   handyman: ['core_ledger', 'invoicing', 'commerce', 'procurement', 'customers', 'projects', 'reconciliation', 'ai_assistant'],
   professional_service: ['core_ledger', 'invoicing', 'customers', 'projects', 'reconciliation', 'ai_assistant'],
   it_freelancer: ['core_ledger', 'invoicing', 'customers', 'projects', 'reconciliation', 'ai_assistant'],
-  vendor: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'inventory', 'cogs_margin', 'reconciliation', 'ai_assistant'],
+  vendor: ['core_ledger', 'commerce', 'invoicing', 'procurement', 'customers', 'inventory', 'shipping_returns', 'cogs_margin', 'reconciliation', 'ai_assistant'],
   custom: ['core_ledger', 'invoicing', 'commerce', 'procurement', 'customers', 'reporting', 'ai_assistant'],
 };
 

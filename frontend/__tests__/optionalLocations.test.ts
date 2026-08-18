@@ -6,7 +6,7 @@ import { LocationDomainService } from '../src/accountingV2/services/locationDoma
 import { postCashSale } from '../src/accountingV2/postings';
 import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
 import { getV2Dashboard } from '../src/accountingV2/v2Dashboard';
-import { qtyAtLocation } from '../src/accountingV2/services/locationDomainService';
+import { qtyAtLocation, resolveWriteLocationId } from '../src/accountingV2/services/locationDomainService';
 
 const BOOK = 'active-v2';
 const PERIOD = 'open-2026';
@@ -52,6 +52,15 @@ describe('optional locations', () => {
       const invoices = new InvoiceDomainService(repo.db, repo, documents, parties, async () => ({ bookId: BOOK, periodId: PERIOD }), async (input) => input);
       const sales = new SaleDomainService(repo.db, repo, documents, parties, invoices, async () => ({ bookId: BOOK, periodId: PERIOD }), async (input) => input, async () => 'cash_sale');
       await expect(sales.createSale({ date: DATE, amount: 10, method: 'cash' })).rejects.toThrow(/location|Choose a location/i);
+    } finally { close(); }
+  });
+
+  it('does not silently choose the first shop when multiple locations have no active context', async () => {
+    const { close, runner, locations } = await setup(['locations']);
+    try {
+      await locations.createLocation({ name: 'Shop A' });
+      await locations.createLocation({ name: 'Shop B' });
+      await expect(resolveWriteLocationId(runner, BOOK)).rejects.toThrow(/Choose a location/i);
     } finally { close(); }
   });
 

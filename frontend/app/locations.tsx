@@ -55,7 +55,7 @@ export default function LocationsScreen() {
       const rows = await api.listLocations();
       const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
       setShops(next);
-      const current = String(settings.activeLocationId || next[0]?.id || "");
+      const current = String(settings.activeLocationId || (next.length === 1 ? next[0]?.id : "") || "");
       setActiveId(current);
       if (getEnabledFeatures(settings).includes("perpetualInventory")) {
         const list = await api.listProducts(current || undefined);

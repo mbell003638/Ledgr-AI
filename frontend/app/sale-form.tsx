@@ -54,7 +54,7 @@ export default function SaleForm() {
         if (multiLocation) {
           const locationList = await api.listLocations();
           setLocations(locationList.filter((item: any) => item.active !== false));
-          if (locationList[0]) setLocationId(locationList[0].id);
+          if (locationList.length === 1) setLocationId(locationList[0].id);
         }
         if (on) {
           const list = await (api as any).listProducts();
@@ -77,6 +77,8 @@ export default function SaleForm() {
           setDiscount(it.discount ? String(it.discount) : "");
           if (Array.isArray(it.lines) && it.lines.length) setLines(it.lines.map((line: any) => ({ description: line.description || "", qty: String(line.qty ?? 1), unit: line.unit || "", rate: String(line.rate ?? line.price ?? "") })));
           if (it.date) setDate(it.date);
+          const persistedLocationId = (it as any).locationId || (it as any).location_id;
+          if (persistedLocationId) setLocationId(String(persistedLocationId));
           if (it.type === "invoice" || it.clientName || it.partyId || (it.notes && it.notes.toLowerCase().includes("credit sale"))) {
             setSaleType("party");
             setCustomerName(it.clientName || it.partyId || "");
@@ -117,6 +119,10 @@ export default function SaleForm() {
     if (!amt || amt <= 0) { setError("Enter a valid subtotal"); return; }
     if (saleType === "party" && !customerName.trim()) {
       setError("Enter the customer / party name for a credit sale");
+      return;
+    }
+    if (locationEnabled && locations.length > 1 && !locationId) {
+      setError("Choose the shop / POS location before saving this sale");
       return;
     }
     const dateIso = normalizeDateInput(date);
@@ -244,7 +250,7 @@ export default function SaleForm() {
             <Card>
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
-            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: locationId === location.id }} accessibilityLabel={`Use location ${location.name}`} key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
+            {locationEnabled && locations.length > 0 ? <View style={{ marginTop: 12 }}><Text style={styles.label}>Location / POS{locations.length > 1 ? " *" : ""}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{locations.map((location) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: locationId === location.id }} accessibilityLabel={`Use location ${location.name}`} key={location.id} onPress={() => setLocationId(location.id)} style={[styles.locationChip, locationId === location.id && styles.locationChipSelected]}><Ionicons name="storefront-outline" size={14} color={locationId === location.id ? theme.color.brandPrimary : theme.color.muted} /><Text style={[styles.locationChipText, locationId === location.id && { color: theme.color.brandPrimary }]}>{location.name}</Text></Pressable>)}</ScrollView></View> : null}
 
             {/* Line Items / Products (Optional) */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 6 }}>

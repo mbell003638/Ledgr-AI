@@ -15,7 +15,7 @@ export async function loadLocationsIfEnabled(): Promise<{ enabled: boolean; loca
     id: String(row.id || ""),
     name: String(row.name || ""),
   })).filter((row: ShopLocation) => row.id);
-  const activeId = String((settings as any)?.activeLocationId || locations[0]?.id || "");
+  const activeId = String((settings as any)?.activeLocationId || (locations.length === 1 ? locations[0]?.id : "") || "");
   return { enabled, locations, activeId };
 }
 
@@ -54,12 +54,13 @@ export function LocationPicker({
 
   return (
     <View style={{ marginBottom: theme.spacing.md }}>
-      <Text style={{ color: theme.color.muted, fontSize: 13, fontWeight: "600", marginBottom: 8 }}>{label}</Text>
+      <Text style={{ color: theme.color.muted, fontSize: 13, fontWeight: "600", marginBottom: 8 }}>{label}{locations.length > 1 ? " *" : ""}</Text>
       {locations.length === 0 ? (
         <Text style={{ color: theme.color.muted, fontSize: 13 }}>Add a shop in Locations first.</Text>
       ) : (
-        <View style={styles.row}>
-          {locations.map((loc) => {
+        <View>
+          <View style={styles.row}>
+            {locations.map((loc) => {
             const on = loc.id === value;
             return (
               <Pressable
@@ -73,7 +74,9 @@ export function LocationPicker({
                 <Text style={{ color: on ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{loc.name}</Text>
               </Pressable>
             );
-          })}
+            })}
+          </View>
+          {locations.length > 1 && !value ? <Text style={{ color: theme.color.warning, fontSize: 11, marginTop: 6 }}>Choose a location before saving this entry.</Text> : null}
         </View>
       )}
     </View>

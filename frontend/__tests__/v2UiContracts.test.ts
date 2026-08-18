@@ -186,13 +186,19 @@ describe('V2 UI contracts', () => {
     expect(source).toMatch(/initializeV2Book\([\s\S]*?personas:\s*v2Personas/);
     const preferences = source.slice(source.indexOf('await api.updateSettings({'), source.indexOf('markOnboarded();'));
     expect(preferences).not.toMatch(/selectedPersonas|activePersona/);
+    expect(preferences).toContain("enabledFeatures: null");
+    expect(preferences).toContain("enabledCapabilities: selectedCapabilities");
   });
 
-  it('the dashboard filters its tile grid through getEnabledFeatures', () => {
+  it('the dashboard stays focused on action-needed items, financial cards, and location-aware summaries', () => {
     const source = readApp('(tabs)/index.tsx');
-    expect(source).toContain('getEnabledFeatures');
-    expect(source).toMatch(/getEnabledFeatures\(settings\)/);
-    expect(source).toMatch(/TILES\.filter/);
+    expect(source).toContain('Action needed');
+    expect(source).toContain('KpiTile label="Sales"');
+    expect(source).toContain('KpiTile label="Purchases"');
+    expect(source).toContain('locationId');
+    expect(source).not.toContain('Quick Workspaces');
+    expect(source).not.toContain('Featured tools');
+    expect(source).not.toContain('ReorderableWorkspaceGrid');
   });
 
   it('dashboard daily-summary card and KPI tiles share the hero GlowPressable press treatment', () => {
@@ -325,7 +331,7 @@ describe('V2 UI contracts', () => {
     expect(parties).toContain('partnerConfigured || investors.length > 0');
     expect(parties).toContain("['all', 'customer', 'supplier', 'partner']");
     expect(quick).toContain('config?.style === "retail_partnership" || investors.length > 0');
-    expect(quick).toContain('Add Business Account');
+    expect(quick).toContain('Add Account');
   });
   it('disables motion and haptics together and follows the device Reduce Motion setting', () => {
     const context = readSource('src/context/ThemeContext.tsx');

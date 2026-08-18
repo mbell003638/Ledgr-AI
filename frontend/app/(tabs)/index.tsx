@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,32 +13,16 @@ import { api } from "@/src/api";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
-import { getEnabledFeatures } from "@/src/utils/featureFlags";
-import { isCapabilityEnabled, eligibleMetrics, workspaceTileLabelsFor } from "@/src/utils/capabilities";
-import { workspacePackFor } from "@/src/utils/workspacePacks";
+import { isCapabilityEnabled, eligibleMetrics } from "@/src/utils/capabilities";
 import { metricsFromDashboard } from "@/src/utils/metrics";
 import { showAlert } from "@/src/utils/alerts";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
-import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
+import Animated from "react-native-reanimated";
 import { GlowPressable } from "@/src/components/GlowPressable";
-import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
 import ArrowLeftRight from "lucide-react-native/icons/arrow-left-right";
-import Banknote from "lucide-react-native/icons/banknote";
-import BarChart2 from "lucide-react-native/icons/chart-no-axes-column";
-import BookOpen from "lucide-react-native/icons/book-open";
-import Calendar from "lucide-react-native/icons/calendar";
-import Cube from "lucide-react-native/icons/box";
-import FileText from "lucide-react-native/icons/file-text";
-import Mic from "lucide-react-native/icons/mic";
 import Package from "lucide-react-native/icons/package";
-import PieChart from "lucide-react-native/icons/chart-pie";
 import Receipt from "lucide-react-native/icons/receipt";
-import Sparkles from "lucide-react-native/icons/sparkles";
-import Tag from "lucide-react-native/icons/tag";
 import TrendingUp from "lucide-react-native/icons/trending-up";
-import Wallet from "lucide-react-native/icons/wallet";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -51,39 +35,6 @@ type Dash = {
   periodStart: string;
   salesTrend: { date: string; value: number }[];
 };
-
-const TILES = [
-  { key: "bills", label: "Purchases", icon: Receipt, route: "/bills", iconColor: "#34D399", iconBackground: "rgba(214,229,219,0.20)" },
-  { key: "sales", label: "Sales", icon: TrendingUp, route: "/sales", iconColor: "#FBBF24", iconBackground: "rgba(243,228,200,0.20)" },
-  { key: "receipts", label: "Receipts", icon: ArrowDownLeft, route: "/receipts", iconColor: "#60A5FA", iconBackground: "rgba(240,228,208,0.20)" },
-  { key: "payments", label: "Payments", icon: Banknote, route: "/payments", iconColor: "#F87171", iconBackground: "rgba(232,218,208,0.20)" },
-  { key: "cashbook", label: "Cash Book", icon: ArrowLeftRight, route: "/cashbook", iconColor: "#C084FC", iconBackground: "rgba(220,232,220,0.20)" },
-  { key: "invoices", label: "Invoices", icon: FileText, route: "/invoices", iconColor: "#38BDF8", iconBackground: "rgba(216,228,240,0.20)" },
-  { key: "quotes", label: "Quotes", icon: Tag, route: "/quotes", iconColor: "#FACC15", iconBackground: "rgba(224,232,240,0.20)" },
-  { key: "delivery", label: "Delivery Notes", icon: Cube, route: "/delivery-notes", iconColor: "#A7F3D0", iconBackground: "rgba(220,228,220,0.20)" },
-  { key: "expenses", label: "Expenses", icon: Wallet, route: "/expenses", iconColor: "#F87171", iconBackground: "rgba(228,216,216,0.20)" },
-  { key: "inventory", label: "Stock", icon: Package, route: "/inventory-form", iconColor: "#34D399", iconBackground: "rgba(227,233,218,0.20)" },
-  { key: "perpetualInventory", label: "Products", icon: Package, route: "/products", iconColor: "#4ADE80", iconBackground: "rgba(220,232,212,0.20)" },
-  { key: "payroll", label: "Payroll", icon: Wallet, route: "/payroll", iconColor: "#A78BFA", iconBackground: "rgba(228,220,236,0.20)" },
-  { key: "fixedAssets", label: "Fixed Assets", icon: PieChart, route: "/fixed-assets", iconColor: "#94A3B8", iconBackground: "rgba(216,220,232,0.20)" },
-  { key: "assets", label: "Assets & Liabilities", icon: PieChart, route: "/assets", iconColor: "#818CF8", iconBackground: "rgba(208,216,224,0.20)" },
-  { key: "daybook", label: "Day Book", icon: BookOpen, route: "/daybook", iconColor: "#F472B6", iconBackground: "rgba(221,227,236,0.20)" },
-  { key: "reports", label: "Reports", icon: BarChart2, route: "/reports", iconColor: "#FBBF24", iconBackground: "rgba(224,224,218,0.20)" },
-  { key: "monthly", label: "Monthly Report", icon: Calendar, route: "/monthly-summary", iconColor: "#F97316", iconBackground: "rgba(239,220,200,0.20)" },
-  { key: "ask", label: "Ask AI", icon: Sparkles, route: "/ask", usesBrandIcon: true },
-  { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
-] as const;
-
-const MARKETPLACE_TILE = { key: "marketplace", label: "Marketplace Operations", icon: Receipt, route: "/marketplace", iconColor: "#A78BFA", iconBackground: "rgba(224,220,240,0.20)" } as const;
-const PROJECTS_TILE = { key: "projects", label: "Projects & Profitability", icon: FileText, route: "/projects", iconColor: "#38BDF8", iconBackground: "rgba(216,228,240,0.20)" } as const;
-const CREATOR_TILE = { key: "creator_revenue", label: "Creator Contracts", icon: Tag, route: "/projects", iconColor: "#F472B6", iconBackground: "rgba(240,220,232,0.20)" } as const;
-
-// Persona-driven tile visibility is derived centrally in
-// src/utils/featureFlags.ts (getEnabledFeatures). The dashboard grid filters
-// TILES through that helper below (see `visibleTiles`), so onboarding persona
-// selection — and any manual override from customize-features — flows straight
-// into which tiles appear here. Manual override (settings.enabledFeatures)
-// takes precedence over the persona baseline.
 
 function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; theme: ReturnType<typeof useTheme> }) {
   // Keep the hero on the same safe transform-only touch treatment as every
@@ -106,13 +57,6 @@ export default function Dashboard() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
-  const scrollRef = useAnimatedRef<any>();
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
-  });
   const [dash, setDash] = useState<Dash | null>(null);
   const [daily, setDaily] = useState<any>(null);
   const localTodayStr = () => {
@@ -124,21 +68,8 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
   const [health, setHealth] = useState<any>(null);
-  const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
-  const [isEditingGrid, setIsEditingGrid] = useState(false);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
-  const workspacePack = useMemo(() => workspacePackFor(settings), [settings]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const saved = await AsyncStorage.getItem("ledgr_tile_order");
-        if (saved) setCustomTileOrder(JSON.parse(saved));
-      } catch {}
-    })();
-  }, []);
-
   // Remember the (data version, dailyDate) at which the dashboard last loaded,
   // so a plain focus-return with nothing changed can skip the full re-read.
   const loadedRef = React.useRef<{ version: number; date: string } | null>(null);
@@ -173,87 +104,6 @@ export default function Dashboard() {
       setRefreshing(false);
     }
   }, [dailyDate, locationId]);
-
-  const visibleTiles = useMemo(() => {
-    const enabled = getEnabledFeatures(settings);
-    const labels = workspaceTileLabelsFor(settings);
-    const baseTiles = TILES.filter((t) => enabled.includes(t.key as any));
-    const availableTiles = [...baseTiles, ...(isCapabilityEnabled(settings, "marketplace") ? [MARKETPLACE_TILE] : []), ...(isCapabilityEnabled(settings, "projects") ? [PROJECTS_TILE] : []), ...(isCapabilityEnabled(settings, "creator_revenue") ? [CREATOR_TILE] : [])];
-    const filtered = availableTiles.map((tile) => ({ ...tile, label: labels[tile.key] || tile.label }));
-    if (!customTileOrder.length) return filtered;
-    const map = new Map<string, (typeof filtered)[number]>(filtered.map((t) => [t.key, t]));
-    const ordered: (typeof filtered)[number][] = [];
-    for (const k of customTileOrder) {
-      if (map.has(k)) {
-        ordered.push(map.get(k)!);
-        map.delete(k);
-      }
-    }
-    return [...ordered, ...Array.from(map.values())];
-  }, [settings, customTileOrder]);
-
-
-  const recordTileUsage = async (key: string) => {
-    try {
-      const raw = (await AsyncStorage.getItem("ledgr_tile_usage")) || "{}";
-      const usage = JSON.parse(raw);
-      usage[key] = (usage[key] || 0) + 1;
-      usage[`${key}_last_used`] = Date.now();
-      await AsyncStorage.setItem("ledgr_tile_usage", JSON.stringify(usage));
-    } catch {}
-  };
-
-  const handleTilePress = (tile: (typeof TILES)[number]) => {
-    if (isEditingGrid) return;
-    recordTileUsage(tile.key);
-    router.push(tile.route as any);
-  };
-
-  const moveTile = (fromIndex: number, toIndex: number) => {
-    const currentKeys = visibleTiles.map((tile) => tile.key);
-    if (
-      fromIndex < 0 ||
-      fromIndex >= currentKeys.length ||
-      toIndex < 0 ||
-      toIndex >= currentKeys.length ||
-      fromIndex === toIndex
-    ) return;
-
-    const [moved] = currentKeys.splice(fromIndex, 1);
-    currentKeys.splice(toIndex, 0, moved);
-    setCustomTileOrder(currentKeys);
-    AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(currentKeys)).catch(() => {});
-  };
-
-  const sortTilesByPreset = async (preset: "alphabetical" | "frequent" | "recent" | "default") => {
-    const enabled = getEnabledFeatures(settings);
-    const baseTiles = TILES.filter((t) => enabled.includes(t.key as any));
-    const availableTiles = [...baseTiles, ...(isCapabilityEnabled(settings, "marketplace") ? [MARKETPLACE_TILE] : []), ...(isCapabilityEnabled(settings, "projects") ? [PROJECTS_TILE] : []), ...(isCapabilityEnabled(settings, "creator_revenue") ? [CREATOR_TILE] : [])];
-    const filtered = availableTiles;
-
-    if (preset === "default") {
-      setCustomTileOrder([]);
-      await AsyncStorage.removeItem("ledgr_tile_order");
-      return;
-    }
-
-    let raw = "";
-    try { raw = (await AsyncStorage.getItem("ledgr_tile_usage")) || ""; } catch {}
-    const usage = raw ? JSON.parse(raw) : {};
-
-    let sorted = [...filtered];
-    if (preset === "alphabetical") {
-      sorted.sort((a, b) => a.label.localeCompare(b.label));
-    } else if (preset === "frequent") {
-      sorted.sort((a, b) => (usage[b.key] || 0) - (usage[a.key] || 0));
-    } else if (preset === "recent") {
-      sorted.sort((a, b) => (usage[`${b.key}_last_used`] || 0) - (usage[`${a.key}_last_used`] || 0));
-    }
-
-    const keys = sorted.map((t) => t.key);
-    setCustomTileOrder(keys);
-    await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(keys));
-  };
 
   useFocusEffect(useCallback(() => {
     const last = loadedRef.current;
@@ -346,14 +196,15 @@ export default function Dashboard() {
     const eligible = new Set(eligibleMetrics(settings).map((metric) => metric.key));
     return metricsFromDashboard(dash, settings?.workspaceMetricInputs || {}).filter((metric) => eligible.has(metric.key));
   }, [dash, settings]);
+  const salesEnabled = isCapabilityEnabled(settings, "commerce") || isCapabilityEnabled(settings, "invoicing");
+  const purchasesEnabled = isCapabilityEnabled(settings, "procurement");
+  const stockEnabled = isCapabilityEnabled(settings, "inventory");
+  const salesRoute = isCapabilityEnabled(settings, "commerce") ? "/sales" : "/invoices";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader title="Ledgr" subtitle="Your business finances, simplified" testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
       <Animated.ScrollView
-        ref={scrollRef}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
         showsVerticalScrollIndicator={false}
@@ -532,7 +383,7 @@ export default function Dashboard() {
                   <Text numberOfLines={1} style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.dailyValue}>{fmt(daily?.netCash ?? 0)}</Text>
                   <Text style={styles.dailySub}>
-                    {daily?.salesCount ?? 0} sales • {daily?.billsCount ?? 0} bills • {daily?.paymentsCount ?? 0} payments
+                    {[salesEnabled ? `${daily?.salesCount ?? 0} sales` : null, purchasesEnabled ? `${daily?.billsCount ?? 0} bills` : null, isCapabilityEnabled(settings, "cashbook") ? `${daily?.paymentsCount ?? 0} payments` : null].filter(Boolean).join(" • ")}
                   </Text>
                 </View>
                 <View style={styles.dailyNav}>
@@ -550,14 +401,14 @@ export default function Dashboard() {
                 </View>
               </View>
               <View style={styles.dailyStats}>
-                <View style={styles.dailyStat}>
+                {salesEnabled ? <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Sales</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={[styles.dailyStatValue, { color: theme.color.success }]}>{fmt(daily?.revenue ?? 0)}</Text>
-                </View>
-                <View style={styles.dailyStat}>
+                </View> : null}
+                {purchasesEnabled ? <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Purchases</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={[styles.dailyStatValue, { color: theme.color.warning }]}>{fmt(daily?.purchases ?? 0)}</Text>
-                </View>
+                </View> : null}
                 <View style={styles.dailyStat}>
                   <Text style={styles.dailyStatLabel}>Profit</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.dailyStatValue}>{fmt(daily?.grossProfit ?? 0)}</Text>
@@ -570,121 +421,17 @@ export default function Dashboard() {
             </Card>
             </GlowPressable>
 
-            {/* KPI row — tap to open the underlying entries */}
-            <View style={styles.kpiRow}>
-              <KpiTile label="Sales" value={fmt(dash?.totalSales)} valueColor={theme.color.success} icon={<TrendingUp width={14} height={14} color={theme.color.success} />} testID="kpi-sales" onPress={() => router.push("/sales")} />
-              <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} valueColor={theme.color.warning} icon={<Receipt width={14} height={14} color={theme.color.warning} />} testID="kpi-purchases" onPress={() => router.push("/bills")} />
-            </View>
+            {/* KPI cards reflect only the selected persona capabilities. */}
+            {salesEnabled || purchasesEnabled ? <View style={styles.kpiRow}>
+              {salesEnabled ? <KpiTile label="Sales" value={fmt(dash?.totalSales)} valueColor={theme.color.success} icon={<TrendingUp width={14} height={14} color={theme.color.success} />} testID="kpi-sales" onPress={() => router.push(salesRoute as any)} /> : null}
+              {purchasesEnabled ? <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} valueColor={theme.color.warning} icon={<Receipt width={14} height={14} color={theme.color.warning} />} testID="kpi-purchases" onPress={() => router.push("/bills")} /> : null}
+            </View> : null}
             <View style={styles.kpiRow}>
               <KpiTile label="Cash" value={fmt(dash?.cash)} icon={<ArrowLeftRight width={14} height={14} color="#60A5FA" />} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
-              <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
+              {stockEnabled ? <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} /> : null}
             </View>
 
-            {/* Quick Workspaces Header */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: theme.spacing.lg, marginBottom: theme.spacing.md }}>
-              <View>
-                <Text style={styles.sectionTitle}>Quick Workspaces</Text>
-                <Text style={{ fontSize: 11, color: theme.color.muted, marginTop: -6 }}>Hold any tile to organize & sort</Text>
-              </View>
-              {isEditingGrid ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Done organizing quick workspaces"
-                  onPress={() => setIsEditingGrid(false)}
-                  style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>Done</Text>
-                </Pressable>
-              ) : null}
-            </View>
-
-            {/* Re-order & Auto-Sort Floating Toolbar (visible during long-press edit mode) */}
-            {isEditingGrid ? (
-              <Card style={styles.organizePanel}>
-                <Text style={{ fontSize: 11, fontWeight: "800", color: theme.color.brandPrimary, marginBottom: 4 }}>
-                  Tile Organization & Auto-Sort
-                </Text>
-                <Text style={{ fontSize: 10, color: theme.color.muted, marginBottom: 6 }}>
-                  Drag a tile to move it, or choose an auto-sort preset:
-                </Text>
-                <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Sort quick workspaces by most recent"
-                    onPress={() => sortTilesByPreset("recent")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>⚡ Most Recent</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Sort quick workspaces by frequently used"
-                    onPress={() => sortTilesByPreset("frequent")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔥 Frequently Used</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Sort quick workspaces alphabetically"
-                    onPress={() => sortTilesByPreset("alphabetical")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.onSurface }}>🔤 A - Z</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Reset quick workspace order"
-                    onPress={() => sortTilesByPreset("default")}
-                    style={{ backgroundColor: theme.color.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border }}
-                  >
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.color.muted }}>🔄 Reset Default</Text>
-                  </Pressable>
-                </View>
-              </Card>
-            ) : null}
-
-            <Card style={{ marginTop: theme.spacing.lg, paddingVertical: 12 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitleInline}>Featured tools</Text>
-                  <Text style={{ fontSize: 11, color: theme.color.muted }}>Built for {workspacePack.title}; advanced tools stay available when you need them.</Text>
-                </View>
-                {workspacePack.advancedModules.length ? (
-                  <Pressable accessibilityRole="button" accessibilityLabel="Open all business tools" onPress={() => router.push("/modules" as any)}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.brandPrimary }}>All tools</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {workspacePack.featuredModules.map((module) => (
-                  <Pressable
-                    key={module.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${module.label}`}
-                    onPress={() => router.push(module.routes[0] as any)}
-                    style={{ minWidth: 92, maxWidth: 142, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }}
-                  >
-                    <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", color: theme.color.onSurface }}>{module.shortLabel}</Text>
-                    <Text numberOfLines={2} style={{ fontSize: 10, color: theme.color.muted, marginTop: 3 }}>{module.description}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </Card>
-
-            {/* Quick Workspaces — continuous One UI-style drag grid */}
-            <ReorderableWorkspaceGrid
-              items={visibleTiles}
-              editing={isEditingGrid}
-              scrollRef={scrollRef}
-              scrollY={scrollY}
-              onEditingChange={setIsEditingGrid}
-              onOrderChange={moveTile}
-              onTilePress={(tile: WorkspaceTileItem) => handleTilePress(tile as (typeof TILES)[number])}
-            />
-
-            {/* Sales trend chart */}
-            <Card style={{ marginTop: theme.spacing.lg }}>
+            {salesEnabled ? <Card style={{ marginTop: theme.spacing.lg }}>
               <Text style={styles.sectionTitleInline}>Sales Trend</Text>
               {barData.length > 0 ? (
                 <BarChart
@@ -702,7 +449,7 @@ export default function Dashboard() {
               ) : (
                 <Text style={styles.emptyText}>No sales recorded yet. Add your first sale to see trends.</Text>
               )}
-            </Card>
+            </Card> : null}
 
             <View style={{ height: 120 }} />
           </>
