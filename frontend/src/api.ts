@@ -25,6 +25,7 @@ import {
   createBook as beCreateBook,
   renameBook as beRenameBook,
   deleteBook as beDeleteBook,
+  clearAskHistory as beClearAskHistory,
   resetBooksAndActiveBook as beResetBooksAndActiveBook,
   type BookMeta,
 } from '@/src/db/backend';
@@ -33,6 +34,7 @@ const AI_PROVIDER_KEY = 'ai_provider';
 const AI_API_KEY_KEY  = 'ai_api_key';
 const AI_MODEL_KEY    = 'ai_model';
 const AI_BASE_URL_KEY = 'ai_base_url';
+const AI_TRANSFER_CONSENT_PREFIX = 'ledgr:ai-transfer-consent:';
 
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
 // per-book settings blob. A factory reset must wipe these too so the device is
@@ -878,13 +880,13 @@ export const api = {
     return { netProfit: display.netProfit, investors };
   },
   drawingsHistory: async () => (await v2SourceDocuments(['drawing'])).map((row: any) => ({ ...row, investorId: row.memberId })),
-  monthlyProfitTrend: async (months = 6) => {
+  monthlyProfitTrend: async (months = 6, locationId?: string) => {
     const out: any[] = []; const now = new Date();
     for (let offset = months - 1; offset >= 0; offset--) {
       const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const from = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
       const to = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
-      const report = await v2Report(from, to);
+      const report = await v2Report(from, to, locationId);
       const display = partnershipDisplayFromReports(report, await liveCommissionPct());
       out.push({ month: from.slice(0, 7), revenue: report.profitAndLoss.revenue, purchases: report.profitAndLoss.cogs, grossProfit: report.profitAndLoss.grossProfit, netProfit: display.netProfit });
     }
@@ -919,21 +921,22 @@ export const api = {
       netProfit: display.netProfit,
     };
   },
-  dailySummary: async (d: string) => {
+  dailySummary: async (d: string, locationId?: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('No active versioned V2 book with an open accounting period');
     const service = new V2AppService(runner);
     const ctx = await service.activeContext();
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
-    const report = await buildPersistentV2Reports(runner, { bookId: ctx.bookId, from: d, to: d });
+    const report = await buildPersistentV2Reports(runner, { bookId: ctx.bookId, from: d, to: d, locationId });
     const salesAndInvoices = await service.listSalesAndInvoices();
     const bills = await service.listBills();
     const payments = await api.listPayments();
     const cashMovements = await service.listCashMovements();
-    const daySales = salesAndInvoices.filter((x: any) => (x.date || '').slice(0, 10) === d);
-    const dayBills = bills.filter((x: any) => (x.date || '').slice(0, 10) === d);
-    const dayPayments = payments.filter((x: any) => (x.date || '').slice(0, 10) === d);
-    const dayMovements = cashMovements.filter((m: any) => (m.date || '').slice(0, 10) === d);
+    const inLocation = (row: any) => !locationId || String(row?.locationId || row?.metadata?.locationId || '') === locationId;
+    const daySales = salesAndInvoices.filter((x: any) => (x.date || '').slice(0, 10) === d && inLocation(x));
+    const dayBills = bills.filter((x: any) => (x.date || '').slice(0, 10) === d && inLocation(x));
+    const dayPayments = payments.filter((x: any) => (x.date || '').slice(0, 10) === d && inLocation(x));
+    const dayMovements = cashMovements.filter((m: any) => (m.date || '').slice(0, 10) === d && inLocation(m));
     const netCash = round2(dayMovements.reduce((sum: number, m: any) => sum + (m.direction === 'in' ? Number(m.amount || 0) : -Number(m.amount || 0)), 0));
     const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     return {
@@ -1081,10 +1084,11 @@ export const api = {
   resetAll: async () => api.clearAccountingData(),
   factoryReset: async () => {
     await api.clearAccountingData();
+    const books = await beListBooks();
     // Wipe each book's business configuration (and its logo key). We iterate all
     // books first, THEN tear down the books index — so no book is missed.
     try {
-      for (const book of await beListBooks()) {
+      for (const book of books) {
         await beSetActiveBook(book.id);
         await db.factoryReset();
       }
@@ -1104,10 +1108,14 @@ export const api = {
       const runner = activeSqlRunner();
       if (runner) await factoryResetV2Data(runner);
     }
+    const consentKeys = (await AsyncStorage.getAllKeys())
+      .filter((key) => key.startsWith(AI_TRANSFER_CONSENT_PREFIX));
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
+      beClearAskHistory(books.map((book) => book.id)),
       AsyncStorage.multiRemove([
         AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY,
+        ...consentKeys,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
@@ -1157,8 +1165,8 @@ export const api = {
     return detail.statement;
   },
   // Date-range reports
-  pnlRange: async (from: string, to: string) => {
-    const report = await v2Report(from, to);
+  pnlRange: async (from: string, to: string, locationId?: string) => {
+    const report = await v2Report(from, to, locationId);
     const display = partnershipDisplayFromReports(report, await liveCommissionPct());
     return {
       revenue: report.profitAndLoss.revenue,
@@ -1343,10 +1351,16 @@ export const api = {
       }
     }
 
+    const customerCreditNotes = creditNotes.filter((row: any) => row.role !== 'supplier');
+    const customerDebitNotes = debitNotes.filter((row: any) => row.role !== 'supplier');
+    const supplierCreditNotes = creditNotes.filter((row: any) => row.role === 'supplier');
+    const supplierDebitNotes = debitNotes.filter((row: any) => row.role === 'supplier');
     const noteTax = (rows: any[]) => rows.filter(inRange).reduce((sum: number, row: any) => sum + rowTaxAmount(row), 0);
-    const creditNoteTax = noteTax(creditNotes);
-    const debitNoteTax = noteTax(debitNotes);
-    const netOutputTax = Math.max(0, Math.round((outputTax - creditNoteTax + debitNoteTax) * 100) / 100);
+    const creditNoteTax = noteTax(customerCreditNotes);
+    const debitNoteTax = noteTax(customerDebitNotes);
+    const supplierCreditNoteTax = noteTax(supplierCreditNotes);
+    const supplierDebitNoteTax = noteTax(supplierDebitNotes);
+    const netOutputTax = Math.round((outputTax - creditNoteTax + debitNoteTax) * 100) / 100;
 
     let inputBase = 0;
     let inputTax = 0;
@@ -1379,31 +1393,46 @@ export const api = {
         }
       }
     }
+    const noteBase = (rows: any[]) => rows.filter(inRange).reduce((sum: number, row: any) => {
+      const total = Number(row.total || row.amount || 0);
+      return sum + total - rowTaxAmount(row);
+    }, 0);
+    const supplierCreditNoteBase = noteBase(supplierCreditNotes);
+    const supplierDebitNoteBase = noteBase(supplierDebitNotes);
+    inputBase = inputBase - supplierCreditNoteBase + supplierDebitNoteBase;
+    inputTax = inputTax - supplierCreditNoteTax + supplierDebitNoteTax;
     inputBase = Math.round(inputBase * 100) / 100;
     inputTax = Math.round(inputTax * 100) / 100;
     outputBase = Math.round(outputBase * 100) / 100;
     outputTax = Math.round(outputTax * 100) / 100;
 
-    const glTaxAccount = report?.trialBalance?.accounts?.find((a: any) => a.code === '2300');
-    const glTaxPayable = glTaxAccount ? glTaxAccount.normalBalance : 0;
-    const netTaxPayable = (basis === 'accrual' && glTaxAccount) ? glTaxPayable : Math.round((netOutputTax - inputTax) * 100) / 100;
+    const glTaxPayable = Math.round((report?.details || [])
+      .filter((line: any) => line.accountCode === '2300')
+      .reduce((sum: number, line: any) => sum + Number(line.credit || 0) - Number(line.debit || 0), 0) * 100) / 100;
+    const netTaxPayable = Math.round((netOutputTax - inputTax) * 100) / 100;
+    const taxReconciliationDifference = Math.round((netTaxPayable - glTaxPayable) * 100) / 100;
+    const taxReconciled = Math.abs(taxReconciliationDifference) <= 0.005;
 
     return {
       from, to, taxLabel: settings.taxLabel || 'Tax', taxRate: rate, basis,
-      outputBase, outputTax, creditNoteTax, debitNoteTax, netOutputTax, inputBase, inputTax, netTaxPayable, glTaxPayable,
+      outputBase, outputTax, creditNoteTax, debitNoteTax, netOutputTax,
+      inputBase, inputTax, supplierCreditNoteTax, supplierDebitNoteTax, netTaxPayable, glTaxPayable,
+      taxReconciliationDifference, taxReconciled, glReconciliationApplicable: basis === 'accrual',
       cashBasisPolicy: basis === 'cash'
         ? 'Input tax is recognized when cash is paid. Advances are taxed only if the receipt itself carries tax.'
         : undefined,
     };
   },
-  salesRegister: async (from: string, to: string) => {
-    const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));
+  salesRegister: async (from: string, to: string, locationId?: string) => {
+    const inLocation = (row: any) => !locationId || String(row.locationId || row.metadata?.locationId || '') === locationId;
+    const rows = (await v2SourceDocuments(['cash_sale','invoice'])).filter((row: any) => row.date >= from && row.date <= to && inLocation(row)).map((row: any) => ({ date: row.date, type: row.type === 'invoice' ? 'Invoice' : 'Cash Sale', ref: row.reference || '', party: row.partyName || '', amount: row.amount, status: row.status }));
     const cashTotal = rows.filter((row: any) => row.type === 'Cash Sale').reduce((sum: number, row: any) => sum + row.amount, 0);
     const invoiceTotal = rows.filter((row: any) => row.type === 'Invoice').reduce((sum: number, row: any) => sum + row.amount, 0);
     return { from, to, rows: rows.sort((a: any,b: any) => a.date.localeCompare(b.date)), total: cashTotal + invoiceTotal, cashTotal, invoiceTotal, count: rows.length };
   },
-  receiptsRegister: async (from: string, to: string) => {
-    const rows = (await api.listReceipts()).filter((row: any) => row.date >= from && row.date <= to).map((row: any) => ({ date: row.date, ref: row.receiptNumber, party: row.clientName || 'Walk-in', mode: row.mode, method: row.method || 'cash', amount: row.amount }));
+  receiptsRegister: async (from: string, to: string, locationId?: string) => {
+    const inLocation = (row: any) => !locationId || String(row.locationId || row.metadata?.locationId || '') === locationId;
+    const rows = (await api.listReceipts()).filter((row: any) => row.date >= from && row.date <= to && inLocation(row)).map((row: any) => ({ date: row.date, ref: row.receiptNumber, party: row.clientName || 'Walk-in', mode: row.mode, method: row.method || 'cash', amount: row.amount }));
     const byMethod: Record<string, number> = {}; const byMode: Record<string, number> = {};
     for (const row of rows) { byMethod[row.method] = (byMethod[row.method] || 0) + row.amount; byMode[row.mode] = (byMode[row.mode] || 0) + row.amount; }
     return { from, to, rows: rows.sort((a: any,b: any) => a.date.localeCompare(b.date)), byMethod, byMode, total: rows.reduce((sum: number, row: any) => sum + row.amount, 0), count: rows.length };

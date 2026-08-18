@@ -132,6 +132,25 @@ export class LocationDomainService {
     const row = await this.db.first<{ id: string; name: string }>('SELECT id,name FROM v2_locations WHERE id=? AND book_id=?', [id, c.bookId]);
     if (!row) throw new Error('Location not found');
     await this.db.run('UPDATE v2_locations SET archived=1 WHERE id=? AND book_id=?', [id, c.bookId]);
+    const cashBalance = await this.db.first<{ balance: number }>(
+      `SELECT COALESCE(SUM(l.debit-l.credit),0) AS balance
+       FROM v2_journal_lines l
+       JOIN v2_journal_entries j ON j.id=l.journal_id
+       JOIN v2_accounts a ON a.id=l.account_id
+       WHERE j.book_id=? AND l.location_id=? AND a.code IN ('1000','1010','1020','1030')`,
+      [c.bookId, id],
+    );
+    const stocked = await this.db.first<{ product_id: string }>(
+      `SELECT product_id FROM v2_stock_moves m
+       WHERE m.book_id=? AND m.location_id=?
+       GROUP BY product_id
+       HAVING ABS(${LOCATION_QTY_SQL}) > 0.0005
+       LIMIT 1`,
+      [c.bookId, id],
+    );
+    if (Math.abs(Number(cashBalance?.balance || 0)) > 0.005 || stocked) {
+      throw new Error('Transfer all cash and stock out of this location before archiving it.');
+    }
     return { id: row.id, bookId: c.bookId, name: row.name, archived: true };
   }
 
@@ -193,24 +212,26 @@ export class LocationDomainService {
     const available = await qtyAtLocation(this.db, c.bookId, product.id, fromId);
     if (qty > available + 0.0005) throw new Error('Not enough stock at the sending location');
     const sourceId = uid('loc_stock');
-    await this.db.run(
-      'INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)',
-      [sourceId, c.bookId, 'location_stock_transfer', input.date, null, JSON.stringify({
-        fromLocationId: fromId,
-        toLocationId: toId,
-        productId: product.id,
-        qty,
-        notes: input.notes || '',
-      }), null],
-    );
-    await this.db.run(
-      'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
-      [uid('move'), c.bookId, product.id, input.date, qty, Number(product.cost), 'transfer_out', sourceId, fromId],
-    );
-    await this.db.run(
-      'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
-      [uid('move'), c.bookId, product.id, input.date, qty, Number(product.cost), 'transfer_in', sourceId, toId],
-    );
+    await this.repo.runInTransaction(async () => {
+      await this.db.run(
+        'INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)',
+        [sourceId, c.bookId, 'location_stock_transfer', input.date, null, JSON.stringify({
+          fromLocationId: fromId,
+          toLocationId: toId,
+          productId: product.id,
+          qty,
+          notes: input.notes || '',
+        }), null],
+      );
+      await this.db.run(
+        'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
+        [uid('move'), c.bookId, product.id, input.date, qty, Number(product.cost), 'transfer_out', sourceId, fromId],
+      );
+      await this.db.run(
+        'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
+        [uid('move'), c.bookId, product.id, input.date, qty, Number(product.cost), 'transfer_in', sourceId, toId],
+      );
+    });
     return { sourceId, qty, unitCost: Number(product.cost), value: mulMoney(Number(product.cost), qty) };
   }
 

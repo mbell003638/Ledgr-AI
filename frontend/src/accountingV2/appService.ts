@@ -273,7 +273,9 @@ export class V2AppService {
 
   // ---------- Source Ownership & Helpers ----------
   async sourceType(id: string): Promise<string | null> {
-    const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [id]);
+    const active = await this.db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+    if (!active?.value || await accountingBookVersion(this.db, active.value) !== V2_BOOK_VERSION) return null;
+    const row = await this.db.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=? AND book_id=?', [id, active.value]);
     return row?.type || null;
   }
 

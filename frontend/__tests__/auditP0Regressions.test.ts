@@ -1,6 +1,6 @@
 import { makeNodeRunner } from './helpers/nodeRunner';
 import { initializeV2Book } from '../src/accountingV2/appBootstrap';
-import { V2AppService } from '../src/accountingV2/appService';
+import { createAppMutationRouter, V2AppService } from '../src/accountingV2/appService';
 import { V2SqlRepository } from '../src/accountingV2/repository';
 import { V2CloseBooksRepository } from '../src/accountingV2/closeBooksRepository';
 
@@ -56,6 +56,39 @@ describe('Audit P0 Forensic Regressions', () => {
     expect(partyA).toBeDefined();
     expect(partyB).toBeDefined();
     expect(partyA.id).not.toEqual(partyB.id);
+  });
+
+  it('ACC-01d: mutation router rejects a source owned by an inactive book', async () => {
+    const node = makeNodeRunner();
+    try {
+      await initializeV2Book(node.runner, {
+        book: { id: 'book_source', name: 'Source Book' },
+        period: { id: 'source:2026', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      await initializeV2Book(node.runner, {
+        book: { id: 'book_active', name: 'Active Book' },
+        period: { id: 'active:2026', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      await node.runner.run("INSERT OR REPLACE INTO meta(key,value) VALUES('v2_active_book_id',?)", ['book_source']);
+      const service = new V2AppService(node.runner);
+      const invoice = await service.createInvoice({ date: '2026-02-01', clientName: 'Book A Customer', amount: 100 });
+
+      await node.runner.run("INSERT OR REPLACE INTO meta(key,value) VALUES('v2_active_book_id',?)", ['book_active']);
+      const mutations = createAppMutationRouter(service);
+      await expect(mutations.deleteInvoice(invoice.source.id)).rejects.toThrow(/unknown V2 invoice source/i);
+      expect(await service.ownsSource(invoice.source.id, 'invoice')).toBe(false);
+
+      const source = await node.runner.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [invoice.source.id]);
+      expect(JSON.parse(source?.metadata || '{}').reversed).toBeFalsy();
+      expect(Number((await node.runner.first<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM v2_journal_entries WHERE reversal_of IS NOT NULL',
+      ))?.n || 0)).toBe(0);
+
+      await node.runner.run("INSERT OR REPLACE INTO meta(key,value) VALUES('v2_active_book_id',?)", ['book_source']);
+      await expect(mutations.deleteInvoice(invoice.source.id)).resolves.toBeDefined();
+    } finally {
+      node.close();
+    }
   });
 
   it('ACC-01b / ENG-02: Party form and invoices share the exact same party record', async () => {
@@ -213,5 +246,33 @@ describe('Audit P0 Forensic Regressions', () => {
     await expect(service.markInvoicePaid(inv.source.id, { date: '2026-06-11', method: 'cash' })).rejects.toThrow(
       'Invoice already settled',
     );
+  });
+
+  it('ACC-02b: receipt edit rejects duplicate allocations whose aggregate exceeds invoice open balance', async () => {
+    const { runner, close, service, repo } = await setupBook('book_duplicate_allocation');
+    try {
+      const invoice = await service.createInvoice({ date: '2026-04-01', clientName: 'Duplicate Corp', amount: 100 });
+      const receipt = await service.createReceipt({
+        date: '2026-04-02', clientName: 'Duplicate Corp', amount: 20,
+        allocations: [{ invoiceSourceId: invoice.source.id, amount: 20 }],
+      });
+
+      await expect(service.updateReceipt(receipt.source.id, {
+        date: '2026-04-02', amount: 120,
+        allocations: [
+          { invoiceSourceId: invoice.source.id, amount: 60 },
+          { invoiceSourceId: invoice.source.id, amount: 60 },
+        ],
+      })).rejects.toThrow('Invalid invoice allocation');
+
+      expect(await repo.invoiceOpen(invoice.source.id)).toBe(80);
+      const allocations = await runner.all<{ amount: number }>(
+        'SELECT amount FROM v2_invoice_allocations WHERE invoice_source_id=?',
+        [invoice.source.id],
+      );
+      expect(allocations).toEqual([{ amount: 20 }]);
+    } finally {
+      close();
+    }
   });
 });

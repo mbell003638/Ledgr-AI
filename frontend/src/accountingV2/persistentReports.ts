@@ -74,7 +74,7 @@ async function openPeriodCogsAdjustment(db: SqlRunner, options: V2ReportOptions)
     if (options.from && options.from > period.end_date) return undefined;
     const end = options.to && options.to < period.end_date ? options.to : period.end_date;
     const { cogs, hasClosingCount } = await computePeriodicCogs(db, options.bookId, { start: period.start_date, end });
-    if (!hasClosingCount || cogs <= 0) return undefined;
+    if (!hasClosingCount || Math.abs(cogs) <= 0.005) return undefined;
     // Resolve account ids by (book_id, code) rather than templating `${bookId}:account:${code}`.
     // If a book's ids ever diverge from that convention, a templated id would miss the report's
     // accountsById lookup and the COGS estimate would silently vanish from the P&L.

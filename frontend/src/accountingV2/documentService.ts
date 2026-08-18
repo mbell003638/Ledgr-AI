@@ -62,7 +62,6 @@ export class V2DocumentService {
   async reverseSource(sourceId: string, expectedType: string, memo: string, deleted = false, opts: { allowAllocations?: boolean } = {}) {
     return this.repoTx(async () => {
       const source = await this.sourceRow(sourceId, expectedType);
-      await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(source.book_id, source.id);
       if (expectedType === 'invoice') {
         // [Finding E / ACC-01c] Drop auto-applied advance allocations generated during invoice creation.
         // Pure advances only credited 2100 without crediting 1100. Direct receipts (which credited 1100)
@@ -98,6 +97,11 @@ export class V2DocumentService {
       for (const extra of originals.slice(1)) {
         reversal = await this.insertReversal(source, extra, memo);
       }
+      await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(
+        source.book_id,
+        source.id,
+        { sourceId: reversal.source.id, date: reversal.journal.date },
+      );
       await this.repo.db.run("UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,'{}'),'$.reversed',1,'$.deleted',?,'$.reversalSourceId',?) WHERE id=?", [deleted ? 1 : 0, reversal.source.id, sourceId]);
       return reversal;
     });
@@ -106,8 +110,6 @@ export class V2DocumentService {
   /** Reverse and replace one source as a single all-or-nothing edit. */
   async replaceSource<T>(sourceId: string, expectedType: string, memo: string, createReplacement: () => Promise<T>): Promise<T> {
     return this.repoTx(async () => {
-      const source = await this.sourceRow(sourceId, expectedType);
-      await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(source.book_id, source.id);
       await this.reverseSource(sourceId, expectedType, memo);
       return createReplacement();
     });
@@ -202,8 +204,20 @@ export class V2DocumentService {
   private async postReceiptInCurrentTransaction(input: ReceiptInput) {
     const amount = positive(input.amount); const party = await this.repo.db.first<any>('SELECT roles FROM v2_parties WHERE id=? AND book_id=?', [input.partyId, input.bookId]);
     if (!party || !JSON.parse(party.roles).includes('customer')) throw new Error('Customer party not found');
-    let allocated = 0; const allocations = input.allocations || [];
-    for (const a of allocations) { const value = positive(a.amount, 'Allocation'); const inv = await this.repo.db.first<any>("SELECT book_id,metadata FROM v2_sources WHERE id=? AND type='invoice'", [a.invoiceSourceId]); const meta = inv ? JSON.parse(inv.metadata || '{}') : {}; if (!inv || inv.book_id !== input.bookId || meta.partyId !== input.partyId || value > await this.repo.invoiceOpen(a.invoiceSourceId) + 0.005) throw new Error('Invalid invoice allocation'); allocated = cents(allocated + value); }
+    let allocated = 0;
+    const allocations = input.allocations || [];
+    const pendingByInvoice: Record<string, number> = {};
+    for (const a of allocations) {
+      const value = positive(a.amount, 'Allocation');
+      const inv = await this.repo.db.first<any>("SELECT book_id,metadata FROM v2_sources WHERE id=? AND type='invoice'", [a.invoiceSourceId]);
+      const meta = inv ? JSON.parse(inv.metadata || '{}') : {};
+      pendingByInvoice[a.invoiceSourceId] = cents((pendingByInvoice[a.invoiceSourceId] || 0) + value);
+      if (!inv || inv.book_id !== input.bookId || meta.partyId !== input.partyId
+        || pendingByInvoice[a.invoiceSourceId] > await this.repo.invoiceOpen(a.invoiceSourceId) + 0.005) {
+        throw new Error('Invalid invoice allocation');
+      }
+      allocated = cents(allocated + value);
+    }
     if (allocated > amount + .005) throw new Error('Allocations exceed receipt');
     const source: V2Source = { id: uid('receipt'), bookId: input.bookId, type: 'receipt', date: input.date, reference: input.reference, metadata: { partyId: input.partyId, total: amount, method: input.method, allocated, advance: cents(amount - allocated) } };
     const lines = [{ accountId: `${input.bookId}:account:${this.paymentCode(input.method)}`, partyId: input.partyId, debit: amount, credit: 0 }, ...(allocated ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: 0, credit: allocated }] : []), ...(amount > allocated ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.CUSTOMER_ADVANCES}`, partyId: input.partyId, debit: 0, credit: cents(amount - allocated) }] : [])];

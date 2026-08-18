@@ -168,7 +168,7 @@ export default function BillForm() {
 
       const qty = Number(stockQty);
       const stockProduct = products.find((p) => p.id === stockProductId);
-      const productLines = !editId && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
+      const productLines = !editId && billType === "inventory" && stockEnabled && stockProduct && Number.isFinite(qty) && qty !== 0
         ? [{ productId: stockProduct.id, qty, ...(Number.isFinite(Number(stockProduct.cost)) ? { unitCost: Number(stockProduct.cost) } : {}) }]
         : undefined;
 
@@ -244,7 +244,10 @@ export default function BillForm() {
                 <Pressable
                   key={t}
                   testID={`bill-type-${t}`}
-                  onPress={() => setBillType(t)}
+                  onPress={() => {
+                    setBillType(t);
+                    if (t === "expense") { setStockProductId(""); setStockQty(""); }
+                  }}
                   style={[styles.segBtnFull, billType === t && styles.segBtnActive]}
                 >
                   <Text style={[styles.segText, billType === t && styles.segTextActive]}>
@@ -336,7 +339,7 @@ export default function BillForm() {
               </View>
             ))}
 
-            {!editId && stockEnabled ? (
+            {!editId && billType === "inventory" && stockEnabled ? (
               <View style={{ marginTop: 8 }}>
                 <Text style={styles.label}>Product stock (optional)</Text>
                 <Text style={styles.hint}>Adds to live product quantity when this bill is saved.</Text>

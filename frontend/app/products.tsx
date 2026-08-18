@@ -344,6 +344,7 @@ export default function ProductsScreen() {
       <ScreenHeader
         title="Products"
         subtitle={enabled ? "Each sale and purchase updates quantity" : "Periodic counts remain the default"}
+        leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>}
         rightAction={enabled ? (
           <Pressable
             testID="btn-add-product"

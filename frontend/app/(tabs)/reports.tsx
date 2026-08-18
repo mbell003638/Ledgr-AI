@@ -95,6 +95,7 @@ export default function ReportsScreen() {
   const loadRequest = useRef(0);
   const sectionRequest = useRef(0);
   const loadedVersion = useRef(-1);
+  const loadedLocation = useRef("");
   const hasLoaded = useRef(false);
   const loadedSections = useRef(new Set<string>());
 
@@ -228,6 +229,7 @@ export default function ReportsScreen() {
       setPeriods(Array.isArray(pd) ? pd : []);
       loadedSections.current.clear();
       loadedVersion.current = getDataVersion();
+      loadedLocation.current = locationId;
       hasLoaded.current = true;
       setRangeNotice(`Showing ${from} to ${to}`);
     } catch (e: any) {
@@ -238,7 +240,7 @@ export default function ReportsScreen() {
   }, [from, to, locationId]);
 
   const loadSection = useCallback(async (section: Seg) => {
-    const key = `${from}|${to}|${section}|${bizSettings?.accountingStyle || 'standard'}`;
+    const key = `${from}|${to}|${locationId}|${section}|${bizSettings?.accountingStyle || 'standard'}`;
     if (loadedSections.current.has(key)) return;
     const requestId = ++sectionRequest.current;
     setSectionLoading(true);
@@ -247,7 +249,7 @@ export default function ReportsScreen() {
         const value = await api.capitalStatement(); if (requestId !== sectionRequest.current) return;
         setCap(normalizeCapitalStatement(value));
       } else if (section === "P&L") {
-        const trend: any = await api.monthlyProfitTrend(6);
+        const trend: any = await api.monthlyProfitTrend(6, locationId || undefined);
         if (requestId !== sectionRequest.current) return;
         setProfitTrend((Array.isArray(trend) ? trend : []).map((item: any) => ({
           label: item.label || String(item.month || "").slice(5),
@@ -265,11 +267,11 @@ export default function ReportsScreen() {
       } else if (section === "Tax") {
         const value = await api.taxReport(from, to); if (requestId !== sectionRequest.current) return; setTaxRep(value);
       } else if (section === "Sales Reg") {
-        const value: any = await api.salesRegister(from, to);
+        const value: any = await api.salesRegister(from, to, locationId || undefined);
         if (requestId !== sectionRequest.current) return;
         setSalesReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [] });
       } else if (section === "Receipts") {
-        const value: any = await api.receiptsRegister(from, to);
+        const value: any = await api.receiptsRegister(from, to, locationId || undefined);
         if (requestId !== sectionRequest.current) return;
         setReceiptsReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [], byMethod: value?.byMethod || {} });
       }
@@ -279,12 +281,12 @@ export default function ReportsScreen() {
     } finally {
       if (requestId === sectionRequest.current) setSectionLoading(false);
     }
-  }, [bizSettings?.accountingStyle, from, to]);
+  }, [bizSettings?.accountingStyle, from, locationId, to]);
 
   useFocusEffect(useCallback(() => {
-    if (hasLoaded.current && loadedVersion.current === getDataVersion()) return;
+    if (hasLoaded.current && loadedVersion.current === getDataVersion() && loadedLocation.current === locationId) return;
     load();
-  }, [load]));
+  }, [load, locationId]));
 
   useEffect(() => {
     if (!loading && hasLoaded.current) loadSection(seg);
@@ -440,11 +442,13 @@ export default function ReportsScreen() {
     }
   };
 
+  const shopScopedSegment = !locationId || ["Summary", "P&L", "Balance", "Trial", "Sales Reg", "Receipts"].includes(seg);
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader 
         title="Reports" 
-        subtitle={locationId ? "This shop" : "All shops"}
+        subtitle={locationId && shopScopedSegment ? "This shop" : "All shops"}
         rightAction={
           <GlowPressable
             testID="btn-custom-report"
@@ -459,6 +463,11 @@ export default function ReportsScreen() {
           </GlowPressable>
         }
       />
+      {locationId && !shopScopedSegment ? (
+        <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.color.muted, fontSize: 13 }}>
+          This section is company-wide; the selected shop is not applied.
+        </Text>
+      ) : null}
       {shopCogsNotice ? (
         <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.color.warning, fontSize: 13 }}>
           Shop COGS is pending period close; gross and net profit may change after the inventory count is posted.

@@ -254,11 +254,21 @@ export class ProductDomainService {
     });
   }
 
-  async reverseMovesForSource(bookId: string, sourceId: string): Promise<void> {
+  async reverseMovesForSource(bookId: string, sourceId: string, reversal?: { sourceId: string; date: string }): Promise<void> {
     if (!(await this.moduleEnabled(bookId))) return;
+    const originalPeriod = await this.db.first<{ status: string | null }>(
+      `SELECT p.status FROM v2_journal_entries j
+       LEFT JOIN v2_periods p ON p.id=j.period_id AND p.book_id=j.book_id
+       WHERE j.book_id=? AND j.source_id=? ORDER BY j.date,j.id LIMIT 1`,
+      [bookId, sourceId],
+    );
+    const preserveHistory = originalPeriod?.status === 'closed';
+    if (preserveHistory && (!reversal?.sourceId || !reversal.date)) {
+      throw new Error('Closed-period stock reversal requires a linked reversal source');
+    }
     await this.repo.runInTransaction(async () => {
-      const moves = await this.db.all<{ id: string; product_id: string; qty: number; kind: string }>(
-        'SELECT id,product_id,qty,kind FROM v2_stock_moves WHERE book_id=? AND source_id=?',
+      const moves = await this.db.all<{ id: string; product_id: string; qty: number; unit_cost: number; kind: string; location_id: string | null }>(
+        'SELECT id,product_id,qty,unit_cost,kind,location_id FROM v2_stock_moves WHERE book_id=? AND source_id=?',
         [bookId, sourceId],
       );
       if (!moves.length) return;
@@ -270,8 +280,16 @@ export class ProductDomainService {
           : move.kind === 'purchase' || move.kind === 'transfer_in' ? current - qty
           : current - qty;
         await this.db.run('UPDATE v2_products SET qty=? WHERE id=? AND book_id=?', [nextQty, product.id, bookId]);
+        if (preserveHistory) {
+          await this.db.run(
+            'INSERT INTO v2_stock_moves(id,book_id,product_id,date,qty,unit_cost,kind,source_id,location_id) VALUES(?,?,?,?,?,?,?,?,?)',
+            [uid('move_reversal'), bookId, move.product_id, reversal!.date, -qty, Number(move.unit_cost), move.kind, reversal!.sourceId, move.location_id],
+          );
+        }
       }
-      await this.db.run('DELETE FROM v2_stock_moves WHERE book_id=? AND source_id=?', [bookId, sourceId]);
+      if (!preserveHistory) {
+        await this.db.run('DELETE FROM v2_stock_moves WHERE book_id=? AND source_id=?', [bookId, sourceId]);
+      }
     });
   }
 

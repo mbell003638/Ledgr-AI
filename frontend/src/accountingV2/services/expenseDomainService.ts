@@ -99,6 +99,10 @@ export class ExpenseDomainService {
           invoiceNo: input.invoiceNo,
           notes: input.notes,
           photo: input.photo,
+          subtotal: input.subtotal,
+          tax: input.tax,
+          taxRate: input.taxRate,
+          taxLabel: input.taxLabel,
           ...(productLines.length ? { productLines } : {}),
         },
       });
@@ -117,7 +121,14 @@ export class ExpenseDomainService {
     const next = await this.editInput(input);
     let priorMeta: AnyRecord = {};
     try { priorMeta = JSON.parse(row.metadata || '{}'); } catch { priorMeta = {}; }
-    const payload = Array.isArray(next.productLines) ? next : { ...next, productLines: priorMeta.productLines };
+    const payload = {
+      ...next,
+      ...(!Array.isArray(next.productLines) ? { productLines: priorMeta.productLines } : {}),
+      ...(next.subtotal == null && priorMeta.subtotal != null ? { subtotal: priorMeta.subtotal } : {}),
+      ...(next.tax == null && priorMeta.tax != null ? { tax: priorMeta.tax } : {}),
+      ...(next.taxRate == null && priorMeta.taxRate != null ? { taxRate: priorMeta.taxRate } : {}),
+      ...(next.taxLabel == null && priorMeta.taxLabel != null ? { taxLabel: priorMeta.taxLabel } : {}),
+    };
     return this.documents.replaceSource(id, row.type, 'Edit bill', () => this.createBill(payload));
   }
 

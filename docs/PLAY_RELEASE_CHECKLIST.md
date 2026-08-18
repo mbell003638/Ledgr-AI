@@ -1,6 +1,6 @@
 # Google Play Release Checklist
 
-This checklist is for the current Codex Android application. An APK sideload test is not proof that the Play AAB is ready.
+This checklist is for the current Ledgr Android application. An APK sideload test is not proof that the Play AAB is ready.
 
 ## Repository-verified configuration
 
@@ -19,7 +19,7 @@ This checklist is for the current Codex Android application. An APK sideload tes
 
 ## Owner action: identity, account and signing
 
-- [ ] Confirm com.ahem.ledgrai.codexsol and Ledgr Codex are permanent.
+- [ ] Confirm com.ahem.ledgrai.codexsol and Ledgr are permanent.
 - [ ] Complete Play Console identity verification and any Android developer verification registration required for the account.
 - [ ] Create one permanent upload keystore and archive it and its passwords in at least two secure locations.
 - [ ] Add RELEASE_KEYSTORE_B64, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD and RELEASE_KEY_PASSWORD as GitHub Actions secrets.

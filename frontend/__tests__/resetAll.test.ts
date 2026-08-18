@@ -14,6 +14,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 import { updateSettings, factoryReset } from '../src/db/local';
 import {
   createBook,
+  deleteBook,
   setActiveBook,
   activeBookId,
   resetBooksAndActiveBook,
@@ -38,6 +39,15 @@ describe('books + active-book teardown (factoryReset support) [C4/M2]', () => {
     expect(mem['ledgr:books']).toBeUndefined();
     expect(mem['ledgr:activeBook']).toBeUndefined();
     expect(activeBookId()).toBe('default');
+  });
+
+  it('deleting a Business Account removes its persisted Ask AI history', async () => {
+    const tech = await createBook('Technician');
+    mem[`ledgr:ask-history:${tech.id}`] = JSON.stringify([{ role: 'user', text: 'private question' }]);
+
+    await deleteBook(tech.id);
+
+    expect(mem[`ledgr:ask-history:${tech.id}`]).toBeUndefined();
   });
 });
 

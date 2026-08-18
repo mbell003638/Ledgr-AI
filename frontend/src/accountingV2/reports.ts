@@ -181,16 +181,21 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
   const pnlTotalsById = new Map(accounts.map((account) => [account.id, { debit: 0, credit: 0 }]));
   const sourcesById = new Map(store.sources.map((source) => [source.id, source]));
   const partiesById = new Map(store.parties.map((party) => [party.id, party]));
-  const journals = store.journals.filter(
+  const asOfJournals = store.journals.filter(
+    (entry) => entry.bookId === options.bookId && (!options.to || entry.date <= options.to),
+  );
+  const journals = asOfJournals.filter(
     (entry) => entry.bookId === options.bookId && isInRange(entry, options),
   );
+  const rangeJournalIds = new Set(journals.map((entry) => entry.id));
   const errors: V2ReconciliationError[] = [];
   const details: V2ReportDetail[] = [];
   let totalDebit = 0;
   let totalCredit = 0;
 
-  for (const journal of journals) {
+  for (const journal of asOfJournals) {
     const isPeriodClosingEntry = journal.memo === 'Period close';
+    const isRangeJournal = rangeJournalIds.has(journal.id);
     let journalDebit = 0;
     let journalCredit = 0;
     for (const line of journal.lines) {
@@ -221,18 +226,20 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
       } else {
         accountTotal.debit += debit;
         accountTotal.credit += credit;
-        if (!isPeriodClosingEntry) {
+        if (isRangeJournal && !isPeriodClosingEntry) {
           const pnlTotal = pnlTotalsById.get(line.accountId)!;
           pnlTotal.debit += debit;
           pnlTotal.credit += credit;
         }
-        const account = accountsById.get(line.accountId)!;
-        const source = journal.sourceId ? sourcesById.get(journal.sourceId) : undefined;
-        details.push({ journalId: journal.id, sourceId: journal.sourceId, date: journal.date,
-          memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
-          accountName: account.name, accountType: account.type, partyId: line.partyId,
-          partyName: line.partyId ? partiesById.get(line.partyId)?.name : undefined,
-          sourceType: source?.type, sourceMetadata: source?.metadata, debit, credit });
+        if (isRangeJournal) {
+          const account = accountsById.get(line.accountId)!;
+          const source = journal.sourceId ? sourcesById.get(journal.sourceId) : undefined;
+          details.push({ journalId: journal.id, sourceId: journal.sourceId, date: journal.date,
+            memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
+            accountName: account.name, accountType: account.type, partyId: line.partyId,
+            partyName: line.partyId ? partiesById.get(line.partyId)?.name : undefined,
+            sourceType: source?.type, sourceMetadata: source?.metadata, debit, credit });
+        }
       }
     }
     const difference = cents(journalDebit - journalCredit);
@@ -246,29 +253,38 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
     }
   }
 
-  // Inject the open-period periodic COGS estimate (Dr COGS / Cr Inventory) so profit
-  // reflects cost of sales before the close posts it. Non-persisted; keeps books balanced.
+  // Inject signed open-period periodic COGS so profit matches the eventual close.
+  // Negative COGS reverses the posting (Dr Inventory / Cr COGS). Non-persisted and balanced.
   const cogsAdj = options.cogsAdjustment;
-  if (cogsAdj && Number.isFinite(cogsAdj.amount) && cogsAdj.amount > 0) {
+  if (cogsAdj && Number.isFinite(cogsAdj.amount) && cents(cogsAdj.amount) !== 0) {
     const amount = cents(cogsAdj.amount);
+    const absolute = Math.abs(amount);
+    const cogsDebit = amount > 0 ? absolute : 0;
+    const cogsCredit = amount < 0 ? absolute : 0;
+    const inventoryDebit = amount < 0 ? absolute : 0;
+    const inventoryCredit = amount > 0 ? absolute : 0;
     const cogsTotal = totalsById.get(cogsAdj.cogsAccountId);
     const inventoryTotal = totalsById.get(cogsAdj.inventoryAccountId);
     if (cogsTotal && inventoryTotal && accountsById.has(cogsAdj.cogsAccountId) && accountsById.has(cogsAdj.inventoryAccountId)) {
-      cogsTotal.debit += amount;
-      inventoryTotal.credit += amount;
+      cogsTotal.debit += cogsDebit;
+      cogsTotal.credit += cogsCredit;
+      inventoryTotal.debit += inventoryDebit;
+      inventoryTotal.credit += inventoryCredit;
       const pnlCogsTotal = pnlTotalsById.get(cogsAdj.cogsAccountId);
       const pnlInventoryTotal = pnlTotalsById.get(cogsAdj.inventoryAccountId);
       if (pnlCogsTotal && pnlInventoryTotal) {
-        pnlCogsTotal.debit += amount;
-        pnlInventoryTotal.credit += amount;
+        pnlCogsTotal.debit += cogsDebit;
+        pnlCogsTotal.credit += cogsCredit;
+        pnlInventoryTotal.debit += inventoryDebit;
+        pnlInventoryTotal.credit += inventoryCredit;
       }
-      totalDebit += amount;
-      totalCredit += amount;
+      totalDebit += absolute;
+      totalCredit += absolute;
       const cogsAccount = accountsById.get(cogsAdj.cogsAccountId)!;
       const inventoryAccount = accountsById.get(cogsAdj.inventoryAccountId)!;
       const date = options.to || '';
-      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: cogsAccount.id, accountCode: cogsAccount.code, accountName: cogsAccount.name, accountType: cogsAccount.type, debit: amount, credit: 0 });
-      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: inventoryAccount.id, accountCode: inventoryAccount.code, accountName: inventoryAccount.name, accountType: inventoryAccount.type, debit: 0, credit: amount });
+      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: cogsAccount.id, accountCode: cogsAccount.code, accountName: cogsAccount.name, accountType: cogsAccount.type, debit: cogsDebit, credit: cogsCredit });
+      details.push({ journalId: 'periodic-cogs', sourceId: undefined, date, memo: 'Periodic cost of goods sold (estimate)', accountId: inventoryAccount.id, accountCode: inventoryAccount.code, accountName: inventoryAccount.name, accountType: inventoryAccount.type, debit: inventoryDebit, credit: inventoryCredit });
     }
   }
 

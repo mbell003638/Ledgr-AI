@@ -251,7 +251,7 @@ describe('V2 application write integration', () => {
       await service.recordManualLiability({ date: '2026-07-02', name: 'Equipment finance', amount: 10, recognition: 'asset' });
       await service.recordInventoryCount({ date: '2026-07-03', value: 30, notes: 'Counted' });
       const { getV2Dashboard } = await import('../src/accountingV2/v2Dashboard');
-      await expect(getV2Dashboard(runner, 'active-v2')).resolves.toMatchObject({ otherAssets: 60, otherLiabilities: 10, assets: 60, liabilities: 10, netWorth: 50 });
+      await expect(getV2Dashboard(runner, 'active-v2')).resolves.toMatchObject({ otherAssets: 60, otherLiabilities: 10, assets: 90, liabilities: 10, netWorth: 80 });
       const overview = await service.inventoryOverview();
       expect(overview?.history).toEqual(expect.arrayContaining([expect.objectContaining({ date: '2026-07-03', actualStock: 30 })]));
       await service.deleteV2InventoryCount(String(overview?.history[0].id));

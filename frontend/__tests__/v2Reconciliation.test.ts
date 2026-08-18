@@ -46,7 +46,7 @@ describe('V2 journal-derived reports and reconciliation', () => {
     expect(report.reconciliation).toEqual({ ok: true, errors: [] });
   });
 
-  test('applies inclusive date filtering to every report', () => {
+  test('applies inclusive range filtering while keeping balance reports cumulative through `to`', () => {
     const store = storeWithBooks('a');
     post(store, 'a', 'before', '2025-12-31', [['1000', 999, 0], ['3000', 0, 999]]);
     post(store, 'a', 'inside', '2026-01-15', [['1000', 75, 0], ['4000', 0, 75]]);
@@ -55,7 +55,7 @@ describe('V2 journal-derived reports and reconciliation', () => {
     const report = buildV2Reports(store, { bookId: 'a', from: '2026-01-01', to: '2026-01-31' });
 
     expect(report.journalCount).toBe(1);
-    expect(report.trialBalance.totals).toEqual({ debit: 75, credit: 75, difference: 0 });
+    expect(report.trialBalance.totals).toEqual({ debit: 1074, credit: 1074, difference: 0 });
     expect(report.profitAndLoss.netProfit).toBe(75);
     expect(report.balanceSheet.difference).toBe(0);
   });

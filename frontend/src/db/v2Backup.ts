@@ -16,17 +16,34 @@
  *     parents-first) then restore meta — the caller wraps this in ONE outer
  *     transaction (withImportTransaction) so it composes with the legacy import
  *     into a single all-or-nothing restore.
- *   - Column mapping is derived from PRAGMA table_info at runtime, so a backup
- *     row carrying UNKNOWN extra columns (from a newer app version) is inserted
- *     using only the columns this schema actually has — the extras are skipped
- *     and reported in `warnings` rather than throwing.
+ *   - Import compatibility is checked before any table is wiped. Data-bearing
+ *     unknown tables/columns are rejected so a newer backup can never appear to
+ *     restore successfully while silently losing information.
  */
 
 import type { SqlRunner } from './schema';
 import { V2_TABLES } from './schema';
 
 /** Schema version marker embedded in the V2 payload (independent of SQLITE SCHEMA_VERSION). */
-export const V2_BACKUP_VERSION = 1 as const;
+export const V2_BACKUP_VERSION = 2 as const;
+
+/** Tables present in the only supported legacy V2 backup schema. */
+const V2_BACKUP_V1_TABLES = [
+  'v2_books',
+  'v2_personas',
+  'v2_parties',
+  'v2_accounts',
+  'v2_periods',
+  'v2_sources',
+  'v2_journal_entries',
+  'v2_journal_lines',
+  'v2_invoice_allocations',
+  'v2_inventory_counts',
+  'v2_members',
+  'v2_close_books',
+] as const;
+
+const LEGACY_FIXED_ASSET_TABLES = ['v2_fixed_assets', 'v2_asset_depreciation'] as const;
 
 /** Meta keys that are part of the V2 ledger's identity and must round-trip. */
 const V2_META_EXACT_KEYS = ['v2_active_book_id'] as const;
@@ -90,9 +107,9 @@ export const INSERT_ORDER: readonly string[] = [
   'v2_employees',
   'v2_pay_runs',
   'v2_payslips',
+  'v2_locations',
   'v2_products',
   'v2_stock_moves',
-  'v2_locations',
 ];
 
 async function tableColumns(db: SqlRunner, table: string): Promise<string[]> {
@@ -105,14 +122,27 @@ async function tableColumns(db: SqlRunner, table: string): Promise<string[]> {
  * self-describing payload.
  */
 export async function exportV2Data(db: SqlRunner): Promise<V2BackupPayload> {
+  // Current builds intentionally preserve these tables on upgraded databases,
+  // but they are not represented by the current product model. Refuse to make
+  // a backup that would silently omit user-entered legacy asset data.
+  for (const table of LEGACY_FIXED_ASSET_TABLES) {
+    const exists = await db.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      [table],
+    );
+    if (!exists) continue;
+    const count = await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`);
+    if (Number(count?.n || 0) > 0) {
+      throw new Error(
+        `Backup cannot continue because legacy Fixed Asset Register data exists in ${table}. `
+        + 'Export or migrate that data before creating a Ledgr backup.',
+      );
+    }
+  }
+
   const tables: Record<string, any[]> = {};
   for (const table of V2_TABLES) {
-    try {
-      tables[table] = await db.all<any>(`SELECT * FROM ${table}`);
-    } catch {
-      // Table missing (older physical schema): record as empty rather than fail.
-      tables[table] = [];
-    }
+    tables[table] = await db.all<any>(`SELECT * FROM ${table}`);
   }
 
   const meta: Record<string, string> = {};
@@ -131,7 +161,61 @@ export async function exportV2Data(db: SqlRunner): Promise<V2BackupPayload> {
 
 /** True when a payload actually carries V2 data (used to decide restore vs. skip). */
 export function hasV2Payload(payload: any): payload is V2BackupPayload {
-  return !!payload && typeof payload === 'object' && payload.tables && typeof payload.tables === 'object';
+  return !!payload && typeof payload === 'object' && !Array.isArray(payload)
+    && !!payload.tables && typeof payload.tables === 'object' && !Array.isArray(payload.tables);
+}
+
+function isMeaningfulUnknownValue(value: any): boolean {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function normalizePayload(payload: V2BackupPayload): { payload: V2BackupPayload; warnings: string[] } {
+  if (!hasV2Payload(payload)) throw new Error('Backup does not contain a valid V2 accounting ledger.');
+  const version = Number(payload.schemaVersion);
+  if (version !== 1 && version !== V2_BACKUP_VERSION) {
+    throw new Error(
+      `Unsupported V2 backup schema v${Number.isFinite(version) ? version : 'unknown'}. `
+      + `This app supports schemas v1 and v${V2_BACKUP_VERSION}.`,
+    );
+  }
+
+  const tables: Record<string, any[]> = {};
+  const required = version === 1 ? V2_BACKUP_V1_TABLES : V2_TABLES;
+  for (const table of required) {
+    if (!Array.isArray(payload.tables[table])) {
+      throw new Error(`V2 backup schema v${version} is missing required table: ${table}`);
+    }
+  }
+  for (const table of V2_TABLES) {
+    const rows = payload.tables[table];
+    if (rows !== undefined && !Array.isArray(rows)) {
+      throw new Error(`V2 backup table ${table} is not an array.`);
+    }
+    tables[table] = Array.isArray(rows) ? rows : [];
+  }
+
+  const warnings: string[] = [];
+  if (version === 1) warnings.push(`Migrated V2 backup schema v1 to v${V2_BACKUP_VERSION}.`);
+  const known = new Set<string>(V2_TABLES as readonly string[]);
+  for (const [table, rows] of Object.entries(payload.tables)) {
+    if (known.has(table)) continue;
+    if (!Array.isArray(rows)) throw new Error(`Unknown V2 backup table ${table} is malformed.`);
+    if (rows.length > 0) {
+      throw new Error(`Cannot restore data-bearing unknown V2 backup table: ${table}. Update Ledgr first.`);
+    }
+    warnings.push(`Ignored empty unknown backup table: ${table}`);
+  }
+
+  return {
+    payload: {
+      schemaVersion: V2_BACKUP_VERSION,
+      tables,
+      meta: payload.meta && typeof payload.meta === 'object' && !Array.isArray(payload.meta)
+        ? { ...payload.meta }
+        : {},
+    },
+    warnings,
+  };
 }
 
 /** Throw if a new V2_TABLES entry was added without updating wipe/restore order. */
@@ -158,8 +242,8 @@ async function wipeV2Tables(db: SqlRunner): Promise<void> {
 }
 
 /**
- * Insert backup rows for one table using ONLY the columns that exist in the
- * live schema. Unknown extra columns are collected into `skippedColumns`.
+ * Insert preflighted backup rows using only live columns. Any unknown columns
+ * reaching this function are known to be empty and are reported as warnings.
  */
 async function insertRows(
   db: SqlRunner,
@@ -198,29 +282,46 @@ async function insertRows(
  * unit — this function does NOT open its own transaction.
  *
  * Order: wipe (FK-safe) → insert parents→children (FK-safe) → restore meta.
- * Tolerant of unknown extra tables/columns: they are skipped and named in
- * `warnings` instead of aborting the whole restore.
+ * Empty unknown tables/columns are harmless and reported. Data-bearing unknown
+ * tables/columns are rejected during preflight before the first destructive SQL.
  */
 export async function importV2Data(db: SqlRunner, payload: V2BackupPayload): Promise<V2ImportResult> {
-  const warnings: string[] = [];
   const rowCounts: Record<string, number> = {};
-  if (!hasV2Payload(payload)) {
-    return { restored: false, rowCounts, warnings: ['No V2 data in backup payload.'] };
-  }
+  const normalized = normalizePayload(payload);
+  payload = normalized.payload;
+  const warnings = [...normalized.warnings];
 
-  // Flag any backup tables the current schema doesn't know about.
-  const known = new Set<string>(V2_TABLES as readonly string[]);
-  for (const table of Object.keys(payload.tables)) {
-    if (!known.has(table)) warnings.push(`Skipped unknown backup table: ${table}`);
+  // Preflight every row and column before wiping anything. Unknown columns are
+  // accepted only when they contain no information on every row.
+  const liveColumns = new Map<string, string[]>();
+  const skippedColumns = new Set<string>();
+  for (const table of INSERT_ORDER) {
+    const columns = await tableColumns(db, table);
+    liveColumns.set(table, columns);
+    const liveSet = new Set(columns);
+    for (const row of payload.tables[table]) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        throw new Error(`V2 backup table ${table} contains an invalid row.`);
+      }
+      for (const [key, value] of Object.entries(row)) {
+        if (liveSet.has(key)) continue;
+        if (isMeaningfulUnknownValue(value)) {
+          throw new Error(`Cannot restore data-bearing unknown V2 backup column: ${table}.${key}. Update Ledgr first.`);
+        }
+        skippedColumns.add(`${table}.${key}`);
+      }
+    }
   }
 
   await wipeV2Tables(db);
+  // A restore replaces V2 ledger identity as well as tables. Clear managed
+  // keys first so books absent from the payload cannot leave stale pointers.
+  await db.run("DELETE FROM meta WHERE key='v2_active_book_id' OR key GLOB 'v2_book_version:*'");
 
-  const skippedColumns = new Set<string>();
   for (const table of INSERT_ORDER) {
     const rows = payload.tables[table];
     if (!Array.isArray(rows) || rows.length === 0) { rowCounts[table] = 0; continue; }
-    const liveColumns = await tableColumns(db, table);
+    const columns = liveColumns.get(table) || [];
 
     let ordered = rows;
     if (table === 'v2_journal_entries') {
@@ -232,7 +333,7 @@ export async function importV2Data(db: SqlRunner, payload: V2BackupPayload): Pro
         return ar - br;
       });
     }
-    rowCounts[table] = await insertRows(db, table, ordered, liveColumns, skippedColumns);
+    rowCounts[table] = await insertRows(db, table, ordered, columns, skippedColumns);
   }
 
   for (const dropped of skippedColumns) warnings.push(`Skipped unknown column: ${dropped}`);
@@ -240,10 +341,27 @@ export async function importV2Data(db: SqlRunner, payload: V2BackupPayload): Pro
   // Restore the V2 meta keys (active book id, per-book versions).
   if (payload.meta && typeof payload.meta === 'object') {
     for (const [key, value] of Object.entries(payload.meta)) {
+      if (!(V2_META_EXACT_KEYS as readonly string[]).includes(key)
+        && !V2_META_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
       await db.run(
         'INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
         [key, String(value)],
       );
+    }
+  }
+
+  // Remove imported identity keys that do not resolve to restored books.
+  const active = await db.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'");
+  if (active?.value && !(await db.first('SELECT id FROM v2_books WHERE id=?', [active.value]))) {
+    await db.run("DELETE FROM meta WHERE key='v2_active_book_id'");
+    warnings.push(`Removed invalid active V2 book reference: ${active.value}`);
+  }
+  const versionRows = await db.all<{ key: string }>("SELECT key FROM meta WHERE key GLOB 'v2_book_version:*'");
+  for (const row of versionRows) {
+    const bookId = row.key.slice('v2_book_version:'.length);
+    if (!bookId || !(await db.first('SELECT id FROM v2_books WHERE id=?', [bookId]))) {
+      await db.run('DELETE FROM meta WHERE key=?', [row.key]);
+      warnings.push(`Removed invalid V2 book version reference: ${bookId || row.key}`);
     }
   }
 

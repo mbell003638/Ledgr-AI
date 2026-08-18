@@ -68,8 +68,10 @@ export class V2SqlRepository {
     return this.tx(async () => {
       const id = input.id || uid('je');
       await this.validateJournal({ ...input, sourceId: source.id }, source.id);
-      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), sourceLocationId(source)]);
-      return this.insertJournal(id, { ...input, sourceId: source.id }, sourceLocationId(source));
+      const locationId = sourceLocationId(source);
+      if (locationId) await this.validateLocation(source.bookId, locationId);
+      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), locationId]);
+      return this.insertJournal(id, { ...input, sourceId: source.id }, locationId);
     });
   }
 
@@ -78,8 +80,10 @@ export class V2SqlRepository {
     return this.tx(async () => {
       const id = input.id || uid('je');
       await this.validateJournal({ ...input, sourceId: source.id }, source.id);
-      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), sourceLocationId(source)]);
-      const journal = await this.insertJournal(id, { ...input, sourceId: source.id }, sourceLocationId(source));
+      const locationId = sourceLocationId(source);
+      if (locationId) await this.validateLocation(source.bookId, locationId);
+      await this.db.run('INSERT INTO v2_sources(id,book_id,type,date,reference,metadata,location_id) VALUES(?,?,?,?,?,?,?)', [source.id, source.bookId, source.type, source.date, source.reference || null, JSON.stringify(source.metadata || {}), locationId]);
+      const journal = await this.insertJournal(id, { ...input, sourceId: source.id }, locationId);
       for (const a of allocations) await this.db.run('INSERT INTO v2_invoice_allocations(id,book_id,invoice_source_id,receipt_source_id,amount,allocated_at) VALUES(?,?,?,?,?,?)', [a.id, a.bookId, a.invoiceSourceId, a.receiptSourceId, a.amount, a.allocatedAt]);
       return journal;
     });
@@ -117,7 +121,14 @@ export class V2SqlRepository {
     for (const line of input.lines) {
       if (!(await this.db.first('SELECT id FROM v2_accounts WHERE id = ? AND book_id = ?', [line.accountId, input.bookId]))) throw new Error(`Account does not belong to book: ${line.accountId}`);
       if (line.partyId && !(await this.db.first('SELECT id FROM v2_parties WHERE id = ? AND book_id = ?', [line.partyId, input.bookId]))) throw new Error(`Business account does not belong to this book: ${line.partyId}`);
+      if (line.locationId) await this.validateLocation(input.bookId, line.locationId);
     }
+  }
+
+  private async validateLocation(bookId: string, locationId: string) {
+    const location = await this.db.first<{ archived: number }>('SELECT archived FROM v2_locations WHERE id=? AND book_id=?', [locationId, bookId]);
+    if (!location) throw new Error(`Location does not belong to this book: ${locationId}`);
+    if (location.archived) throw new Error('That location is archived');
   }
 
   private async insertJournal(id: string, input: Omit<V2JournalEntry, 'id'>, fallbackLocationId?: string | null): Promise<V2JournalEntry> {

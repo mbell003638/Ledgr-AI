@@ -3,6 +3,7 @@ import { V2SqlRepository } from '../repository';
 import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES, type V2JournalEntry, type V2Source } from '../types';
 import { round2 } from '../../money';
+import { resolveWriteLocationId } from './locationDomainService';
 
 const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
@@ -63,6 +64,7 @@ export type PayrollRunInput = {
   method: 'cash' | 'bank';
   employeeIds?: string[];
   notes?: string;
+  locationId?: string;
 };
 
 export type PayrollPayRun = {
@@ -183,6 +185,7 @@ export class PayrollDomainService {
     const context = await this.getActiveContext(input.date);
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     await this.requirePayroll(context.bookId);
+    const locationId = await resolveWriteLocationId(this.db, context.bookId, input.locationId);
     if (input.method !== 'cash' && input.method !== 'bank') throw new Error('Payroll method must be cash or bank');
 
     const employees = await this.loadEmployeesForRun(context.bookId, input.date, input.employeeIds);
@@ -202,10 +205,10 @@ export class PayrollDomainService {
     await this.repo.ensureDefaultAccounts(context.bookId);
     const cashCode = input.method === 'bank' ? V2_ACCOUNT_CODES.BANK : V2_ACCOUNT_CODES.CASH;
     const lines = [
-      totalGross ? { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.WAGES_EXPENSE}`, debit: totalGross, credit: 0 } : null,
-      totalNet ? { accountId: `${context.bookId}:account:${cashCode}`, debit: 0, credit: totalNet } : null,
-      totalTax ? { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.PAYROLL_TAX_PAYABLE}`, debit: 0, credit: totalTax } : null,
-    ].filter((line): line is { accountId: string; debit: number; credit: number } => !!line);
+      totalGross ? { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.WAGES_EXPENSE}`, debit: totalGross, credit: 0, locationId: locationId || undefined } : null,
+      totalNet ? { accountId: `${context.bookId}:account:${cashCode}`, debit: 0, credit: totalNet, locationId: locationId || undefined } : null,
+      totalTax ? { accountId: `${context.bookId}:account:${V2_ACCOUNT_CODES.PAYROLL_TAX_PAYABLE}`, debit: 0, credit: totalTax, locationId: locationId || undefined } : null,
+    ].filter(Boolean) as { accountId: string; debit: number; credit: number; locationId?: string }[];
 
     const sourceId = uid('pay_run');
     const payRunId = uid('pr');
@@ -215,6 +218,7 @@ export class PayrollDomainService {
       bookId: context.bookId,
       type: 'pay_run',
       date: input.date,
+      locationId: locationId || undefined,
       metadata: {
         method: input.method,
         notes,
@@ -222,6 +226,7 @@ export class PayrollDomainService {
         totalTax,
         totalNet,
         employeeIds: slips.map((slip) => slip.employee.id),
+        ...(locationId ? { locationId } : {}),
       },
     };
 

@@ -164,8 +164,9 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec('PRAGMA wal_autocheckpoint = 1000;');
   await db.exec(schemaSql());
   // Schema 7: drop the unused Fixed Asset Register tables. Chart accounts 1400/1450 stay.
-  await db.exec('DROP TABLE IF EXISTS v2_asset_depreciation;');
-  await db.exec('DROP TABLE IF EXISTS v2_fixed_assets;');
+  // Legacy fixed-asset tables may contain user-entered data from earlier builds.
+  // Keep them intact even though the current UI uses generic dated asset entries.
+  // A future explicit migration can convert them after a verified backup.
   await addColumnIfMissing(db, 'v2_sources', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_journal_lines', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_stock_moves', 'location_id', 'TEXT');

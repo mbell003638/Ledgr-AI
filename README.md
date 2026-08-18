@@ -26,7 +26,7 @@ See docs/PRIVACY_POLICY.md, docs/PLAY_DATA_SAFETY.md and docs/PLAY_RELEASE_CHECK
 
 ## Android identity
 
-Current Codex Android identity:
+Current Android release identity:
 
 - Display name: Ledgr
 - Application ID: com.ahem.ledgrai.codexsol

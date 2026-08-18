@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLLECTIONS, CollectionName, SqlRunner, initSchema } from './schema';
 import { initializeV2Book, accountingBookVersion } from '../accountingV2/appBootstrap';
 import { deleteV2BookData } from '../accountingV2/resetBook';
+import { askHistoryStorageKey } from '../utils/askHistory';
 import {
   readColl as sqlRead,
   writeColl as sqlWrite,
@@ -103,6 +104,12 @@ export async function renameBook(id: string, name: string): Promise<void> {
   await AsyncStorage.setItem(BOOKS_INDEX_KEY, JSON.stringify(next));
 }
 
+/** Remove locally persisted Ask AI conversations for the specified books. */
+export async function clearAskHistory(bookIds: readonly string[]): Promise<void> {
+  const keys = [...new Set(bookIds.filter(Boolean).map(askHistoryStorageKey))];
+  await Promise.all(keys.map((key) => AsyncStorage.removeItem(key)));
+}
+
 export async function deleteBook(id: string): Promise<void> {
   if (id === DEFAULT_BOOK) throw new Error('The main account cannot be deleted.');
   // Remove the authoritative normalized ledger first. If it fails, leave the
@@ -115,6 +122,7 @@ export async function deleteBook(id: string): Promise<void> {
   }
   await AsyncStorage.removeItem(`ledgr:${id}:settings`);
   await AsyncStorage.removeItem(`ledgr:${id}:logo`);
+  await clearAskHistory([id]);
   const books = (await listBooks()).filter((b) => b.id !== id);
   await AsyncStorage.setItem(BOOKS_INDEX_KEY, JSON.stringify(books));
   if (activeBook === id) await setActiveBook(DEFAULT_BOOK);

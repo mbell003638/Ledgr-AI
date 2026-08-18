@@ -1,4 +1,4 @@
-/** Current-format backup contract. Older formats were never released. */
+/** Current-format backup contract plus its single supported predecessor. */
 
 const mem: Record<string, string> = {};
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -30,8 +30,8 @@ describe('current backup format', () => {
     }
   });
 
-  it('rejects files that are not exact current-format V2 backups', async () => {
-    await expect(importBackup({ _meta: { app: 'ledgr', version: BACKUP_VERSION - 1 } })).rejects.toThrow(/unsupported.*format/i);
+  it('rejects files outside the current and explicitly supported legacy formats', async () => {
+    await expect(importBackup({ _meta: { app: 'ledgr', version: BACKUP_VERSION - 2 } })).rejects.toThrow(/unsupported.*format/i);
     await expect(importBackup({ _meta: { app: 'ledgr', version: BACKUP_VERSION + 1 } })).rejects.toThrow(/unsupported.*format/i);
     await expect(importBackup({ _meta: { app: 'notledgr', version: BACKUP_VERSION } })).rejects.toThrow(/not a Ledgr backup/i);
     await expect(importBackup({ _meta: { app: 'ledgr', version: BACKUP_VERSION } })).rejects.toThrow(/does not contain.*V2/i);

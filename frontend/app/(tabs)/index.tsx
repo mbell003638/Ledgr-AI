@@ -130,9 +130,9 @@ export default function Dashboard() {
     })();
   }, []);
 
-  // Remember the (data version, dailyDate) at which the dashboard last loaded,
+  // Remember the (data version, dailyDate, location) at which the dashboard last loaded,
   // so a plain focus-return with nothing changed can skip the full re-read.
-  const loadedRef = React.useRef<{ version: number; date: string } | null>(null);
+  const loadedRef = React.useRef<{ version: number; date: string; locationId: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -149,11 +149,11 @@ export default function Dashboard() {
       }
       const [d, day] = await Promise.all([
         api.dashboard(shopId || undefined),
-        api.dailySummary(dailyDate),
+        api.dailySummary(dailyDate, shopId || undefined),
       ]);
       setDash(d);
       setDaily(day);
-      loadedRef.current = { version: getDataVersion(), date: dailyDate };
+      loadedRef.current = { version: getDataVersion(), date: dailyDate, locationId: shopId };
     } catch (e) {
       console.warn("dash", e);
     } finally {
@@ -240,12 +240,12 @@ export default function Dashboard() {
 
   useFocusEffect(useCallback(() => {
     const last = loadedRef.current;
-    const upToDate = last != null && last.version === getDataVersion() && last.date === dailyDate;
+    const upToDate = last != null && last.version === getDataVersion() && last.date === dailyDate && last.locationId === locationId;
     if (upToDate) return; // nothing changed since last load — instant return
     // Defer the heavy dashboard aggregation past the tab/entering animation.
     const task = InteractionManager.runAfterInteractions(() => { load(); });
     return () => task.cancel();
-  }, [load, dailyDate]));
+  }, [load, dailyDate, locationId]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -286,6 +286,13 @@ export default function Dashboard() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [rangeData, setRangeData] = useState<any>(null);
+  const chooseLocation = (nextLocationId: string) => {
+    setLocationId(nextLocationId);
+    setPeriodPreset("all");
+    setFromDate("");
+    setToDate("");
+    setRangeData(null);
+  };
 
   const applyPeriod = useCallback(async (preset: "all" | "today" | "this_month" | "custom", fStr?: string, tStr?: string) => {
     setPeriodPreset(preset);
@@ -313,11 +320,11 @@ export default function Dashboard() {
 
     if (f && t) {
       try {
-        const res = await api.pnlRange(f, t);
+        const res = await api.pnlRange(f, t, locationId || undefined);
         setRangeData(res);
       } catch (e) { console.warn(e); }
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, locationId, toDate]);
 
   const displaySales = rangeData ? rangeData.revenue : (dash?.totalSales ?? 0);
   const displayPurchases = rangeData ? rangeData.purchases : (dash?.totalPurchases ?? 0);
@@ -331,11 +338,11 @@ export default function Dashboard() {
       <ScreenHeader title="Ledgr" subtitle={locationId ? "This shop" : "Your business finances, simplified"} testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
       {shops.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+          <Pressable onPress={() => chooseLocation("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
             <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
           </Pressable>
           {shops.map((shop) => (
-            <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+            <Pressable key={shop.id} onPress={() => chooseLocation(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
               <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
             </Pressable>
           ))}

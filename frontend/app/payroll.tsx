@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, RefreshControl, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -13,6 +13,7 @@ import { fmt } from "@/src/theme";
 import { getEnabledFeatures } from "@/src/utils/featureFlags";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { confirmAction } from "@/src/utils/alerts";
+import { LocationPicker } from "@/src/components/LocationPicker";
 
 type PayMethod = "cash" | "bank";
 
@@ -111,8 +112,12 @@ export default function PayrollScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [currSym, setCurrSym] = useState("$");
+  const [locationId, setLocationId] = useState("");
+  const payslipRequest = useRef(0);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payRuns, setPayRuns] = useState<PayRun[]>([]);
@@ -153,17 +158,20 @@ export default function PayrollScreen() {
   };
 
   const load = useCallback(async () => {
+    setLoadError("");
     try {
-      const settings = await api.getSettings().catch(() => ({}));
+      const settings = await api.getSettings();
       const features = getEnabledFeatures(settings);
       const on = Array.isArray(features) && features.includes("payroll");
       setEnabled(on);
       setCurrSym(getCurrencySymbol((settings as any)?.currency || "USD"));
       if (!on) {
+        payslipRequest.current += 1;
         setEmployees([]);
         setPayRuns([]);
         setPayslips([]);
         setSelectedRunId(null);
+        setHasLoaded(true);
         return;
       }
       const [empRows, runRows] = await Promise.all([
@@ -172,9 +180,9 @@ export default function PayrollScreen() {
       ]);
       setEmployees(asList(empRows).map(mapEmployee).filter((row) => row.id && !row.archived));
       setPayRuns(asList(runRows).map(mapPayRun).filter((row) => row.id));
-    } catch {
-      setEmployees([]);
-      setPayRuns([]);
+      setHasLoaded(true);
+    } catch (e: any) {
+      setLoadError(e?.message || "Payroll could not be loaded.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -238,8 +246,9 @@ export default function PayrollScreen() {
     setRunningPay(true);
     setPayError("");
     try {
-      await api.runPayroll({ date: dateIso, method: payMethod, notes: payNotes.trim() });
+      await api.runPayroll({ date: dateIso, method: payMethod, notes: payNotes.trim(), ...(locationId ? { locationId } : {}) });
       setPayNotes("");
+      payslipRequest.current += 1;
       setSelectedRunId(null);
       setPayslips([]);
       await load();
@@ -251,6 +260,7 @@ export default function PayrollScreen() {
   };
 
   const openPayRun = async (run: PayRun) => {
+    const requestId = ++payslipRequest.current;
     if (selectedRunId === run.id) {
       setSelectedRunId(null);
       setPayslips([]);
@@ -261,8 +271,10 @@ export default function PayrollScreen() {
     setPayslipError("");
     try {
       const rows = await api.listPayslips(run.id);
+      if (requestId !== payslipRequest.current) return;
       setPayslips(asList(rows).map((row) => mapPayslip(row, employees)));
     } catch (e: any) {
+      if (requestId !== payslipRequest.current) return;
       setPayslips([]);
       setPayslipError(e?.message || "Could not load payslips.");
     }
@@ -300,7 +312,11 @@ export default function PayrollScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Payroll" subtitle="Employees, pay runs, and payslips" />
+      <ScreenHeader
+        title="Payroll"
+        subtitle="Employees, pay runs, and payslips"
+        leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>}
+      />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} color={theme.color.brandPrimary} />
       ) : (
@@ -309,7 +325,14 @@ export default function PayrollScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           keyboardShouldPersistTaps="handled"
         >
-          {!enabled ? (
+          {loadError ? (
+            <Card>
+              <Text style={styles.cardTitle}>Payroll could not be loaded</Text>
+              <Text style={styles.errorInline}>{loadError}</Text>
+              <FormActions primaryLabel="Retry" onPrimary={() => { setLoading(true); load(); }} />
+            </Card>
+          ) : null}
+          {hasLoaded ? (!enabled ? (
             <Card>
               <View style={styles.formTitleRow}>
                 <View style={styles.formIcon}>
@@ -328,6 +351,7 @@ export default function PayrollScreen() {
             </Card>
           ) : (
             <>
+              <LocationPicker value={locationId} onChange={setLocationId} />
               <Card>
                 <View style={styles.formTitleRow}>
                   <View style={styles.formIcon}>
@@ -530,7 +554,7 @@ export default function PayrollScreen() {
               </Card>
               <View style={{ height: 120 }} />
             </>
-          )}
+          )) : null}
         </ScrollView>
       )}
     </SafeAreaView>

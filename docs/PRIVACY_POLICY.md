@@ -14,7 +14,7 @@ AI features are optional and require the user to configure an AI provider and AP
 
 ## Storage and security
 
-Accounting data is stored locally on the device. On iOS and Android, AI API keys are stored using the device's secure credential storage. On the web target, browsers have no device keychain, so a saved key is kept in the browser's local storage for that site only and should be treated as session convenience, not hardware-backed security. Android operating-system backup is disabled. Users may explicitly export a JSON backup; exported files are readable accounting data and should be stored and shared securely.
+Accounting data is stored locally on the device. On iOS and Android, AI API keys are stored using the device's secure credential storage. On the web target, browsers have no device keychain, so an entered API key is kept only in memory for the current page session and is lost when the page reloads or closes. Android operating-system backup is disabled. Users may explicitly export a JSON backup; exported files are readable accounting data and should be stored and shared securely.
 
 Camera, photo, microphone, and document access is requested only when the user invokes a feature that needs it. App Lock can use the device PIN or biometric authentication when enabled.
 

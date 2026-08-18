@@ -154,6 +154,10 @@ export class SaleDomainService {
         reference: input.reference,
         reason: input.reason,
         notes: input.notes,
+        subtotal: input.subtotal,
+        tax: input.tax,
+        taxRate: input.taxRate,
+        taxLabel: input.taxLabel,
         method: paymentMethodOrUndefined(input.method),
       });
     });
@@ -184,6 +188,10 @@ export class SaleDomainService {
       reference: input.reference ?? row.reference ?? '',
       reason: input.reason ?? prior.reason ?? '',
       notes: input.notes ?? prior.notes ?? '',
+      subtotal: input.subtotal ?? (prior.invoiceSourceId ? undefined : prior.subtotal),
+      tax: input.tax ?? (prior.invoiceSourceId ? undefined : prior.tax),
+      taxRate: input.taxRate ?? (prior.invoiceSourceId ? undefined : prior.taxRate),
+      taxLabel: input.taxLabel ?? prior.taxLabel,
     });
     const create = row.type === 'credit_note' ? this.createCreditNote.bind(this) : this.createDebitNote.bind(this);
     return this.documents.replaceSource(id, row.type, 'Edit debit / credit note', () => create({

@@ -8,6 +8,27 @@ function withLocation<T extends Record<string, unknown>>(metadata: T | undefined
   return locationId ? { ...(metadata || {} as T), locationId } : (metadata || {} as T);
 }
 
+function grossTaxBreakdown(amount: number, metadata: Record<string, unknown> | undefined) {
+  const rawRate = metadata?.taxRate;
+  const taxRate = rawRate == null || rawRate === '' ? 0 : Number(rawRate);
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('Tax rate must be between 0 and 100');
+  let tax: number;
+  if (metadata?.tax != null && metadata.tax !== '') {
+    tax = cents(Number(metadata.tax));
+  } else if (metadata?.subtotal != null && metadata.subtotal !== '') {
+    tax = cents(amount - Number(metadata.subtotal));
+  } else {
+    tax = taxRate > 0 ? cents(amount - amount / (1 + taxRate / 100)) : 0;
+  }
+  if (!Number.isFinite(tax) || tax < 0 || tax >= amount) {
+    if (tax === 0) return { tax: 0, subtotal: amount, taxRate };
+    throw new Error('Tax must be a non-negative amount below the document total');
+  }
+  const subtotal = cents(amount - tax);
+  if (subtotal <= 0) throw new Error('Taxable subtotal must be positive');
+  return { tax, subtotal, taxRate };
+}
+
 /**
  * Advance receipts a party still has unconsumed credit on, oldest first. A receipt's
  * remaining advance = its total minus every allocation already pointing at it (advance
@@ -156,9 +177,20 @@ export async function postPurchase(repo: V2SqlRepository, input: { bookId:string
   // part of the new payable instead of leaving cash tied up in an advance.
   const applied = input.method ? 0 : Math.min(await supplierAdvanceBalance(repo, input.bookId, input.partyId), amount);
   const isExpense = Boolean(input.metadata?.isExpense === true || input.metadata?.billType === 'expense');
-  const source: V2Source = { id: uid(type), bookId: input.bookId, type, date: input.date, locationId: input.locationId, metadata: withLocation({ partyId: input.partyId, total: amount, method: input.method, ...(applied > 0 ? { supplierAdvanceApplied: cents(applied) } : {}), ...(input.metadata || {}) }, input.locationId) };
+  const { tax, subtotal, taxRate } = grossTaxBreakdown(amount, input.metadata);
+  const source: V2Source = {
+    id: uid(type), bookId: input.bookId, type, date: input.date, locationId: input.locationId,
+    metadata: withLocation({
+      ...(input.metadata || {}),
+      partyId: input.partyId, total: amount, method: input.method, subtotal, tax, taxRate,
+      ...(applied > 0 ? { supplierAdvanceApplied: cents(applied) } : {}),
+    }, input.locationId),
+  };
   const debitCode = isExpense ? V2_ACCOUNT_CODES.EXPENSES : V2_ACCOUNT_CODES.INVENTORY;
-  const lines: any[] = [{ accountId: `${input.bookId}:account:${debitCode}`, partyId: input.partyId, debit: amount, credit: 0 }];
+  const lines: any[] = [{ accountId: `${input.bookId}:account:${debitCode}`, partyId: input.partyId, debit: subtotal, credit: 0 }];
+  if (tax > 0) {
+    lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, partyId: input.partyId, debit: tax, credit: 0 });
+  }
   if (input.method) {
     lines.push({ accountId: `${input.bookId}:account:${paymentCode(input.method)}`, partyId: input.partyId, debit: 0, credit: amount });
   } else {
@@ -221,26 +253,43 @@ export async function postExpense(repo:V2SqlRepository,input:{bookId:string;peri
  *   - credit note  → DR AP, CR Inventory/Expense (we owe the supplier LESS)
  *   - debit note   → DR Inventory/Expense, CR AP (we owe the supplier MORE)
  */
-async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string; method?: V2PaymentMethod; locationId?: string }, kind: 'credit_note'|'debit_note') {
+async function note(repo: V2SqlRepository, input: { bookId:string; periodId:string; partyId:string; invoiceSourceId?:string|null; date:string; amount:number; role?: 'customer'|'supplier'; reference?: string; reason?: string; notes?: string; method?: V2PaymentMethod; locationId?: string; tax?: number; taxRate?: number; taxLabel?: string; subtotal?: number }, kind: 'credit_note'|'debit_note') {
   const amount = cents(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const role = input.role === 'supplier' ? 'supplier' : 'customer';
   let isExpenseBill = false;
+  let linkedMeta: Record<string, any> | null = null;
   if (role === 'supplier') {
     await supplier(repo, input.bookId, input.partyId);
     if (input.invoiceSourceId) {
-      const bill = await repo.db.first<{ metadata: string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=?", [input.invoiceSourceId, input.bookId]);
-      const meta = bill ? JSON.parse(bill.metadata || '{}') : {};
-      if (meta.isExpense === true || meta.billType === 'expense') isExpenseBill = true;
+      const bill = await repo.db.first<{ metadata: string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type IN ('cash_purchase','credit_purchase')", [input.invoiceSourceId, input.bookId]);
+      linkedMeta = bill ? JSON.parse(bill.metadata || '{}') : null;
+      if (!linkedMeta || linkedMeta.partyId !== input.partyId) throw new Error('Bill does not belong to supplier');
+      if (linkedMeta.isExpense === true || linkedMeta.billType === 'expense') isExpenseBill = true;
     }
   } else {
     await customer(repo, input.bookId, input.partyId);
     if (input.invoiceSourceId) {
       const inv = await repo.db.first<{ metadata:string }>("SELECT metadata FROM v2_sources WHERE id=? AND book_id=? AND type='invoice'", [input.invoiceSourceId, input.bookId]);
-      const meta = inv ? JSON.parse(inv.metadata) : {};
-      if (meta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
+      linkedMeta = inv ? JSON.parse(inv.metadata) : null;
+      if (!linkedMeta || linkedMeta.partyId !== input.partyId) throw new Error('Invoice does not belong to customer');
     }
   }
+  let taxMetadata: Record<string, unknown> = {
+    tax: input.tax,
+    taxRate: input.taxRate,
+    subtotal: input.subtotal,
+  };
+  if (input.tax == null && input.subtotal == null && input.taxRate == null && linkedMeta) {
+    const linkedTotal = Number(linkedMeta.total || 0);
+    const linkedTax = Number(linkedMeta.tax || 0);
+    taxMetadata = {
+      tax: linkedTotal > 0 ? cents(linkedTax * amount / linkedTotal) : 0,
+      taxRate: Number(linkedMeta.taxRate || 0),
+    };
+  }
+  const { tax, subtotal, taxRate } = grossTaxBreakdown(amount, taxMetadata);
+  const taxLabel = input.taxLabel || linkedMeta?.taxLabel;
   const reference = String(input.reference || '').trim() || undefined;
   const reason = String(input.reason || '').trim();
   const notes = String(input.notes || '').trim();
@@ -249,23 +298,31 @@ async function note(repo: V2SqlRepository, input: { bookId:string; periodId:stri
   const supplierAccount = isExpenseBill ? V2_ACCOUNT_CODES.EXPENSES : V2_ACCOUNT_CODES.INVENTORY;
   const source: V2Source = {
     id: uid(kind), bookId: input.bookId, type: kind, date: input.date, reference, locationId: input.locationId,
-    metadata: withLocation({ partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role, total: amount, reason, notes, ...(method ? { method } : {}) }, input.locationId),
+    metadata: withLocation({
+      partyId: input.partyId, invoiceSourceId: input.invoiceSourceId || null, role,
+      total: amount, subtotal, tax, taxRate, ...(taxLabel ? { taxLabel } : {}),
+      reason, notes, ...(method ? { method } : {}),
+    }, input.locationId),
   };
   const credit = kind === 'credit_note';
   const lines = role === 'supplier'
     ? (credit ? [
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: amount, credit: 0 },
-        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: 0, credit: amount },
+        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: 0, credit: subtotal },
+        ...(tax ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax }] : []),
       ] : [
-        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${supplierAccount}`, debit: subtotal, credit: 0 },
+        ...(tax ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: tax, credit: 0 }] : []),
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: 0, credit: amount },
       ])
     : (credit ? [
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES_RETURNS}`, debit: amount, credit: 0 },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES_RETURNS}`, debit: subtotal, credit: 0 },
+        ...(tax ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: tax, credit: 0 }] : []),
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: 0, credit: amount },
       ] : [
         { accountId: `${input.bookId}:account:${payAccount}`, partyId: input.partyId, debit: amount, credit: 0 },
-        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: amount },
+        { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: subtotal },
+        ...(tax ? [{ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax }] : []),
       ]);
   const journal = await repo.postSourceJournal(source, {
     bookId: input.bookId, periodId: input.periodId, date: input.date,

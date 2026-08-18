@@ -26,7 +26,7 @@ import {
   writeCollInTxn,
   writeSettingsInTxn,
 } from './sqliteStore';
-import { exportV2Data, importV2Data, hasV2Payload, type V2ImportResult } from './v2Backup';
+import { exportV2Data, importV2Data, hasV2Payload, V2_BACKUP_VERSION, type V2ImportResult } from './v2Backup';
 
 /**
  * Ledgr local database (single-user, on-device).
@@ -1323,9 +1323,11 @@ export async function closePeriod(actualStock: number, notes = '', commissionPct
 // document, handled separately). Order is deterministic so wipe
 // and restore always touch the same set. [H1]
 const BACKUP_COLLECTIONS = SQL_COLLECTIONS; // the 15 data collections (settings is handled separately)
-// Current backup format. Older schemas were never released and are intentionally
-// unsupported; this clean-install app restores only an exact current-format file.
-export const BACKUP_VERSION = 10;
+// Format 11 adds an explicit V2 schema revision for employees, payroll,
+// products, stock movements and locations. Format 10 remains readable through
+// the narrowly-scoped V2 v1 -> v2 migration in v2Backup.ts.
+export const BACKUP_VERSION = 11;
+const LEGACY_BACKUP_VERSION = 10;
 
 export type ImportBackupResult = {
   ok: true;
@@ -1367,7 +1369,9 @@ export async function exportBackup() {
   const bookData: Record<string, { collections: Record<string, any[]>; settings: any; logo: string }> = {};
   for (const book of booksIndex) {
     if (!book || !book.id || book.id === 'default') continue;
-    try { bookData[book.id] = await readSecondaryBookPayload(book.id); } catch { /* best-effort per book */ }
+    // A backup advertised as complete must never silently omit an indexed book.
+    // Let storage failures abort the export before the user shares a lossy file.
+    bookData[book.id] = await readSecondaryBookPayload(book.id);
   }
 
   return {
@@ -1386,19 +1390,64 @@ export async function exportBackup() {
  *   - Clears all document collections and V2 tables before applying the backup.
  *   - In SQLite mode the whole restore (all collections + settings + V2) runs
  *     inside ONE transaction and rolls back entirely on any error. [C3]
- * Only exact current-format backups with a normalized V2 payload are accepted.
+ * Current backups and the explicitly migrated previous format are accepted.
  */
 export async function importBackup(data: any): Promise<ImportBackupResult> {
   const meta = data && typeof data === 'object' ? data._meta : undefined;
   if (!meta || meta.app !== 'ledgr') throw new Error('This file is not a Ledgr backup.');
   const version = Number(meta.version);
-  if (version !== BACKUP_VERSION) throw new Error(`Unsupported Ledgr backup format v${Number.isFinite(version) ? version : 'unknown'}. Only format v${BACKUP_VERSION} can be restored.`);
+  if (version !== BACKUP_VERSION && version !== LEGACY_BACKUP_VERSION) {
+    throw new Error(
+      `Unsupported Ledgr backup format v${Number.isFinite(version) ? version : 'unknown'}. `
+      + `Only formats v${LEGACY_BACKUP_VERSION} and v${BACKUP_VERSION} can be restored.`,
+    );
+  }
   if (!hasV2Payload(data?.v2)) throw new Error('This backup does not contain the current V2 accounting ledger.');
+  const v2SchemaVersion = Number(data.v2.schemaVersion);
+  if ((version === LEGACY_BACKUP_VERSION && v2SchemaVersion !== 1)
+    || (version === BACKUP_VERSION && v2SchemaVersion !== V2_BACKUP_VERSION)) {
+    throw new Error(`Ledgr backup format v${version} has an incompatible V2 schema version.`);
+  }
 
   const runner = backendActiveSqlRunner();
   const sqliteMode = backendStorageMode() === 'sqlite' && !!runner && activeBookIsDefault();
   if (!runner || !sqliteMode) throw new Error('Current-format backup restore requires SQLite storage on the main account.');
   const warnings: string[] = [];
+
+  // Validate the complete multi-book slice BEFORE the main SQLite transaction
+  // replaces any current data. Formats 10 and 11 export every secondary collection,
+  // its settings object, and its logo string; accepting an absent payload here
+  // would make writeSecondaryBookPayload clear that entire indexed book.
+  if (!Array.isArray(data.books)) throw new Error('Backup is missing its Business Accounts index.');
+  const backupBooks: any[] = data.books;
+  const backupBookData: Record<string, any> = (data.bookData && typeof data.bookData === 'object' && !Array.isArray(data.bookData)) ? data.bookData : {};
+  const secondaryIds: string[] = [];
+  const seenBookIds = new Set<string>();
+  for (const book of backupBooks) {
+    const id = typeof book?.id === 'string' ? book.id.trim() : '';
+    if (!id) throw new Error('Backup contains a Business Account without an ID.');
+    if (seenBookIds.has(id)) throw new Error(`Backup contains duplicate Business Account ID: ${id}`);
+    seenBookIds.add(id);
+    if (id === 'default') continue;
+    secondaryIds.push(id);
+    const payload = backupBookData[id];
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error(`Backup is missing data for Business Account: ${book.name || id}`);
+    }
+    if (!payload.collections || typeof payload.collections !== 'object' || Array.isArray(payload.collections)) {
+      throw new Error(`Backup has invalid collections for Business Account: ${book.name || id}`);
+    }
+    const missingCollections = SQL_COLLECTIONS.filter((collection) => !Array.isArray(payload.collections[collection]));
+    if (missingCollections.length) {
+      throw new Error(`Backup is incomplete for Business Account ${book.name || id}: missing ${missingCollections.join(', ')}`);
+    }
+    if (!payload.settings || typeof payload.settings !== 'object' || Array.isArray(payload.settings)) {
+      throw new Error(`Backup has invalid settings for Business Account: ${book.name || id}`);
+    }
+    if (typeof payload.logo !== 'string') {
+      throw new Error(`Backup has invalid logo data for Business Account: ${book.name || id}`);
+    }
+  }
 
   // What the restore writes into a collection: the backup's array, or [] when
   // that collection is absent (so it is CLEARED, never left stale). [H1]
@@ -1409,63 +1458,59 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
   const stripInlineLogo = (s: any) => { if (s && isDataUri(s.logo)) delete s.logo; return s; };
   const logoValue: string | null = typeof data?.logo === 'string' ? data.logo : null;
 
-  if (sqliteMode && runner) {
-    // ----- SQLite: one atomic transaction for EVERYTHING -----
-    await withImportTransaction(runner, async () => {
-      for (const c of BACKUP_COLLECTIONS) {
-        await writeCollInTxn(runner, c, collValue(c)); // DELETE + INSERT clears absent colls too
-      }
-      const baseSettings = await (async () => {
-        const row = await runner.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
-        try { return row ? JSON.parse(row.value) : {}; } catch { return {}; }
-      })();
-      const nextSettings = stripInlineLogo(mergedSettings(baseSettings));
-      if (logoValue != null) nextSettings.hasLogo = !!logoValue;
-      await writeSettingsInTxn(runner, nextSettings);
-      // Logo row (separate from the settings doc's CursorWindow).
-      if (logoValue != null) {
-        if (logoValue) await runner.run("INSERT INTO settings(key,value) VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [logoValue]);
-        else await runner.run("DELETE FROM settings WHERE key='logo'");
-      }
-      const v2Result: V2ImportResult = await importV2Data(runner, data.v2);
-      warnings.push(...v2Result.warnings);
-    });
+  // Stage the complete secondary-account slice first. SQLite is the final
+  // commit point: if its transaction fails, restore this exact snapshot so the
+  // index and every namespaced collection/settings/logo key remain unchanged.
+  const currentBooks = await readBooksIndexRaw();
+  const currentSecondaryIds = currentBooks.map((b) => b.id).filter((id) => id && id !== 'default');
+  const idsToSnapshot = new Set<string>([...secondaryIds, ...currentSecondaryIds]);
+  const bookKeys: string[] = ['ledgr:books'];
+  for (const id of idsToSnapshot) {
+    for (const c of SQL_COLLECTIONS) bookKeys.push(`ledgr:${id}:${c}`);
+    bookKeys.push(`ledgr:${id}:settings`, `ledgr:${id}:logo`);
+  }
+  const bookSnapshot = await snapshotKeys(bookKeys);
+  try {
+    await writeBooksIndexRaw(backupBooks);
+    for (const id of currentSecondaryIds) {
+      if (!secondaryIds.includes(id)) await writeSecondaryBookPayload(id, {});
+    }
+    for (const id of secondaryIds) {
+      const payload = backupBookData[id];
+      await writeSecondaryBookPayload(id, {
+        collections: payload.collections,
+        settings: payload.settings,
+        logo: payload.logo,
+      });
+    }
+  } catch (e) {
+    await restoreKeys(bookSnapshot);
+    throw e;
   }
 
-  // [Finding D] Restore the books index + every SECONDARY book's namespaced
-  // document payload (collections/settings/logo). These live in AsyncStorage for
-  // ALL storage modes (only the default book uses the SQLite store), so this
-  // runs after the default-book restore above regardless of mode. We snapshot
-  // the exact keys first and roll them back on any failure. The shared v2_*
-  // ledger for secondary books was already restored with the V2 payload above.
-  const backupBooks: any[] = Array.isArray(data?.books) ? data.books : [];
-  const backupBookData: Record<string, any> = (data?.bookData && typeof data.bookData === 'object') ? data.bookData : {};
-  const secondaryIds = backupBooks.map((b) => b && b.id).filter((id) => id && id !== 'default');
-  if (backupBooks.length || secondaryIds.length) {
-    // Snapshot: the books index + every secondary book's collection/settings/logo
-    // keys (both the ones we are about to write AND any currently-present books,
-    // so a book removed by the restore is cleaned up on rollback too).
-    const currentBooks = await readBooksIndexRaw();
-    const idsToSnapshot = new Set<string>([...secondaryIds, ...currentBooks.map((b) => b.id).filter((id) => id && id !== 'default')]);
-    const bookKeys: string[] = ['ledgr:books'];
-    for (const id of idsToSnapshot) {
-      for (const c of SQL_COLLECTIONS) bookKeys.push(`ledgr:${id}:${c}`);
-      bookKeys.push(`ledgr:${id}:settings`, `ledgr:${id}:logo`);
-    }
-    const bookSnapshot = await snapshotKeys(bookKeys);
+  if (sqliteMode && runner) {
     try {
-      // Persist the index EXACTLY as backed up (listBooks re-injects default).
-      await writeBooksIndexRaw(backupBooks);
-      for (const id of secondaryIds) {
-        const payload = backupBookData[id] || {};
-        await writeSecondaryBookPayload(id, {
-          collections: payload.collections,
-          settings: payload.settings,
-          logo: payload.logo,
-        });
-      }
+      // ----- SQLite: final atomic commit for the main account -----
+      await withImportTransaction(runner, async () => {
+        for (const c of BACKUP_COLLECTIONS) {
+          await writeCollInTxn(runner, c, collValue(c)); // DELETE + INSERT clears absent colls too
+        }
+        const baseSettings = await (async () => {
+          const row = await runner.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
+          try { return row ? JSON.parse(row.value) : {}; } catch { return {}; }
+        })();
+        const nextSettings = stripInlineLogo(mergedSettings(baseSettings));
+        if (logoValue != null) nextSettings.hasLogo = !!logoValue;
+        await writeSettingsInTxn(runner, nextSettings);
+        if (logoValue != null) {
+          if (logoValue) await runner.run("INSERT INTO settings(key,value) VALUES('logo',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [logoValue]);
+          else await runner.run("DELETE FROM settings WHERE key='logo'");
+        }
+        const v2Result: V2ImportResult = await importV2Data(runner, data.v2);
+        warnings.push(...v2Result.warnings);
+      });
     } catch (e) {
-      await restoreKeys(bookSnapshot); // best-effort rollback of the multi-book slice
+      await restoreKeys(bookSnapshot);
       throw e;
     }
   }

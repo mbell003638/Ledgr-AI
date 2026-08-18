@@ -8,7 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { localTodayIso } from "@/src/utils/dateValidation";
@@ -16,6 +16,8 @@ import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
 
+import { getProviderMeta } from "@/src/db/ai";
+import { scopeAiSnapshot } from "@/src/utils/aiContextScope";
 type Msg = { role: "user" | "assistant"; text: string };
 
 // Source tag prefixed onto notes/memo of records this screen creates (fix M-5).
@@ -359,10 +361,47 @@ export default function AskBooks() {
     );
   };
 
-  const buildContext = async (): Promise<string> => {
+  const confirmAiTransfer = async (): Promise<boolean> => {
+    const cfg = await getAIConfig();
+    const provider = getProviderMeta(cfg.provider);
+    const consentKey = `ledgr:ai-transfer-consent:${api.activeBookId()}:${provider.id}`;
+    if (await AsyncStorage.getItem(consentKey) === "1") return true;
+    const message = `When you continue, Ledgr sends your prompt and only the accounting details relevant to it to ${provider.label}. This may include amounts and, when needed, business-account names or notes. Ledgr sends data directly from this device to your selected provider and does not run an AI server of its own.`;
+
+    if (Platform.OS === "web") {
+      if (typeof window === "undefined" || !window.confirm(`Send data to ${provider.label}?\n\n${message}`)) return false;
+      await AsyncStorage.setItem(consentKey, "1");
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(
+        `Send data to ${provider.label}?`,
+        message,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          {
+            text: "Continue",
+            onPress: () => {
+              AsyncStorage.setItem(consentKey, "1")
+                .then(() => resolve(true))
+                .catch(() => {
+                  showAlert("Could Not Save Consent", "Ledgr did not send anything. Please try again.");
+                  resolve(false);
+                });
+            },
+          },
+        ],
+        { cancelable: false },
+      );
+    });
+  };
+
+  const buildContext = async (question: string): Promise<string> => {
     const today = new Date();
     const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso());
-    return JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
+    const withSymbol = { ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") };
+    return JSON.stringify(scopeAiSnapshot(withSymbol, question));
   };
   const applyPendingProposal = async () => {
     const proposal = pendingProposal;
@@ -407,6 +446,12 @@ export default function AskBooks() {
       return;
     }
 
+    try {
+      if (!(await confirmAiTransfer())) return;
+    } catch (e: any) {
+      showAlert("Could Not Check AI Consent", e?.message || "Ledgr did not send anything. Please try again.");
+      return;
+    }
     const priorProposal = pendingProposal;
     const questionForAi = priorProposal
       ? `The user is revising this pending Ledgr transaction entry. Existing action JSON: ${JSON.stringify(priorProposal.action)}. User follow-up: ${q}. Return the full revised action, or ask one counter-question.`
@@ -417,7 +462,7 @@ export default function AskBooks() {
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
-      const context = await buildContext();
+      const context = await buildContext(q);
       const res: any = await api.askBooks(questionForAi, context);
       const answer = typeof res === "string" ? res : res?.answer || "";
       const action = typeof res === "string" ? null : res?.action || null;

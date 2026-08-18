@@ -4,6 +4,7 @@ import { V2CloseBooksRepository } from '../src/accountingV2/closeBooksRepository
 import { buildPersistentV2Reports } from '../src/accountingV2/persistentReports';
 import { V2SqlRepository } from '../src/accountingV2/repository';
 import { ProductDomainService } from '../src/accountingV2/services/productDomainService';
+import { V2DocumentService } from '../src/accountingV2/documentService';
 
 const BOOK = 'active-v2';
 const PERIOD = 'open-2026';
@@ -124,6 +125,8 @@ describe('optional perpetual inventory', () => {
       const created = await products.upsertProduct({ name: 'Widget', cost: 5, price: 10, openingQty: 10 });
       const sourceId = await dummySource(runner);
       await products.applySaleLines(BOOK, PERIOD, DATE, sourceId, [{ productId: created.id, qty: 3 }]);
+      const purchaseSourceId = await dummySource(runner, 'src-purchase');
+      await products.applyPurchaseLines(BOOK, PERIOD, DATE, purchaseSourceId, [{ productId: created.id, qty: 2, unitCost: 5 }]);
       await repo.createPeriod({ id: 'next-2027', bookId: BOOK, startDate: '2027-01-01', endDate: '2027-12-31', status: 'open' });
       const closeRepo = new V2CloseBooksRepository(runner);
       await closeRepo.recordInventoryCount({ id: 'count-1', bookId: BOOK, periodId: PERIOD, date: DATE, value: 0 });
@@ -131,6 +134,7 @@ describe('optional perpetual inventory', () => {
         id: 'close-p', bookId: BOOK, periodId: PERIOD, nextPeriodId: 'next-2027', date: '2026-12-31', commissionPct: 0,
       });
       expect(result.snapshot.cogs).toBe(15);
+      expect(result.snapshot.purchases).toBe(10);
       const periodic = await runner.all<{ id: string }>(
         "SELECT id FROM v2_journal_entries WHERE memo='Cost of goods sold (periodic)'",
       );
@@ -186,5 +190,54 @@ describe('optional perpetual inventory', () => {
       expect(await productQty(runner, productId)).toBe(10);
       expect(Number((await runner.first<{ n: number }>('SELECT COUNT(*) AS n FROM v2_stock_moves'))?.n)).toBe(0);
     } finally { close(); }
+  });
+  it('preserves closed-period stock moves and appends a linked reversal in the current open period', async () => {
+    const node = makeNodeRunner();
+    const originalPeriod = 'closed-2025';
+    const openPeriod = 'open-2026';
+    const originalDate = '2025-07-01';
+    const sourceId = 'closed-sale-source';
+    try {
+      await initializeV2Book(node.runner, {
+        book: { id: BOOK, name: 'Historical Stock Shop' },
+        period: { id: originalPeriod, startDate: '2025-01-01', endDate: '2025-12-31' },
+      });
+      await node.runner.run(
+        "INSERT INTO settings(key,value) VALUES('main',?)",
+        [JSON.stringify({ enabledFeatures: ['perpetualInventory'] })],
+      );
+      const repo = new V2SqlRepository(node.runner);
+      const products = new ProductDomainService(node.runner, repo, async () => ({ bookId: BOOK, periodId: openPeriod }));
+      const productId = await seedProduct(node.runner, { qty: 10, cost: 5 });
+      await node.runner.run(
+        'INSERT INTO v2_sources(id,book_id,type,date,reference,metadata) VALUES(?,?,?,?,?,?)',
+        [sourceId, BOOK, 'cash_sale', originalDate, null, '{}'],
+      );
+      await products.applySaleLines(BOOK, originalPeriod, originalDate, sourceId, [{ productId, qty: 3 }]);
+      expect(await productQty(node.runner, productId)).toBe(7);
+
+      await node.runner.run("UPDATE v2_periods SET status='closed' WHERE id=?", [originalPeriod]);
+      await repo.createPeriod({
+        id: openPeriod,
+        bookId: BOOK,
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        status: 'open',
+      });
+
+      const reversal = await new V2DocumentService(repo).reverseSource(sourceId, 'cash_sale', 'Reverse historical sale', true);
+      expect(await productQty(node.runner, productId)).toBe(10);
+      const moves = await node.runner.all<{
+        date: string; qty: number; kind: string; source_id: string;
+      }>('SELECT date,qty,kind,source_id FROM v2_stock_moves ORDER BY date,id');
+      expect(moves).toEqual([
+        { date: originalDate, qty: 3, kind: 'sale', source_id: sourceId },
+        { date: reversal.journal.date, qty: -3, kind: 'sale', source_id: reversal.source.id },
+      ]);
+      expect(reversal.journal.periodId).toBe(openPeriod);
+      expect(reversal.journal.date).toMatch(/^2026-/);
+    } finally {
+      node.close();
+    }
   });
 });

@@ -97,7 +97,15 @@ export class V2CloseBooksRepository {
       const balance = (code: string) => this.net(balances, code);
       const returns = movement('4010');
       const sales = cents(-movement('4000') - returns);
-      const purchases = cents(Math.max(0, movement('1200')));
+      const perpetualPurchaseRow = perpetualInventory
+        ? await this.db.first<{ total: number }>(
+            "SELECT COALESCE(SUM(qty * unit_cost),0) AS total FROM v2_stock_moves WHERE book_id=? AND kind='purchase' AND date>=? AND date<=?",
+            [input.bookId, period.start_date, input.date],
+          )
+        : null;
+      const purchases = cents(perpetualInventory
+        ? Math.max(0, Number(perpetualPurchaseRow?.total || 0))
+        : cogsResult.purchases);
       const expenses = cents(Math.max(0, movement('6000') + movement('6200') + movement('6300')));
       const drawings = cents(Math.max(0, movement('3100')));
       // Perpetual already posted Dr 5000 / Cr 1200 at sale time. Snapshot the

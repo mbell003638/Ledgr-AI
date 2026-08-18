@@ -3,7 +3,7 @@
  *
  * The pre-fix exportBackup captured only the ACTIVE book's legacy collections and
  * neither the books index (ledgr:books) nor secondary books' namespaced legacy
- * payloads, so a restore lost every secondary book. Format 10 captures the books
+ * payloads, so a restore lost every secondary book. Format 11 captures the books
  * index + every book's payload; the shared v2_* ledger (all books) is captured by
  * the V2 payload. This drives the REAL api/backend/V2 stack against a real SQLite
  * db (node:sqlite) with mocked AsyncStorage/secure-store — exactly as a device.
@@ -14,11 +14,15 @@
 
 const mem: Record<string, string> = {};
 const secure: Record<string, string> = {};
+let failingGetKey: string | null = null;
 function installMocks() {
   jest.doMock('@react-native-async-storage/async-storage', () => ({
     __esModule: true,
     default: {
-      getItem: jest.fn(async (k: string) => (k in mem ? mem[k] : null)),
+      getItem: jest.fn(async (k: string) => {
+        if (k === failingGetKey) throw new Error(`mock read failure: ${k}`);
+        return k in mem ? mem[k] : null;
+      }),
       setItem: jest.fn(async (k: string, v: string) => { mem[k] = v; }),
       removeItem: jest.fn(async (k: string) => { delete mem[k]; }),
       multiGet: jest.fn(async (keys: string[]) => keys.map((k) => [k, k in mem ? mem[k] : null])),
@@ -48,7 +52,11 @@ function installMocks() {
     }),
   }));
 }
-function resetMem() { for (const k of Object.keys(mem)) delete mem[k]; for (const k of Object.keys(secure)) delete secure[k]; }
+function resetMem() {
+  for (const k of Object.keys(mem)) delete mem[k];
+  for (const k of Object.keys(secure)) delete secure[k];
+  failingGetKey = null;
+}
 
 async function bootDefault() {
   const backend = require('../src/db/backend');
@@ -64,7 +72,7 @@ async function bootDefault() {
 describe('Finding D — backup round-trip preserves both books', () => {
   beforeEach(() => { jest.resetModules(); resetMem(); installMocks(); });
 
-  it('format-10 backup captures the books index + every book, and a restore lists/hydrates both', async () => {
+  it('format-11 backup captures the books index + every book, and a restore lists/hydrates both', async () => {
     const { api } = await bootDefault();
     await api.postV2OpeningBalances({ date: '2026-01-01', cash: 1000, inventory: 0 });
     await api.createSale({ date: '2026-06-01', amount: 500, method: 'cash' });
@@ -75,7 +83,7 @@ describe('Finding D — backup round-trip preserves both books', () => {
     await api.setActiveBook('default');
 
     const backup: any = await api.exportBackup();
-    expect(backup._meta.version).toBe(10);
+    expect(backup._meta.version).toBe(11);
     // Books index captured, and Book2's secondary payload present.
     expect(backup.books.map((b: any) => b.name)).toEqual(expect.arrayContaining(['Book2']));
     expect(backup.bookData[book2.id]).toBeTruthy();
@@ -98,6 +106,61 @@ describe('Finding D — backup round-trip preserves both books', () => {
     const dash2 = await api2.dashboard();
     expect(dash2.totalSales).toBe(77);       // Book2's $77 sale survived
     expect(dash2.cash).toBe(127);            // 50 opening + 77 sale
+  });
+
+  it('fails export instead of silently omitting a secondary Business Account', async () => {
+    const { api } = await bootDefault();
+    const book2 = await api.createBook('Book2');
+    failingGetKey = `ledgr:${book2.id}:sales`;
+
+    await expect(api.exportBackup()).rejects.toThrow(/mock read failure/);
+  });
+
+  it('rejects an incomplete secondary-book payload before replacing main-book data', async () => {
+    const { api } = await bootDefault();
+    await api.createSale({ date: '2026-06-01', amount: 33, method: 'cash' });
+    const book2 = await api.createBook('Book2');
+    await api.setActiveBook('default');
+    const backup: any = await api.exportBackup();
+    delete backup.bookData[book2.id];
+
+    await expect(api.importBackup(backup)).rejects.toThrow(/missing data for Business Account/i);
+    expect((await api.dashboard()).totalSales).toBe(33);
+  });
+
+  it('rolls back staged secondary-account data when the final SQLite restore fails', async () => {
+    const { api } = await bootDefault();
+    await api.createSale({ date: '2026-06-01', amount: 33, method: 'cash' });
+    const book2 = await api.createBook('Book2');
+    await api.setActiveBook(book2.id);
+    await api.updateSettings({ businessName: 'Book2 Before Restore', currency: 'CAD' });
+    await api.setActiveBook('default');
+
+    const backup: any = await api.exportBackup();
+    backup.bookData[book2.id].settings.businessName = 'Staged But Must Roll Back';
+    // This survives format/preflight checks but violates the live NOT NULL
+    // constraint during V2 insertion, forcing the final SQLite transaction to fail.
+    backup.v2.tables.v2_books[0].name = null;
+    const beforeMem = JSON.parse(JSON.stringify(mem));
+    const beforeDashboard = await api.dashboard();
+
+    await expect(api.importBackup(backup)).rejects.toThrow();
+
+    expect(mem).toEqual(beforeMem);
+    expect(await api.dashboard()).toEqual(beforeDashboard);
+  });
+
+  it('restores format 10 through the explicit V2 schema-v1 migration', async () => {
+    const { api } = await bootDefault();
+    await api.createSale({ date: '2026-06-01', amount: 42, method: 'cash' });
+    const backup: any = await api.exportBackup();
+    backup._meta.version = 10;
+    backup.v2.schemaVersion = 1;
+
+    const result = await api.importBackup(backup);
+
+    expect(result.warnings).toContain('Migrated V2 backup schema v1 to v2.');
+    expect((await api.dashboard()).totalSales).toBe(42);
   });
 });
 

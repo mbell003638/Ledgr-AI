@@ -31,7 +31,7 @@ Key features:
 
 Accounting records are stored on your device. Core bookkeeping works offline. AI tools are optional and send selected content directly to the provider you configure only when invoked.
 
-Ledgr Codex is a bookkeeping and record-management tool. It does not provide banking, lending, investment, insurance, cryptocurrency, money-transfer or payment-processing services.
+Ledgr is a bookkeeping and record-management tool. It does not provide banking, lending, investment, insurance, cryptocurrency, money-transfer or payment-processing services.
 
 ## Suggested declarations
 

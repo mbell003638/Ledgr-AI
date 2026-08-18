@@ -38,4 +38,18 @@ describe('accountingV2 Invariant Engine', () => {
     expect(() => validatePostingInvariants(lines)).toThrow(InvariantError);
     expect(() => validatePostingInvariants(lines)).toThrow('NON_NEGATIVE_AMOUNTS');
   });
+
+  it.each([
+    ['NaN decimals', [
+      { accountCode: '1000', debit: Number.NaN, credit: 100 },
+      { accountCode: '4000', debit: 100, credit: Number.NaN },
+    ]],
+    ['infinite cents', [
+      { accountCode: '1000', debitCents: Number.POSITIVE_INFINITY, creditCents: 10000 },
+      { accountCode: '4000', debitCents: 10000, creditCents: Number.NEGATIVE_INFINITY },
+    ]],
+  ])('rejects non-finite posting inputs before money coercion: %s', (_label, lines) => {
+    expect(() => validatePostingInvariants(lines)).toThrow(InvariantError);
+    expect(() => validatePostingInvariants(lines)).toThrow('FINITE_AMOUNTS');
+  });
 });

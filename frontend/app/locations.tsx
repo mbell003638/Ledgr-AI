@@ -139,7 +139,11 @@ export default function LocationsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Locations" subtitle="Each shop has its own cash and stock" />
+      <ScreenHeader
+        title="Locations"
+        subtitle="Each shop has its own cash and stock"
+        leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} hitSlop={10}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>}
+      />
       {loading ? <ActivityIndicator style={{ marginTop: 24 }} color={theme.color.brandPrimary} /> : (
         <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} /> } contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 48 }}>
           {!enabled ? (

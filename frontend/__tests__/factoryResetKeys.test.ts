@@ -61,6 +61,11 @@ describe('factoryReset — device-level key wipe (api.ts wiring)', () => {
     expect(body).toContain('AI_PROVIDER_KEY');
     expect(body).toContain('AI_MODEL_KEY');
     expect(body).toContain('secureRemove(AI_API_KEY_KEY)');
+    expect(body).toContain('beClearAskHistory(books.map((book) => book.id))');
+    expect(API_SRC).toContain("AI_TRANSFER_CONSENT_PREFIX = 'ledgr:ai-transfer-consent:'");
+    expect(body).toContain('getAllKeys()');
+    expect(body).toContain('key.startsWith(AI_TRANSFER_CONSENT_PREFIX)');
+    expect(body).toContain('...consentKeys');
   });
 
   it('factoryReset wires the scorched-earth V2 wipe (zero rows in every v2_* table)', () => {

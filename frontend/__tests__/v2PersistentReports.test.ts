@@ -3,6 +3,7 @@ import { initSchema, type SqlRunner } from '../src/db/schema';
 import { defaultAccounts, defaultBook } from '../src/accountingV2/schema';
 import { V2SqlRepository } from '../src/accountingV2/repository';
 import { persistentV2Reports } from '../src/accountingV2/persistentReports';
+import { buildV2Reports } from '../src/accountingV2/reports';
 
 describe('persistent V2 reports', () => {
   it('derives trial balance, P&L and balance sheet from persisted journal lines in the requested range', async () => {
@@ -91,5 +92,61 @@ describe('persistent V2 reports', () => {
       run: async () => undefined,
     } satisfies SqlRunner;
     await expect(persistentV2Reports(broken, { bookId: 'default' })).rejects.toThrow('database unavailable');
+  });
+
+  it('keeps trial balance and balance sheet cumulative as of `to` while P&L/details honor `from`', async () => {
+    const { runner, close } = makeNodeRunner();
+    try {
+      await initSchema(runner);
+      const repo = new V2SqlRepository(runner);
+      const book = defaultBook('as-of-book', 'As Of Shop');
+      await repo.createBook(book, defaultAccounts(book.id));
+      await repo.createPeriod({ id: 'as-of:p', bookId: book.id, startDate: '2026-01-01', endDate: '2026-12-31', status: 'open' });
+      await repo.postJournal({ bookId: book.id, periodId: 'as-of:p', date: '2026-01-01', memo: 'Opening capital', lines: [
+        { accountId: 'as-of-book:account:1000', debit: 1000, credit: 0 },
+        { accountId: 'as-of-book:account:3000', debit: 0, credit: 1000 },
+      ] });
+      await repo.postJournal({ bookId: book.id, periodId: 'as-of:p', date: '2026-02-10', memo: 'February sale', lines: [
+        { accountId: 'as-of-book:account:1000', debit: 250, credit: 0 },
+        { accountId: 'as-of-book:account:4000', debit: 0, credit: 250 },
+      ] });
+
+      const result = await persistentV2Reports(runner, { bookId: book.id, from: '2026-02-01', to: '2026-02-28' });
+      expect(result.report.journalCount).toBe(1);
+      expect(result.report.details.map((line) => line.date)).toEqual(['2026-02-10', '2026-02-10']);
+      expect(result.report.trialBalance.totals).toEqual({ debit: 1250, credit: 1250, difference: 0 });
+      expect(result.report.profitAndLoss).toEqual({ revenue: 250, expenses: 0, cogs: 0, grossProfit: 250, netProfit: 250 });
+      expect(result.report.balanceSheet).toMatchObject({ assets: 1250, equity: 1000, currentEarnings: 250, balanced: true });
+    } finally {
+      close();
+    }
+  });
+
+  it('applies a negative open-period COGS estimate as a balanced inventory reversal', () => {
+    const book = defaultBook('negative-cogs-book', 'Negative COGS Shop');
+    const report = buildV2Reports({
+      books: [book],
+      accounts: defaultAccounts(book.id),
+      parties: [],
+      journals: [],
+      sources: [],
+      allocations: [],
+    }, {
+      bookId: book.id,
+      to: '2026-12-31',
+      cogsAdjustment: {
+        cogsAccountId: `${book.id}:account:5000`,
+        inventoryAccountId: `${book.id}:account:1200`,
+        amount: -20,
+      },
+    });
+
+    expect(report.trialBalance.totals).toEqual({ debit: 20, credit: 20, difference: 0 });
+    expect(report.profitAndLoss).toEqual({ revenue: 0, expenses: -20, cogs: -20, grossProfit: 20, netProfit: 20 });
+    expect(report.balanceSheet).toMatchObject({ assets: 20, currentEarnings: 20, balanced: true });
+    expect(report.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountCode: '5000', debit: 0, credit: 20 }),
+      expect.objectContaining({ accountCode: '1200', debit: 20, credit: 0 }),
+    ]));
   });
 });

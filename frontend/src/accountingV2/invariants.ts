@@ -70,7 +70,32 @@ export const minimumLinesInvariant: InvariantCheck = {
 };
 
 /**
- * INV-03: NON_NEGATIVE_AMOUNTS
+ * INV-03: FINITE_AMOUNTS
+ * Supplied monetary values must be finite before any rounding/coercion. The
+ * shared money helpers deliberately coerce non-finite values to zero for
+ * display arithmetic; a posting boundary must reject them instead.
+ */
+export const finiteAmountsInvariant: InvariantCheck = {
+  name: 'FINITE_AMOUNTS',
+  description: 'Supplied debit and credit amounts must be finite numbers.',
+  check: (lines: JournalLineInput[]) => {
+    for (const line of lines) {
+      for (const [field, value] of [
+        ['debit', line.debit],
+        ['credit', line.credit],
+        ['debitCents', line.debitCents],
+        ['creditCents', line.creditCents],
+      ] as const) {
+        if (value !== undefined && !Number.isFinite(value)) {
+          throw new InvariantError('FINITE_AMOUNTS', `${field} must be a finite number.`);
+        }
+      }
+    }
+  },
+};
+
+/**
+ * INV-04: NON_NEGATIVE_AMOUNTS
  * Line amounts must be non-negative integers/decimals.
  */
 export const nonNegativeAmountsInvariant: InvariantCheck = {
@@ -104,6 +129,7 @@ export const nonNegativeAmountsInvariant: InvariantCheck = {
 
 export const CORE_INVARIANTS: InvariantCheck[] = [
   minimumLinesInvariant,
+  finiteAmountsInvariant,
   balancedJournalInvariant,
   nonNegativeAmountsInvariant,
 ];

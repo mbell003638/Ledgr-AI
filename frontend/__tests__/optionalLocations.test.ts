@@ -139,4 +139,72 @@ describe('optional locations', () => {
       expect(await isOptionalModuleEnabled(runner, 'locations', 'book-b')).toBe(false);
     } finally { close(); }
   });
+  it('rejects foreign locations on journal lines', async () => {
+    const { runner, close, repo, locations } = await setup(['locations']);
+    try {
+      await initializeV2Book(runner, {
+        book: { id: 'book-b', name: 'Other Co' },
+        period: { id: 'book-b:period', startDate: '2026-01-01', endDate: '2026-12-31' },
+      });
+      await runner.run("INSERT INTO v2_locations(id,book_id,name,archived) VALUES('foreign-loc','book-b','Foreign',0)");
+      await locations.createLocation({ name: 'Local' });
+      await expect(repo.postJournal({
+        bookId: BOOK,
+        periodId: PERIOD,
+        date: DATE,
+        memo: 'foreign location attempt',
+        lines: [
+          { accountId: `${BOOK}:account:1000`, debit: 10, credit: 0, locationId: 'foreign-loc' },
+          { accountId: `${BOOK}:account:4000`, debit: 0, credit: 10, locationId: 'foreign-loc' },
+        ],
+      })).rejects.toThrow(/Location does not belong to this book/i);
+    } finally { close(); }
+  });
+
+  it('blocks archiving a location with balances but allows an empty location', async () => {
+    const { close, repo, locations } = await setup(['locations']);
+    try {
+      const funded = await locations.createLocation({ name: 'Funded' });
+      const empty = await locations.createLocation({ name: 'Empty' });
+      await postCashSale(repo, { bookId: BOOK, periodId: PERIOD, date: DATE, amount: 25, method: 'cash', locationId: funded.id });
+      await expect(locations.archiveLocation(funded.id)).rejects.toThrow(/Transfer all cash and stock/i);
+      await expect(locations.archiveLocation(empty.id)).resolves.toMatchObject({ id: empty.id, archived: true });
+    } finally { close(); }
+  });
+
+  it('rolls back the source and first stock move if a transfer write fails', async () => {
+    const { runner, close, products, locations } = await setup(['locations', 'perpetualInventory']);
+    try {
+      const from = await locations.createLocation({ name: 'From' });
+      const to = await locations.createLocation({ name: 'To' });
+      await products.upsertProduct({ id: 'widget-atomic', name: 'Widget', cost: 2, price: 4, openingQty: 5, locationId: from.id });
+      const originalRun = runner.run.bind(runner);
+      let transferMoveWrites = 0;
+      (runner as any).run = async (sql: string, params?: unknown[]) => {
+        if (sql.includes('INSERT INTO v2_stock_moves') && ++transferMoveWrites === 2) throw new Error('injected transfer failure');
+        return originalRun(sql, params);
+      };
+      await expect(locations.transferStock({ date: DATE, fromLocationId: from.id, toLocationId: to.id, productId: 'widget-atomic', qty: 2 }))
+        .rejects.toThrow(/injected transfer failure/i);
+      (runner as any).run = originalRun;
+      const sourceCount = await runner.first<{ n: number }>("SELECT COUNT(*) AS n FROM v2_sources WHERE type='location_stock_transfer'");
+      const moveCount = await runner.first<{ n: number }>("SELECT COUNT(*) AS n FROM v2_stock_moves WHERE kind IN ('transfer_out','transfer_in')");
+      expect(Number(sourceCount?.n)).toBe(0);
+      expect(Number(moveCount?.n)).toBe(0);
+    } finally { close(); }
+  });
+
+  it('stamps every payroll journal line with the selected location', async () => {
+    const { runner, close, repo, locations } = await setup(['locations', 'payroll']);
+    try {
+      const { PayrollDomainService } = await import('../src/accountingV2/services/payrollDomainService');
+      const shop = await locations.createLocation({ name: 'Payroll Shop' });
+      const payroll = new PayrollDomainService(runner, repo, async () => ({ bookId: BOOK, periodId: PERIOD }));
+      await payroll.upsertEmployee({ name: 'Worker', payRate: 100, taxWithholdPct: 10, startDate: '2026-01-01' });
+      const result = await payroll.runPayroll({ date: DATE, method: 'cash', locationId: shop.id });
+      const rows = await runner.all<{ location_id: string | null }>('SELECT location_id FROM v2_journal_lines WHERE journal_id=?', [result.journal.id]);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(new Set(rows.map((row) => row.location_id))).toEqual(new Set([shop.id]));
+    } finally { close(); }
+  });
 });
