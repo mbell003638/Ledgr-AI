@@ -1,5 +1,6 @@
 import type { SqlRunner } from '../db/schema';
 import { OPTIONAL_FEATURE_KEYS, type FeatureKey } from '../utils/featureFlags';
+import { featureKeysForCapabilities } from '../utils/capabilities';
 
 export type OptionalModuleKey = (typeof OPTIONAL_FEATURE_KEYS)[number];
 
@@ -12,12 +13,18 @@ export async function isOptionalModuleEnabled(db: SqlRunner, key: OptionalModule
   return Array.isArray(parsed.enabledFeatures) && parsed.enabledFeatures.includes(key);
 }
 
-export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promise<{ enabledFeatures?: string[]; activeLocationId?: string }> {
+export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promise<{ enabledFeatures?: string[]; enabledCapabilities?: string[]; activeLocationId?: string }> {
   const rows = await db.all<{ config: string }>('SELECT config FROM v2_personas WHERE book_id=? AND enabled=1', [bookId]);
   for (const row of rows) {
     try {
       const parsed = JSON.parse(row.config || '{}');
-      if (Array.isArray(parsed.enabledFeatures)) return { enabledFeatures: parsed.enabledFeatures.map(String), activeLocationId: parsed.activeLocationId ? String(parsed.activeLocationId) : undefined };
+      if (Array.isArray(parsed.enabledFeatures) || Array.isArray(parsed.enabledCapabilities)) {
+        return {
+          enabledFeatures: Array.isArray(parsed.enabledFeatures) ? parsed.enabledFeatures.map(String) : undefined,
+          enabledCapabilities: Array.isArray(parsed.enabledCapabilities) ? parsed.enabledCapabilities.map(String) : undefined,
+          activeLocationId: parsed.activeLocationId ? String(parsed.activeLocationId) : undefined,
+        };
+      }
     } catch { /* try the next enabled persona */ }
   }
   return {};
@@ -26,6 +33,10 @@ export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promi
 export async function isOptionalModuleEnabledForBook(db: SqlRunner, bookId: string, key: OptionalModuleKey): Promise<boolean> {
   const scoped = await bookOptionalSettings(db, bookId);
   if (scoped.enabledFeatures) return scoped.enabledFeatures.includes(key);
+  // New onboarding/customization stores capability packs. Resolve optional
+  // modules from that same persisted configuration so the UI and the ledger
+  // enforcement layer cannot disagree about Locations being enabled.
+  if (scoped.enabledCapabilities) return featureKeysForCapabilities({ enabledCapabilities: scoped.enabledCapabilities }).includes(key);
   // Older books without a scoped preference record retain the legacy setting
   // until the active-book mirroring path initializes their persona config.
   return isOptionalModuleEnabled(db, key);

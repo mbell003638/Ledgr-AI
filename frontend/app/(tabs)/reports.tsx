@@ -21,7 +21,7 @@ import { partnershipDisplayFromReports } from "@/src/accountingV2/reports";
 import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
-import { eligibleMetrics, isCapabilityEnabled, reportSegmentsFor, type ReportSegmentKey } from "@/src/utils/capabilities";
+import { isCapabilityEnabled, reportSegmentsFor, selectedWorkspaceMetrics, type ReportSegmentKey } from "@/src/utils/capabilities";
 import { metricsFromDashboard } from "@/src/utils/metrics";
 
 type Seg = ReportSegmentKey;
@@ -94,8 +94,8 @@ export default function ReportsScreen() {
   const [dateEdges, setDateEdges] = useState({ left: false, right: true });
   const visibleSegments = useMemo(() => reportSegmentsFor(bizSettings), [bizSettings]);
   const workspaceMetrics = useMemo(() => {
-    const enabled = new Set(eligibleMetrics(bizSettings).map((metric) => metric.key));
-    return metricsFromDashboard(dash, bizSettings?.workspaceMetricInputs || {}).filter((metric) => enabled.has(metric.key));
+    const selected = new Set(selectedWorkspaceMetrics(bizSettings).map((metric) => metric.key));
+    return metricsFromDashboard(dash, bizSettings?.workspaceMetricInputs || {}).filter((metric) => selected.has(metric.key));
   }, [bizSettings, dash]);
   useEffect(() => {
     if (!visibleSegments.includes(seg)) setSeg("Summary");
@@ -587,7 +587,7 @@ export default function ReportsScreen() {
 
               {workspaceMetrics.length > 0 && <Card style={{ marginTop: theme.spacing.md }} testID="report-workspace-metrics">
                 <Text style={styles.rTitle}>Workspace metrics</Text>
-                <Text style={styles.hint}>Metrics remain visible even when more inputs are needed.</Text>
+                <Text style={styles.hint}>Only the metrics selected during setup are shown here. Add missing inputs from Workspace capabilities when needed.</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 10 }}>
                   {workspaceMetrics.map((metric) => <View key={metric.key} style={{ width: 126, padding: 10, borderRadius: 12, backgroundColor: theme.color.surfaceSecondary }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: metric.value === null ? theme.color.muted : theme.color.onSurface, fontSize: 16, fontWeight: "900", marginTop: 4 }}>{metric.value === null ? "—" : metric.unit === "percent" ? `${metric.value}%` : metric.unit === "ratio" ? String(metric.value) : fmt(metric.value)}</Text><Text style={{ color: metric.value === null ? theme.color.warning : theme.color.muted, fontSize: 9, lineHeight: 12, marginTop: 3 }} numberOfLines={3}>{metric.value === null ? metric.explanation : metric.state === "estimated" ? "Estimated" : "Posted inputs"}</Text></View>)}
                 </ScrollView>

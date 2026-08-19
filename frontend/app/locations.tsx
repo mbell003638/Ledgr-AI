@@ -46,6 +46,7 @@ export default function LocationsScreen() {
 
   const load = useCallback(async () => {
     try {
+      setError("");
       const settings = await api.getSettings();
       const on = isCapabilityEnabled(settings, "multi_location");
       setEnabled(on);
@@ -165,6 +166,9 @@ export default function LocationsScreen() {
                             </Card>
               <Card>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><View style={{ flex: 1 }}><Text style={styles.section}>POS sessions</Text><Text style={styles.guide}>Open and close each cash drawer by store and register.</Text></View><Pressable onPress={() => router.push("/pos-sessions")} style={styles.link}><Text style={styles.linkText}>Open POS</Text></Pressable></View>
+              </Card>
+              <Card>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><View style={{ flex: 1 }}><Text style={styles.section}>Shop closeout</Text><Text style={styles.guide}>Settle each shop&apos;s cash drawers, enter physical stock counts, post location-tagged variances, then review that shop&apos;s report.</Text></View><Pressable onPress={() => router.push("/shop-close")} style={styles.link}><Text style={styles.linkText}>Close shop</Text></Pressable></View>
               </Card>
               <Card>
                 <Text style={styles.section}>Move cash</Text>

@@ -13,8 +13,7 @@ import { api } from "@/src/api";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
-import { isCapabilityEnabled, eligibleMetrics } from "@/src/utils/capabilities";
-import { metricsFromDashboard } from "@/src/utils/metrics";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { showAlert } from "@/src/utils/alerts";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import Animated from "react-native-reanimated";
@@ -67,7 +66,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
-  const [health, setHealth] = useState<any>(null);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
   // Remember the (data version, dailyDate) at which the dashboard last loaded,
@@ -89,14 +87,12 @@ export default function Dashboard() {
         setShops([]);
         shopId = "";
       }
-      const [d, day, h] = await Promise.all([
+      const [d, day] = await Promise.all([
         api.dashboard(shopId || undefined),
         api.dailySummary(dailyDate),
-        api.bookHealth().catch(() => null),
       ]);
       setDash(d);
       setDaily(day);
-      setHealth(h);
       loadedRef.current = { version: getDataVersion(), date: dailyDate };
     } catch (e) {
       console.warn("dash", e);
@@ -193,10 +189,6 @@ export default function Dashboard() {
   const displayCommission = rangeData ? rangeData.commission : (dash?.commission ?? 0);
   const displayNetProfit = rangeData ? rangeData.netProfit : (dash?.netProfit ?? 0);
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
-  const workspaceMetrics = useMemo(() => {
-    const eligible = new Set(eligibleMetrics(settings).map((metric) => metric.key));
-    return metricsFromDashboard(dash, settings?.workspaceMetricInputs || {}).filter((metric) => eligible.has(metric.key));
-  }, [dash, settings]);
   const salesEnabled = isCapabilityEnabled(settings, "commerce") || isCapabilityEnabled(settings, "invoicing");
   const purchasesEnabled = isCapabilityEnabled(settings, "procurement");
   const stockEnabled = isCapabilityEnabled(settings, "inventory");
@@ -215,11 +207,6 @@ export default function Dashboard() {
         ) : (
           <>
             {shops.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}><Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => { setLocationId(""); void api.updateSettings({ activeLocationId: "" }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>{shops.map((shop) => <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => { setLocationId(shop.id); void api.updateSettings({ activeLocationId: shop.id }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}</ScrollView> : null}
-            {health?.warnings?.length ? <Card style={{ marginBottom: theme.spacing.md, padding: 13 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}><Ionicons name={health.hasRecoveryWarning ? "shield-outline" : "alert-circle-outline"} size={18} color={theme.color.warning} /><Text style={{ color: theme.color.onSurface, fontSize: 13, fontWeight: "800", marginLeft: 7 }}>Action needed</Text><Text style={{ color: theme.color.muted, fontSize: 10, marginLeft: "auto" as any }}>{health.warnings.length} item{health.warnings.length === 1 ? "" : "s"}</Text></View>
-              {health.hasRecoveryWarning && <View style={{ flexDirection: "row", gap: 7, marginTop: 5 }}><Ionicons name="cloud-offline-outline" size={15} color={theme.color.warning} /><View style={{ flex: 1 }}><Text style={{ color: theme.color.onSurface, fontSize: 11, fontWeight: "700" }}>Export a JSON backup</Text><Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 14 }}>Device backup is not guaranteed. Export from Advanced Settings after important bookkeeping work.</Text></View></View>}
-              {health.warnings.slice(0, 2).map((warning: any) => <View key={warning.key} style={{ flexDirection: "row", gap: 7, marginTop: 5 }}><Ionicons name={warning.severity === "warning" ? "alert-circle-outline" : "information-circle-outline"} size={15} color={warning.severity === "warning" ? theme.color.warning : theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={{ color: theme.color.onSurface, fontSize: 11, fontWeight: "700" }}>{warning.label}</Text><Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 14 }}>{warning.detail}</Text></View></View>)}
-            </Card> : null}
             {/* Period Filter Bar */}
             <View style={{ marginBottom: theme.spacing.md }}>
               <View style={styles.periodRow}>
@@ -348,17 +335,6 @@ export default function Dashboard() {
                 </View>
               </Card>
             ) : null}
-            {workspaceMetrics.length > 0 ? <Card style={{ marginTop: theme.spacing.md, padding: 14 }} surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}><Text style={styles.sectionTitleInline}>Workspace metrics</Text><Text style={{ color: theme.color.muted, fontSize: 10 }}>Based on your workspace</Text></View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {workspaceMetrics.map((metric) => {
-                  const hasValue = metric.value !== null;
-                  const value = hasValue ? (metric.unit === 'percent' ? `${metric.value}%` : metric.unit === 'ratio' ? String(metric.value) : fmt(metric.value || 0)) : '—';
-                  const status = metric.state === 'estimated' ? 'Estimated' : hasValue ? 'Posted inputs' : 'Needs inputs';
-                  return <View key={metric.key} style={{ width: 118, minHeight: 86, padding: 10, borderRadius: 12, backgroundColor: theme.color.surface }}><Text style={{ color: theme.color.muted, fontSize: 10, fontWeight: "800" }}>{metric.label}</Text><Text style={{ color: hasValue ? theme.color.onSurface : theme.color.muted, fontSize: 16, fontWeight: "900", marginTop: 5 }}>{value}</Text><Text style={{ color: hasValue ? theme.color.muted : theme.color.warning, fontSize: 9, marginTop: 3 }} numberOfLines={2}>{status}</Text><Text style={{ color: theme.color.muted, fontSize: 9, lineHeight: 12, marginTop: 2 }} numberOfLines={2}>{metric.explanation}</Text></View>;
-                })}
-              </ScrollView>
-            </Card> : null}
 
             {/* Daily quick summary — WhatsApp shareable. Same press treatment as
                 the hero card (GlowPressable, pressScale 0.972, no haptic, clipSafe,

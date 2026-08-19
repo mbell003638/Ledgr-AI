@@ -190,9 +190,10 @@ describe('V2 UI contracts', () => {
     expect(preferences).toContain("enabledCapabilities: selectedCapabilities");
   });
 
-  it('the dashboard stays focused on action-needed items, financial cards, and location-aware summaries', () => {
+  it('the dashboard stays focused on financial cards and location-aware summaries, leaving backup notices and workspace metrics out of Home', () => {
     const source = readApp('(tabs)/index.tsx');
-    expect(source).toContain('Action needed');
+    expect(source).not.toContain('Action needed');
+    expect(source).not.toContain('Workspace metrics');
     expect(source).toContain('KpiTile label="Sales"');
     expect(source).toContain('KpiTile label="Purchases"');
     expect(source).toContain('locationId');

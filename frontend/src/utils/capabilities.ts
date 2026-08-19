@@ -206,6 +206,19 @@ export function eligibleMetrics(settings: any): MetricDefinition[] {
   return METRICS.filter((metric) => metric.requiredCapabilities.every((key) => enabled.has(key)));
 }
 
+/**
+ * Metrics are opt-in workspace reporting views. Capability eligibility makes a
+ * metric available; it does not force a speculative tile onto Home or Reports.
+ */
+export function selectedWorkspaceMetrics(settings: any): MetricDefinition[] {
+  const requested = new Set(
+    Array.isArray(settings?.workspaceMetricKeys)
+      ? settings.workspaceMetricKeys.map(String)
+      : [],
+  );
+  return eligibleMetrics(settings).filter((metric) => requested.has(metric.key));
+}
+
 export function featureKeysForCapabilities(settings: any): string[] {
   const enabled = new Set(getEnabledCapabilities(settings));
   const keys = new Set<string>();

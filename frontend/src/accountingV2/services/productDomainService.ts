@@ -1,6 +1,6 @@
 import type { SqlRunner } from '../../db/schema';
 import { V2SqlRepository } from '../repository';
-import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
+import { isOptionalModuleEnabledForBook, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES } from '../types';
 import { mulMoney, round2 } from '../../money';
 import { localTodayIso } from '../../utils/dateValidation';
@@ -77,7 +77,7 @@ export class ProductDomainService {
       [c.bookId],
     );
     const products = rows.map(mapProduct);
-    if (!locationId || !(await isOptionalModuleEnabled(this.db, 'locations'))) return products;
+    if (!locationId || !(await isOptionalModuleEnabledForBook(this.db, c.bookId, 'locations'))) return products;
     return Promise.all(products.map(async (product) => ({
       ...product,
       qty: await qtyAtLocation(this.db, c.bookId, product.id, locationId),
@@ -299,8 +299,8 @@ export class ProductDomainService {
         const inventoryId = acct(c.bookId, V2_ACCOUNT_CODES.INVENTORY);
         const expenseId = acct(c.bookId, V2_ACCOUNT_CODES.EXPENSES);
         const lines = qtyDelta > 0
-          ? [{ accountId: inventoryId, debit: value, credit: 0 }, { accountId: expenseId, debit: 0, credit: value }]
-          : [{ accountId: expenseId, debit: value, credit: 0 }, { accountId: inventoryId, debit: 0, credit: value }];
+          ? [{ accountId: inventoryId, debit: value, credit: 0, locationId: locationId || undefined }, { accountId: expenseId, debit: 0, credit: value, locationId: locationId || undefined }]
+          : [{ accountId: expenseId, debit: value, credit: 0, locationId: locationId || undefined }, { accountId: inventoryId, debit: 0, credit: value, locationId: locationId || undefined }];
         await this.repo.ensureDefaultAccounts(c.bookId);
         await this.repo.postSourceJournal(source, {
           bookId: c.bookId,
@@ -365,7 +365,7 @@ export class ProductDomainService {
   }
 
   private async resolveStockLocation(bookId: string, locationId?: string): Promise<string | null> {
-    if (!(await isOptionalModuleEnabled(this.db, 'locations'))) return null;
+    if (!(await isOptionalModuleEnabledForBook(this.db, bookId, 'locations'))) return null;
     return resolveWriteLocationId(this.db, bookId, locationId);
   }
 
@@ -383,7 +383,8 @@ export class ProductDomainService {
   }
 
   private async moduleEnabled() {
-    return isOptionalModuleEnabled(this.db, 'perpetualInventory');
+    const context = await this.getActiveContext();
+    return Boolean(context && await isOptionalModuleEnabledForBook(this.db, context.bookId, 'perpetualInventory'));
   }
 
   private async requireModule() {

@@ -8,7 +8,7 @@ import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
-import { CAPABILITIES, CORE_CAPABILITIES, getPersonaCapabilityDefaults, type CapabilityKey } from "@/src/utils/capabilities";
+import { CAPABILITIES, CORE_CAPABILITIES, METRICS, getPersonaCapabilityDefaults, type CapabilityKey, type MetricKey } from "@/src/utils/capabilities";
 
 const CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED", "CAD", "AUD", "NGN", "KES", "ZAR", "BDT", "PKR", "PHP", "MXN", "BRL"];
 const RECOMMENDED_PERSONA_IDS: PersonaId[] = ["mobile_invoicing", "dropshipper", "marketplace_seller", "entrepreneur", "startup", "developer", "content_creator", "manufacturer", "import_export", "retail"];
@@ -33,6 +33,7 @@ export default function Onboarding() {
   const [lockEnabled, setLockEnabled] = useState(false);
   const [multiLocation, setMultiLocation] = useState(false);
   const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
+  const [selectedMetricKeys, setSelectedMetricKeys] = useState<MetricKey[]>([]);
   const [showCustomize, setShowCustomize] = useState(false);
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,10 +50,15 @@ export default function Onboarding() {
   const selectedCapabilityLabels = selectedCapabilities
     .map((key) => CAPABILITIES.find((item) => item.key === key)?.label)
     .filter(Boolean) as string[];
+  const metricOptions = useMemo(() => {
+    const enabled = new Set(selectedCapabilities);
+    return METRICS.filter((metric) => metric.requiredCapabilities.every((key) => enabled.has(key)));
+  }, [selectedCapabilities]);
 
   const choosePersona = (nextPersona: PersonaId) => {
     setPersona(nextPersona);
     setCustomCapabilities(null);
+    setSelectedMetricKeys([]);
     setShowCustomize(false);
     if (!RECOMMENDED_PERSONA_IDS.includes(nextPersona)) setMultiLocation(false);
   };
@@ -62,6 +68,10 @@ export default function Onboarding() {
     const current = new Set(customCapabilities || personaCapabilities);
     if (current.has(key)) current.delete(key); else current.add(key);
     setCustomCapabilities([...current]);
+  };
+
+  const toggleMetric = (key: MetricKey) => {
+    setSelectedMetricKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   };
 
   useFocusEffect(useCallback(() => {
@@ -116,6 +126,7 @@ export default function Onboarding() {
         businessType: finalPersona,
         enabledFeatures: null,
         enabledCapabilities: selectedCapabilities,
+        workspaceMetricKeys: selectedMetricKeys.filter((key) => metricOptions.some((metric) => metric.key === key)),
       });
       markOnboarded();
       router.replace("/(tabs)");
@@ -216,6 +227,7 @@ export default function Onboarding() {
               <Text style={styles.previewHint}>{selectedCapabilities.length} workflows are enabled for this workspace. Hidden workflows do not appear on Home but can be restored later.</Text>
               <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide workspace customization" : "Customize workspace capabilities"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide customization" : "Customize workspace"}</Text></Pressable>
               {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, and financial reporting always stay available.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key)).map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
+              {metricOptions.length ? <View style={styles.metricPanel}><Text style={styles.customizeTitle}>Choose report metrics</Text><Text style={styles.customizeHint}>Select only the metrics you want in Reports. Unselected metrics stay hidden; they never appear on Home.</Text>{metricOptions.map((metric) => { const selected = selectedMetricKeys.includes(metric.key); return <Pressable key={metric.key} onPress={() => toggleMetric(metric.key)} accessibilityRole="checkbox" accessibilityLabel={`Show ${metric.label} in reports`} accessibilityState={{ checked: selected }} style={[styles.metricRow, selected && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{metric.label}</Text><Text style={styles.customizeRowDesc}>{metric.description}</Text></View><Ionicons name={selected ? "checkbox" : "square-outline"} size={22} color={selected ? theme.color.brandPrimary : theme.color.muted} /></Pressable>; })}</View> : null}
               <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export a JSON backup from Settings after important work and keep a copy somewhere safe.</Text></View>
             </View>
             {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text></View><Pressable onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
@@ -281,10 +293,12 @@ function makeStyles(theme: any) {
     customizeButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10", marginTop: theme.spacing.md },
     customizeButtonText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
     customizePanel: { marginTop: theme.spacing.md, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    metricPanel: { marginTop: theme.spacing.md, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: theme.color.brandPrimary + "55", backgroundColor: theme.color.brandPrimary + "08" },
     customizeTitle: { color: theme.color.onSurface, fontSize: 13, fontWeight: "800" },
     customizeHint: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 4, marginBottom: 8 },
     customizeRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.color.border },
     customizeRowEnabled: { backgroundColor: theme.color.brandPrimary + "08" },
+    metricRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.color.border },
     customizeRowTitle: { color: theme.color.onSurface, fontSize: 12, fontWeight: "800" },
     customizeRowDesc: { color: theme.color.muted, fontSize: 10, lineHeight: 14, marginTop: 2 },
     input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.xl },
