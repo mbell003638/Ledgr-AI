@@ -45,7 +45,7 @@ export class V2CloseBooksRepository {
       `SELECT id,book_id,period_id,date,value,location_id,notes FROM v2_inventory_counts WHERE book_id=? AND period_id=? AND ${locationId ? 'location_id=?' : 'location_id IS NULL'} ORDER BY date,id`,
       locationId ? [bookId, periodId, locationId] : [bookId, periodId],
     );
-    return rows.map((row) => ({ id: row.id, bookId: row.book_id, periodId: row.period_id, date: row.date, value: cents(Number(row.value)), notes: row.notes || '', ...(row.location_id ? { locationId: row.location_id } : {}) }));
+    return rows.map((row) => ({ id: row.id, bookId: row.book_id, periodId: row.period_id, date: row.date, value: cents(Number(row.value)), ...(row.notes ? { notes: row.notes } : {}), ...(row.location_id ? { locationId: row.location_id } : {}) }));
   }
 
   async addMember(member: V2Member): Promise<V2Member> {
