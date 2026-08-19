@@ -130,13 +130,18 @@ export default function ReportsScreen() {
     setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
+      let shopId = locationId || undefined;
       if (getEnabledFeatures(s).includes("locations")) {
         const rows = await api.listLocations().catch(() => []);
-        setShops((Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
+        const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
+        setShops(next);
+        shopId = next.some((shop) => shop.id === locationId) ? locationId : undefined;
+        if (locationId && !shopId) setLocationId('');
       } else {
         setShops([]);
+        shopId = undefined;
+        if (locationId) setLocationId('');
       }
-      const shopId = locationId || undefined;
       const [core, snapshotDash, pd] = await Promise.all([
         v2Reports({ from, to, locationId: shopId }),
         api.dashboard(shopId),
@@ -443,12 +448,13 @@ export default function ReportsScreen() {
   };
 
   const shopScopedSegment = !locationId || ["Summary", "P&L", "Balance", "Trial", "Sales Reg", "Receipts"].includes(seg);
+  const selectedShop = shops.find((shop) => shop.id === locationId);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader 
         title="Reports" 
-        subtitle={locationId && shopScopedSegment ? "This shop" : "All shops"}
+        subtitle={selectedShop && shopScopedSegment ? `This shop · ${selectedShop.name}` : "All shops"}
         rightAction={
           <GlowPressable
             testID="btn-custom-report"
@@ -474,12 +480,12 @@ export default function ReportsScreen() {
         </Text>
       ) : null}
       {shops.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shopRail} contentContainerStyle={styles.shopRailContent}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
             <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
           </Pressable>
           {shops.map((shop) => (
-            <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+            <Pressable key={shop.id} accessibilityRole="button" accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
               <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
             </Pressable>
           ))}
@@ -910,6 +916,8 @@ function makeStyles(theme: any) { return StyleSheet.create({
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   filterRail: { position: "relative" },
+  shopRail: { flexGrow: 0, minHeight: 60 },
+  shopRailContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
   railFade: { position: "absolute", top: 0, bottom: 0, width: 34, zIndex: 10 },
   railFadeLeft: { left: 0 },
   railFadeRight: { right: 0 },

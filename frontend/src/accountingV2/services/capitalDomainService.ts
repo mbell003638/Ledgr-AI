@@ -8,6 +8,7 @@ import { V2_ACCOUNT_CODES } from '../types';
 import { round2 } from '../../money';
 import type { AccountingPeriodPolicy } from '../config';
 import type { PartyDomainService } from './partyDomainService';
+import { requireLocation } from './locationDomainService';
 
 type AnyRecord = Record<string, any>;
 type PeriodRow = { id: string; start_date: string; end_date: string };
@@ -289,15 +290,17 @@ export class CapitalDomainService {
     });
   }
 
-  async recordInventoryCount(input: { date: string; value: number; notes?: string }) {
+  async recordInventoryCount(input: { date: string; value: number; notes?: string; locationId?: string }) {
     const context = await this.getActiveContext(input.date);
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
+    const locationId = input.locationId ? await requireLocation(this.db, context.bookId, input.locationId) : undefined;
     const value = cents(input.value);
     if (!Number.isFinite(value) || value < 0) throw new Error('Inventory value must be non-negative');
-    const id = `${context.bookId}:inventory:${context.periodId}:${input.date}`;
+    const globalId = `${context.bookId}:inventory:${context.periodId}:${input.date}`;
+    const id = locationId ? `${globalId}:${locationId}` : globalId;
     const prior = await this.db.first('SELECT id FROM v2_inventory_counts WHERE id=?', [id]);
-    if (prior) { await this.db.run('UPDATE v2_inventory_counts SET value=? WHERE id=?', [value, id]); return { id, bookId: context.bookId, periodId: context.periodId, date: input.date, value }; }
-    const count = await new V2CloseBooksRepository(this.db).recordInventoryCount({ id, bookId: context.bookId, periodId: context.periodId, date: input.date, value });
+    if (prior) { await this.db.run('UPDATE v2_inventory_counts SET value=?,notes=? WHERE id=?', [value, input.notes || '', id]); return { id, bookId: context.bookId, periodId: context.periodId, date: input.date, value, notes: input.notes || '', ...(locationId ? { locationId } : {}) }; }
+    const count = await new V2CloseBooksRepository(this.db).recordInventoryCount({ id, bookId: context.bookId, periodId: context.periodId, date: input.date, value, locationId, notes: input.notes || '' });
     return { ...count, notes: input.notes || '' };
   }
 
@@ -360,28 +363,30 @@ export class CapitalDomainService {
     return { source, journal };
   }
 
-  async inventoryOverview() {
+  async inventoryOverview(locationId?: string) {
     const context = await this.getActiveContext();
     if (!context) return null;
+    if (locationId) await requireLocation(this.db, context.bookId, locationId);
     const period = await this.db.first<PeriodRow>('SELECT id,start_date,end_date FROM v2_periods WHERE id=? AND book_id=?', [context.periodId, context.bookId]);
     if (!period) return null;
     const closeRepo = new V2CloseBooksRepository(this.db);
-    const counts = await closeRepo.listInventoryCounts(context.bookId, context.periodId);
+    const counts = await closeRepo.listInventoryCounts(context.bookId, context.periodId, locationId);
     const expectedAt = async (to: string) => {
-      const report = await buildPersistentV2Reports(this.db, { bookId: context.bookId, to });
+      const report = await buildPersistentV2Reports(this.db, { bookId: context.bookId, to, locationId });
       return cents(report.trialBalance.accounts.find((account) => account.code === V2_ACCOUNT_CODES.INVENTORY)?.normalBalance || 0);
     };
     const history = await Promise.all(counts.map(async (count) => {
       const expectedStock = await expectedAt(count.date);
-      return { id: count.id, date: count.date, actualStock: count.value, expectedStock, variance: cents(count.value - expectedStock), notes: '' };
+      return { id: count.id, date: count.date, actualStock: count.value, expectedStock, variance: cents(count.value - expectedStock), notes: count.notes || '' };
     }));
     const expected = await expectedAt(period.end_date);
     const openingInventory = await expectedAt(period.start_date);
     const lastAudit = history.length ? history[history.length - 1] : null;
     const sinceDate = lastAudit?.date || period.start_date;
     const sinceSources = await this.db.all<any>(
-      `SELECT type, metadata FROM v2_sources WHERE book_id=? AND date>=? AND date<=?`,
-      [context.bookId, sinceDate, period.end_date],
+      `SELECT type, metadata FROM v2_sources WHERE book_id=? AND date>=? AND date<=?${locationId ? " AND (location_id=? OR (location_id IS NULL AND json_extract(metadata,'$.locationId')=?))" : ''}`,
+      locationId ? [context.bookId, sinceDate, period.end_date, locationId, locationId]
+        : [context.bookId, sinceDate, period.end_date],
     );
     let purchasesSince = 0;
     let salesSince = 0;
@@ -393,7 +398,7 @@ export class CapitalDomainService {
       if (row.type === 'cash_purchase' || row.type === 'credit_purchase') purchasesSince += tot;
       else if (row.type === 'cash_sale' || row.type === 'invoice') salesSince += tot;
     }
-    return { expected, openingInventory, lastAudit, purchasesSince: cents(purchasesSince), salesSince: cents(salesSince), history: history.reverse(), periodStart: period.start_date, periodEnd: period.end_date, periodPolicy: await this.periodPolicy(context.bookId) };
+    return { expected, openingInventory, lastAudit, purchasesSince: cents(purchasesSince), salesSince: cents(salesSince), history: history.reverse(), periodStart: period.start_date, periodEnd: period.end_date, periodPolicy: await this.periodPolicy(context.bookId), locationId: locationId || null };
   }
 
   async deleteV2InventoryCount(id: string) {

@@ -10,6 +10,8 @@ import { V2AppService, createAppWriteRouter, createAppMutationRouter, createClos
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import { ensureV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
+import { assertFeatureDisableAllowed, getV2FeatureDisableBlockers, type FeatureDisableBlockers } from '@/src/accountingV2/featureDisableGuards';
+import { getEnabledFeatures, type FeatureKey } from '@/src/utils/featureFlags';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { partnershipDisplayFromReports } from './accountingV2/reports';
@@ -265,6 +267,38 @@ async function preferenceSettings() {
     ...(prefs && prefs.activeLocationId !== undefined ? { activeLocationId: prefs.activeLocationId } : {}),
   };
 }
+async function featureDisableBlockers(): Promise<FeatureDisableBlockers> {
+  const runner = activeSqlRunner();
+  if (!runner) return {};
+  const service = new V2AppService(runner);
+  const context = await service.activeContext();
+  if (!context) return {};
+  const blockers = await getV2FeatureDisableBlockers(runner, context.bookId);
+  const [quotes, deliveryNotes] = await Promise.all([
+    db.listQuotes().catch(() => []),
+    db.listDeliveryNotes().catch(() => []),
+  ]);
+  if (quotes.length) {
+    blockers.quotes = 'Cannot disable Quotes & Estimates because this book still has quote records. Delete those records first, then try again.';
+  }
+  if (deliveryNotes.length) {
+    blockers.delivery = 'Cannot disable Delivery Notes because this book still has delivery-note records. Delete those records first, then try again.';
+  }
+  return blockers;
+}
+
+async function assertRequestedFeaturesAllowed(
+  runner: NonNullable<ReturnType<typeof activeSqlRunner>>,
+  bookId: string,
+  next: FeatureKey[],
+) {
+  const currentSettings = await preferenceSettings();
+  const current = getEnabledFeatures(currentSettings);
+  await assertFeatureDisableAllowed(runner, bookId, current, next);
+  const blockers = await featureDisableBlockers();
+  const blocked = current.find((key) => !next.includes(key) && blockers[key]);
+  if (blocked) throw new Error(blockers[blocked]);
+}
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
@@ -423,6 +457,9 @@ export const api = {
   setV2Persona: async (bookId: string, type: PersonaId) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const currentSettings = await preferenceSettings();
+    const nextFeatures = getEnabledFeatures({ ...currentSettings, activePersona: type });
+    await assertRequestedFeaturesAllowed(runner, bookId, nextFeatures);
     const r = await new V2BookConfigRepository(runner).setActivePersona(bookId, type);
     bumpDataVersion();
     return r;
@@ -435,7 +472,12 @@ export const api = {
   updateV2BookConfig: async (config: V2BookConfigUpdate) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).updateActiveBookConfig(config);
+    const service = new V2AppService(runner);
+    const context = await service.activeContext();
+    if (!context) throw new Error('No active versioned V2 book');
+    const nextFeatures = getEnabledFeatures({ ...(await preferenceSettings()), selectedPersonas: config.selectedPersonas, activePersona: config.activePersona });
+    await assertRequestedFeaturesAllowed(runner, context.bookId, nextFeatures);
+    const r = await service.updateActiveBookConfig(config);
     bumpDataVersion();
     return r;
   },
@@ -482,7 +524,7 @@ export const api = {
     bumpDataVersion();
     return r;
   },
-  recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
+  recordV2InventoryCount: async (input: { date: string; value: number; notes?: string; locationId?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await new V2AppService(runner).recordInventoryCount(input);
@@ -523,12 +565,16 @@ export const api = {
     return r;
   },
   getSettings: () => preferenceSettings(),
+  getFeatureDisableBlockers: () => featureDisableBlockers(),
   updateSettings: async (s: any) => {
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
       const context = await service.activeContext();
       if (context) {
+        if (Array.isArray(s.enabledFeatures)) {
+          await assertRequestedFeaturesAllowed(runner, context.bookId, s.enabledFeatures as FeatureKey[]);
+        }
         if (s.managerCommissionPct !== undefined) {
           const repo = new V2BookConfigRepository(runner);
           const config = await repo.getBookConfig(context.bookId);
@@ -693,10 +739,10 @@ export const api = {
   deletePayment: (id: string) => mutateTransaction('deletePayment', id),
 
   // Inventory
-  v2InventoryOverview: async () => {
+  v2InventoryOverview: async (locationId?: string) => {
     const runner = activeSqlRunner();
     if (!runner) return null;
-    return new V2AppService(runner).inventoryOverview();
+    return new V2AppService(runner).inventoryOverview(locationId);
   },
   deleteV2InventoryCount: async (id: string) => {
     const runner = activeSqlRunner();

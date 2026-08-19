@@ -17,7 +17,7 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -86,9 +86,10 @@ export function schemaSql(): string {
     );
     CREATE TABLE IF NOT EXISTS v2_inventory_counts (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, period_id TEXT NOT NULL, date TEXT NOT NULL,
-      value REAL NOT NULL CHECK(typeof(value) IN ('integer','real') AND value >= 0),
+      value REAL NOT NULL CHECK(typeof(value) IN ('integer','real') AND value >= 0), location_id TEXT, notes TEXT NOT NULL DEFAULT '',
       FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT
+      FOREIGN KEY(period_id) REFERENCES v2_periods(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      FOREIGN KEY(location_id) REFERENCES v2_locations(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
     CREATE TABLE IF NOT EXISTS v2_members (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, name TEXT NOT NULL,
@@ -170,6 +171,8 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await addColumnIfMissing(db, 'v2_sources', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_journal_lines', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_stock_moves', 'location_id', 'TEXT');
+  await addColumnIfMissing(db, 'v2_inventory_counts', 'location_id', 'TEXT');
+  await addColumnIfMissing(db, 'v2_inventory_counts', 'notes', "TEXT NOT NULL DEFAULT ''");
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');

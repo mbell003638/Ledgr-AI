@@ -8,7 +8,7 @@ import { isOptionalModuleEnabled } from './optionalModules';
 let closeBooksSavepointSequence = 0;
 const cents = round2;
 
-export type InventoryCount = { id: string; bookId: string; periodId: string; date: string; value: number };
+export type InventoryCount = { id: string; bookId: string; periodId: string; date: string; value: number; locationId?: string; notes?: string };
 export type MemberProfitShare = {
   memberId: string; name: string; profitSharePct: number; openingCapital: number;
   profitShare: number; drawings: number; closingCapital: number;
@@ -23,7 +23,7 @@ export type CloseBooksResult = { id: string; bookId: string; periodId: string; c
 export type CloseBooksInput = { id: string; bookId: string; periodId: string; nextPeriodId: string; date: string; commissionPct: number };
 
 type PeriodRow = { id: string; book_id: string; start_date: string; end_date: string; status: string };
-type InventoryRow = { id: string; book_id: string; period_id: string; date: string; value: number };
+type InventoryRow = { id: string; book_id: string; period_id: string; date: string; value: number; location_id: string | null; notes: string };
 type MemberRow = { id: string; book_id: string; name: string; current_capital: number; profit_share_pct: number };
 type CloseRow = { id: string; book_id: string; period_id: string; closed_at: string; snapshot: string; journal_id: string | null };
 type AccountTotalRow = { code: string; type: string; debit: number; credit: number };
@@ -36,13 +36,16 @@ export class V2CloseBooksRepository {
     const period = await this.period(count.bookId, count.periodId);
     if (period.status !== 'open') throw new Error('Period is closed');
     if (count.date < period.start_date || count.date > period.end_date) throw new Error('Inventory count date is outside the period');
-    await this.db.run('INSERT INTO v2_inventory_counts(id,book_id,period_id,date,value) VALUES(?,?,?,?,?)', [count.id, count.bookId, count.periodId, count.date, cents(count.value)]);
-    return { ...count, value: cents(count.value) };
+    await this.db.run('INSERT INTO v2_inventory_counts(id,book_id,period_id,date,value,location_id,notes) VALUES(?,?,?,?,?,?,?)', [count.id, count.bookId, count.periodId, count.date, cents(count.value), count.locationId || null, count.notes || '']);
+    return { ...count, value: cents(count.value), notes: count.notes || '' };
   }
 
-  async listInventoryCounts(bookId: string, periodId: string): Promise<InventoryCount[]> {
-    const rows = await this.db.all<InventoryRow>('SELECT id,book_id,period_id,date,value FROM v2_inventory_counts WHERE book_id=? AND period_id=? ORDER BY date,id', [bookId, periodId]);
-    return rows.map((row) => ({ id: row.id, bookId: row.book_id, periodId: row.period_id, date: row.date, value: cents(Number(row.value)) }));
+  async listInventoryCounts(bookId: string, periodId: string, locationId?: string): Promise<InventoryCount[]> {
+    const rows = await this.db.all<InventoryRow>(
+      `SELECT id,book_id,period_id,date,value,location_id,notes FROM v2_inventory_counts WHERE book_id=? AND period_id=? AND ${locationId ? 'location_id=?' : 'location_id IS NULL'} ORDER BY date,id`,
+      locationId ? [bookId, periodId, locationId] : [bookId, periodId],
+    );
+    return rows.map((row) => ({ id: row.id, bookId: row.book_id, periodId: row.period_id, date: row.date, value: cents(Number(row.value)), notes: row.notes || '', ...(row.location_id ? { locationId: row.location_id } : {}) }));
   }
 
   async addMember(member: V2Member): Promise<V2Member> {

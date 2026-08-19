@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { showAlert } from '@/src/utils/alerts';
 import {
   ALL_FEATURES,
   getEnabledFeatures,
@@ -31,10 +32,12 @@ export default function CustomizeFeaturesScreen() {
   const [settings, setSettings] = useState<any>({});
   const [activeFeatures, setActiveFeatures] = useState<Set<FeatureKey>>(new Set());
 
+  const [disableBlockers, setDisableBlockers] = useState<Record<string, string>>({});
   useEffect(() => {
     (async () => {
       try {
-        const s = await api.getSettings();
+        const [s, blockers] = await Promise.all([api.getSettings(), api.getFeatureDisableBlockers().catch(() => ({}))]);
+        setDisableBlockers(blockers || {});
         setSettings(s);
         const enabled = getEnabledFeatures(s);
         setActiveFeatures(new Set(enabled));
@@ -47,6 +50,10 @@ export default function CustomizeFeaturesScreen() {
   }, []);
 
   const toggleFeature = (key: FeatureKey) => {
+    if (activeFeatures.has(key) && disableBlockers[key]) {
+      showAlert('Feature contains saved data', disableBlockers[key]);
+      return;
+    }
     setActiveFeatures((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -59,11 +66,24 @@ export default function CustomizeFeaturesScreen() {
     });
   };
 
+  const applyRequestedFeatures = (requested: Set<FeatureKey>) => {
+    const blocked = Array.from(activeFeatures).filter((key) => !requested.has(key) && disableBlockers[key]);
+    for (const key of blocked) requested.add(key);
+    if (blocked.length) {
+      showAlert(
+        'Some features stayed enabled',
+        blocked.map((key) => disableBlockers[key]).join('\n\n'),
+      );
+    }
+    setActiveFeatures(requested);
+  };
+
   const resetToPersonaDefaults = () => {
+
     // Union of the selected personas' default sets (falls back to activePersona
     // / businessType / custom inside the helper).
     const defaults = getPersonaBaselineFeatures(settings);
-    setActiveFeatures(new Set(defaults));
+    applyRequestedFeatures(new Set(defaults));
   };
 
   const enableAll = () => {
@@ -78,6 +98,8 @@ export default function CustomizeFeaturesScreen() {
       router.back();
     } catch (e: any) {
       console.warn("Failed to save feature flags", e);
+      showAlert('Could not save customization', e?.message || 'The feature settings could not be saved.');
+      setDisableBlockers(await api.getFeatureDisableBlockers().catch(() => disableBlockers));
     } finally {
       setSaving(false);
     }
@@ -138,6 +160,7 @@ export default function CustomizeFeaturesScreen() {
             <Card style={{ padding: 0, overflow: "hidden" }}>
               {cat.items.map((item, idx) => {
                 const isEnabled = activeFeatures.has(item.key);
+                const blocker = disableBlockers[item.key];
                 const isLast = idx === cat.items.length - 1;
                 return (
                   <View
@@ -154,12 +177,15 @@ export default function CustomizeFeaturesScreen() {
                       <Text style={styles.rowLabel}>{item.label}</Text>
                       <Text style={styles.rowDesc}>{item.description}</Text>
                     </View>
-                    <Switch
-                      value={isEnabled}
-                      onValueChange={() => toggleFeature(item.key)}
-                      trackColor={{ false: theme.color.border, true: theme.color.brandPrimary }}
-                      thumbColor="#fff"
-                    />
+                    <View style={styles.toggleWrap}>
+                      {isEnabled && blocker ? <Ionicons name="lock-closed-outline" size={14} color={theme.color.warning} /> : null}
+                      <Switch
+                        value={isEnabled}
+                        onValueChange={() => toggleFeature(item.key)}
+                        trackColor={{ false: theme.color.border, true: theme.color.brandPrimary }}
+                        thumbColor="#fff"
+                      />
+                    </View>
                   </View>
                 );
               })}
@@ -268,5 +294,6 @@ function makeStyles(theme: any) {
       color: theme.color.muted,
       marginTop: 2,
     },
+    toggleWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   });
 }

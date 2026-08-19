@@ -242,10 +242,10 @@ export class V2AppService {
   async updateOpeningBalances(input: V2OpeningBalancesInput) { return this.capital.updateOpeningBalances(input); }
   async importClosingBalances(input: V2ClosingBalancesImportInput) { return this.capital.importClosingBalances(input); }
   async getOpeningBalances() { return this.capital.getOpeningBalances(); }
-  async recordInventoryCount(input: { date: string; value: number; notes?: string }) { return this.capital.recordInventoryCount(input); }
+  async recordInventoryCount(input: { date: string; value: number; notes?: string; locationId?: string }) { return this.capital.recordInventoryCount(input); }
   async recordManualAsset(input: { date: string; name: string; category?: string; amount: number; funding: 'cash' | 'bank' | 'capital' | 'liability'; notes?: string }) { return this.capital.recordManualAsset(input); }
   async recordManualLiability(input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense' | 'creditor'; notes?: string }) { return this.capital.recordManualLiability(input); }
-  async inventoryOverview() { return this.capital.inventoryOverview(); }
+  async inventoryOverview(locationId?: string) { return this.capital.inventoryOverview(locationId); }
   async deleteV2InventoryCount(id: string) { return this.capital.deleteV2InventoryCount(id); }
   async listManualBalanceTransactions() { return this.capital.listManualBalanceTransactions(); }
   async deleteManualBalanceTransaction(sourceId: string) { return this.capital.deleteManualBalanceTransaction(sourceId); }

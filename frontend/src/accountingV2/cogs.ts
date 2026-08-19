@@ -84,7 +84,7 @@ export async function computePeriodicCogs(
   // Opening inventory: prefer a physical count dated exactly on the period start;
   // otherwise fall back to the Inventory GL balance of everything before the start.
   const startCount = await db.first<{ id: string; value: number }>(
-    'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date = ? ORDER BY id DESC LIMIT 1',
+    'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date = ? AND location_id IS NULL ORDER BY id DESC LIMIT 1',
     [bookId, start],
   );
   const openingInventory = startCount
@@ -111,11 +111,11 @@ export async function computePeriodicCogs(
   // closing; otherwise (opening derived from the GL) any in-period count is a valid closing.
   const closingCount = startCount
     ? await db.first<{ id: string; value: number }>(
-        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date > ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1',
+        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date > ? AND date <= ? AND location_id IS NULL ORDER BY date DESC, id DESC LIMIT 1',
         [bookId, start, end],
       )
     : await db.first<{ id: string; value: number }>(
-        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date >= ? AND date <= ? ORDER BY date DESC, id DESC LIMIT 1',
+        'SELECT id, value FROM v2_inventory_counts WHERE book_id = ? AND date >= ? AND date <= ? AND location_id IS NULL ORDER BY date DESC, id DESC LIMIT 1',
         [bookId, start, end],
       );
   const hasClosingCount = Boolean(closingCount);

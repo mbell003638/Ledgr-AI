@@ -143,9 +143,18 @@ export default function Dashboard() {
         const rows = await api.listLocations().catch(() => []);
         const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
         setShops(next);
+        const saved = String(s.activeLocationId || '');
+        shopId = next.some((shop) => shop.id === locationId)
+          ? locationId
+          : next.some((shop) => shop.id === saved) ? saved : '';
+        if (shopId !== locationId) setLocationId(shopId);
+        if (saved && !next.some((shop) => shop.id === saved)) {
+          api.updateSettings({ activeLocationId: '' }).catch(() => {});
+        }
       } else {
         setShops([]);
         shopId = "";
+        if (locationId) setLocationId('');
       }
       const [d, day] = await Promise.all([
         api.dashboard(shopId || undefined),
@@ -162,9 +171,9 @@ export default function Dashboard() {
     }
   }, [dailyDate, locationId]);
 
+  const enabledFeatures = useMemo(() => getEnabledFeatures(settings), [settings]);
   const visibleTiles = useMemo(() => {
-    const enabled = getEnabledFeatures(settings);
-    const filtered = TILES.filter((t) => enabled.includes(t.key as any));
+    const filtered = TILES.filter((t) => enabledFeatures.includes(t.key as any));
     if (!customTileOrder.length) return filtered;
     const map = new Map<string, (typeof TILES)[number]>(filtered.map((t) => [t.key, t]));
     const ordered: (typeof TILES)[number][] = [];
@@ -175,7 +184,7 @@ export default function Dashboard() {
       }
     }
     return [...ordered, ...Array.from(map.values())];
-  }, [settings, customTileOrder]);
+  }, [enabledFeatures, customTileOrder]);
 
 
   const recordTileUsage = async (key: string) => {
@@ -288,6 +297,7 @@ export default function Dashboard() {
   const [rangeData, setRangeData] = useState<any>(null);
   const chooseLocation = (nextLocationId: string) => {
     setLocationId(nextLocationId);
+    api.updateSettings({ activeLocationId: nextLocationId }).catch((error) => console.warn('active location', error));
     setPeriodPreset("all");
     setFromDate("");
     setToDate("");
@@ -332,17 +342,18 @@ export default function Dashboard() {
   const displayCommission = rangeData ? rangeData.commission : (dash?.commission ?? 0);
   const displayNetProfit = rangeData ? rangeData.netProfit : (dash?.netProfit ?? 0);
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
+  const selectedShop = shops.find((shop) => shop.id === locationId);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScreenHeader title="Ledgr" subtitle={locationId ? "This shop" : "Your business finances, simplified"} testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
+      <ScreenHeader title="Ledgr" subtitle={selectedShop ? `This shop · ${selectedShop.name}` : "Your business finances, simplified"} testID="dashboard-header" style={styles.homeHeader} titleStyle={styles.homeHeaderTitle} subtitleStyle={styles.homeHeaderSubtitle} />
       {shops.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <Pressable onPress={() => chooseLocation("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.shopRail} contentContainerStyle={styles.shopRailContent}>
+          <Pressable accessibilityRole="button" accessibilityState={{ selected: !locationId }} onPress={() => chooseLocation("")} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
             <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
           </Pressable>
           {shops.map((shop) => (
-            <Pressable key={shop.id} onPress={() => chooseLocation(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+            <Pressable key={shop.id} accessibilityRole="button" accessibilityState={{ selected: locationId === shop.id }} onPress={() => chooseLocation(shop.id)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
               <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
             </Pressable>
           ))}
@@ -553,12 +564,20 @@ export default function Dashboard() {
 
             {/* KPI row — tap to open the underlying entries */}
             <View style={styles.kpiRow}>
+              {enabledFeatures.includes('sales') ? (
               <KpiTile label="Sales" value={fmt(dash?.totalSales)} valueColor={theme.color.success} icon={<TrendingUp width={14} height={14} color={theme.color.success} />} testID="kpi-sales" onPress={() => router.push("/sales")} />
+              ) : null}
+              {enabledFeatures.includes('bills') ? (
               <KpiTile label="Purchases" value={fmt(dash?.totalPurchases)} valueColor={theme.color.warning} icon={<Receipt width={14} height={14} color={theme.color.warning} />} testID="kpi-purchases" onPress={() => router.push("/bills")} />
+              ) : null}
             </View>
             <View style={styles.kpiRow}>
+              {enabledFeatures.includes('cashbook') ? (
               <KpiTile label="Cash" value={fmt(dash?.cash)} icon={<ArrowLeftRight width={14} height={14} color="#60A5FA" />} testID="kpi-cash" onPress={() => router.push("/cashbook")} />
+              ) : null}
+              {enabledFeatures.includes('inventory') ? (
               <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} />
+              ) : null}
             </View>
 
             {/* Quick Workspaces Header */}
@@ -660,6 +679,8 @@ function makeStyles(theme: any) { return StyleSheet.create({
   homeHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
   homeHeaderTitle: { fontSize: 28, fontWeight: "700", letterSpacing: -0.5 },
   homeHeaderSubtitle: { fontSize: 14, marginTop: 4 },
+  shopRail: { flexGrow: 0, minHeight: 60 },
+  shopRailContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
   scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl },
   periodRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" },
   periodPill: {

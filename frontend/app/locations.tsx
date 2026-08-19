@@ -54,8 +54,15 @@ export default function LocationsScreen() {
       const rows = await api.listLocations();
       const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
       setShops(next);
-      const current = String(settings.activeLocationId || next[0]?.id || "");
+      const requested = String(settings.activeLocationId || '');
+      const current = next.some((shop) => shop.id === requested) ? requested : String(next[0]?.id || '');
+      if (requested !== current) await api.updateSettings({ activeLocationId: current });
       setActiveId(current);
+      const validId = (candidate: string, fallback = '') => next.some((shop) => shop.id === candidate) ? candidate : fallback;
+      setCashFrom((prior) => validId(prior, current));
+      setCashTo((prior) => validId(prior, next.find((shop) => shop.id !== current)?.id || current));
+      setStockFrom((prior) => validId(prior, current));
+      setStockTo((prior) => validId(prior, next.find((shop) => shop.id !== current)?.id || current));
       if (getEnabledFeatures(settings).includes("perpetualInventory")) {
         const list = await api.listProducts(current || undefined);
         setProducts((Array.isArray(list) ? list : []).map((p: any) => ({ id: String(p.id), name: String(p.name), qty: Number(p.qty || 0) })));
@@ -74,8 +81,7 @@ export default function LocationsScreen() {
 
   const persistActive = async (id: string) => {
     setActiveId(id);
-    const settings = await api.getSettings();
-    await api.updateSettings({ ...settings, activeLocationId: id });
+    await api.updateSettings({ activeLocationId: id });
   };
 
   const addShop = async () => {
@@ -94,11 +100,11 @@ export default function LocationsScreen() {
 
   const archive = (shop: Shop) => {
     confirmAction("Archive location?", `${shop.name} will be hidden. Past activity stays on the books.`, async () => {
+      setError('');
       try {
         await api.archiveLocation(shop.id);
         if (activeId === shop.id) {
-          const settings = await api.getSettings();
-          await api.updateSettings({ ...settings, activeLocationId: "" });
+          await api.updateSettings({ activeLocationId: "" });
         }
         await load();
       } catch (e: any) {
@@ -109,6 +115,8 @@ export default function LocationsScreen() {
 
   const moveCash = async () => {
     const dateIso = normalizeDateInput(cashDate);
+    if (shops.length < 2 || !cashFrom || !cashTo) { setError("Add at least two active shops before transferring cash."); return; }
+    if (cashFrom === cashTo) { setError("Choose two different shops for the cash transfer."); return; }
     const amount = parseMoneyInput(cashAmount);
     if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the cash transfer date."); return; }
     if (!Number.isFinite(amount) || amount <= 0) { setError("Enter a cash amount to move."); return; }
@@ -125,6 +133,9 @@ export default function LocationsScreen() {
   const moveStock = async () => {
     const dateIso = normalizeDateInput(stockDate);
     const qty = Number(String(stockQty).replace(",", "."));
+    if (shops.length < 2 || !stockFrom || !stockTo) { setError("Add at least two active shops before transferring stock."); return; }
+    if (stockFrom === stockTo) { setError("Choose two different shops for the stock transfer."); return; }
+    if (!stockProductId) { setError("Choose a product to transfer."); return; }
     if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the stock transfer date."); return; }
     if (!Number.isFinite(qty) || qty <= 0) { setError("Enter a quantity to move."); return; }
     setSaving(true); setError("");
@@ -157,6 +168,7 @@ export default function LocationsScreen() {
                 <Text style={styles.section}>Shops</Text>
                 <FormField label="New shop" value={name} onChangeText={setName} placeholder="Shop A" />
                 <FormActions primaryLabel={saving ? "Saving…" : "Add shop"} onPrimary={addShop} primaryBusy={saving} primaryDisabled={saving} />
+                {!shops.length ? <Text style={styles.guide}>No active shops. Add a shop above to start location tracking.</Text> : null}
                 {shops.map((shop) => (
                   <View key={shop.id} style={styles.shopRow}>
                     <Pressable onPress={() => persistActive(shop.id)} style={{ flex: 1 }}>
@@ -167,33 +179,39 @@ export default function LocationsScreen() {
                 ))}
               </Card>
 
-              <Card>
-                <Text style={styles.section}>Move cash</Text>
-                <LocationPicker label="From" value={cashFrom} onChange={setCashFrom} />
-                <LocationPicker label="To" value={cashTo} onChange={setCashTo} />
-                <FormField label={`Amount (${currency})`} value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" />
-                <FormField label="Date" value={cashDate} onChangeText={setCashDate} />
-                <FormActions primaryLabel="Transfer cash" onPrimary={moveCash} primaryBusy={saving} primaryDisabled={saving} />
-              </Card>
+              {shops.length >= 2 ? (
+                <>
+                  <Card>
+                    <Text style={styles.section}>Move cash</Text>
+                    <LocationPicker label="From" value={cashFrom} onChange={setCashFrom} locations={shops} enabled={enabled} />
+                    <LocationPicker label="To" value={cashTo} onChange={setCashTo} locations={shops} enabled={enabled} />
+                    <FormField label={`Amount (${currency})`} value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" />
+                    <FormField label="Date" value={cashDate} onChangeText={setCashDate} />
+                    <FormActions primaryLabel="Transfer cash" onPrimary={moveCash} primaryBusy={saving} primaryDisabled={saving} />
+                  </Card>
 
-              {stockEnabled ? (
-                <Card>
-                  <Text style={styles.section}>Move stock</Text>
-                  <LocationPicker label="From" value={stockFrom} onChange={setStockFrom} />
-                  <LocationPicker label="To" value={stockTo} onChange={setStockTo} />
-                  <Text style={styles.hint}>Product</Text>
-                  <View style={styles.wrap}>
-                    {products.map((p) => (
-                      <Pressable key={p.id} onPress={() => setStockProductId(p.id)} style={[styles.chip, stockProductId === p.id && styles.chipOn]}>
-                        <Text style={styles.chipText}>{p.name}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <FormField label="Quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
-                  <FormField label="Date" value={stockDate} onChangeText={setStockDate} />
-                  <FormActions primaryLabel="Transfer stock" onPrimary={moveStock} primaryBusy={saving} primaryDisabled={saving} />
-                </Card>
-              ) : null}
+                  {stockEnabled ? (
+                    <Card>
+                      <Text style={styles.section}>Move stock</Text>
+                      <LocationPicker label="From" value={stockFrom} onChange={setStockFrom} locations={shops} enabled={enabled} />
+                      <LocationPicker label="To" value={stockTo} onChange={setStockTo} locations={shops} enabled={enabled} />
+                      <Text style={styles.hint}>Product</Text>
+                      <View style={styles.wrap}>
+                        {products.map((p) => (
+                          <Pressable key={p.id} onPress={() => setStockProductId(p.id)} style={[styles.chip, stockProductId === p.id && styles.chipOn]}>
+                            <Text style={styles.chipText}>{p.name}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <FormField label="Quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
+                      <FormField label="Date" value={stockDate} onChangeText={setStockDate} />
+                      <FormActions primaryLabel="Transfer stock" onPrimary={moveStock} primaryBusy={saving} primaryDisabled={saving} />
+                    </Card>
+                  ) : null}
+                </>
+              ) : (
+                <Card><Text style={styles.guide}>Add at least two active shops to transfer cash or stock between locations.</Text></Card>
+              )}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
             </>

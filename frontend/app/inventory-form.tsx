@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,6 +10,8 @@ import { Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
+import { loadLocationsIfEnabled, type ShopLocation } from '@/src/components/LocationPicker';
+import { getEnabledFeatures } from '@/src/utils/featureFlags';
 
 export default function InventoryForm() {
   const theme = useTheme();
@@ -25,6 +27,11 @@ export default function InventoryForm() {
   const [date, setDate] = useState(() => localTodayIso());
   const [history, setHistory] = useState<any[]>([]);
   const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
+  const [locationsEnabled, setLocationsEnabled] = useState(false);
+  const [shops, setShops] = useState<ShopLocation[]>([]);
+  const [locationId, setLocationId] = useState('');
+  const [inventoryEnabled, setInventoryEnabled] = useState<boolean | null>(null);
+  const loadRequest = useRef(0);
 
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
@@ -32,9 +39,11 @@ export default function InventoryForm() {
   const [commissionPct, setCommissionPct] = useState("");
   const [bookCommissionPct, setBookCommissionPct] = useState(0);
 
-  const loadData = async () => {
+  const loadData = useCallback(async (scopeId: string) => {
+    const requestId = ++loadRequest.current;
     try {
-      const [v2, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
+      const [v2, config, opening] = await Promise.all([api.v2InventoryOverview(scopeId || undefined), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
+      if (requestId !== loadRequest.current) return;
       if (!v2) throw new Error('No active versioned V2 book');
       setExpected(Number(v2.expected || 0));
       setInfo(v2);
@@ -45,13 +54,38 @@ export default function InventoryForm() {
       setCommissionPct(Number.isFinite(bookRate) && bookRate > 0 ? String(bookRate) : "");
       setOpeningEffectiveDate(String(opening?.date || v2?.periodStart || ""));
       setOpeningStock(Number(opening?.inventory ?? v2?.openingInventory ?? 0));
-    } catch (e) { console.warn(e); }
-    finally { setLoading(false); }
-  };
+    } catch (e) {
+      if (requestId === loadRequest.current) console.warn(e);
+    } finally {
+      if (requestId === loadRequest.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    (async () => {
+      try {
+        const featureSettings = await api.getSettings();
+        if (!getEnabledFeatures(featureSettings).includes('inventory')) {
+          setInventoryEnabled(false);
+          setLoading(false);
+          return;
+        }
+        setInventoryEnabled(true);
+        const locationState = await loadLocationsIfEnabled();
+        setLocationsEnabled(locationState.enabled);
+        setShops(locationState.locations);
+        const initialLocation = locationState.enabled && locationState.locations.some((shop) => shop.id === locationState.activeId)
+          ? locationState.activeId
+          : '';
+        setLocationId(initialLocation);
+        await loadData(initialLocation);
+      } catch (e) {
+        console.warn('inventory setup', e);
+        setInventoryEnabled(false);
+        setLoading(false);
+      }
+    })();
+  }, [loadData]);
 
   const save = async () => {
     const act = parseFloat(actual);
@@ -61,10 +95,10 @@ export default function InventoryForm() {
     setDate(dateIso); // reflect the canonical form in the field
     setSaving(true); setError("");
     try {
-      await api.recordV2InventoryCount({ date: dateIso, value: act, notes });
+      await api.recordV2InventoryCount({ date: dateIso, value: act, notes, locationId: locationId || undefined });
       setActual("");
       setNotes("");
-      loadData();
+      await loadData(locationId);
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   };
@@ -72,7 +106,7 @@ export default function InventoryForm() {
   const deleteAudit = async (id: string) => {
     try {
       await api.deleteV2InventoryCount(id);
-      loadData();
+      await loadData(locationId);
     } catch (e: any) { setError(e.message); }
   };
 
@@ -109,6 +143,37 @@ export default function InventoryForm() {
 
   const variance = actual ? parseFloat(actual) - expected : 0;
   const varColor = variance === 0 ? theme.color.muted : variance > 0 ? theme.color.success : theme.color.error;
+  const selectedShop = shops.find((shop) => shop.id === locationId);
+  const selectStockScope = async (nextLocationId: string) => {
+    if (nextLocationId === locationId) return;
+    setLocationId(nextLocationId);
+    setActual('');
+    setNotes('');
+    setError('');
+    setLoading(true);
+    await loadData(nextLocationId);
+  };
+
+  if (!loading && inventoryEnabled === false) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={{ padding: theme.spacing.lg }}>
+          <Card>
+        <View style={styles.headerBar}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+          <Text style={styles.headerTitle}>Stock & Physical Count</Text>
+          <View style={{ width: 26 }} />
+        </View>
+            <Text style={styles.label}>Physical Stock is not enabled for this business</Text>
+            <Text style={styles.hint}>Enable Inventory & Stock Counts in Customize Features when this business needs physical stock tracking.</Text>
+            <Pressable accessibilityRole="button" onPress={() => router.push('/customize-features')} style={[styles.scopeChip, styles.scopeChipOn, { alignSelf: 'flex-start', marginTop: 12 }]}>
+              <Text style={styles.scopeChipTextOn}>Open Customize Features</Text>
+            </Pressable>
+          </Card>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -121,7 +186,44 @@ export default function InventoryForm() {
         <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }} keyboardShouldPersistTaps="handled">
           {loading ? <ActivityIndicator color={theme.color.brandPrimary} /> : (
             <>
+              {locationsEnabled ? (
+                <Card style={{ marginBottom: theme.spacing.md }}>
+                  <Text style={styles.label}>Physical count location</Text>
+                  <Text style={styles.hint}>
+                    {selectedShop
+                      ? `You are counting stock only for ${selectedShop.name}. This operational audit does not replace the company-wide count required to close the period.`
+                      : 'All Shops records the company-wide count required for period close. Choose one shop for an operational location audit.'}
+                  </Text>
+                  <View style={styles.scopeRow}>
+                    <Pressable
+                      testID="inventory-scope-all"
+                      onPress={() => selectStockScope('')}
+                      accessibilityRole="button" accessibilityState={{ selected: !locationId }}
+                      style={[styles.scopeChip, !locationId && styles.scopeChipOn]}
+                    >
+                      <Text style={[styles.scopeChipText, !locationId && styles.scopeChipTextOn]}>All shops</Text>
+                    </Pressable>
+                    {shops.map((shop) => {
+                      const selected = shop.id === locationId;
+                      return (
+                        <Pressable
+                          key={shop.id}
+                          testID={`inventory-scope-${shop.id}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => selectStockScope(shop.id)}
+                          style={[styles.scopeChip, selected && styles.scopeChipOn]}
+                        >
+                          <Text style={[styles.scopeChipText, selected && styles.scopeChipTextOn]}>{shop.name}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {!shops.length ? <Text style={styles.hint}>No active shops remain. Add a shop in Locations to record a shop-specific count.</Text> : null}
+                </Card>
+              ) : null}
               {/* Opening Stock Card */}
+              {!locationId ? (
               <Card style={{ marginBottom: theme.spacing.md }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
@@ -139,9 +241,10 @@ export default function InventoryForm() {
                   </Pressable>
                 </View>
               </Card>
+              ) : null}
 
               <FormCard>
-                <Text style={styles.label}>Live System Stock (USD value)</Text>
+                <Text style={styles.label}>{selectedShop ? `${selectedShop.name} Live System Stock (USD value)` : 'All Shops Live System Stock (USD value)'}</Text>
                 <Text style={styles.expected} testID="inv-expected">{fmt(expected)}</Text>
                 {info?.lastAudit ? (
                   <Text style={styles.hint}>Last audit: {info.lastAudit.date} at {fmt(info.lastAudit.actualStock)}. Purchases since: {fmt(info.purchasesSince)}. Sales since: {fmt(info.salesSince)}.</Text>
@@ -158,7 +261,7 @@ export default function InventoryForm() {
                   placeholder="YYYY-MM-DD"
                 />
                 <FormField
-                  label="Physical Stock Count (Shelf Count, USD)"
+                  label={selectedShop ? `${selectedShop.name} Physical Stock Count (Shelf Count, USD)` : 'All Shops Physical Stock Count (Shelf Count, USD)'}
                   labelStyle={{ marginTop: 14 }}
                   testID="input-actual-stock"
                   value={actual}
@@ -221,6 +324,7 @@ export default function InventoryForm() {
                 </Card>
               )}
 
+              {!locationId ? (
               <Card style={{ marginTop: theme.spacing.lg, borderColor: theme.color.brandPrimary, borderWidth: 2 }}>
                 <Text style={[styles.label, { color: theme.color.brandPrimary }]}>Close Period</Text>
                 <Text style={styles.hint}>
@@ -277,11 +381,12 @@ export default function InventoryForm() {
                   </View>
                 )}
               </Card>
+              ) : null}
             </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-      <OpeningBalancesModal visible={openingVisible} mode="inventory" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); loadData(); }} />
+      <OpeningBalancesModal visible={!locationId && openingVisible} mode="inventory" onClose={() => setOpeningVisible(false)} onSuccess={() => { setOpeningVisible(false); setLoading(true); loadData(''); }} />
     </SafeAreaView>
   );
 }
@@ -316,4 +421,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   historyTitle: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   historySub: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
   historyVariance: { fontSize: 13, fontWeight: "700" },
+  scopeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  scopeChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border },
+  scopeChipOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  scopeChipText: { color: theme.color.onSurface, fontWeight: '600', fontSize: 13 },
+  scopeChipTextOn: { color: '#fff' },
 }); }

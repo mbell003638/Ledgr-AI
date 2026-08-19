@@ -129,9 +129,8 @@ export class LocationDomainService {
   async archiveLocation(id: string): Promise<LocationRecord> {
     await this.requireModule();
     const c = await this.requireContext();
-    const row = await this.db.first<{ id: string; name: string }>('SELECT id,name FROM v2_locations WHERE id=? AND book_id=?', [id, c.bookId]);
-    if (!row) throw new Error('Location not found');
-    await this.db.run('UPDATE v2_locations SET archived=1 WHERE id=? AND book_id=?', [id, c.bookId]);
+    const row = await this.db.first<{ id: string; name: string; archived: number }>('SELECT id,name,archived FROM v2_locations WHERE id=? AND book_id=?', [id, c.bookId]);
+    if (!row || row.archived) throw new Error('Location not found');
     const cashBalance = await this.db.first<{ balance: number }>(
       `SELECT COALESCE(SUM(l.debit-l.credit),0) AS balance
        FROM v2_journal_lines l
@@ -151,6 +150,7 @@ export class LocationDomainService {
     if (Math.abs(Number(cashBalance?.balance || 0)) > 0.005 || stocked) {
       throw new Error('Transfer all cash and stock out of this location before archiving it.');
     }
+    await this.db.run('UPDATE v2_locations SET archived=1 WHERE id=? AND book_id=?', [id, c.bookId]);
     return { id: row.id, bookId: c.bookId, name: row.name, archived: true };
   }
 
