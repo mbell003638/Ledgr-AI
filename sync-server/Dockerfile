@@ -11,6 +11,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/dist ./dist
+COPY migrations ./migrations
 EXPOSE 8787
 USER node
 CMD ["node", "dist/index.js"]

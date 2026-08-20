@@ -372,6 +372,13 @@ export default function SettingsScreen() {
               </View>
             </GlowPressable>
 
+            <GlowPressable topHighlight={false} haptic onPress={() => router.push("/sync-settings" as any)} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary + "55", backgroundColor: theme.color.brandPrimary + "0D", padding: 20 }} testID="open-sync-settings">
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 16 }}><Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Self-hosted Sync (Optional)</Text><Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Prepare an offline-first connection to your own server</Text></View>
+                <Ionicons name="cloud-offline-outline" size={22} color={theme.color.brandPrimary} />
+              </View>
+            </GlowPressable>
+
             <GlowPressable
               topHighlight={false}
               haptic

@@ -8,13 +8,13 @@ the API and storage can evolve as long as these invariants remain true.
 
 ## Current implementation status
 
-The first `codex-sol` foundation slice adds the numbered SQLite sync tables,
-operation envelope, atomic outbox helper, replay metadata and a reference
-self-hosted HTTP server. Existing accounting commands are not yet routed
-through the outbox, and the reference server is intentionally in-memory with
-no authentication or accounting arbitration. Do not enable it for production
-data until the command-bus, PostgreSQL, authorization and conflict-resolution
-phases below are complete.
+The current `codex-sol` slice adds the numbered SQLite sync tables, operation
+envelope, atomic outbox helper, replay metadata, and a self-hosted server with
+PostgreSQL persistence, OIDC JWT verification, book membership authorization,
+and deterministic accounting-arbitration hooks. The in-memory server remains
+available for tests only. Existing accounting commands and full domain conflict
+resolution still need command-bus rollout before production accounting use;
+follow `sync-server/README.md` for required deployment controls.
 
 ## Current boundary
 

@@ -175,6 +175,11 @@ function ThemedStack() {
             <Stack.Screen name="reconcile" options={{ presentation: "card" }} />
             <Stack.Screen name="integrations" options={{ presentation: "card" }} />
           </Stack.Protected>
+          <Stack.Protected guard={canOpen("core_ledger")}>
+            <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
+            <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />
+            <Stack.Screen name="sync-conflict-correction" options={{ presentation: "modal" }} />
+          </Stack.Protected>
           <Stack.Protected guard={canOpen("ai_assistant")}>
             <Stack.Screen name="ask" options={{ presentation: "card" }} />
             <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
