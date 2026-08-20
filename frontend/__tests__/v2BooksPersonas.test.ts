@@ -1,5 +1,5 @@
 import { makeNodeRunner } from './helpers/nodeRunner';
-import { initSchema } from '../src/db/schema';
+import { initSchema, SCHEMA_VERSION } from '../src/db/schema';
 import { V2BookConfigRepository } from '../src/accountingV2/bookConfigRepository';
 import { defaultBook } from '../src/accountingV2/schema';
 
@@ -19,7 +19,7 @@ describe('V2BookConfigRepository — persistent books and persona isolation', ()
       await initSchema(runner);
       const active = await runner.all<{ type: string }>('SELECT type FROM v2_personas WHERE book_id = ? AND active = 1', ['old-book']);
       expect(active).toEqual([{ type: 'retail' }]);
-      expect((await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='schema_version'"))?.value).toBe('10');
+      expect((await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='schema_version'"))?.value).toBe(String(SCHEMA_VERSION));
     } finally { close(); }
   });
 

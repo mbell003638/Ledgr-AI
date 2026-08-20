@@ -17,7 +17,7 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -147,6 +147,53 @@ export function schemaSql(): string {
     CREATE INDEX IF NOT EXISTS idx_v2_journal_lines_journal ON v2_journal_lines(journal_id);
     CREATE INDEX IF NOT EXISTS idx_v2_sources_book_date ON v2_sources(book_id, date);
     CREATE INDEX IF NOT EXISTS idx_v2_alloc_invoice ON v2_invoice_allocations(invoice_source_id);
+
+    CREATE TABLE IF NOT EXISTS sync_profiles (
+      id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, enabled INTEGER NOT NULL DEFAULT 0,
+      protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_device_state (
+      book_id TEXT NOT NULL, device_id TEXT NOT NULL, book_epoch TEXT NOT NULL,
+      next_sequence INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
+      PRIMARY KEY(book_id, device_id)
+    );
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      op_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, book_epoch TEXT NOT NULL, device_id TEXT NOT NULL,
+      device_sequence INTEGER NOT NULL, actor_id TEXT NOT NULL, command_type TEXT NOT NULL,
+      aggregate_id TEXT NOT NULL, base_revision INTEGER, dependencies TEXT NOT NULL DEFAULT '[]',
+      payload TEXT NOT NULL, payload_hash TEXT NOT NULL, client_created_at TEXT NOT NULL,
+      business_date TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+      next_retry_at TEXT, last_error TEXT, accepted_book_sequence INTEGER,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      UNIQUE(book_id, device_id, device_sequence)
+    );
+    CREATE TABLE IF NOT EXISTS sync_applied_ops (
+      op_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, book_sequence INTEGER NOT NULL,
+      applied_at TEXT NOT NULL, UNIQUE(book_id, book_sequence)
+    );
+    CREATE TABLE IF NOT EXISTS sync_book_state (
+      book_id TEXT PRIMARY KEY, book_epoch TEXT NOT NULL, server_cursor INTEGER NOT NULL DEFAULT 0,
+      snapshot_hash TEXT, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_entity_revisions (
+      book_id TEXT NOT NULL, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL,
+      revision INTEGER NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY(book_id, aggregate_type, aggregate_id)
+    );
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      conflict_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, op_id TEXT NOT NULL,
+      canonical_op_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+      base_payload TEXT, local_payload TEXT NOT NULL, canonical_payload TEXT,
+      created_at TEXT NOT NULL, resolved_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sync_tombstones (
+      book_id TEXT NOT NULL, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL,
+      op_id TEXT NOT NULL, book_sequence INTEGER, created_at TEXT NOT NULL,
+      PRIMARY KEY(book_id, aggregate_type, aggregate_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(book_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_applied_book_seq ON sync_applied_ops(book_id, book_sequence);
+    CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(book_id, status, created_at);
   `;
 }
 
