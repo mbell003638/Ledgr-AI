@@ -18,7 +18,7 @@ export const COLLECTIONS = [
   'locations', 'posSessions', 'stockTransfers',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -29,7 +29,7 @@ export const V2_TABLES = [
   'v2_products', 'v2_stock_moves',
   'v2_locations', 'v2_marketplace_orders', 'v2_marketplace_settlements', 'v2_projects', 'v2_project_entries', 'v2_creator_contracts', 'v2_creator_payouts',
   'v2_boms', 'v2_bom_lines', 'v2_production_orders', 'v2_trade_shipments', 'v2_trade_costs',
-  'v2_workflows', 'v2_audit_events', 'v2_sync_queue', 'v2_integrations', 'v2_tax_profiles', 'v2_budgets', 'v2_budget_lines', 'v2_recurring_templates', 'v2_bank_feed_entries',
+  'v2_workflows', 'v2_audit_events', 'v2_sync_queue', 'v2_integrations', 'v2_sync_state', 'v2_tax_profiles', 'v2_budgets', 'v2_budget_lines', 'v2_recurring_templates', 'v2_bank_feed_entries',
 ] as const;
 
 export function schemaSql(): string {
@@ -280,6 +280,13 @@ export function schemaSql(): string {
       UNIQUE(book_id, provider, kind),
       FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
     );
+    CREATE TABLE IF NOT EXISTS v2_sync_state (
+      id TEXT PRIMARY KEY, book_id TEXT NOT NULL, provider TEXT NOT NULL, remote_book_id TEXT NOT NULL,
+      device_id TEXT NOT NULL, etag TEXT, last_local_hash TEXT, last_sync_at TEXT, status TEXT NOT NULL DEFAULT 'never',
+      last_error TEXT, conflict_payload TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL,
+      UNIQUE(book_id, provider),
+      FOREIGN KEY(book_id) REFERENCES v2_books(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    );
     CREATE TABLE IF NOT EXISTS v2_tax_profiles (
       id TEXT PRIMARY KEY, book_id TEXT NOT NULL, country_code TEXT NOT NULL, tax_label TEXT NOT NULL,
       default_rate REAL NOT NULL DEFAULT 0, registration TEXT, config TEXT NOT NULL DEFAULT '{}', active INTEGER NOT NULL DEFAULT 1,
@@ -311,6 +318,7 @@ export function schemaSql(): string {
     CREATE INDEX IF NOT EXISTS idx_v2_workflows_book_status ON v2_workflows(book_id,status,created_at);
     CREATE INDEX IF NOT EXISTS idx_v2_audit_events_book_created ON v2_audit_events(book_id,created_at);
     CREATE INDEX IF NOT EXISTS idx_v2_sync_queue_pending ON v2_sync_queue(book_id,status,next_attempt_at);
+    CREATE INDEX IF NOT EXISTS idx_v2_sync_state_book ON v2_sync_state(book_id,provider);
     CREATE INDEX IF NOT EXISTS idx_v2_budget_lines_budget ON v2_budget_lines(budget_id);
     CREATE INDEX IF NOT EXISTS idx_v2_bank_feed_book_date ON v2_bank_feed_entries(book_id,date);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_unique_reversal ON v2_journal_entries(reversal_of) WHERE reversal_of IS NOT NULL;
@@ -337,6 +345,7 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await db.exec(schemaSql());
   // Schema 7: add migration-safe location dimensions without deleting existing modules.
 
+  await addColumnIfMissing(db, 'v2_sync_state', 'last_local_hash', 'TEXT');
   await addColumnIfMissing(db, 'v2_sources', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_journal_lines', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_stock_moves', 'location_id', 'TEXT');

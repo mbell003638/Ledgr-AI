@@ -15,6 +15,7 @@ import { partnershipDisplayFromReports } from './accountingV2/reports';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
+import { selfHostedSync } from '@/src/accountingV2/services/selfHostedSyncService';
 import { v2Services } from '@/src/accountingV2/runtime';
 import {
   listBooks as beListBooks,
@@ -639,6 +640,14 @@ export const api = {
   listPendingSync: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listPendingSync(); },
   upsertIntegration: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).upsertIntegration(input); },
   listIntegrations: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listIntegrations(); },
+  configureSelfHostedSync: selfHostedSync.configure,
+  disableSelfHostedSync: selfHostedSync.disable,
+  getSelfHostedSyncState: selfHostedSync.getState,
+  testSelfHostedSyncConnection: selfHostedSync.testConnection,
+  pushSelfHostedSnapshot: selfHostedSync.push,
+  pullSelfHostedSnapshot: selfHostedSync.pull,
+  resolveSelfHostedConflict: selfHostedSync.resolveConflict,
+  syncSelfHostedNow: selfHostedSync.syncNow,
   upsertTaxProfile: (input: any) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).upsertTaxProfile(input); },
   listTaxProfiles: async () => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).listTaxProfiles(); },
   importBankFeedRows: (provider: string, rows: any[]) => { const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage'); return new V2AppService(runner).importBankFeedRows(provider, rows); },

@@ -526,6 +526,24 @@ describe('V2 UI contracts', () => {
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
   });
 
+  it('exposes user-owned self-host sync without removing local integrations', () => {
+    const integrations = readApp('integrations.tsx');
+    const syncService = readSource('src/accountingV2/services/selfHostedSyncService.ts');
+    const apiFacade = readSource('src/api.ts');
+    expect(integrations).toContain('testID="self-host-sync-card"');
+    expect(integrations).toContain('Save server');
+    expect(integrations).toContain('Push local');
+    expect(integrations).toContain('Pull remote');
+    expect(integrations).toContain('Keep local');
+    expect(integrations).toContain('Use remote');
+    expect(integrations).toContain('Local CSV');
+    expect(syncService).toContain('importBackup(body.snapshot)');
+    expect(syncService).toContain('Local offline edits are not synced');
+    expect(syncService).toContain('SecureStore');
+    expect(apiFacade).toContain('configureSelfHostedSync');
+    expect(apiFacade).toContain('resolveSelfHostedConflict');
+  });
+
   it('keeps Quick Actions as the center control and keeps workspace metrics out of Home', () => {
     const tabs = readApp('(tabs)/_layout.tsx');
     const home = readApp('(tabs)/index.tsx');
