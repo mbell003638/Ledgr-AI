@@ -1,40 +1,33 @@
-# Ledgr self-host sync server
+# Ledgr self-hosted sync server (foundation)
 
-This is an optional, user-owned synchronization service for Ledgr. It stores encrypted-transport uploads of the app's current Ledgr backup format per workspace. It does not run accounting SQL, mutate journal rows, or replace the on-device ledger. The Ledgr client validates and atomically restores a pulled snapshot through its existing backup-import path.
+This directory contains a small, dependency-light HTTP protocol reference for the planned offline-first sync feature. It accepts semantic operations, assigns a per-book monotonically increasing cursor, supports cursor-based pull, and makes retries idempotent by `opId` plus `payloadHash`.
+
+It is deliberately **not production-ready accounting arbitration**. The current store is in-memory, there is no authentication or authorization, and it does not yet validate balanced journals, receipt allocation, inventory, period closing, or conflict policies. Do not use it with real financial data or expose it to the internet.
 
 ## Run locally
 
-```bash
-cd sync-server
-LEDGR_SYNC_TOKEN='replace-with-a-long-random-token' npm start
+```sh
+npm install
+npm test
+npm start
 ```
 
-The service listens on `http://127.0.0.1:8787` by default when run locally. For a phone to reach a computer on the same private network, use the computer's private LAN address and keep the service behind the local firewall.
+The server listens on `0.0.0.0:8787` by default. Set `PORT` and `HOST` to override. Endpoints:
 
-## Run with Docker
+- `GET /healthz`
+- `GET /v1/capabilities`
+- `POST /v1/sync/push` with `{ "bookId": "...", "operations": [...] }`
+- `GET /v1/sync/pull?bookId=...&after=0&limit=100`
 
-```bash
-docker build -t ledgr-self-host-sync .
-mkdir -p ledgr-sync-data
-docker run --name ledgr-sync \
-  -p 8787:8787 \
-  -e LEDGR_SYNC_TOKEN='replace-with-a-long-random-token' \
-  -v "$PWD/ledgr-sync-data:/app/data" \
-  ledgr-self-host-sync
+See `src/protocol.ts` for the versioned operation envelope. Clients should write their local ledger mutation and durable outbox row in one SQLite transaction, then retry the same `opId` until acknowledged.
+
+## Production replacement boundary
+
+Replace `MemoryEventStore` with a PostgreSQL-backed implementation behind the `EventStore` interface. A production implementation must authenticate users/devices, enforce book membership, validate dependencies and accounting invariants in one database transaction, append immutable canonical events, update projections, and retain conflict records. The server must use TLS (for example, Caddy), an OIDC provider with PKCE-compatible clients, rate/payload limits, encrypted backups, and restore drills. Never synchronize SQLite files directly.
+
+Use Docker only as a development shape until the PostgreSQL implementation and security controls are complete:
+
+```sh
+docker build -t ledgr-sync-server .
+docker run --rm -p 8787:8787 ledgr-sync-server
 ```
-
-For internet exposure, put the service behind HTTPS, a private VPN, or an authenticated reverse proxy. Do not expose an unauthenticated instance to the public internet. Set `LEDGR_SYNC_ALLOWED_ORIGIN` to the web app origin when using Ledgr in a browser. The default `*` is convenient for a private mobile endpoint but should be narrowed for public deployments.
-
-## Client configuration
-
-In Ledgr, open **Business Tools → Integrations → User-owned sync**. Enter the server URL, the same bearer token, and a workspace identifier. Test the connection, then use **Push local**, **Pull remote**, or **Sync now**. Automatic sync is opt-in and remains disabled by default.
-
-The client continues to work without a network connection. A local edit made after the last successful sync is never silently overwritten by a pull. If the remote copy changed too, Ledgr reports a conflict and asks the user to choose either **Push local** or **Replace local with remote**.
-
-## Stored data
-
-The service stores one opaque Ledgr backup snapshot per workspace as a JSON file under `LEDGR_SYNC_DATA_DIR`. Use a private volume with restricted permissions and include it in the user's own backup plan. The service does not receive or store the sync bearer token. The snapshot contains the user's Ledgr book data, so the host administrator must be trusted.
-
-## API
-
-`GET /v1/sync/health` checks connectivity. `GET /v1/sync/pull?workspaceId=...` returns the latest snapshot. `POST /v1/sync/push` accepts a workspace identifier, device identifier, expected remote etag, snapshot hash, and Ledgr backup snapshot. The server uses optimistic concurrency and returns HTTP 409 when another device has changed the workspace.
