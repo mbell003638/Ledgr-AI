@@ -216,6 +216,7 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen name="bills" options={{ href: null }} />
+        <Tabs.Screen name="operations" options={{ href: null }} />
       </Tabs>
       <QuickActionMenu />
       <VoiceFab />

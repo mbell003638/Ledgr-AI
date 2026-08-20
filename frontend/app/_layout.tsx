@@ -146,6 +146,8 @@ function ThemedStack() {
             {canOpen("invoicing") ? <>
               <Stack.Screen name="invoices" options={{ presentation: "card" }} />
               <Stack.Screen name="quotes" options={{ presentation: "card" }} />
+            </> : null}
+            {canOpen("invoicing") || canOpen("customers") ? <>
               <Stack.Screen name="receipts" options={{ presentation: "card" }} />
               <Stack.Screen name="receipt-form" options={{ presentation: "modal" }} />
             </> : null}

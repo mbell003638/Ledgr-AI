@@ -531,17 +531,26 @@ describe('V2 UI contracts', () => {
     const home = readApp('(tabs)/index.tsx');
     const onboarding = readApp('onboarding.tsx');
     const reports = readApp('(tabs)/reports.tsx');
+    const rootLayout = readApp('_layout.tsx');
     const shopClose = readApp('shop-close.tsx');
 
     expect(tabs).toContain('import QuickActionMenu');
     expect(tabs).toContain('<QuickActionMenu />');
     expect(tabs).toContain('name="quick_action_spacer"');
-    expect(tabs).not.toContain('name="operations"');
+    expect(tabs).toMatch(/name="operations" options=\{\{ href: null \}\}/);
+    expect(home).toContain('home-workflow-shortcuts');
+    expect(home).toContain('testID={`home-workflow-${tile.key}`}');
+    expect(home).toContain('key: "sales"');
+    expect(home).toContain('key: "purchases"');
+    expect(home).toContain('key: "expenses"');
+    expect(home).toContain('key: "stock"');
     expect(home).not.toContain('Workspace metrics');
     expect(onboarding).toContain('Choose report metrics');
     expect(onboarding).toContain('workspaceMetricKeys');
     expect(reports).toContain('selectedWorkspaceMetrics');
     expect(reports).toContain('testID="report-workspace-metrics"');
+    expect(rootLayout).toContain('name="receipt-form"');
+    expect(rootLayout).toContain('canOpen("customers")');
     expect(shopClose).toContain('normalizeDateInput');
     expect(shopClose).toContain('isValidDateString');
     expect(shopClose).toContain('locationId');
