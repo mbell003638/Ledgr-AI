@@ -56,7 +56,7 @@ export async function getV2FeatureDisableBlockers(db: SqlRunner, bookId: string)
        JOIN v2_accounts a ON a.id=l.account_id
        JOIN v2_journal_entries j ON j.id=l.journal_id
        LEFT JOIN v2_sources s ON s.id=j.source_id
-       WHERE l.book_id=? AND a.code='1200'
+       WHERE j.book_id=? AND a.code='1200'
          AND (s.id IS NULL OR (${LIVE_SOURCE.replace(/metadata/g, 's.metadata')}))`,
       [bookId],
     ),
@@ -78,7 +78,7 @@ export async function getV2FeatureDisableBlockers(db: SqlRunner, bookId: string)
         + (SELECT COUNT(*) FROM v2_journal_lines l
              JOIN v2_journal_entries j ON j.id=l.journal_id
              LEFT JOIN v2_sources s ON s.id=j.source_id
-             WHERE l.book_id=? AND l.location_id IS NOT NULL
+             WHERE j.book_id=? AND l.location_id IS NOT NULL
                AND (s.id IS NULL OR (${LIVE_SOURCE.replace(/metadata/g, 's.metadata')})))
         + (SELECT COUNT(*) FROM v2_stock_moves m
              LEFT JOIN v2_sources s ON s.id=m.source_id
