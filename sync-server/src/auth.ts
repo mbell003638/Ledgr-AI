@@ -31,7 +31,7 @@ export interface Authenticator {
 }
 
 export interface Authorizer {
-  authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push"): void | Promise<void>;
+  authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", deviceId?: string): void | Promise<void>;
 }
 
 /** Development-only authenticator. Production entrypoints select OIDC when configured. */
@@ -42,7 +42,7 @@ export class AnonymousAuthenticator implements Authenticator {
 }
 
 export class BookMembershipAuthorizer implements Authorizer {
-  authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push"): void {
+  authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", _deviceId?: string): void {
     const allowed = principal.books.has("*") || principal.books.has(bookId) || principal.scopes.has("sync:*") || principal.scopes.has(`sync:${action}`);
     if (!allowed) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
   }

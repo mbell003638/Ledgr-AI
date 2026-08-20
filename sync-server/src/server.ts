@@ -2,7 +2,7 @@ import { createServer as createHttpServer, IncomingMessage, Server, ServerRespon
 import { URL } from "node:url";
 import { EventStore, StoreConflictError } from "./store.js";
 import { MAX_BATCH_SIZE, PROTOCOL_VERSION, ProtocolError, parsePushRequest } from "./protocol.js";
-import { AnonymousAuthenticator, AuthenticationError, AuthorizationError, Authenticator, Authorizer, BookMembershipAuthorizer } from "./auth.js";
+import { AnonymousAuthenticator, AuthenticationError, AuthorizationError, Authenticator, Authorizer, BookMembershipAuthorizer, SyncPrincipal } from "./auth.js";
 import { AccountingArbitrator, ArbitrationError, NoopAccountingArbitrator } from "./arbitration.js";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -58,10 +58,23 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
         json(response, 200, { protocolVersion: PROTOCOL_VERSION, maxBatchSize: MAX_BATCH_SIZE, features: ["cursor-pull", "idempotent-operations", "semantic-operations", ...(options.production ? ["oidc-auth", "postgres-event-store", "accounting-arbitration"] : ["in-memory-reference-store"])], productionReady: options.production === true }); return;
       }
+      if (request.method === "POST" && url.pathname === "/v1/sync/devices/revoke") {
+        const value = await body(request);
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProtocolError("device revoke body must be an object");
+        const input = value as Record<string, unknown>;
+        if (typeof input.bookId !== "string" || typeof input.deviceId !== "string") throw new ProtocolError("bookId and deviceId are required");
+        const principal = await authenticator.authenticate(request.headers);
+        const revoker = authorizer as Authorizer & { revokeDevice?: (principal: SyncPrincipal, bookId: string, deviceId: string) => Promise<void> };
+        if (!revoker.revokeDevice) throw new ProtocolError("device revocation is unavailable for this server", 501);
+        await revoker.revokeDevice(principal, input.bookId, input.deviceId);
+        json(response, 200, { revoked: true, bookId: input.bookId, deviceId: input.deviceId }); return;
+      }
       if (request.method === "POST" && url.pathname === "/v1/sync/push") {
         const result = parsePushRequest(await body(request));
         const principal = await authenticator.authenticate(request.headers);
-        await authorizer.authorize(principal, result.bookId, "push");
+        const deviceId = result.operations[0]?.deviceId;
+        if (result.operations.some((operation) => operation.deviceId !== deviceId)) throw new ProtocolError("a push batch must contain one deviceId");
+        await authorizer.authorize(principal, result.bookId, "push", deviceId);
         await arbitrator.validate({ bookId: result.bookId, operations: result.operations, principal });
         const accepted = await store.append(result.bookId, result.operations);
         json(response, 200, { accepted, cursor: accepted.reduce((max, item) => Math.max(max, item.bookSequence), 0) }); return;
@@ -70,7 +83,8 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
         const bookId = url.searchParams.get("bookId");
         if (!bookId) throw new ProtocolError("bookId query parameter is required");
         const principal = await authenticator.authenticate(request.headers);
-        await authorizer.authorize(principal, bookId, "pull");
+        const deviceId = url.searchParams.get("deviceId") || undefined;
+        await authorizer.authorize(principal, bookId, "pull", deviceId);
         const after = positiveInteger(url.searchParams.get("after"), 0, Number.MAX_SAFE_INTEGER);
         const requestedLimit = positiveInteger(url.searchParams.get("limit"), MAX_BATCH_SIZE, MAX_BATCH_SIZE);
         if (requestedLimit < 1) throw new ProtocolError("limit must be at least 1");

@@ -17,7 +17,7 @@ import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import { selfHostedSync } from '@/src/accountingV2/services/selfHostedSyncService';
 import { v2Services } from '@/src/accountingV2/runtime';
-import { configureSync, disableSync, getSyncStatus, listSyncConflicts, resolveSyncConflict, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
+import { configureSync, disableSync, getSyncStatus, listSyncConflicts, markSyncRecoveryRequired, resolveSyncConflict, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
 import type { SyncOperation } from '@/src/sync/protocol';
 import {
   listBooks as beListBooks,
@@ -726,7 +726,11 @@ export const api = {
   setActiveBook: async (id: string) => { const r = await beSetActiveBook(id); bumpDataVersion(); return r; },
   createBook: async (name: string, businessType?: string) => { const r = await beCreateBook(name, businessType); bumpDataVersion(); return r; },
   renameBook: async (id: string, name: string) => { const r = await beRenameBook(id, name); bumpDataVersion(); return r; },
-  deleteBook: async (id: string) => { const r = await beDeleteBook(id); bumpDataVersion(); return r; },
+  deleteBook: async (id: string) => {
+    const runner = activeSqlRunner();
+    if (runner) await markSyncRecoveryRequired(runner, id, 'Business Account deletion requires sync re-enrollment');
+    const r = await beDeleteBook(id); bumpDataVersion(); return r;
+  },
 
   // POS sessions keep register metadata locally, while cash settlement is posted to the authoritative V2 ledger.
   listPosSessions: async () => db.listPosSessions(),
@@ -1221,6 +1225,8 @@ export const api = {
     return data;
   },
   importBackup: async (payload: any) => {
+    const runner = activeSqlRunner();
+    if (runner) await markSyncRecoveryRequired(runner, beActiveBookId(), 'Manual backup restore requires sync re-enrollment and reconciliation');
     const result: any = await db.importBackup(payload);
     // Restore model name if present in backup
     if (payload.geminiModel && typeof payload.geminiModel === 'string') {
@@ -1320,10 +1326,11 @@ export const api = {
     const originalBookId = beActiveBookId();
     const originalV2Active = runner ? await runner.first<{ value: string }>("SELECT value FROM meta WHERE key='v2_active_book_id'") : null;
     try {
+      const books = await beListBooks();
       if (runner) {
+        for (const book of books) await markSyncRecoveryRequired(runner, book.id, 'Accounting reset requires sync re-enrollment and reconciliation');
         await resetAllV2AccountingData(runner, today);
       }
-      const books = await beListBooks();
       for (const book of books) {
         await beSetActiveBook(book.id);
         await db.resetAll();

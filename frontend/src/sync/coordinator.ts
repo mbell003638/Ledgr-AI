@@ -21,6 +21,7 @@ import {
 const DEVICE_KEY = 'ledgr:sync:device-id';
 const tokenKey = (bookId: string) => `ledgr:sync:${bookId}:access-token`;
 const now = () => new Date().toISOString();
+let remoteBatchSequence = 0;
 
 export type SyncProfile = {
   bookId: string;
@@ -30,6 +31,8 @@ export type SyncProfile = {
   actorId: string;
   bookEpoch: string;
   enabled: boolean;
+  recoveryRequired: boolean;
+  recoveryReason?: string;
   updatedAt: string;
 };
 
@@ -50,6 +53,8 @@ export type SyncStatus = {
   pending: number;
   conflicts: number;
   lastError?: string;
+  recoveryRequired?: boolean;
+  recoveryReason?: string;
 };
 
 function validServerUrl(value: string): string {
@@ -79,6 +84,8 @@ export async function getSyncProfile(db: SqlRunner, bookId: string): Promise<Syn
     actorId: String(row.actor_id || row.user_id || ''),
     bookEpoch: String(row.book_epoch || ''),
     enabled: Boolean(row.enabled),
+    recoveryRequired: Boolean(row.recovery_required),
+    ...(row.recovery_reason ? { recoveryReason: String(row.recovery_reason) } : {}),
     updatedAt: String(row.updated_at),
   };
 }
@@ -110,11 +117,30 @@ export async function disableSync(db: SqlRunner, bookId: string): Promise<void> 
   await db.run('UPDATE sync_profiles SET enabled=0,updated_at=? WHERE id=?', [now(), bookId]);
 }
 
+/** Preserve pending intent and require explicit re-enrollment after destructive local changes. */
+export async function markSyncRecoveryRequired(db: SqlRunner, bookId: string, reason: string): Promise<void> {
+  await db.run("UPDATE sync_outbox SET status='quarantined',last_error=?,updated_at=? WHERE book_id=? AND status IN ('pending','retryable')", [reason, now(), bookId]);
+  await db.run('UPDATE sync_profiles SET enabled=0,recovery_required=1,recovery_reason=?,updated_at=? WHERE id=?', [reason, now(), bookId]);
+}
+
+/** Complete the local half of recovery after the server has issued a current epoch. */
+export async function completeSyncRecovery(db: SqlRunner, bookId: string, bookEpoch: string): Promise<void> {
+  const profile = await getSyncProfile(db, bookId);
+  if (!profile) throw new Error('Sync profile is not configured');
+  await db.run('UPDATE sync_profiles SET book_epoch=?,enabled=1,recovery_required=0,recovery_reason=NULL,updated_at=? WHERE id=?', [bookEpoch, now(), bookId]);
+  await db.run('UPDATE sync_book_state SET book_epoch=?,server_cursor=0,snapshot_hash=NULL,updated_at=? WHERE book_id=?', [bookEpoch, now(), bookId]);
+}
+
 export async function getSyncStatus(db: SqlRunner, bookId: string): Promise<SyncStatus> {
   const profile = await getSyncProfile(db, bookId);
   const pendingRow = await db.first<{ count: number; last_error?: string }>("SELECT COUNT(*) AS count, MAX(last_error) AS last_error FROM sync_outbox WHERE book_id=? AND status IN ('pending','retryable')", [bookId]);
   const conflictRow = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM sync_conflicts WHERE book_id=? AND status='open'", [bookId]);
-  return { enabled: Boolean(profile?.enabled), configured: Boolean(profile), ...(profile ? { serverUrl: profile.serverUrl } : {}), pending: Number(pendingRow?.count || 0), conflicts: Number(conflictRow?.count || 0), ...(pendingRow?.last_error ? { lastError: pendingRow.last_error } : {}) };
+  return {
+    enabled: Boolean(profile?.enabled), configured: Boolean(profile), ...(profile ? { serverUrl: profile.serverUrl } : {}),
+    pending: Number(pendingRow?.count || 0), conflicts: Number(conflictRow?.count || 0),
+    ...(pendingRow?.last_error ? { lastError: pendingRow.last_error } : {}),
+    ...(profile?.recoveryRequired ? { recoveryRequired: true, recoveryReason: profile.recoveryReason } : {}),
+  };
 }
 
 export async function withSyncedMutation<T>(db: SqlRunner, mutation: SyncMutation, apply: () => Promise<T>): Promise<T> {
@@ -149,9 +175,11 @@ async function request(profile: SyncProfile, path: string, init: RequestInit, to
 
 async function recordConflict(db: SqlRunner, operation: SyncOperation, reason: string, canonical?: SyncOperation): Promise<void> {
   await db.run(
-    `INSERT OR IGNORE INTO sync_conflicts(conflict_id,book_id,op_id,canonical_op_id,reason,local_payload,canonical_payload,created_at)
-     VALUES(?,?,?,?,?,?,?,?)`,
-    [createSyncId(), operation.bookId, operation.opId, canonical?.opId || null, reason, JSON.stringify(operation.payload), canonical ? JSON.stringify(canonical.payload) : null, now()],
+    `INSERT INTO sync_conflicts(conflict_id,book_id,op_id,canonical_op_id,reason,local_payload,canonical_payload,created_at)
+     SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS (
+       SELECT 1 FROM sync_conflicts WHERE book_id=? AND op_id=? AND status='open'
+     )`,
+    [createSyncId(), operation.bookId, operation.opId, canonical?.opId || null, reason, JSON.stringify(operation.payload), canonical ? JSON.stringify(canonical.payload) : null, now(), operation.bookId, operation.opId],
   );
 }
 
@@ -165,29 +193,45 @@ async function pullAndApply(
   state: SyncBookState,
   applyRemote?: RemoteOperationApplier,
 ): Promise<SyncBookState> {
-  const pulled = await request(profile, `/v1/sync/pull?bookId=${encodeURIComponent(bookId)}&after=${state.serverCursor}&limit=100`, { method: 'GET' }, token);
-  for (const event of Array.isArray(pulled.events) ? pulled.events : []) {
-    const already = await db.first<{ op_id: string }>('SELECT op_id FROM sync_applied_ops WHERE op_id=?', [event.opId]);
-    if (!already) {
+  const pulled = await request(profile, `/v1/sync/pull?bookId=${encodeURIComponent(bookId)}&deviceId=${encodeURIComponent(profile.deviceId)}&after=${state.serverCursor}&limit=100`, { method: 'GET' }, token);
+  const savepoint = `sync_remote_batch_${++remoteBatchSequence}`;
+  let failedEvent: SyncOperation | undefined;
+  await db.exec(`SAVEPOINT ${savepoint}`);
+  try {
+    for (const event of Array.isArray(pulled.events) ? pulled.events : []) {
+      const already = await db.first<{ op_id: string }>('SELECT op_id FROM sync_applied_ops WHERE op_id=?', [event.opId]);
+      if (already) continue;
+      failedEvent = event as SyncOperation;
       const local = await db.first<any>('SELECT * FROM sync_outbox WHERE op_id=?', [event.opId]);
-      try {
-        if (!local && applyRemote) await applyRemote(db, event as SyncOperation);
-        else if (!local && !applyRemote) throw new Error('No remote operation applier is registered');
-        await db.run('INSERT OR IGNORE INTO sync_applied_ops(op_id,book_id,book_sequence,applied_at) VALUES(?,?,?,?)', [event.opId, bookId, event.bookSequence, now()]);
-      } catch (error: any) {
-        await recordConflict(db, event as SyncOperation, error?.message || 'Remote operation could not be applied');
-      }
+      if (!local && applyRemote) await applyRemote(db, event as SyncOperation);
+      else if (!local && !applyRemote) throw new Error('No remote operation applier is registered');
+      await db.run('INSERT OR IGNORE INTO sync_applied_ops(op_id,book_id,book_sequence,applied_at) VALUES(?,?,?,?)', [event.opId, bookId, event.bookSequence, now()]);
+      failedEvent = undefined;
     }
+    const nextCursor = Number(pulled.cursor || state.serverCursor);
+    const nextState = {
+      ...state,
+      serverCursor: nextCursor,
+      ...(typeof pulled.checkpointHash === 'string' ? { snapshotHash: pulled.checkpointHash } : {}),
+      updatedAt: now(),
+    };
+    await writeSyncBookState(db, nextState);
+    await db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+    return nextState;
+  } catch (error: any) {
+    try {
+      await db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+    } catch { /* preserve the original replay failure */ }
+    if (failedEvent) await recordConflict(db, failedEvent, error?.message || 'Remote operation could not be applied');
+    throw error;
   }
-  const nextCursor = Number(pulled.cursor || state.serverCursor);
-  const nextState = { ...state, serverCursor: nextCursor, updatedAt: now() };
-  await writeSyncBookState(db, nextState);
-  return nextState;
 }
 
 export async function syncNow(db: SqlRunner, bookId: string, applyRemote?: RemoteOperationApplier): Promise<SyncStatus> {
   const profile = await getSyncProfile(db, bookId);
   if (!profile?.enabled) return getSyncStatus(db, bookId);
+  if (profile.recoveryRequired) throw new Error(profile.recoveryReason || 'Sync recovery requires explicit re-enrollment');
   const token = await storage.secureGet<string | null>(tokenKey(bookId), null);
   if (!token) throw new Error('Sync access token is missing; open Sync Settings to enroll this device');
 

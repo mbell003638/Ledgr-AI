@@ -46,3 +46,24 @@ test("does not partially append a conflicting batch", async () => {
   const pulled = await store.pull("book-a", 0, 10);
   assert.equal(pulled.events.length, 0);
 });
+
+test("accepts independent operations from two offline devices in canonical order", async () => {
+  const store = new MemoryEventStore();
+  const first = { ...operation("op-a", 1, { amount: 10 }), deviceId: "device-a", actorId: "user-a", aggregateId: "sale-a" };
+  const second = { ...operation("op-b", 1, { amount: 20 }), deviceId: "device-b", actorId: "user-b", aggregateId: "sale-b" };
+  const accepted = await store.append("book-a", [first, second]);
+  assert.deepEqual(accepted.map((event) => event.bookSequence), [1, 2]);
+  assert.deepEqual(accepted.map((event) => event.aggregateRevision), [1, 1]);
+  const deviceA = await store.pull("book-a", 0, 10);
+  const deviceB = await store.pull("book-a", 0, 10);
+  assert.deepEqual(deviceA.events.map((event) => event.opId), deviceB.events.map((event) => event.opId));
+  assert.equal(typeof deviceA.checkpointHash, "string");
+});
+
+test("rejects stale same-aggregate edits instead of last-write-wins", async () => {
+  const store = new MemoryEventStore();
+  const first = { ...operation("op-rev-1", 1, { name: "A" }), aggregateId: "party-1", baseRevision: 0 };
+  await store.append("book-a", [first]);
+  const stale = { ...operation("op-rev-2", 1, { name: "B" }), deviceId: "device-b", actorId: "user-b", aggregateId: "party-1", baseRevision: 0 };
+  await assert.rejects(() => store.append("book-a", [stale]), /aggregate revision conflict/);
+});

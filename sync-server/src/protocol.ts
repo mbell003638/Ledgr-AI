@@ -15,7 +15,7 @@ export type SyncOperation = {
   actorId: string;
   commandType: string;
   aggregateId: string;
-  baseRevision?: number;
+  baseRevision?: number | null;
   dependencies?: string[];
   payload: unknown;
   payloadHash: string;
@@ -24,13 +24,14 @@ export type SyncOperation = {
 };
 
 export type CanonicalEvent = SyncOperation & {
+  aggregateRevision: number;
   bookSequence: number;
   acceptedAt: string;
 };
 
 export type PushRequest = { bookId: string; operations: SyncOperation[] };
 export type PushResult = { accepted: CanonicalEvent[]; cursor: number };
-export type PullResult = { events: CanonicalEvent[]; cursor: number; hasMore: boolean };
+export type PullResult = { events: CanonicalEvent[]; cursor: number; hasMore: boolean; checkpointHash?: string };
 
 export function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -81,8 +82,8 @@ export function validateOperation(value: unknown): SyncOperation {
   if (!Number.isSafeInteger(op.payloadVersion) || (op.payloadVersion as number) < 1) throw new ProtocolError("payloadVersion must be a positive safe integer");
   if (op.payload === undefined) throw new ProtocolError("payload is required");
   if (!Number.isSafeInteger(op.deviceSequence) || (op.deviceSequence as number) < 0) throw new ProtocolError("deviceSequence must be a non-negative safe integer");
-  if (op.baseRevision !== undefined && (!Number.isSafeInteger(op.baseRevision) || (op.baseRevision as number) < 0)) throw new ProtocolError("baseRevision must be a non-negative safe integer");
-  result.baseRevision = op.baseRevision as number | undefined;
+  if (op.baseRevision !== undefined && op.baseRevision !== null && (!Number.isSafeInteger(op.baseRevision) || (op.baseRevision as number) < 0)) throw new ProtocolError("baseRevision must be a non-negative safe integer");
+  result.baseRevision = op.baseRevision as number | null | undefined;
   if (op.dependencies !== undefined) {
     if (!Array.isArray(op.dependencies) || op.dependencies.some((item) => typeof item !== "string")) throw new ProtocolError("dependencies must be an array of strings");
     result.dependencies = op.dependencies as string[];
