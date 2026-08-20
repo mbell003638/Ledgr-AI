@@ -30,6 +30,18 @@ describe('Manus remediation regressions', () => {
     } finally { node.close(); }
   });
 
+  it('prefers current capability packs over stale legacy feature flags for location enforcement', async () => {
+    const node = makeNodeRunner();
+    try {
+      const bookId = 'capability-precedence-book';
+      const periodId = 'capability-precedence-period';
+      await initializeV2Book(node.runner, { book: { id: bookId, name: 'Capability precedence' }, period: { id: periodId, startDate: '2026-01-01', endDate: '2026-12-31' } });
+      const persona = await node.runner.first<{ id: string }>('SELECT id FROM v2_personas WHERE book_id=? AND active=1', [bookId]);
+      await node.runner.run('UPDATE v2_personas SET config=? WHERE id=?', [JSON.stringify({ enabledFeatures: [], enabledCapabilities: ['multi_location', 'inventory'] }), persona!.id]);
+      await expect(isOptionalModuleEnabledForBook(node.runner, bookId, 'locations')).resolves.toBe(true);
+    } finally { node.close(); }
+  });
+
   it('keeps physical-stock adjustments and their journal lines scoped to the closed shop', async () => {
     const node = makeNodeRunner();
     try {

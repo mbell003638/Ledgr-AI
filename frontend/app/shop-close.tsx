@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Card, ScreenHeader } from "@/src/components/UI";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 type Shop = { id: string; name: string };
@@ -34,7 +34,10 @@ export default function ShopCloseScreen() {
       setSettings(nextSettings || {});
       const activeShops = (Array.isArray(nextShops) ? nextShops : []).filter((shop: any) => shop.active !== false).map((shop: any) => ({ id: String(shop.id), name: String(shop.name) }));
       setShops(activeShops); setSessions(Array.isArray(nextSessions) ? nextSessions : []);
-      const chosen = String(params.locationId || locationId || nextSettings?.activeLocationId || (activeShops.length === 1 ? activeShops[0]?.id : "") || "");
+      const requested = String(params.locationId || locationId || nextSettings?.activeLocationId || "");
+      const chosen = activeShops.length === 1
+        ? activeShops[0]?.id || ""
+        : activeShops.some((shop) => shop.id === requested) ? requested : "";
       setLocationId(chosen);
       if (chosen) {
         const stock = await api.listProducts(chosen);
@@ -52,17 +55,22 @@ export default function ShopCloseScreen() {
     if (!locationId || !chosenShop) return Alert.alert("Choose a shop", "Select the shop you are closing first.");
     if (!products.length) return Alert.alert("No active products", "There are no products to count for this shop.");
     if (!allCounted) return Alert.alert("Complete the physical count", "Enter the counted quantity for every product before posting a shop closeout.");
+    const dateIso = normalizeDateInput(date);
+    if (!isValidDateString(dateIso)) return Alert.alert("Invalid close date", `Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`);
+    if (dateIso !== date) setDate(dateIso);
     setSaving(true);
     try {
-      let adjusted = 0;
-      for (const product of products) {
+      const planned = products.map((product) => {
         const actual = Number(String(counted[product.id]).replace(",", "."));
         if (!Number.isFinite(actual) || actual < 0) throw new Error(`Enter a valid counted quantity for ${product.name}.`);
-        const delta = Math.round((actual - product.qty) * 1000) / 1000;
-        if (Math.abs(delta) > 0.0005) { await api.adjustProductQty({ productId: product.id, qtyDelta: delta, date, locationId, notes: `Physical count — ${chosenShop.name} shop close` }); adjusted += 1; }
+        return { product, delta: Math.round((actual - product.qty) * 1000) / 1000 };
+      });
+      let adjusted = 0;
+      for (const { product, delta } of planned) {
+        if (Math.abs(delta) > 0.0005) { await api.adjustProductQty({ productId: product.id, qtyDelta: delta, date: dateIso, locationId, notes: `Physical count — ${chosenShop.name} shop close` }); adjusted += 1; }
       }
       const current = await api.getSettings();
-      await api.updateSettings({ ...current, shopCloseouts: { ...(current.shopCloseouts || {}), [locationId]: { locationId, date, countedProducts: products.length, adjustedProducts: adjusted, recordedAt: new Date().toISOString() } } });
+      await api.updateSettings({ ...current, shopCloseouts: { ...(current.shopCloseouts || {}), [locationId]: { locationId, date: dateIso, countedProducts: products.length, adjustedProducts: adjusted, recordedAt: new Date().toISOString() } } });
       Alert.alert("Physical stock posted", `${products.length} product count${products.length === 1 ? "" : "s"} recorded for ${chosenShop.name}. ${adjusted ? `${adjusted} variance adjustment${adjusted === 1 ? "" : "s"} posted to this shop ledger.` : "No stock variance was found."}`);
       setCounted({}); await load();
     } catch (error: any) { Alert.alert("Stock count was not posted", error?.message || "Try again."); }
@@ -79,7 +87,7 @@ export default function ShopCloseScreen() {
     {chosenShop ? <>
       <Card><View style={styles.cardHead}><View style={styles.icon}><Ionicons name="cash-outline" size={20} color={theme.color.brandPrimary} /></View><View style={{ flex: 1 }}><Text style={styles.title}>1. Settle cash drawers</Text><Text style={styles.hint}>{openSessions.length ? `${openSessions.length} open POS session${openSessions.length === 1 ? "" : "s"} must be counted and settled before this shop is closed.` : "No open POS sessions for this shop. Cash drawer closeout is complete."}</Text></View></View><Pressable onPress={openPos} style={styles.secondary}><Text style={styles.secondaryText}>{openSessions.length ? "Review POS sessions" : "View settled sessions"}</Text><Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} /></Pressable></Card>
       <Card><View style={styles.cardHead}><View style={styles.icon}><Ionicons name="cube-outline" size={20} color={theme.color.brandPrimary} /></View><View style={{ flex: 1 }}><Text style={styles.title}>2. Count physical stock</Text><Text style={styles.hint}>Expected stock is location-scoped. Enter the quantity physically present at {chosenShop.name}; only variances create location-tagged adjustments.</Text></View></View><TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.date} accessibilityLabel="Shop close date" />{products.length ? products.map((product) => <View key={product.id} style={styles.product}><View style={{ flex: 1 }}><Text style={styles.productName}>{product.name}</Text><Text style={styles.productExpected}>Expected at {chosenShop.name}: {product.qty}</Text></View><TextInput value={counted[product.id] ?? ""} onChangeText={(value) => setCounted((current) => ({ ...current, [product.id]: value }))} keyboardType="decimal-pad" placeholder="Counted" placeholderTextColor={theme.color.muted} style={styles.countInput} accessibilityLabel={`Counted quantity for ${product.name}`} /></View>) : <Text style={styles.hint}>No live products are available for this shop. Add products or enable Live Product Stock before using a physical count.</Text>}<Pressable disabled={saving || !products.length || openSessions.length > 0} onPress={postStockCount} style={[styles.primary, (saving || !products.length || openSessions.length > 0) && styles.disabled]}><Text style={styles.primaryText}>{saving ? "Posting count…" : openSessions.length ? "Settle cash before stock close" : "Post physical stock count"}</Text></Pressable></Card>
-      <Card><View style={styles.cardHead}><View style={styles.icon}><Ionicons name="document-text-outline" size={20} color={theme.color.brandPrimary} /></View><View style={{ flex: 1 }}><Text style={styles.title}>3. Review this shop ledger</Text><Text style={styles.hint}>Reports can be viewed by the selected shop or consolidated across All Shops. An individual shop closeout never silently closes the whole company period.</Text></View></View><Pressable onPress={openShopReport} style={styles.secondary}><Text style={styles.secondaryText}>Open {chosenShop.name} reports</Text><Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} /></Pressable></Card>
+      <Card><View style={styles.cardHead}><View style={styles.icon}><Ionicons name="document-text-outline" size={20} color={theme.color.brandPrimary} /></View><View style={{ flex: 1 }}><Text style={styles.title}>3. Review this shop ledger</Text><Text style={styles.hint}>Reports can be viewed by the selected shop or consolidated across All Shops. This shop closeout records cash and physical stock for one shop; it does not close the whole company accounting period.</Text></View></View><Pressable onPress={openShopReport} style={styles.secondary}><Text style={styles.secondaryText}>Open {chosenShop.name} reports</Text><Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} /></Pressable></Card>
     </> : null}
   </ScrollView></SafeAreaView>;
 }

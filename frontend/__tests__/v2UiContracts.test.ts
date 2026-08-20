@@ -525,4 +525,27 @@ describe('V2 UI contracts', () => {
     expect(quick).toContain('isCapabilityEnabled(settings, "ai_assistant") && <QuickActionRow');
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
   });
+
+  it('keeps Quick Actions as the center control and keeps workspace metrics out of Home', () => {
+    const tabs = readApp('(tabs)/_layout.tsx');
+    const home = readApp('(tabs)/index.tsx');
+    const onboarding = readApp('onboarding.tsx');
+    const reports = readApp('(tabs)/reports.tsx');
+    const shopClose = readApp('shop-close.tsx');
+
+    expect(tabs).toContain('import QuickActionMenu');
+    expect(tabs).toContain('<QuickActionMenu />');
+    expect(tabs).toContain('name="quick_action_spacer"');
+    expect(tabs).not.toContain('name="operations"');
+    expect(home).not.toContain('Workspace metrics');
+    expect(onboarding).toContain('Choose report metrics');
+    expect(onboarding).toContain('workspaceMetricKeys');
+    expect(reports).toContain('selectedWorkspaceMetrics');
+    expect(reports).toContain('testID="report-workspace-metrics"');
+    expect(shopClose).toContain('normalizeDateInput');
+    expect(shopClose).toContain('isValidDateString');
+    expect(shopClose).toContain('locationId');
+    expect(shopClose).toContain('Physical stock posted');
+    expect(shopClose).toContain('does not close the whole company accounting period');
+  });
 });

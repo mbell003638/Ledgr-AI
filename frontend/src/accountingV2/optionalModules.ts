@@ -32,11 +32,12 @@ export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promi
 
 export async function isOptionalModuleEnabledForBook(db: SqlRunner, bookId: string, key: OptionalModuleKey): Promise<boolean> {
   const scoped = await bookOptionalSettings(db, bookId);
-  if (scoped.enabledFeatures) return scoped.enabledFeatures.includes(key);
-  // New onboarding/customization stores capability packs. Resolve optional
-  // modules from that same persisted configuration so the UI and the ledger
-  // enforcement layer cannot disagree about Locations being enabled.
+  // Current onboarding/customization stores capability packs. Prefer this
+  // authoritative capability state when a legacy enabledFeatures array is also
+  // present, otherwise stale legacy flags can make the UI show Locations as on
+  // while the ledger enforcement layer rejects a shop close.
   if (scoped.enabledCapabilities) return featureKeysForCapabilities({ enabledCapabilities: scoped.enabledCapabilities }).includes(key);
+  if (scoped.enabledFeatures) return scoped.enabledFeatures.includes(key);
   // Older books without a scoped preference record retain the legacy setting
   // until the active-book mirroring path initializes their persona config.
   return isOptionalModuleEnabled(db, key);

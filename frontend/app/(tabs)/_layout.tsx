@@ -7,8 +7,8 @@ import Grid3X3 from "lucide-react-native/icons/grid-3x3";
 import Users from "lucide-react-native/icons/users";
 import PieChart from "lucide-react-native/icons/chart-pie";
 import Settings from "lucide-react-native/icons/settings";
-import ListChecks from "lucide-react-native/icons/list-checks";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
+import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
 import { api } from "@/src/api";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
@@ -190,7 +190,14 @@ export default function TabsLayout() {
             tabBarButtonTestID: "tab-suppliers",
           }}
         />
-        <Tabs.Screen name="operations" options={{ title: "Operations", tabBarIcon: ({ color, focused }) => <PrototypeTabIcon Icon={ListChecks} color={color} focused={focused} />, tabBarButtonTestID: "tab-operations" }} />
+        <Tabs.Screen
+          name="quick_action_spacer"
+          options={{
+            title: "",
+            tabBarIcon: () => null,
+            tabBarButton: () => <View accessible={false} pointerEvents="none" style={{ flex: 1 }} />,
+          }}
+        />
         <Tabs.Screen
           name="reports"
           options={{
@@ -209,8 +216,8 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen name="bills" options={{ href: null }} />
-        <Tabs.Screen name="quick_action_spacer" options={{ href: null }} />
       </Tabs>
+      <QuickActionMenu />
       <VoiceFab />
     </View>
   );
