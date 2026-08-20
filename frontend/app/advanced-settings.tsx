@@ -404,6 +404,16 @@ export default function AdvancedSettingsScreen() {
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
+              <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
+                <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+              </Pressable>
+              <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
+                <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+              </Pressable>
               
               <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>

@@ -17,7 +17,7 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -149,7 +149,7 @@ export function schemaSql(): string {
     CREATE INDEX IF NOT EXISTS idx_v2_alloc_invoice ON v2_invoice_allocations(invoice_source_id);
 
     CREATE TABLE IF NOT EXISTS sync_profiles (
-      id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, enabled INTEGER NOT NULL DEFAULT 0,
+      id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, device_id TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', book_epoch TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0,
       protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_device_state (
@@ -220,6 +220,9 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await addColumnIfMissing(db, 'v2_stock_moves', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_inventory_counts', 'location_id', 'TEXT');
   await addColumnIfMissing(db, 'v2_inventory_counts', 'notes', "TEXT NOT NULL DEFAULT ''");
+  await addColumnIfMissing(db, 'sync_profiles', 'device_id', "TEXT NOT NULL DEFAULT ''");
+  await addColumnIfMissing(db, 'sync_profiles', 'actor_id', "TEXT NOT NULL DEFAULT ''");
+  await addColumnIfMissing(db, 'sync_profiles', 'book_epoch', "TEXT NOT NULL DEFAULT ''");
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');

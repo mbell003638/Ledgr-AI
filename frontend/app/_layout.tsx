@@ -12,6 +12,7 @@ import { OnboardingGateProvider, useOnboardingGate } from "@/src/context/Onboard
 import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
 import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
+import { api } from "@/src/api";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -129,6 +130,8 @@ function ThemedStack() {
         <Stack.Screen name="daybook" options={{ presentation: "card" }} />
         <Stack.Screen name="ask" options={{ presentation: "card" }} />
         <Stack.Screen name="customize-features" options={{ presentation: "card" }} />
+        <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
+        <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />
         <Stack.Screen name="payroll" options={{ presentation: "card" }} />
         <Stack.Screen name="products" options={{ presentation: "card" }} />
         <Stack.Screen name="locations" options={{ presentation: "card" }} />
@@ -248,7 +251,12 @@ export default function RootLayout() {
     initStorage()
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setStorageReady(true);
+        if (!cancelled) {
+          setStorageReady(true);
+          // Sync is strictly best-effort: startup and offline-only use never
+          // wait on a server or fail because the endpoint is unavailable.
+          void api.syncNow().catch(() => {});
+        }
       });
 
     return () => {
@@ -286,6 +294,7 @@ export default function RootLayout() {
       }
       if (state === "active") {
         cancelPendingBackgroundLock();
+        void api.syncNow().catch(() => {});
         if (shouldUnlockOnActive.current) {
           shouldUnlockOnActive.current = false;
           attemptUnlock();

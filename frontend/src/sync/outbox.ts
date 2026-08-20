@@ -91,8 +91,8 @@ function mapOutbox(row: any): SyncOutboxRow {
 
 export async function listPendingSyncOperations(db: SqlRunner, bookId: string, limit = 100): Promise<SyncOutboxRow[]> {
   const rows = await db.all<any>(
-    `SELECT * FROM sync_outbox WHERE book_id=? AND status IN ('pending','retryable') ORDER BY device_sequence LIMIT ?`,
-    [bookId, Math.max(1, Math.min(500, Math.floor(limit)))],
+    `SELECT * FROM sync_outbox WHERE book_id=? AND status IN ('pending','retryable') AND (next_retry_at IS NULL OR next_retry_at<=?) ORDER BY device_sequence LIMIT ?`,
+    [bookId, nowIso(), Math.max(1, Math.min(500, Math.floor(limit)))],
   );
   return rows.map(mapOutbox);
 }
@@ -102,7 +102,11 @@ export async function markSyncOperationAccepted(db: SqlRunner, opId: string, boo
 }
 
 export async function markSyncOperationFailed(db: SqlRunner, opId: string, status: Extract<SyncOperationStatus, 'retryable' | 'conflict' | 'rejected'>, error?: string): Promise<void> {
-  await db.run('UPDATE sync_outbox SET status=?,attempts=attempts+1,last_error=?,updated_at=? WHERE op_id=?', [status, error || null, nowIso(), opId]);
+  const row = await db.first<{ attempts: number }>('SELECT attempts FROM sync_outbox WHERE op_id=?', [opId]);
+  const attempts = Number(row?.attempts || 0) + 1;
+  const delayMs = Math.min(24 * 60 * 60 * 1000, 1000 * (2 ** Math.min(10, attempts)) + Math.floor(Math.random() * 1000));
+  const nextRetryAt = status === 'retryable' ? new Date(Date.now() + delayMs).toISOString() : null;
+  await db.run('UPDATE sync_outbox SET status=?,attempts=?,next_retry_at=?,last_error=?,updated_at=? WHERE op_id=?', [status, attempts, nextRetryAt, error || null, nowIso(), opId]);
 }
 
 export async function readSyncBookState(db: SqlRunner, bookId: string): Promise<SyncBookState | null> {

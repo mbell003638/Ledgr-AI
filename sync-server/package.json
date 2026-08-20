@@ -2,16 +2,23 @@
   "name": "@ledgr/sync-server",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted synchronization protocol foundation for Ledgr (not production accounting arbitration).",
+  "description": "Self-hosted synchronization server for Ledgr offline-first sync.",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "jose": "^6.2.9",
+    "pg": "^8.23.0"
   }
 }
