@@ -157,22 +157,14 @@ async function recordConflict(db: SqlRunner, operation: SyncOperation, reason: s
 
 export type RemoteOperationApplier = (db: SqlRunner, operation: SyncOperation) => Promise<void>;
 
-export async function syncNow(db: SqlRunner, bookId: string, applyRemote?: RemoteOperationApplier): Promise<SyncStatus> {
-  const profile = await getSyncProfile(db, bookId);
-  if (!profile?.enabled) return getSyncStatus(db, bookId);
-  const token = await storage.secureGet<string | null>(tokenKey(bookId), null);
-  if (!token) throw new Error('Sync access token is missing; open Sync Settings to enroll this device');
-  const pending = await listPendingSyncOperations(db, bookId, 100);
-  if (pending.length) {
-    try {
-      const pushed = await request(profile, '/v1/sync/push', { method: 'POST', body: JSON.stringify({ bookId, operations: pending }) }, token);
-      for (const accepted of Array.isArray(pushed.accepted) ? pushed.accepted : []) await markSyncOperationAccepted(db, String(accepted.opId), Number(accepted.bookSequence));
-    } catch (error: any) {
-      const permanent = error instanceof SyncHttpError && (error.status === 400 || error.status === 401 || error.status === 403 || error.status === 409);
-      for (const operation of pending) await markSyncOperationFailed(db, operation.opId, permanent ? (error.status === 409 ? 'conflict' : 'rejected') : 'retryable', error?.message || 'Sync push failed');
-    }
-  }
-  const state = (await readSyncBookState(db, bookId)) || { bookId, bookEpoch: profile.bookEpoch, serverCursor: 0, updatedAt: now() };
+async function pullAndApply(
+  db: SqlRunner,
+  profile: SyncProfile,
+  bookId: string,
+  token: string,
+  state: SyncBookState,
+  applyRemote?: RemoteOperationApplier,
+): Promise<SyncBookState> {
   const pulled = await request(profile, `/v1/sync/pull?bookId=${encodeURIComponent(bookId)}&after=${state.serverCursor}&limit=100`, { method: 'GET' }, token);
   for (const event of Array.isArray(pulled.events) ? pulled.events : []) {
     const already = await db.first<{ op_id: string }>('SELECT op_id FROM sync_applied_ops WHERE op_id=?', [event.opId]);
@@ -187,7 +179,37 @@ export async function syncNow(db: SqlRunner, bookId: string, applyRemote?: Remot
       }
     }
   }
-  await writeSyncBookState(db, { ...state, serverCursor: Number(pulled.cursor || state.serverCursor), updatedAt: now() });
+  const nextCursor = Number(pulled.cursor || state.serverCursor);
+  const nextState = { ...state, serverCursor: nextCursor, updatedAt: now() };
+  await writeSyncBookState(db, nextState);
+  return nextState;
+}
+
+export async function syncNow(db: SqlRunner, bookId: string, applyRemote?: RemoteOperationApplier): Promise<SyncStatus> {
+  const profile = await getSyncProfile(db, bookId);
+  if (!profile?.enabled) return getSyncStatus(db, bookId);
+  const token = await storage.secureGet<string | null>(tokenKey(bookId), null);
+  if (!token) throw new Error('Sync access token is missing; open Sync Settings to enroll this device');
+
+  // Pull first so the local projection observes the server order before this
+  // device pushes operations that may depend on the current canonical state.
+  let state = (await readSyncBookState(db, bookId)) || { bookId, bookEpoch: profile.bookEpoch, serverCursor: 0, updatedAt: now() };
+  state = await pullAndApply(db, profile, bookId, token, state, applyRemote);
+
+  const pending = await listPendingSyncOperations(db, bookId, 100);
+  if (pending.length) {
+    try {
+      const pushed = await request(profile, '/v1/sync/push', { method: 'POST', body: JSON.stringify({ bookId, operations: pending }) }, token);
+      for (const accepted of Array.isArray(pushed.accepted) ? pushed.accepted : []) await markSyncOperationAccepted(db, String(accepted.opId), Number(accepted.bookSequence));
+    } catch (error: any) {
+      const permanent = error instanceof SyncHttpError && (error.status === 400 || error.status === 401 || error.status === 403 || error.status === 409);
+      for (const operation of pending) await markSyncOperationFailed(db, operation.opId, permanent ? (error.status === 409 ? 'conflict' : 'rejected') : 'retryable', error?.message || 'Sync push failed');
+    }
+  }
+
+  // Pull again so accepted operations and any concurrent device operations are
+  // applied before the durable cursor is considered complete.
+  await pullAndApply(db, profile, bookId, token, state, applyRemote);
   return getSyncStatus(db, bookId);
 }
 

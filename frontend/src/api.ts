@@ -393,6 +393,15 @@ async function applyRemoteSyncOperation(dbRunner: NonNullable<ReturnType<typeof 
     'capital.draw': (value) => new V2InvestorLedgerService(dbRunner).draw({ ...(value.input || {}), bookId: String((value.input || {}).bookId || ''), memberId: String(value.memberId) }),
     'capital.patch': (value) => new V2InvestorLedgerService(dbRunner).updateDeposit(String(value.sourceId), { ...(value.input || {}), bookId: String((value.input || {}).bookId || ''), memberId: String(value.memberId) }),
     'capital.delete': (value) => new V2InvestorLedgerService(dbRunner).deleteDeposit(String(value.sourceId), String((value.input || {}).bookId || ''), String(value.memberId)),
+    'opening_balances.post': (value) => service.postOpeningBalances(value),
+    'opening_balances.update': (value) => service.updateOpeningBalances(value),
+    'closing_balances.import': (value) => service.importClosingBalances(value),
+    'scan.transaction.import': (value) => service.importScanTransaction(value),
+    'inventory.count.record': (value) => service.recordInventoryCount(value),
+    'manual.asset.create': (value) => service.recordManualAsset(value),
+    'manual.liability.create': (value) => service.recordManualLiability(value),
+    'manual.balance.delete': (value) => service.deleteManualBalanceTransaction(String(value.sourceId)),
+    'manual.balance.update': (value) => service.updateManualBalanceTransaction(String(value.sourceId), value.input || {}),
   };
   const handler = direct[operation.commandType];
   if (handler) { await handler(body); return; }
@@ -523,21 +532,30 @@ export const api = {
   postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).postOpeningBalances(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'opening_balances.post', aggregateType: 'opening_balance', aggregateId: `opening:${input.date || localTodayIso()}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).postOpeningBalances(input));
     bumpDataVersion();
     return r;
   },
   updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).updateOpeningBalances(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'opening_balances.update', aggregateType: 'opening_balance', aggregateId: `opening:${input.date || localTodayIso()}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).updateOpeningBalances(input));
     bumpDataVersion();
     return r;
   },
   importV2ClosingBalances: async (input: V2ClosingBalancesImportInput) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).importClosingBalances(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'closing_balances.import', aggregateType: 'closing_balance', aggregateId: `closing:${input.date || localTodayIso()}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).importClosingBalances(input));
     bumpDataVersion();
     return r;
   },
@@ -549,28 +567,41 @@ export const api = {
   importV2ScanTransaction: async (input: V2ScanTransactionImportInput) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).importScanTransaction(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'scan.transaction.import', aggregateType: 'scan_transaction',
+      aggregateId: `scan:${input.entryType}:${input.date}:${input.partyName || ''}:${input.amount}:${input.method || ''}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).importScanTransaction(input));
     bumpDataVersion();
     return r;
   },
   recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).recordInventoryCount(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'inventory.count.record', aggregateType: 'inventory_count',
+      aggregateId: `inventory:${input.date}:${input.locationId || 'global'}`, payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).recordInventoryCount(input));
     bumpDataVersion();
     return r;
   },
   createManualAsset: async (input: { date: string; name: string; category?: string; amount: number; funding: 'cash' | 'bank' | 'capital' | 'liability'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual asset transactions require SQLite storage');
-    const r = await new V2AppService(runner).recordManualAsset(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'manual.asset.create', aggregateType: 'manual_asset', aggregateId: `manual-asset:${input.date}:${input.name}:${input.amount}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).recordManualAsset(input));
     bumpDataVersion();
     return r;
   },
   createManualLiability: async (input: { date: string; name: string; category?: string; amount: number; recognition: 'cash' | 'bank' | 'asset' | 'expense' | 'creditor'; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual liability transactions require SQLite storage');
-    const r = await new V2AppService(runner).recordManualLiability(input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'manual.liability.create', aggregateType: 'manual_liability', aggregateId: `manual-liability:${input.date}:${input.name}:${input.amount}`,
+      payload: input, businessDate: input.date,
+    }, () => new V2AppService(runner).recordManualLiability(input));
     bumpDataVersion();
     return r;
   },
@@ -582,14 +613,19 @@ export const api = {
   deleteManualBalanceTransaction: async (sourceId: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual balance transactions require SQLite storage');
-    const r = await new V2AppService(runner).deleteManualBalanceTransaction(sourceId);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'manual.balance.delete', aggregateType: 'source', aggregateId: sourceId, payload: { sourceId },
+    }, () => new V2AppService(runner).deleteManualBalanceTransaction(sourceId));
     bumpDataVersion();
     return r;
   },
   updateManualBalanceTransaction: async (sourceId: string, input: any) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual balance transactions require SQLite storage');
-    const r = await new V2AppService(runner).updateManualBalanceTransaction(sourceId, input);
+    const r = await withSyncedMutation(runner, {
+      commandType: 'manual.balance.update', aggregateType: 'source', aggregateId: sourceId,
+      payload: { sourceId, input }, businessDate: input?.date,
+    }, () => new V2AppService(runner).updateManualBalanceTransaction(sourceId, input));
     bumpDataVersion();
     return r;
   },
