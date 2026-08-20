@@ -1,7 +1,7 @@
 export const SYNC_PROTOCOL_VERSION = 1;
 export const SYNC_PAYLOAD_VERSION = 1;
 
-export type SyncOperationStatus = 'pending' | 'retryable' | 'accepted' | 'conflict' | 'rejected';
+export type SyncOperationStatus = 'pending' | 'retryable' | 'accepted' | 'conflict' | 'rejected' | 'quarantined';
 export type SyncOperation = {
   protocolVersion: number; payloadVersion: number; opId: string; bookId: string; bookEpoch: string;
   deviceId: string; deviceSequence: number; actorId: string; commandType: string; aggregateId: string;

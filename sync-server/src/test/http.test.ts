@@ -21,4 +21,25 @@ test("HTTP health, push and pull endpoints work together", async (t) => {
   const result = await pulled.json() as { events: unknown[]; cursor: number };
   assert.equal(result.events.length, 1);
   assert.equal(result.cursor, 1);
+  assert.equal(typeof (result as { checkpointHash?: string }).checkpointHash, "string");
+  assert.equal((await fetch(`${base}/v1/sync/pull?bookId=book-http&deviceId=device-http&after=0`)).status, 200);
+});
+
+test("HTTP rejects a mixed-device push batch before it reaches the store", async (t) => {
+  const server = createServer(new MemoryEventStore());
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  const makeOperation = (opId: string, deviceId: string) => {
+    const payload = { value: opId };
+    return { protocolVersion: 1, payloadVersion: 1, opId, bookId: "book-mixed", bookEpoch: "epoch-mixed", deviceId, deviceSequence: 1, actorId: "anonymous", commandType: "note.create", aggregateId: opId, payload, payloadHash: hashPayload(payload), clientCreatedAt: "2026-08-20T00:00:00.000Z" };
+  };
+  const response = await fetch(`${base}/v1/sync/push`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ bookId: "book-mixed", operations: [makeOperation("op-a", "device-a"), makeOperation("op-b", "device-b")] }),
+  });
+  assert.equal(response.status, 400);
 });

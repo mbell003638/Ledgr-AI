@@ -150,7 +150,7 @@ export function schemaSql(): string {
 
     CREATE TABLE IF NOT EXISTS sync_profiles (
       id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, device_id TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', book_epoch TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0,
-      protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      recovery_required INTEGER NOT NULL DEFAULT 0, recovery_reason TEXT, protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_device_state (
       book_id TEXT NOT NULL, device_id TEXT NOT NULL, book_epoch TEXT NOT NULL,
@@ -223,6 +223,8 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await addColumnIfMissing(db, 'sync_profiles', 'device_id', "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(db, 'sync_profiles', 'actor_id', "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(db, 'sync_profiles', 'book_epoch', "TEXT NOT NULL DEFAULT ''");
+  await addColumnIfMissing(db, 'sync_profiles', 'recovery_required', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing(db, 'sync_profiles', 'recovery_reason', 'TEXT');
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');
