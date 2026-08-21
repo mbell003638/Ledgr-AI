@@ -37,7 +37,7 @@ describe('hosting mode contract', () => {
     expect(HOSTING_MODE_LABELS.private_sync).toBe('Private sync');
     expect(HOSTING_MODE_DESCRIPTIONS.local_only).toMatch(/encrypted backup/i);
     expect(HOSTING_MODE_DESCRIPTIONS.private_sync).toMatch(/server/i);
-    expect(HOSTING_CONCEPT_COPY.backup).toBe('Encrypted backup');
+    expect(HOSTING_CONCEPT_COPY.backup).toBe('Back up your data');
     expect(HOSTING_CONCEPT_COPY.serverHealth).toBe('Server health');
   });
 

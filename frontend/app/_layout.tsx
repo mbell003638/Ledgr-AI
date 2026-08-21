@@ -181,6 +181,7 @@ function ThemedStack() {
             <Stack.Screen name="backup-recovery" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
             <Stack.Screen name="private-sync-migration" options={{ presentation: "card" }} />
+            <Stack.Screen name="private-sync-guide" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-admin" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-health" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />

@@ -15,8 +15,8 @@ export const HOSTING_MODE_DESCRIPTIONS: Record<HostingMode, string> = {
 };
 
 export const HOSTING_CONCEPT_COPY = {
-  backup: 'Encrypted backup',
-  sync: 'Private sync',
+  backup: 'Back up your data',
+  sync: 'Add another device',
   serverHealth: 'Server health',
   futureHostedErp: 'A full hosted ERP is a separate future product concept and is not required for Ledgr today.',
 } as const;

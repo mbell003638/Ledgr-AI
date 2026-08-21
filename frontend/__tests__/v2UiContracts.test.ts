@@ -706,7 +706,7 @@ describe('roadmap phases 9–10 migration and release contracts', () => {
     expect(migration).toContain('Start safe migration');
     expect(migration).toContain('Return this device to Local-only mode');
     expect(migration).toContain('not destructively replace');
-    expect(settings).toContain('open-private-sync-migration');
+    expect(settings).toContain('Open guided setup');
     expect(apiSource).toContain('migrateToPrivateSync');
     expect(apiSource).toContain('leavePrivateSync');
     expect(layout).toContain('private-sync-migration');
@@ -723,5 +723,19 @@ describe('roadmap phases 9–10 migration and release contracts', () => {
     expect(checklist).toContain('future full hosted ERP');
     expect(preflight).toContain('No services were started');
     expect(advanced).toContain('sslmode');
+  });
+});
+
+
+describe('beginner-first private sync UI contracts', () => {
+  it('provides a simple guide and progressive disclosure', () => {
+    const settings = readApp('sync-settings.tsx');
+    const guide = readApp('private-sync-guide.tsx');
+    expect(settings).toContain('open-private-sync-guide');
+    expect(settings).toContain('Simple setup');
+    expect(settings).toContain('Choose a path');
+    expect(settings).toContain('I already have a server — show sign-in fields');
+    expect(guide).toContain('Think of your business book like a notebook.');
+    expect(guide).toContain('Go to Private sync');
   });
 });
