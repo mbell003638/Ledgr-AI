@@ -29,6 +29,9 @@ import { installServerSnapshot, publishServerSnapshot, verifyProjectionCheckpoin
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import type { SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
+import { checkLocalIntegrity } from '@/src/utils/localIntegrity';
+import { getRequestedHostingMode, setRequestedHostingMode, type HostingMode } from '@/src/utils/hostingMode';
+import { listBackupHistory } from '@/src/utils/backupHistory';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -56,6 +59,7 @@ const THEME_MODE_KEY        = 'theme_mode';
 const ANIMATIONS_ENABLED_KEY = 'animations_enabled';
 const TILE_ORDER_KEY        = 'ledgr_tile_order';
 const TILE_USAGE_KEY        = 'ledgr_tile_usage';
+const LAST_BACKUP_KEY        = 'ledgr:last_backup_at';
 // Exported so the reset UI (advanced-settings) can assert/reset in lockstep and
 // tests can enumerate the exact device-level keys a factory reset must clear.
 export const FACTORY_RESET_PREF_KEYS = [
@@ -63,6 +67,8 @@ export const FACTORY_RESET_PREF_KEYS = [
   ANIMATIONS_ENABLED_KEY,
   TILE_ORDER_KEY,
   TILE_USAGE_KEY,
+  'ledgr:hosting_mode',
+  LAST_BACKUP_KEY,
 ] as const;
 
 let webSessionAiKey = '';
@@ -784,6 +790,7 @@ export const api = {
   configureSync: async (input: { serverUrl: string; userId: string; actorId?: string; accessToken?: string; enabled?: boolean; oidcIssuer?: string; oidcClientId?: string; oidcScopes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
+    await setRequestedHostingMode('private_sync');
     const profile = await configureSync(runner, { ...input, bookId: beActiveBookId() });
     bumpDataVersion();
     return profile;
@@ -793,6 +800,7 @@ export const api = {
     if (!runner) throw new Error('Sync requires SQLite storage');
     const profile = await configureSync(runner, { ...input, bookId: beActiveBookId(), enabled: false });
     await runSyncOidcAuthorization(profile);
+    await setRequestedHostingMode('private_sync');
     bumpDataVersion();
     return profile;
   },
@@ -801,6 +809,16 @@ export const api = {
     if (!runner) throw new Error('Sync requires SQLite storage');
     await disableSync(runner, beActiveBookId());
     bumpDataVersion();
+  },
+  getHostingMode: () => getRequestedHostingMode(),
+  setHostingMode: async (mode: HostingMode) => { await setRequestedHostingMode(mode); bumpDataVersion(); },
+  checkLocalIntegrity,
+  getPrivateSyncPrerequisites: async () => {
+    const integrity = await checkLocalIntegrity();
+    const history = await listBackupHistory();
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recentEncryptedBackup = history.find((item) => item.kind === 'encrypted_export' && item.verified && new Date(item.createdAt).getTime() >= cutoff);
+    return { ok: integrity.ok && !!recentEncryptedBackup, integrity, hasRecentEncryptedBackup: !!recentEncryptedBackup, latestEncryptedBackup: recentEncryptedBackup || null };
   },
   getSyncStatus: async () => {
     const runner = activeSqlRunner();
@@ -832,7 +850,11 @@ export const api = {
   enableSync: async () => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
+    const prerequisites = await api.getPrivateSyncPrerequisites();
+    if (!prerequisites.integrity.ok) throw new Error(`Complete the local integrity check before enabling private sync: ${prerequisites.integrity.issues.join(' ')}`);
+    if (!prerequisites.hasRecentEncryptedBackup) throw new Error('Create and verify an encrypted backup within the last 30 days before enabling private sync.');
     await enableSync(runner, beActiveBookId());
+    await setRequestedHostingMode('private_sync');
     return getSyncStatus(runner, beActiveBookId());
   },
   installSyncSnapshot: async () => {
@@ -845,6 +867,14 @@ export const api = {
     }, applyRemoteSyncOperation);
     bumpDataVersion();
     return snapshot;
+  },
+  recordBackupAuditEvent: async (eventType: string, payload: Record<string, unknown> = {}) => {
+    const runner = activeSqlRunner();
+    if (!runner) return false;
+    await runner.run('INSERT INTO v2_audit_events(id,book_id,event_type,actor,payload,created_at) VALUES(?,?,?,?,?,?)', [
+      `backup:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`, beActiveBookId(), eventType, 'local-user', JSON.stringify(payload), new Date().toISOString(),
+    ]);
+    return true;
   },
   verifySyncCheckpoint: async () => {
     const runner = activeSqlRunner();
@@ -1554,6 +1584,7 @@ export const api = {
       const runner = activeSqlRunner();
       if (runner) await factoryResetV2Data(runner);
     }
+    const backupHistoryKeys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith('ledgr:backup_history:'));
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
       AsyncStorage.multiRemove([
@@ -1561,6 +1592,7 @@ export const api = {
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
+        ...backupHistoryKeys,
       ]),
     ]);
     return { ok: true };

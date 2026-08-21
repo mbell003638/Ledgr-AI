@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
+import { setRequestedHostingMode } from "@/src/utils/hostingMode";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
 import { CAPABILITIES, CORE_CAPABILITIES, METRICS, getPersonaCapabilityDefaults, type CapabilityKey, type MetricKey } from "@/src/utils/capabilities";
@@ -116,6 +117,7 @@ export default function Onboarding() {
           personas: v2Personas,
         });
       }
+      await setRequestedHostingMode("local_only");
       await api.updateSettings({
         businessName: finalBizName,
         currency,
@@ -176,7 +178,10 @@ export default function Onboarding() {
               <View style={styles.modalBackdrop}>
                 <View style={styles.personaModal}>
                   <View style={styles.modalHeader}>
-                    <View><Text style={styles.modalTitle}>Choose your workspace</Text><Text style={styles.modalSub}>Select the business model that best matches how you earn and spend.</Text></View>
+                    <View>
+                      <Text style={styles.title}>Customize your workspace</Text>
+                      <Text style={styles.modalSub}>Select the business model that best matches how you earn and spend.</Text>
+                    </View>
                     <Pressable onPress={() => setShowPersonaPicker(false)} accessibilityRole="button" accessibilityLabel="Close workspace picker" style={styles.modalClose}><Ionicons name="close" size={22} color={theme.color.onSurface} /></Pressable>
                   </View>
                   <ScrollView contentContainerStyle={styles.personaOptions} keyboardShouldPersistTaps="handled">
@@ -228,7 +233,8 @@ export default function Onboarding() {
               <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide workspace customization" : "Customize workspace capabilities"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide customization" : "Customize workspace"}</Text></Pressable>
               {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, and financial reporting always stay available.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key)).map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
               {metricOptions.length ? <View style={styles.metricPanel}><Text style={styles.customizeTitle}>Choose report metrics</Text><Text style={styles.customizeHint}>Select only the metrics you want in Reports. Unselected metrics stay hidden; they never appear on Home.</Text>{metricOptions.map((metric) => { const selected = selectedMetricKeys.includes(metric.key); return <Pressable key={metric.key} onPress={() => toggleMetric(metric.key)} accessibilityRole="checkbox" accessibilityLabel={`Show ${metric.label} in reports`} accessibilityState={{ checked: selected }} style={[styles.metricRow, selected && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{metric.label}</Text><Text style={styles.customizeRowDesc}>{metric.description}</Text></View><Ionicons name={selected ? "checkbox" : "square-outline"} size={22} color={selected ? theme.color.brandPrimary : theme.color.muted} /></Pressable>; })}</View> : null}
-              <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export a JSON backup from Settings after important work and keep a copy somewhere safe.</Text></View>
+              <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export an encrypted backup from Settings after important work and keep a copy somewhere safe.</Text></View>
+              <View testID="onboarding-hosting-mode" style={styles.hostingCard}><Text style={styles.hostingTitle}>Local-only mode</Text><Text style={styles.hostingText}>Ledgr works offline on this device by default. You can create an encrypted backup anytime, or enable private sync later when you need your own server for multiple devices.</Text></View>
             </View>
             {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text></View><Pressable onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
             <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>Protect sensitive actions</Text><Text style={styles.lockDesc}>Use your phone PIN, fingerprint, or face unlock before deleting or resetting data.</Text></View><Pressable onPress={toggleLock} style={[styles.toggle, lockEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: lockEnabled }} accessibilityLabel="Protect sensitive actions with App Lock"><View style={[styles.toggleThumb, lockEnabled && styles.toggleThumbOn]} /></Pressable></View>
@@ -304,6 +310,9 @@ function makeStyles(theme: any) {
     input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 15, fontSize: 17, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.xl },
     tipCard: { flexDirection: "row", gap: 10, padding: 14, marginTop: 16, borderRadius: 16, backgroundColor: theme.color.brandPrimary + "10", borderWidth: 1, borderColor: theme.color.brandPrimary + "30" },
     tipText: { flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 18 },
+    hostingCard: { padding: 14, marginTop: 12, borderRadius: 16, backgroundColor: theme.color.brandPrimary + "0D", borderWidth: 1, borderColor: theme.color.brandPrimary + "35" },
+    hostingTitle: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
+    hostingText: { color: theme.color.muted, fontSize: 12, lineHeight: 18, marginTop: 5 },
     currencyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: theme.spacing.xl },
     currencyButton: { minWidth: 74, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center" },
     currencySelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },

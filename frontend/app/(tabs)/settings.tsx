@@ -14,6 +14,7 @@ import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { deviceHasLock } from "@/src/utils/lock";
 import { type PersonaId } from "@/src/accountingV2/config";
+import { HostingModeCard } from "@/src/components/HostingModeCard";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -351,6 +352,8 @@ export default function SettingsScreen() {
                 </View>
               </AccordionRow>
 </Card>
+
+            <HostingModeCard />
 
             <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

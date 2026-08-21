@@ -176,6 +176,7 @@ function ThemedStack() {
             <Stack.Screen name="integrations" options={{ presentation: "card" }} />
           </Stack.Protected>
           <Stack.Protected guard={canOpen("core_ledger")}>
+            <Stack.Screen name="backup-recovery" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-conflict-correction" options={{ presentation: "modal" }} />

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
+import { HostingModeCard } from '@/src/components/HostingModeCard';
 import { useTheme } from '@/src/context/ThemeContext';
 import { activeBookId, activeSqlRunner } from '@/src/db/backend';
 import { advanceSyncEpoch, enrollSyncDevice, listSyncDevices, revokeSyncDevice, type SyncDevice } from '@/src/sync/recovery';
@@ -30,6 +31,8 @@ export default function SyncSettingsScreen() {
   const enroll = async () => {
     setBusy(true); setMessage('');
     try {
+      const prerequisites = await api.getPrivateSyncPrerequisites();
+      if (!prerequisites.ok) throw new Error(!prerequisites.integrity.ok ? prerequisites.integrity.issues.join(' ') : 'Create and verify an encrypted backup before connecting private sync.');
       await api.configureSync({ serverUrl, userId, accessToken: token, enabled: false, oidcIssuer, oidcClientId, oidcScopes });
       const db = activeSqlRunner(); if (!db) throw new Error('Sync requires SQLite storage');
       const enrolled = await enrollSyncDevice(db, activeBookId()); setToken('');
@@ -41,6 +44,8 @@ export default function SyncSettingsScreen() {
   const enrollOidc = async () => {
     setBusy(true); setMessage('');
     try {
+      const prerequisites = await api.getPrivateSyncPrerequisites();
+      if (!prerequisites.ok) throw new Error(!prerequisites.integrity.ok ? prerequisites.integrity.issues.join(' ') : 'Create and verify an encrypted backup before connecting private sync.');
       await api.authorizeSyncOidc({ serverUrl, userId, oidcIssuer, oidcClientId, oidcScopes });
       const db = activeSqlRunner(); if (!db) throw new Error('Sync requires SQLite storage');
       const enrolled = await enrollSyncDevice(db, activeBookId());
@@ -67,8 +72,10 @@ export default function SyncSettingsScreen() {
   const revoke = (device: SyncDevice) => Alert.alert('Revoke device?', device.current ? 'This device will stop syncing and must be explicitly re-enrolled.' : `Device ${device.deviceId.slice(0, 12)}… will no longer access this Business Account.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Revoke', style: 'destructive', onPress: async () => { const db = activeSqlRunner(); if (!db) return; setBusy(true); try { await revokeSyncDevice(db, activeBookId(), device.deviceId); setMessage('Device revoked.'); await load(); } catch (error: any) { setMessage(error?.message || 'Could not revoke device.'); } finally { setBusy(false); } } }]);
   return <SafeAreaView style={styles.container} edges={['top']}>
     <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><ScreenHeader title="Self-hosted Sync" subtitle="Optional offline-first collaboration" /></View>
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-      <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text><Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <HostingModeCard compact />
+      <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text>
+<Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>
         <Text style={styles.label}>Server URL</Text><TextInput value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" keyboardType="url" placeholder="https://sync.example.com" placeholderTextColor={theme.color.muted} style={styles.input} />
         <Text style={styles.label}>Account or user ID</Text><TextInput value={userId} onChangeText={setUserId} autoCapitalize="none" placeholder="you@example.com" placeholderTextColor={theme.color.muted} style={styles.input} />
         <Text style={styles.label}>OIDC issuer</Text><TextInput value={oidcIssuer} onChangeText={setOidcIssuer} autoCapitalize="none" keyboardType="url" placeholder="https://identity.example.com/realms/ledgr" placeholderTextColor={theme.color.muted} style={styles.input} />

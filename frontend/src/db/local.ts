@@ -1,4 +1,5 @@
 import { computeCogs, grossProfit as calcGross, commission as calcCommission, netProfit as calcNet, computeCash } from '../accounting';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pctOf, subMoney, addMoney, round2 } from '../money';
 import { localTodayIso } from '../utils/dateValidation';
 import {
@@ -108,6 +109,9 @@ export async function getSettings(): Promise<Record<string, any>> {
     hasLogo: !!logo,
     hasOnboarded: s.hasOnboarded ?? false,
     businessType: s.businessType ?? '',
+    hostingMode: (await AsyncStorage.getItem('ledgr:hosting_mode')) === 'private_sync' ? 'private_sync' : 'local_only',
+    backupReminderEnabled: s.backupReminderEnabled !== false,
+    backupReminderDays: Number(s.backupReminderDays || 7),
     invoiceTheme: s.invoiceTheme ?? 'navy_gold',
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',

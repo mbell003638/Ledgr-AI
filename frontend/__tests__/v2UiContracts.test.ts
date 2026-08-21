@@ -580,3 +580,49 @@ describe('V2 UI contracts', () => {
     expect(shopClose).toContain('does not close the whole company accounting period');
   });
 });
+
+
+describe('hosting mode and Backup & Recovery UI contracts', () => {
+  it('exposes local-only mode during onboarding and persists the safe default', () => {
+    const onboarding = readApp('onboarding.tsx');
+    expect(onboarding).toContain('setRequestedHostingMode("local_only")');
+    expect(onboarding).toContain('testID="onboarding-hosting-mode"');
+    expect(onboarding).toContain('encrypted backup');
+    expect(onboarding).toContain('private sync later');
+  });
+
+  it('shows hosting status and direct recovery/private-sync routes from Settings', () => {
+    const settings = readApp('(tabs)/settings.tsx');
+    const card = readSource('src/components/HostingModeCard.tsx');
+    const hosting = readSource('src/utils/hostingMode.ts');
+    expect(settings).toContain('<HostingModeCard />');
+    expect(card).toContain('testID="hosting-mode-card"');
+    expect(card).toContain('testID="open-backup-recovery"');
+    expect(card).toContain('testID="open-private-sync"');
+    expect(hosting).toContain("local_only: 'Local-only mode'");
+    expect(hosting).toContain("private_sync: 'Private sync'");
+  });
+
+  it('registers Backup & Recovery under the authenticated core ledger shell', () => {
+    const layout = readApp('_layout.tsx');
+    const backup = readApp('backup-recovery.tsx');
+    expect(layout).toContain('name="backup-recovery"');
+    expect(backup).toContain('testID="backup-export-button"');
+    expect(backup).toContain('testID="backup-dry-run-button"');
+    expect(backup).toContain('testID="backup-restore-button"');
+    expect(backup).toContain('testID="backup-integrity-button"');
+    expect(backup).toContain('Encrypted backup');
+    expect(backup).toContain('Restore dry-run');
+    expect(backup).toContain('No data has been changed');
+  });
+
+  it('requires integrity and recent encrypted backup before private sync activation', () => {
+    const api = readSource('src/api.ts');
+    const sync = readApp('sync-settings.tsx');
+    expect(api).toContain('getPrivateSyncPrerequisites');
+    expect(api).toContain('hasRecentEncryptedBackup');
+    expect(api).toContain('checkLocalIntegrity');
+    expect(sync).toContain('getPrivateSyncPrerequisites');
+    expect(sync).toContain('encrypted backup before connecting private sync');
+  });
+});

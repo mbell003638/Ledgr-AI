@@ -644,8 +644,11 @@ export default function AdvancedSettingsScreen() {
                   </Pressable>
                 </View>
               </AccordionRow>
-              <AccordionRow title="Backup & Restore" subtitle="Export data to JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Backup & Restore" subtitle="Encrypted recovery and legacy JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
+                  <Text style={styles.hint}>Use Backup & Recovery for encrypted exports, integrity checks, restore dry-runs, and recovery history. The legacy JSON buttons remain available for compatibility with older files.</Text>
+                  <Pressable testID="open-backup-recovery" onPress={() => router.push('/backup-recovery' as any)} style={[styles.bookRow, { marginTop: theme.spacing.md, marginBottom: theme.spacing.md }]}><Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={styles.bookName}>Open Backup & Recovery</Text><Text style={styles.subLabel}>Recommended for sensitive financial data</Text></View><Ionicons name="chevron-forward" size={18} color={theme.color.muted} /></Pressable>
+                  <Text style={[styles.subLabel, { marginBottom: theme.spacing.sm }]}>Legacy JSON compatibility</Text>
                   <View style={styles.backupRow}>
                     <Pressable onPress={doExport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
                       {busy === "export" ? <ActivityIndicator color="#fff" /> : <><Ionicons name="share-outline" size={18} color="#fff" /><Text style={styles.backupBtnTextPrimary}>Export</Text></>}
