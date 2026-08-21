@@ -4,9 +4,8 @@
 
 **Target branch:** `codex-sol`
 
-**Audit date:** 2026-08-20
-**Evidence state:** implementation review complete; runtime validation deferred
-at the user's request
+**Audit date:** 2026-08-22
+**Evidence state:** implementation review complete; local validation gate completed; production environment evidence remains outstanding
 
 ## Executive verdict
 
@@ -23,8 +22,7 @@ lifecycle controls. The client provides opt-in enrollment, sync status,
 snapshot recovery, projection verification, conflict review, audited
 corrections, and device administration.
 
-This is an implementation-complete working tree, not a production-acceptance
-claim. Tests and operational drills have not yet been run for this work cycle.
+This is an implementation-complete working tree with the available local validation gate completed. It is not a production-acceptance claim: real PostgreSQL/OIDC staging, device convergence, crash/restart, encrypted restore, monitoring, rotation, and disaster-recovery evidence still require an operator-controlled environment.
 
 ## Gap closure
 
@@ -67,17 +65,31 @@ The implementation intentionally does not change sync protocol, accounting comma
 
 These checks validate the source-level UI contracts. They do not replace device-level verification on the target Android screen, especially keyboard behavior across different IME sizes and screen widths.
 
+## Validation evidence completed in this work cycle
+
+| Check | Result | Evidence boundary |
+|---|---:|---|
+| Frontend unit/integration suite | **83 suites, 613 tests passed** | Local Jest environment; no physical-device runtime evidence. |
+| Frontend TypeScript | **Passed** | `npx tsc --noEmit`. |
+| Frontend lint | **Passed** | `npm run lint:ci` with zero warnings. |
+| Expo Doctor | **18/18 checks passed** | Local project health check. |
+| Frontend dependency audit | **Passed under repository policy** | Only the repository’s temporarily allowlisted Metro `image-size` advisories were reported. |
+| Sync-server build and tests | **36 tests passed** | Includes protocol, arbitration, revisions, snapshots, epochs, devices, conflicts, and recovery tests. |
+| Deployment asset checks | **Passed statically** | Required files exist, shell scripts pass `bash -n`, and migration markers are present. Docker was unavailable in the validation environment, so Compose/build execution was not claimed. |
+| `git diff --check` | **Passed** | Working tree content has no whitespace errors. |
+
 ## Remaining evidence gates
 
-The following are deliberately not marked passed:
+The following remain deliberately unclaimed:
 
-1. Frontend tests, TypeScript, lint, Expo Doctor, and dependency audit.
-2. Sync-server build, tests, migration checks, and security/recovery tests.
-3. Container/configuration validation.
-4. Real PostgreSQL/OIDC two-device convergence and crash/restart exercises.
-5. Encrypted backup restoration, projection reconciliation, monitoring alert,
-   token/key rotation, incident-response, and disaster-recovery records.
+1. Real PostgreSQL/OIDC two-device convergence, token rotation, membership changes,
+   revocation, stale epochs, projection reconciliation, and crash/restart exercises.
+2. Docker image build and Compose validation in an environment with Docker.
+3. Encrypted backup restoration, monitoring alerts, key rotation,
+   incident-response, and disaster-recovery records in the production topology.
+4. Physical or isolated-device verification of the Android enrollment layout,
+   keyboard avoidance, and the single sync navigation entry across screen sizes.
 
-The first three begin only after the user authorizes testing. The final two
-require an operator-controlled staging environment and remain release evidence,
-not missing application code.
+The repository now contains the planned implementation and has passed the
+available local validation gate. The remaining items are environment-dependent
+release evidence, not unimplemented application code in this tree.
