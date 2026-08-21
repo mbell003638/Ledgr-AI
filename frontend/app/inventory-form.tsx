@@ -10,6 +10,8 @@ import { Card } from "@/src/components/UI";
 import { FormCard, FormField, FormActions } from "@/src/components/FormCard";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
+import { LocationPicker } from "@/src/components/LocationPicker";
+import { isCapabilityEnabled } from "@/src/utils/capabilities";
 
 export default function InventoryForm() {
   const theme = useTheme();
@@ -25,6 +27,9 @@ export default function InventoryForm() {
   const [date, setDate] = useState(() => localTodayIso());
   const [history, setHistory] = useState<any[]>([]);
   const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
+  const [settings, setSettings] = useState<any>({});
+  const [locationId, setLocationId] = useState("");
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
 
   const [openingStock, setOpeningStock] = useState(0);
   const [openingEffectiveDate, setOpeningEffectiveDate] = useState("");
@@ -34,7 +39,14 @@ export default function InventoryForm() {
 
   const loadData = async () => {
     try {
-      const [v2, config, opening] = await Promise.all([api.v2InventoryOverview(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances()]);
+      const [v2, config, opening, nextSettings] = await Promise.all([api.v2InventoryOverview(), api.getV2BookConfig().catch(() => null), api.getV2OpeningBalances(), api.getSettings()]);
+      setSettings(nextSettings || {});
+      const locationEnabled = isCapabilityEnabled(nextSettings, "multi_location");
+      const nextLocations = locationEnabled ? await api.listLocations().catch(() => []) : [];
+      const normalizedLocations = (Array.isArray(nextLocations) ? nextLocations : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })).filter((row) => row.id);
+      setLocations(normalizedLocations);
+      const activeLocation = String(nextSettings?.activeLocationId || (normalizedLocations.length === 1 ? normalizedLocations[0]?.id : "") || "");
+      setLocationId(activeLocation);
       if (!v2) throw new Error('No active versioned V2 book');
       setExpected(Number(v2.expected || 0));
       setInfo(v2);
@@ -56,12 +68,16 @@ export default function InventoryForm() {
   const save = async () => {
     const act = parseFloat(actual);
     if (isNaN(act) || act < 0) { setError("Enter a valid stock value"); return; }
+    const locationEnabled = isCapabilityEnabled(settings, "multi_location");
+    if (locationEnabled && locations.length > 1 && !locationId) { setError("Choose the shop being counted before saving this audit."); return; }
     const dateIso = normalizeDateInput(date);
     if (!isValidDateString(dateIso)) { setError(`Couldn't read "${date.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
     setDate(dateIso); // reflect the canonical form in the field
     setSaving(true); setError("");
     try {
-      await api.recordV2InventoryCount({ date: dateIso, value: act, notes });
+      const selectedLocation = locations.find((location) => location.id === locationId);
+      const auditNotes = selectedLocation ? `Shop ${selectedLocation.name} physical stock audit${notes.trim() ? ` — ${notes.trim()}` : ""}` : notes;
+      await api.recordV2InventoryCount({ date: dateIso, value: act, notes: auditNotes });
       setActual("");
       setNotes("");
       loadData();
@@ -140,6 +156,7 @@ export default function InventoryForm() {
                 </View>
               </Card>
 
+              {isCapabilityEnabled(settings, "multi_location") ? <Card style={{ marginBottom: theme.spacing.md, borderColor: theme.color.brandPrimary + "66" }}><Text style={styles.label}>Shop being counted</Text><Text style={styles.hint}>Choose the shop for this audit. This screen records the book-level stock value; use Shop close for product-by-product shop variance adjustments.</Text><LocationPicker label="Shop / location" value={locationId} onChange={async (id) => { setLocationId(id); const current = await api.getSettings(); await api.updateSettings({ ...current, activeLocationId: id }); }} />{locations.length > 1 && !locationId ? <Text style={styles.errorText}>Select a shop before saving this audit.</Text> : null}</Card> : null}
               <FormCard>
                 <Text style={styles.label}>Live System Stock (USD value)</Text>
                 <Text style={styles.expected} testID="inv-expected">{fmt(expected)}</Text>
@@ -292,6 +309,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
   label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   hint: { fontSize: 12, color: theme.color.muted, marginTop: 6 },
+  errorText: { fontSize: 12, color: theme.color.error, marginTop: 8 },
   expected: { fontSize: 28, fontWeight: "700", color: theme.color.brandPrimary, marginTop: 4 },
   input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
   varBox: { marginTop: 16, padding: theme.spacing.md, borderRadius: theme.radius.md },

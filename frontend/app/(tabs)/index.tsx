@@ -56,6 +56,7 @@ const WORKFLOW_TILES: WorkflowTile[] = [
   { key: "delivery", label: "Delivery Notes", subtitle: "", icon: "cube-outline", color: "#A7F3D0", capability: "shipping_returns", route: "/delivery-notes" },
   { key: "expenses", label: "Expenses", subtitle: "", icon: "wallet-outline", color: "#F87171", capability: "core_ledger", route: "/expenses" },
   { key: "stock", label: "Stock", subtitle: "", icon: "cube-outline", color: "#34D399", capability: "inventory", route: "/products" },
+  { key: "locations", label: "Locations", subtitle: "", icon: "storefront-outline", color: "#2DD4BF", capability: "multi_location", route: "/locations" },
   { key: "assets", label: "Assets & Liabilities", subtitle: "", icon: "pie-chart-outline", color: "#818CF8", capability: "core_ledger", route: "/assets" },
   { key: "daybook", label: "Day Book", subtitle: "", icon: "book-outline", color: "#EC4899", capability: "core_ledger", route: "/daybook" },
   { key: "reports", label: "Reports", subtitle: "", icon: "bar-chart-outline", color: "#FBBF24", capability: "reporting", route: "/reports" },

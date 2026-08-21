@@ -27,19 +27,33 @@ export async function isOptionalModuleEnabled(db: SqlRunner, key: OptionalModule
 
 export async function bookOptionalSettings(db: SqlRunner, bookId: string): Promise<{ enabledFeatures?: string[]; enabledCapabilities?: string[]; activeLocationId?: string }> {
   const rows = await db.all<{ config: string }>('SELECT config FROM v2_personas WHERE book_id=? AND enabled=1', [bookId]);
+  let scoped: { enabledFeatures?: string[]; enabledCapabilities?: string[]; activeLocationId?: string } = {};
   for (const row of rows) {
     try {
       const parsed = JSON.parse(row.config || '{}');
       if (Array.isArray(parsed.enabledFeatures) || Array.isArray(parsed.enabledCapabilities)) {
-        return {
+        scoped = {
           enabledFeatures: Array.isArray(parsed.enabledFeatures) ? parsed.enabledFeatures.map(String) : undefined,
           enabledCapabilities: Array.isArray(parsed.enabledCapabilities) ? parsed.enabledCapabilities.map(String) : undefined,
           activeLocationId: parsed.activeLocationId ? String(parsed.activeLocationId) : undefined,
         };
+        break;
       }
     } catch { /* try the next enabled persona */ }
   }
-  return {};
+  // Customize Features writes the active settings document. Read it as the
+  // compatibility source when older V2 persona rows do not yet contain the
+  // current capability pack. This keeps the UI and posting guard in agreement.
+  const main = await db.first<{ value: string }>("SELECT value FROM settings WHERE key='main'");
+  let visible: Record<string, unknown> = {};
+  try { visible = JSON.parse(main?.value || '{}'); } catch { visible = {}; }
+  const visibleCapabilities = Array.isArray(visible.enabledCapabilities) ? visible.enabledCapabilities.map(String) : undefined;
+  const visibleFeatures = Array.isArray(visible.enabledFeatures) ? visible.enabledFeatures.map(String) : undefined;
+  return {
+    enabledFeatures: visibleFeatures !== undefined ? visibleFeatures : scoped.enabledFeatures,
+    enabledCapabilities: visibleCapabilities !== undefined ? visibleCapabilities : scoped.enabledCapabilities,
+    activeLocationId: visible.activeLocationId ? String(visible.activeLocationId) : scoped.activeLocationId,
+  };
 }
 
 export async function isOptionalModuleEnabledForBook(db: SqlRunner, bookId: string, key: OptionalModuleKey): Promise<boolean> {

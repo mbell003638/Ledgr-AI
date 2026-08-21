@@ -262,13 +262,6 @@ export default function QuickActionMenu() {
                 setTimeout(() => setOpeningModalVisible(true), theme.motion.fast);
               }}
             />}
-            {isCapabilityEnabled(settings, "multi_location") && <QuickActionRow
-              icon="🏬"
-              iconBackground="rgba(45,212,191,0.15)"
-              title="Manage locations"
-              subtitle="Stores, POS sessions, and stock transfers"
-              onPress={() => navigate("/locations")}
-            />}
           </View>
         </Animated.View>
       </Modal>

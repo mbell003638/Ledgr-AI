@@ -97,6 +97,17 @@ describe('V2 UI contracts', () => {
     expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
   });
 
+  it('onboarding has one multi-location control and asks for the accounting model', () => {
+    const onboarding = readApp('onboarding.tsx');
+    expect(onboarding).toContain('I operate multiple stores or POS points');
+    expect(onboarding).toContain('setMultiLocation');
+    expect(onboarding).toContain('item.key !== "multi_location"');
+    expect(onboarding).toContain('testID="onboarding-accounting-standard"');
+    expect(onboarding).toContain('testID="onboarding-accounting-equity-split"');
+    expect(onboarding).toContain('style: accountingStyle');
+    expect(onboarding).toContain('enabled: accountingStyle === "retail_partnership"');
+  });
+
   it('keeps preferences free of accounting state and uses V2 as the single source', () => {
     const local = readSource('src/db/local.ts');
     const opening = readSource('src/components/OpeningBalancesModal.tsx');
@@ -571,6 +582,8 @@ describe('V2 UI contracts', () => {
     expect(home).toContain('key: "purchases"');
     expect(home).toContain('key: "expenses"');
     expect(home).toContain('key: "stock"');
+    expect(home).toContain('key: "locations"');
+    expect(home).toContain('capability: "multi_location"');
     expect(home).not.toContain('Workspace metrics');
     expect(onboarding).toContain('Choose report metrics');
     expect(onboarding).toContain('workspaceMetricKeys');
@@ -583,6 +596,13 @@ describe('V2 UI contracts', () => {
     expect(shopClose).toContain('locationId');
     expect(shopClose).toContain('Physical stock posted');
     expect(shopClose).toContain('does not close the whole company accounting period');
+    const locations = readApp('locations.tsx');
+    const inventory = readApp('inventory-form.tsx');
+    expect(locations).toContain('Choose two different shops for a cash transfer.');
+    expect(locations).toContain('Choose two different shops for a stock transfer.');
+    expect(inventory).toContain('Shop being counted');
+    expect(inventory).toContain('Choose the shop being counted before saving this audit.');
+    expect(inventory).toContain('LocationPicker');
   });
 });
 

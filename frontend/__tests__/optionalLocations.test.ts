@@ -40,6 +40,14 @@ describe('optional locations', () => {
     } finally { close(); }
   });
 
+  it('honors enabledCapabilities from the visible settings document when persona config is stale', async () => {
+    const { runner, close, locations } = await setup([]);
+    try {
+      await runner.run("INSERT INTO settings(key,value) VALUES('main',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [JSON.stringify({ enabledCapabilities: ['multi_location'] })]);
+      await expect(locations.createLocation({ name: 'Shop B' })).resolves.toMatchObject({ name: 'Shop B' });
+    } finally { close(); }
+  });
+
   it('throws when recording a sale without a shop once locations are on', async () => {
     const { close, repo } = await setup(['locations']);
     try {

@@ -110,6 +110,8 @@ export default function LocationsScreen() {
   };
 
   const moveCash = async () => {
+    if (!cashFrom || !cashTo) { setError("Choose both the sending shop and receiving shop."); return; }
+    if (cashFrom === cashTo) { setError("Choose two different shops for a cash transfer."); return; }
     const dateIso = normalizeDateInput(cashDate);
     const amount = parseMoneyInput(cashAmount);
     if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the cash transfer date."); return; }
@@ -125,6 +127,9 @@ export default function LocationsScreen() {
   };
 
   const moveStock = async () => {
+    if (!stockFrom || !stockTo) { setError("Choose both the sending shop and receiving shop."); return; }
+    if (stockFrom === stockTo) { setError("Choose two different shops for a stock transfer."); return; }
+    if (!stockProductId) { setError("Choose a product to transfer."); return; }
     const dateIso = normalizeDateInput(stockDate);
     const qty = Number(String(stockQty).replace(",", "."));
     if (!isValidDateString(dateIso)) { setError("Use YYYY-MM-DD for the stock transfer date."); return; }
@@ -176,7 +181,7 @@ export default function LocationsScreen() {
                 <LocationPicker label="To" value={cashTo} onChange={setCashTo} />
                 <FormField label={`Amount (${currency})`} value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" />
                 <FormField label="Date" value={cashDate} onChangeText={setCashDate} />
-                <FormActions primaryLabel="Transfer cash" onPrimary={moveCash} primaryBusy={saving} primaryDisabled={saving} />
+                <FormActions primaryLabel="Transfer cash" onPrimary={moveCash} primaryBusy={saving} primaryDisabled={saving || !cashFrom || !cashTo || cashFrom === cashTo} />
               </Card>
 
               {stockEnabled ? (
@@ -194,7 +199,7 @@ export default function LocationsScreen() {
                   </View>
                   <FormField label="Quantity" value={stockQty} onChangeText={setStockQty} keyboardType="decimal-pad" />
                   <FormField label="Date" value={stockDate} onChangeText={setStockDate} />
-                  <FormActions primaryLabel="Transfer stock" onPrimary={moveStock} primaryBusy={saving} primaryDisabled={saving} />
+                  <FormActions primaryLabel="Transfer stock" onPrimary={moveStock} primaryBusy={saving} primaryDisabled={saving || !stockFrom || !stockTo || stockFrom === stockTo || !stockProductId} />
                 </Card>
               ) : null}
 

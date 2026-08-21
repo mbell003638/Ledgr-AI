@@ -33,6 +33,7 @@ export default function Onboarding() {
   const [currency, setCurrency] = useState("USD");
   const [lockEnabled, setLockEnabled] = useState(false);
   const [multiLocation, setMultiLocation] = useState(false);
+  const [accountingStyle, setAccountingStyle] = useState<"standard" | "retail_partnership">("standard");
   const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<MetricKey[]>([]);
   const [showCustomize, setShowCustomize] = useState(false);
@@ -112,9 +113,23 @@ export default function Onboarding() {
       if (await api.v2BookVersion(activeBookId) == null) {
         const year = new Date().getFullYear();
         await api.initializeV2Book({
-          book: { id: activeBookId, name: finalBizName, style: finalPersona === "manufacturer" ? "retail_partnership" : "standard", basis: "accrual" },
+          book: { id: activeBookId, name: finalBizName, style: accountingStyle, basis: "accrual" },
           period: { id: `${activeBookId}:period:${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` },
           personas: v2Personas,
+        });
+      }
+      const currentBookConfig = await api.getV2BookConfig().catch(() => null);
+      if (currentBookConfig && currentBookConfig.style !== accountingStyle) {
+        await api.updateV2BookConfig({
+          style: accountingStyle,
+          basis: currentBookConfig.basis,
+          periodPolicy: currentBookConfig.periodPolicy,
+          selectedPersonas: currentBookConfig.selectedPersonas,
+          activePersona: currentBookConfig.activePersona,
+          retailPartnership: {
+            ...currentBookConfig.retailPartnership,
+            enabled: accountingStyle === "retail_partnership",
+          },
         });
       }
       await setRequestedHostingMode("local_only");
@@ -227,11 +242,16 @@ export default function Onboarding() {
             <Text style={styles.sub}>We will start with these capabilities. Nothing else will compete for attention until you enable it.</Text>
             <View style={styles.previewCard}>
               <View style={styles.previewHeader}><View style={styles.iconCircleSelected}><Ionicons name={(PERSONA_ICON[persona || "entrepreneur"] || "briefcase-outline") as any} size={22} color={theme.color.brandPrimary} /></View><View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.previewTitle}>{selectedPersona?.label || "Entrepreneur"}</Text><Text style={styles.previewSub}>{bizName.trim() || "My Business"} · {currency}</Text></View></View>
+              <Text style={styles.previewKicker}>ACCOUNTING MODEL</Text>
+              <View style={styles.accountingChoiceRow}>
+                <Pressable testID="onboarding-accounting-standard" onPress={() => setAccountingStyle("standard")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "standard" }} style={[styles.accountingChoice, accountingStyle === "standard" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "standard" && { color: theme.color.brandPrimary }]}>Standard entity</Text><Text style={styles.accountingChoiceText}>One business ledger with normal owner equity and liabilities.</Text></Pressable>
+                <Pressable testID="onboarding-accounting-equity-split" onPress={() => setAccountingStyle("retail_partnership")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "retail_partnership" }} style={[styles.accountingChoice, accountingStyle === "retail_partnership" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "retail_partnership" && { color: theme.color.brandPrimary }]}>Equity split</Text><Text style={styles.accountingChoiceText}>Track partner capital, ownership shares, drawings, and profit allocation.</Text></Pressable>
+              </View>
               <Text style={styles.previewKicker}>STARTING CAPABILITIES</Text>
               <View style={styles.chipWrap}>{selectedCapabilityLabels.slice(0, 6).map((label) => <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{label}</Text></View>)}</View>
               <Text style={styles.previewHint}>{selectedCapabilities.length} workflows are enabled for this workspace. Hidden workflows do not appear on Home but can be restored later.</Text>
               <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide workspace customization" : "Customize workspace capabilities"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide customization" : "Customize workspace"}</Text></Pressable>
-              {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, and financial reporting always stay available.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key)).map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
+              {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, financial reporting, and multi-location are configured in their dedicated choices below.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key) && item.key !== "multi_location").map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
               {metricOptions.length ? <View style={styles.metricPanel}><Text style={styles.customizeTitle}>Choose report metrics</Text><Text style={styles.customizeHint}>Select only the metrics you want in Reports. Unselected metrics stay hidden; they never appear on Home.</Text>{metricOptions.map((metric) => { const selected = selectedMetricKeys.includes(metric.key); return <Pressable key={metric.key} onPress={() => toggleMetric(metric.key)} accessibilityRole="checkbox" accessibilityLabel={`Show ${metric.label} in reports`} accessibilityState={{ checked: selected }} style={[styles.metricRow, selected && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{metric.label}</Text><Text style={styles.customizeRowDesc}>{metric.description}</Text></View><Ionicons name={selected ? "checkbox" : "square-outline"} size={22} color={selected ? theme.color.brandPrimary : theme.color.muted} /></Pressable>; })}</View> : null}
               <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export an encrypted backup from Settings after important work and keep a copy somewhere safe.</Text></View>
               <View testID="onboarding-hosting-mode" style={styles.hostingCard}><Text style={styles.hostingTitle}>Local-only mode</Text><Text style={styles.hostingText}>Ledgr works offline on this device by default. You can create an encrypted backup anytime, or enable private sync later when you need your own server for multiple devices.</Text></View>
@@ -325,6 +345,11 @@ function makeStyles(theme: any) {
     chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 10 },
     capabilityChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 20, backgroundColor: theme.color.brandPrimary + "16" },
     capabilityChipText: { color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800" },
+    accountingChoiceRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+    accountingChoice: { flex: 1, minHeight: 104, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+    accountingChoiceSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    accountingChoiceTitle: { color: theme.color.onSurface, fontSize: 12, fontWeight: "800" },
+    accountingChoiceText: { color: theme.color.muted, fontSize: 10, lineHeight: 14, marginTop: 5 },
     previewHint: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 14 },
     lockCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 15, marginTop: 14, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     lockTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
