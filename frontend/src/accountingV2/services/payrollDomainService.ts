@@ -3,7 +3,6 @@ import { V2SqlRepository } from '../repository';
 import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES, type V2JournalEntry, type V2Source } from '../types';
 import { round2 } from '../../money';
-import { resolveWriteLocationId } from './locationDomainService';
 import { accountingRuntimeId as uid } from '../runtimeIds';
 
 const cents = round2;

@@ -8,7 +8,7 @@ const LIVE_SOURCE = "(json_extract(metadata,'$.reversed') IS NULL OR json_extrac
 const FEATURE_LABELS: Record<FeatureKey, string> = {
   sales: 'Sales', bills: 'Purchases & Vendor Bills', receipts: 'Customer Receipts', payments: 'Supplier Payments & Capital Withdrawals',
   cashbook: 'Cash Book', invoices: 'Invoices & Billing', quotes: 'Quotes & Estimates', delivery: 'Delivery Notes', expenses: 'Business Expenses',
-  inventory: 'Inventory & Stock Counts', assets: 'Assets & Liabilities', daybook: 'Day Book Ledger', reports: 'Financial Reports', monthly: 'Monthly Summary',
+  inventory: 'Inventory & Stock Counts', assets: 'Assets & Liabilities', fixedAssets: 'Fixed Assets', daybook: 'Day Book Ledger', reports: 'Financial Reports', monthly: 'Monthly Summary',
   ask: 'Ask AI Finance Chat', voice: 'Voice AI Assistant', payroll: 'Payroll', perpetualInventory: 'Live Product Stock', locations: 'Locations / Shops',
 };
 

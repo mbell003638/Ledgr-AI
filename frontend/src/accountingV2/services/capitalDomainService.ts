@@ -8,7 +8,6 @@ import { V2_ACCOUNT_CODES } from '../types';
 import { round2 } from '../../money';
 import type { AccountingPeriodPolicy } from '../config';
 import type { PartyDomainService } from './partyDomainService';
-import { requireLocation } from './locationDomainService';
 import { accountingRuntimeId } from '../runtimeIds';
 
 type AnyRecord = Record<string, any>;

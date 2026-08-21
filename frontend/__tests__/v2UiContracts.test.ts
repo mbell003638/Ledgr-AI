@@ -526,22 +526,26 @@ describe('V2 UI contracts', () => {
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
   });
 
-  it('exposes user-owned self-host sync without removing local integrations', () => {
+  it('exposes semantic self-host sync without removing local integrations', () => {
     const integrations = readApp('integrations.tsx');
+    const syncSettings = readApp('sync-settings.tsx');
     const syncService = readSource('src/accountingV2/services/selfHostedSyncService.ts');
     const apiFacade = readSource('src/api.ts');
     expect(integrations).toContain('testID="self-host-sync-card"');
-    expect(integrations).toContain('Save server');
-    expect(integrations).toContain('Push local');
-    expect(integrations).toContain('Pull remote');
-    expect(integrations).toContain('Keep local');
-    expect(integrations).toContain('Use remote');
+    expect(integrations).toContain('Semantic self-host sync');
+    expect(integrations).toContain('testID="open-semantic-sync-settings"');
+    expect(integrations).toContain("router.push('/sync-settings'");
     expect(integrations).toContain('Local CSV');
+    expect(integrations).not.toContain('Save server');
+    expect(integrations).not.toContain('Push local');
+    expect(syncSettings).toContain('configureSync');
+    expect(syncSettings).toContain('syncNow');
+    expect(syncSettings).toContain('publishSyncSnapshot');
+    expect(syncSettings).toContain('verifySyncCheckpoint');
     expect(syncService).toContain('importBackup(body.snapshot)');
-    expect(syncService).toContain('Local offline edits are not synced');
     expect(syncService).toContain('SecureStore');
-    expect(apiFacade).toContain('configureSelfHostedSync');
-    expect(apiFacade).toContain('resolveSelfHostedConflict');
+    expect(apiFacade).toContain('configureSync');
+    expect(apiFacade).toContain('resolveSyncConflict');
   });
 
   it('keeps Quick Actions as the center control and keeps workspace metrics out of Home', () => {

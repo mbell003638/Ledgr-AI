@@ -8,7 +8,7 @@ import { AnimatedGlassSurface } from "@/src/components/AnimatedGlassSurface";
 
 import { api } from "@/src/api";
 
-export function ScreenHeader({ title, subtitle, testID, rightAction, style, titleStyle, subtitleStyle }: { title: string; subtitle?: string; testID?: string; rightAction?: React.ReactNode; style?: StyleProp<ViewStyle>; titleStyle?: StyleProp<TextStyle>; subtitleStyle?: StyleProp<TextStyle> }) {
+export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction, style, titleStyle, subtitleStyle }: { title: string; subtitle?: string; testID?: string; leftAction?: React.ReactNode; rightAction?: React.ReactNode; style?: StyleProp<ViewStyle>; titleStyle?: StyleProp<TextStyle>; subtitleStyle?: StyleProp<TextStyle> }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [bizName, setBizName] = React.useState<string | null>(null);
@@ -26,9 +26,12 @@ export function ScreenHeader({ title, subtitle, testID, rightAction, style, titl
   return (
     <View style={[styles.header, style]} testID={testID}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.title, titleStyle]}>{title}</Text>
-          {subtitle ? <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-start' }}>
+          {leftAction ? <View style={{ marginRight: 10, paddingTop: 2 }}>{leftAction}</View> : null}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, titleStyle]}>{title}</Text>
+            {subtitle ? <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
+          </View>
         </View>
         <View style={{ alignItems: "flex-end", gap: 8, maxWidth: "45%" }}>
           {bizName ? (
