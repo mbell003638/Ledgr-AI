@@ -24,6 +24,18 @@ The advanced installer performs the same fail-before-start checks, validates the
 
 The external database must support PostgreSQL 16-compatible transactions, JSONB, advisory locks, and the migration statements in `../migrations/001_sync.sql`. No high-availability claim is made by this package; failover and restore evidence must be produced by the operator.
 
+## Preflight and release gates
+
+Run the no-start preflight before either deployment mode:
+
+```sh
+./preflight.sh single-node
+# or
+./preflight.sh advanced
+```
+
+Then follow [`RELEASE_CHECKLIST.md`](./RELEASE_CHECKLIST.md) for minimum host resources, verified-backup gates, two-device smoke tests, upgrade evidence, and rollback. The preflight never starts or stops services.
+
 ## Operations
 
 Use `/healthz` for liveness. Use the operations bearer token for `/readyz`, `/metrics`, and `/v1/ops/health`. The mobile Sync Health screen can display the protected response for one session-only token entry. Use `RUNBOOK.md` for backup, restore-drill, key rotation, upgrade, rollback, and production acceptance evidence.

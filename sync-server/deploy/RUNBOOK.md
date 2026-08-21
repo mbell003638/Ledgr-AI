@@ -96,3 +96,11 @@ The installer fails before starting containers when Docker Compose, required env
 The device and access administration endpoints are protected by the authenticated book/device flow: `/v1/sync/devices`, `/v1/sync/devices/rename`, `/v1/sync/devices/revoke`, `/v1/sync/memberships`, `/v1/sync/memberships/remove`, and `/v1/sync/memberships/locations`. These endpoints do not delete historical accounting operations. Location scopes are explicit and must be enforced by the application’s domain authorization layer before accepting location-sensitive operations.
 
 The mobile client’s Sync Health screen keeps the operations token session-only and displays local queue/error state even when the server is unavailable. The Sync Administration screen exposes device naming/revocation and role/location scope management only after the private sync profile is configured.
+
+## Local-only to private-sync migration
+
+Keep the source device in Local-only mode while creating and verifying an encrypted backup. Run `./preflight.sh single-node` or `./preflight.sh advanced`, then configure the Ledgr client with the user-owned server. The client enrolls the device, reports whether the server is empty or already canonical, and requires an explicit initial snapshot publication or validated snapshot installation. Pending local operations are preserved; raw SQLite files are never uploaded or copied over the server database. To leave private sync, use the app's Return to Local-only action; this disables the local profile without deleting the server or local book.
+
+## Phase-10 release gate
+
+Before upgrade, complete `RELEASE_CHECKLIST.md`, verify an encrypted backup and restore drill, and set `UPGRADE_BACKUP_CONFIRMED=I_HAVE_A_VERIFIED_BACKUP_AND_RESTORE_DRILL` for `upgrade.sh`. After restart, verify health, readiness, database state, backup freshness, two-device offline writes, queue drain, and an explicit conflict resolution. If any check fails, stop enrollment, preserve logs, restore the previous image or deployment artifact into a new database/volume when necessary, and never delete the PostgreSQL volume or overwrite it with a raw client SQLite file.

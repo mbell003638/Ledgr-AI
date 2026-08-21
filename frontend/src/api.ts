@@ -25,7 +25,7 @@ import { V2DocumentService } from '@/src/accountingV2/documentService';
 import { v2Services } from '@/src/accountingV2/runtime';
 import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecoveryRequired, retrySyncNow, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
 import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
-import { createSyncEnrollmentCode, installServerSnapshot, listSyncDevices, listSyncMemberships, publishServerSnapshot, redeemSyncEnrollmentCode, removeSyncMembership, renameSyncDevice, revokeSyncDevice, setSyncMembershipLocations, upsertSyncMembership, verifyProjectionCheckpoint } from '@/src/sync/recovery';
+import { createSyncEnrollmentCode, enrollSyncDevice, installServerSnapshot, listSyncDevices, listSyncMemberships, publishServerSnapshot, redeemSyncEnrollmentCode, removeSyncMembership, renameSyncDevice, revokeSyncDevice, setSyncMembershipLocations, upsertSyncMembership, verifyProjectionCheckpoint } from '@/src/sync/recovery';
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import type { SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
@@ -786,6 +786,25 @@ export const api = {
     const preferences = await preferenceSettings();
     bumpDataVersion();
     return { ...r, ...preferences };
+  },
+  migrateToPrivateSync: async (input: { serverUrl: string; userId: string; accessToken?: string; oidcIssuer?: string; oidcClientId?: string; oidcScopes?: string }) => {
+    const prerequisites = await api.getPrivateSyncPrerequisites();
+    if (!prerequisites.integrity.ok) throw new Error(`Complete the local integrity check first: ${prerequisites.integrity.issues.join(' ')}`);
+    if (!prerequisites.hasRecentEncryptedBackup) throw new Error('Create and verify an encrypted backup within the last 30 days before migrating this book.');
+    const before = await api.getSyncStatus();
+    await api.configureSync({ ...input, enabled: false });
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const enrolled = await enrollSyncDevice(runner, beActiveBookId());
+    const after = await api.getSyncStatus();
+    return { enrolled, before, after, preservedPending: Number(before.pending || 0) + Number(before.retryable || 0), stage: after.bootstrapRequired ? 'publish_initial_snapshot' : after.recoveryRequired ? 'install_validated_snapshot' : 'ready_for_sync' as const };
+  },
+  leavePrivateSync: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await disableSync(runner, beActiveBookId());
+    await setRequestedHostingMode('local_only');
+    bumpDataVersion();
   },
   configureSync: async (input: { serverUrl: string; userId: string; actorId?: string; accessToken?: string; enabled?: boolean; oidcIssuer?: string; oidcClientId?: string; oidcScopes?: string }) => {
     const runner = activeSqlRunner();

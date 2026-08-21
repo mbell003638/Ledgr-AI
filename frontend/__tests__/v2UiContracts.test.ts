@@ -695,3 +695,33 @@ describe('roadmap phases 7–8 sync UX contracts', () => {
     expect(conflicts).toContain('silent last-write-wins');
   });
 });
+
+
+describe('roadmap phases 9–10 migration and release contracts', () => {
+  it('exposes a guarded local-to-private migration flow and safe return path', () => {
+    const migration = readApp('private-sync-migration.tsx');
+    const settings = readApp('sync-settings.tsx');
+    const apiSource = readSource('src/api.ts');
+    const layout = readApp('_layout.tsx');
+    expect(migration).toContain('Start safe migration');
+    expect(migration).toContain('Return this device to Local-only mode');
+    expect(migration).toContain('not destructively replace');
+    expect(settings).toContain('open-private-sync-migration');
+    expect(apiSource).toContain('migrateToPrivateSync');
+    expect(apiSource).toContain('leavePrivateSync');
+    expect(layout).toContain('private-sync-migration');
+  });
+
+  it('keeps release requirements and rollback gates discoverable in the user-owned package', () => {
+    const deployGuide = readSource('../sync-server/deploy/README.md');
+    const checklist = readSource('../sync-server/deploy/RELEASE_CHECKLIST.md');
+    const preflight = readSource('../sync-server/deploy/preflight.sh');
+    const advanced = readSource('../sync-server/deploy/install-advanced.sh');
+    expect(deployGuide).toContain('./preflight.sh advanced');
+    expect(checklist).toContain('Rollback procedure');
+    expect(checklist).toContain('Minimum requirements');
+    expect(checklist).toContain('future full hosted ERP');
+    expect(preflight).toContain('No services were started');
+    expect(advanced).toContain('sslmode');
+  });
+});
