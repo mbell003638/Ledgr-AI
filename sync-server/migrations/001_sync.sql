@@ -198,3 +198,17 @@ CREATE TABLE IF NOT EXISTS sync_membership_locations (
 );
 CREATE INDEX IF NOT EXISTS sync_membership_locations_subject_idx ON sync_membership_locations(book_id, subject);
 CREATE INDEX IF NOT EXISTS sync_devices_book_status_idx ON sync_devices(book_id, revoked_at, expires_at);
+
+CREATE TABLE IF NOT EXISTS sync_enrollment_codes (
+  code_id UUID PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES sync_books(book_id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  created_by TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'viewer',
+  location_ids TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  used_by_device TEXT
+);
+CREATE INDEX IF NOT EXISTS sync_enrollment_codes_book_idx ON sync_enrollment_codes(book_id, expires_at, used_at);

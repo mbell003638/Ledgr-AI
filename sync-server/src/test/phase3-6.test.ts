@@ -49,3 +49,22 @@ test('administration routes delegate through authenticated device and membership
   assert.equal((await fetch(`${base}/v1/sync/memberships/locations`, { method: 'POST', headers, body: JSON.stringify({ bookId: 'book-admin', deviceId: 'device-1', subject: 'owner', locationIds: ['shop-a', 'shop-b'] }) })).status, 200);
   assert.deepEqual(state.locations, ['shop-a', 'shop-b']);
 });
+
+test('one-time enrollment code routes issue and redeem short-lived device access', async (t) => {
+  const state = { created: false, redeemed: false };
+  const admin = {
+    authorize: async () => undefined,
+    createEnrollmentCode: async (_principal: any, bookId: string, role: string, locationIds: string[]) => { state.created = true; return { codeId: 'code-1', bookId, code: 'LGR-abcdefghijklmnopqrstuv', role, locationIds, expiresAt: new Date(Date.now() + 900_000).toISOString() }; },
+    redeemEnrollmentCode: async (_principal: any, code: string, deviceId: string, displayName?: string, platform?: string) => { state.redeemed = code.startsWith('LGR-') && deviceId === 'device-new' && displayName === 'POS 1' && platform === 'android'; return { bookId: 'book-code', bookEpoch: 'epoch-code', epochNumber: 1, epochStartSequence: 1, currentSequence: 0, device: { deviceId, displayName, platform } }; },
+  };
+  const { server, base } = await start({ authorizer: admin, deviceAdministration: admin });
+  t.after(() => server.close());
+  const headers = { 'content-type': 'application/json' };
+  const created = await fetch(`${base}/v1/sync/enrollment-codes`, { method: 'POST', headers, body: JSON.stringify({ bookId: 'book-code', deviceId: 'device-admin', role: 'viewer', locationIds: ['shop-a'], ttlMinutes: 15 }) });
+  assert.equal(created.status, 201);
+  assert.equal((await created.json() as any).enrollment.code, 'LGR-abcdefghijklmnopqrstuv');
+  const redeemed = await fetch(`${base}/v1/sync/enroll-code/redeem`, { method: 'POST', headers, body: JSON.stringify({ code: 'LGR-abcdefghijklmnopqrstuv', deviceId: 'device-new', displayName: 'POS 1', platform: 'android' }) });
+  assert.equal(redeemed.status, 200);
+  assert.equal(state.created, true);
+  assert.equal(state.redeemed, true);
+});

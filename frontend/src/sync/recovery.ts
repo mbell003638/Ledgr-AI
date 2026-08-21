@@ -12,6 +12,7 @@ let savepointSequence = 0;
 export type SyncEpochState = { bookId: string; bookEpoch: string; epochNumber: number; epochStartSequence: number; currentSequence: number };
 export type SyncDevice = { deviceId: string; subject?: string; enrolledAt?: string; expiresAt?: string; lastSeenAt?: string; revokedAt?: string | null; current?: boolean; displayName?: string; platform?: string };
 export type SyncMembership = { bookId: string; subject: string; role: 'owner' | 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor'; locationIds: string[]; updatedAt: string };
+export type EnrollmentCode = { codeId: string; bookId: string; code: string; role: Exclude<SyncMembership['role'], 'owner'>; locationIds: string[]; expiresAt: string };
 export type ProjectionVerification = { bookId: string; bookEpoch: string; throughSequence: number; serverEventHash: string; eventHashMatches: boolean; projectionHashMatches?: boolean; verifiedAt: string };
 export type SnapshotInstaller = (db: SqlRunner, payload: unknown, snapshot: SyncSnapshot) => Promise<void>;
 export type SnapshotReplayer = (db: SqlRunner, operation: SyncOperation) => Promise<void>;
@@ -39,6 +40,26 @@ function epoch(value: any, bookId: string): SyncEpochState {
 }
 
 /** Explicit enrollment installs only server-issued epoch identity. */
+export async function createSyncEnrollmentCode(db: SqlRunner, bookId: string, role: EnrollmentCode['role'], locationIds: string[], ttlMinutes = 15): Promise<EnrollmentCode> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Configure the sync server before creating an enrollment code');
+  const result = await request(profile, '/v1/sync/enrollment-codes', { method: 'POST', body: JSON.stringify({ bookId, deviceId: profile.deviceId, role, locationIds, ttlMinutes }) });
+  const enrollment = result.enrollment;
+  if (!enrollment || typeof enrollment.code !== 'string' || typeof enrollment.expiresAt !== 'string') throw new Error('Sync server returned an invalid enrollment code');
+  return { codeId: String(enrollment.codeId), bookId: String(enrollment.bookId), code: enrollment.code, role: enrollment.role, locationIds: Array.isArray(enrollment.locationIds) ? enrollment.locationIds.map(String) : [], expiresAt: enrollment.expiresAt };
+}
+
+export async function redeemSyncEnrollmentCode(db: SqlRunner, bookId: string, code: string, displayName?: string, platform?: string): Promise<SyncEpochState> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Configure the sync server before redeeming an enrollment code');
+  const result = await request(profile, '/v1/sync/enroll-code/redeem', { method: 'POST', body: JSON.stringify({ code, deviceId: profile.deviceId, ...(displayName ? { displayName } : {}), ...(platform ? { platform } : {}) }) });
+  const enrollment = result.enrollment;
+  if (!enrollment || String(enrollment.bookId) !== bookId) throw new Error('Enrollment code belongs to another Business Account');
+  const epochResult = epoch(enrollment, bookId);
+  const timestamp = now();
+  await db.run('UPDATE sync_profiles SET book_epoch=?,enabled=?,recovery_required=0,recovery_reason=NULL,updated_at=? WHERE id=?', [epochResult.bookEpoch, 1, timestamp, bookId]);
+  await writeSyncBookState(db, { bookId, bookEpoch: epochResult.bookEpoch, serverCursor: Math.max(0, epochResult.epochStartSequence - 1), epochNumber: epochResult.epochNumber, epochStartSequence: epochResult.epochStartSequence, updatedAt: timestamp });
+  return epochResult;
+}
+
 export async function enrollSyncDevice(db: SqlRunner, bookId: string): Promise<SyncEpochState> {
   const profile = await getSyncProfile(db, bookId);
   if (!profile) throw new Error('Configure the sync server before enrolling this device');

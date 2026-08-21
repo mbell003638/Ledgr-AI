@@ -14,6 +14,7 @@ import { requireAuth } from "@/src/utils/lock";
 import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
 import { api } from "@/src/api";
 import { isCapabilityEnabled, type CapabilityKey } from "@/src/utils/capabilities";
+import { SyncStatusIndicator } from "@/src/components/SyncStatusIndicator";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -105,6 +106,7 @@ function ThemedStack() {
   return (
     <View style={{ flex: 1, backgroundColor: isWideWeb ? theme.color.surfaceTertiary : theme.color.surface, alignItems: "center" }}>
       <StatusBar style={effective === "dark" ? "light" : "dark"} />
+      <SyncStatusIndicator />
       <View
         style={{
           flex: 1,

@@ -25,7 +25,7 @@ import { V2DocumentService } from '@/src/accountingV2/documentService';
 import { v2Services } from '@/src/accountingV2/runtime';
 import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecoveryRequired, retrySyncNow, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
 import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
-import { installServerSnapshot, listSyncDevices, listSyncMemberships, publishServerSnapshot, removeSyncMembership, renameSyncDevice, revokeSyncDevice, setSyncMembershipLocations, upsertSyncMembership, verifyProjectionCheckpoint } from '@/src/sync/recovery';
+import { createSyncEnrollmentCode, installServerSnapshot, listSyncDevices, listSyncMemberships, publishServerSnapshot, redeemSyncEnrollmentCode, removeSyncMembership, renameSyncDevice, revokeSyncDevice, setSyncMembershipLocations, upsertSyncMembership, verifyProjectionCheckpoint } from '@/src/sync/recovery';
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import type { SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
@@ -883,6 +883,16 @@ export const api = {
       `backup:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`, beActiveBookId(), eventType, 'local-user', JSON.stringify(payload), new Date().toISOString(),
     ]);
     return true;
+  },
+  createSyncEnrollmentCode: async (role: 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor', locationIds: string[], ttlMinutes = 15) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    return createSyncEnrollmentCode(runner, beActiveBookId(), role, locationIds, ttlMinutes);
+  },
+  redeemSyncEnrollmentCode: async (code: string, displayName?: string, platform?: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    return redeemSyncEnrollmentCode(runner, beActiveBookId(), code, displayName, platform);
   },
   listSyncDevices: async () => {
     const runner = activeSqlRunner();

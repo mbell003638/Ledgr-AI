@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { CanonicalEvent, hashPayload, SyncOperation } from "./protocol.js";
@@ -12,6 +12,7 @@ export type PgClient = { query<T = Record<string, unknown>>(sql: string, values?
 export type PgPool = { query<T = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<PgResult<T>>; connect(): Promise<PgClient> };
 export type SyncDeviceRecord = { bookId: string; deviceId: string; subject: string; enrolledEpoch: string; enrolledAt: string; expiresAt: string; lastSeenAt?: string; revokedAt?: string; revocationReason?: string; displayName?: string; platform?: string };
 export type SyncMembershipRecord = { bookId: string; subject: string; role: 'owner' | 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor'; locationIds: string[]; updatedAt: string };
+export type EnrollmentCodeRecord = { codeId: string; bookId: string; code: string; role: SyncMembershipRecord['role']; locationIds: string[]; expiresAt: string };
 
 /** PostgreSQL membership and epoch-scoped device authorization. */
 export class PostgresBookAuthorizer implements Authorizer {
@@ -72,6 +73,40 @@ export class PostgresBookAuthorizer implements Authorizer {
     if (principal.scopes.has("sync:*") || principal.scopes.has("sync:device-admin") || principal.scopes.has("sync:book-admin")) return;
     const role = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, principal.subject])).rows[0]?.role;
     if (role !== "owner" && role !== "admin") throw new AuthorizationError("book administration permission is required");
+  }
+
+  async createEnrollmentCode(principal: SyncPrincipal, bookId: string, role: SyncMembershipRecord['role'], locationIds: string[], ttlMinutes = 15): Promise<EnrollmentCodeRecord> {
+    await this.authorizeAdministration(principal, bookId);
+    if (role === 'owner') throw new AuthorizationError('one-time codes cannot delegate book ownership');
+    if (!Number.isSafeInteger(ttlMinutes) || ttlMinutes < 5 || ttlMinutes > 60) throw new AuthorizationError('enrollment-code expiry must be between 5 and 60 minutes');
+    const normalizedLocations = [...new Set(locationIds.map((value) => String(value).trim()).filter(Boolean))].slice(0, 500);
+    const codeId = randomUUID();
+    const code = `LGR-${randomBytes(18).toString('base64url')}`;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
+    await this.pool.query("INSERT INTO sync_enrollment_codes(code_id,book_id,code_hash,created_by,role,location_ids,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)", [codeId, bookId, createHash('sha256').update(code).digest('hex'), principal.subject, role, normalizedLocations, expiresAt]);
+    return { codeId, bookId, code, role, locationIds: normalizedLocations, expiresAt };
+  }
+
+  async redeemEnrollmentCode(principal: SyncPrincipal, code: string, deviceId: string, displayName?: string, platform?: string): Promise<{ bookId: string; bookEpoch: string; epochNumber: number; epochStartSequence: number; currentSequence: number; device: SyncDeviceRecord }> {
+    const normalizedCode = code.trim();
+    if (!/^LGR-[A-Za-z0-9_-]{20,80}$/u.test(normalizedCode)) throw new AuthorizationError('enrollment code is invalid');
+    if (!deviceId.trim()) throw new AuthorizationError('device id is required');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const row = (await client.query<any>("SELECT c.code_id,c.book_id,c.role,c.location_ids,c.expires_at,b.book_epoch,b.epoch_number,b.start_sequence,b.next_sequence FROM sync_enrollment_codes c JOIN sync_books b ON b.book_id=c.book_id WHERE c.code_hash=$1 AND c.used_at IS NULL FOR UPDATE", [createHash('sha256').update(normalizedCode).digest('hex')])).rows[0];
+      if (!row || new Date(row.expires_at).getTime() <= Date.now()) throw new AuthorizationError('enrollment code is expired, already used, or invalid');
+      const existing = (await client.query<any>("SELECT subject,revoked_at FROM sync_devices WHERE book_id=$1 AND device_id=$2", [row.book_id, deviceId.trim()])).rows[0];
+      if (existing && existing.subject !== principal.subject) throw new AuthorizationError('device id is already assigned to another user');
+      const device = (await client.query<any>(`INSERT INTO sync_devices(book_id,device_id,subject,enrolled_epoch,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,display_name,platform) VALUES($1,$2,$3,$4,now(),now() + ($5 * interval '1 day'),now(),NULL,NULL,$6,$7) ON CONFLICT(book_id,device_id) DO UPDATE SET subject=EXCLUDED.subject,enrolled_epoch=EXCLUDED.enrolled_epoch,enrolled_at=now(),expires_at=EXCLUDED.expires_at,last_seen_at=now(),revoked_at=NULL,revocation_reason=NULL,display_name=COALESCE(EXCLUDED.display_name,sync_devices.display_name),platform=COALESCE(EXCLUDED.platform,sync_devices.platform) RETURNING book_id,device_id,subject,enrolled_epoch,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,display_name,platform`, [row.book_id, deviceId.trim(), principal.subject, row.book_epoch, this.options.enrollmentTtlDays ?? 90, displayName?.trim() || null, platform?.trim() || null])).rows[0];
+      await client.query("INSERT INTO sync_memberships(book_id,subject,role,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(book_id,subject) DO UPDATE SET role=EXCLUDED.role,updated_at=now()", [row.book_id, principal.subject, row.role]);
+      await client.query("DELETE FROM sync_membership_locations WHERE book_id=$1 AND subject=$2", [row.book_id, principal.subject]);
+      for (const locationId of (Array.isArray(row.location_ids) ? row.location_ids : [])) await client.query("INSERT INTO sync_membership_locations(book_id,subject,location_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", [row.book_id, principal.subject, String(locationId)]);
+      await client.query("UPDATE sync_enrollment_codes SET used_at=now(),used_by_device=$2 WHERE code_id=$1", [row.code_id, deviceId.trim()]);
+      await client.query('COMMIT');
+      return { bookId: row.book_id, bookEpoch: row.book_epoch, epochNumber: Number(row.epoch_number), epochStartSequence: Number(row.start_sequence || 1), currentSequence: Number(row.next_sequence) - 1, device: { bookId: device.book_id, deviceId: device.device_id, subject: device.subject, enrolledEpoch: device.enrolled_epoch, enrolledAt: new Date(device.enrolled_at).toISOString(), expiresAt: new Date(device.expires_at).toISOString(), ...(device.last_seen_at ? { lastSeenAt: new Date(device.last_seen_at).toISOString() } : {}), ...(device.display_name ? { displayName: device.display_name } : {}), ...(device.platform ? { platform: device.platform } : {}) } };
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    finally { client.release(); }
   }
 
   async renameDevice(principal: SyncPrincipal, bookId: string, deviceId: string, displayName: string, platform?: string): Promise<void> {

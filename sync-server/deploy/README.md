@@ -14,12 +14,13 @@ The installer validates configuration before starting containers. PostgreSQL has
 
 ## Advanced PostgreSQL
 
-Copy `config.advanced.example` to `.env`, create `secrets/database_url` and `secrets/metrics_token`, and verify that the external PostgreSQL endpoint is reachable only over a private network or VPN with TLS enabled. Then run:
+Copy `config.advanced.example` to `.env`, create `secrets/database_url` and `secrets/metrics_token`, and verify that the external PostgreSQL endpoint is reachable only over a private network or VPN with TLS enabled. The database URL must declare `sslmode=require`, `verify-ca`, or `verify-full`. Then run:
 
 ```sh
-docker compose -f docker-compose.advanced.yml config --quiet
-docker compose -f docker-compose.advanced.yml up -d --build
+./install-advanced.sh
 ```
+
+The advanced installer performs the same fail-before-start checks, validates the external database URL’s TLS intent, and starts the sync service plus Caddy without exposing PostgreSQL from this package.
 
 The external database must support PostgreSQL 16-compatible transactions, JSONB, advisory locks, and the migration statements in `../migrations/001_sync.sql`. No high-availability claim is made by this package; failover and restore evidence must be produced by the operator.
 

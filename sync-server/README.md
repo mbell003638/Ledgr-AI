@@ -78,6 +78,7 @@ the client.
 - `GET /readyz`, `GET /metrics`, and `GET /v1/ops/health` with the operations bearer token
 - `GET /v1/capabilities`
 - `POST /v1/sync/enroll`
+- `POST /v1/sync/enrollment-codes` and `POST /v1/sync/enroll-code/redeem` for short-lived, single-use device onboarding
 - `POST /v1/sync/push`
 - `GET /v1/sync/pull`
 - `GET|POST /v1/sync/snapshot`
@@ -92,6 +93,14 @@ the client.
 - `POST /v1/sync/memberships/locations`
 - `GET /v1/sync/conflicts`
 - `POST /v1/sync/conflicts/resolve`
+
+The app’s Sync Administration screen can issue a one-time code with an initial
+role and location scope. The code is stored only as a SHA-256 digest, expires,
+and is marked used in the same transaction as device enrollment. The Sync
+Health screen combines local queue/error telemetry with optional protected
+server diagnostics. The Conflict Inbox shows business-language consequences
+and field differences before offering canonical, safe-merge, or audited-
+correction outcomes.
 
 All production sync endpoints require OIDC bearer authentication. Every
 endpoint except enrollment also verifies the current enrolled device.

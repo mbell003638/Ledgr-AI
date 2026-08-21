@@ -89,6 +89,8 @@ type DeviceAdministration = Authorizer & {
   removeMembership?: (principal: SyncPrincipal, bookId: string, subject: string) => Promise<void>;
   setMembershipLocations?: (principal: SyncPrincipal, bookId: string, subject: string, locationIds: string[]) => Promise<void>;
   authorizeOperation?: (principal: SyncPrincipal, operation: SyncOperation) => Promise<void>;
+  createEnrollmentCode?: (principal: SyncPrincipal, bookId: string, role: SyncRole, locationIds: string[], ttlMinutes?: number) => Promise<unknown>;
+  redeemEnrollmentCode?: (principal: SyncPrincipal, code: string, deviceId: string, displayName?: string, platform?: string) => Promise<unknown>;
   authorizeBookAdmin?: (principal: SyncPrincipal, bookId: string, capability: "epoch" | "snapshot") => Promise<void>;
 };
 
@@ -177,7 +179,32 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        json(response, 200, { protocolVersion: PROTOCOL_VERSION, payloadVersion: PAYLOAD_VERSION, maxBatchSize: MAX_BATCH_SIZE, features: ["cursor-pull", "idempotent-operations", "semantic-operations", "per-operation-results", "aggregate-revisions", "epoch-recovery", "snapshots", "checkpoint-verification", "conflict-resolution", "device-revocation", ...(options.production ? ["oidc-auth", "postgres-event-store", "accounting-arbitration"] : ["in-memory-reference-store"])], productionReady: options.production === true });
+        json(response, 200, { protocolVersion: PROTOCOL_VERSION, payloadVersion: PAYLOAD_VERSION, maxBatchSize: MAX_BATCH_SIZE, features: ["cursor-pull", "idempotent-operations", "semantic-operations", "per-operation-results", "aggregate-revisions", "epoch-recovery", "snapshots", "checkpoint-verification", "conflict-resolution", "device-revocation", "one-time-enrollment", "location-scopes", "operations-health", ...(options.production ? ["oidc-auth", "postgres-event-store", "accounting-arbitration"] : ["in-memory-reference-store"])], productionReady: options.production === true });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sync/enrollment-codes") {
+        if (!devices.createEnrollmentCode) throw new ProtocolError("one-time enrollment codes are unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const bookId = requiredString(input.bookId, "bookId", 120);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const role = requiredString(input.role || "viewer", "role", 30);
+        if (!["admin", "accountant", "editor", "viewer", "auditor"].includes(role)) throw new ProtocolError("role is invalid");
+        if (!Array.isArray(input.locationIds) || input.locationIds.some((value) => typeof value !== "string")) throw new ProtocolError("locationIds must be an array of strings");
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "push", deviceId);
+        const ttlMinutes = input.ttlMinutes === undefined ? undefined : Number(input.ttlMinutes);
+        json(response, 201, { enrollment: await devices.createEnrollmentCode(principal, bookId, role as SyncRole, input.locationIds as string[], ttlMinutes) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sync/enroll-code/redeem") {
+        if (!devices.redeemEnrollmentCode) throw new ProtocolError("one-time enrollment codes are unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const code = requiredString(input.code, "code", 100);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const principal = await authenticator.authenticate(request.headers);
+        json(response, 200, { enrollment: await devices.redeemEnrollmentCode(principal, code, deviceId, typeof input.displayName === "string" ? input.displayName : undefined, typeof input.platform === "string" ? input.platform : undefined) });
         return;
       }
 

@@ -666,3 +666,32 @@ describe('phases 3–6 self-hosting UI contracts', () => {
     expect(coordinator).toContain('last_sync_error_at');
   });
 });
+
+
+describe('roadmap phases 7–8 sync UX contracts', () => {
+  it('exposes secure one-time enrollment in the user flow and administrator flow', () => {
+    const settings = readApp('sync-settings.tsx');
+    const admin = readApp('sync-admin.tsx');
+    const recovery = readSource('src/sync/recovery.ts');
+    const server = readSource('../sync-server/src/server.ts');
+    expect(settings).toContain('testID="sync-enrollment-code"');
+    expect(settings).toContain('testID="redeem-sync-enrollment-code"');
+    expect(admin).toContain('Generate 15-minute code');
+    expect(admin).toContain('Share this code once');
+    expect(recovery).toContain('redeemSyncEnrollmentCode');
+    expect(server).toContain('/v1/sync/enrollment-codes');
+    expect(server).toContain('/v1/sync/enroll-code/redeem');
+  });
+
+  it('keeps global sync attention compact and makes conflicts business-readable', () => {
+    const layout = readApp('_layout.tsx');
+    const indicator = readSource('src/components/SyncStatusIndicator.tsx');
+    const conflicts = readApp('sync-conflicts.tsx');
+    expect(layout).toContain('SyncStatusIndicator');
+    expect(indicator).toContain('Open Sync Health');
+    expect(indicator).toContain('20_000');
+    expect(conflicts).toContain('Field differences');
+    expect(conflicts).toContain('No settlement is silently posted');
+    expect(conflicts).toContain('silent last-write-wins');
+  });
+});
