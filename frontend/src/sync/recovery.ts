@@ -22,7 +22,7 @@ export type SnapshotExporter = (db: SqlRunner, bookId: string) => Promise<{ sche
 class RecoveryHttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 
 async function request(profile: SyncProfile, path: string, init: RequestInit): Promise<any> {
-  const response = await fetch(`${profile.serverUrl}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${await getValidSyncAccessToken(profile)}`, ...(init.headers || {}) } });
+  const response = await fetch(`${profile.serverUrl}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${await getValidSyncAccessToken(profile)}`, 'x-ledgr-protocol-version': String(SYNC_PROTOCOL_VERSION), 'x-ledgr-payload-version': String(SYNC_PAYLOAD_VERSION), ...(init.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new RecoveryHttpError(response.status, String(body?.message || `Sync request failed (${response.status})`));
   return body;

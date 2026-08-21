@@ -68,3 +68,11 @@ test('one-time enrollment code routes issue and redeem short-lived device access
   assert.equal(state.created, true);
   assert.equal(state.redeemed, true);
 });
+
+test('rejects incompatible sync client versions before processing operations', async (t) => {
+  const { server, base } = await start({});
+  t.after(() => server.close());
+  const response = await fetch(`${base}/v1/sync/pull?bookId=book-version&cursor=0&limit=1`, { headers: { authorization: 'Bearer test-token', 'x-ledgr-protocol-version': '999', 'x-ledgr-payload-version': '1' } });
+  assert.equal(response.status, 426);
+  assert.match(String((await response.json() as any).message), /Upgrade Ledgr/u);
+});

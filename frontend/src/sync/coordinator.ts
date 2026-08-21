@@ -7,6 +7,8 @@ import { withSyncDatabaseMutationLock } from './databaseMutex';
 import {
   assertSyncOperation,
   hashPayload,
+  SYNC_PAYLOAD_VERSION,
+  SYNC_PROTOCOL_VERSION,
   type SyncBookState,
   type SyncOperation,
   type SyncOutboxRow,
@@ -222,7 +224,7 @@ export async function withSyncedMutation<T>(db: SqlRunner, mutation: SyncMutatio
 class SyncHttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 
 async function request(profile: SyncProfile, path: string, init: RequestInit, token: string): Promise<any> {
-  const response = await fetch(`${profile.serverUrl}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...(init.headers || {}) } });
+  const response = await fetch(`${profile.serverUrl}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'x-ledgr-protocol-version': String(SYNC_PROTOCOL_VERSION), 'x-ledgr-payload-version': String(SYNC_PAYLOAD_VERSION), ...(init.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new SyncHttpError(response.status, String(body?.message || `Sync request failed (${response.status})`));
   return body;

@@ -77,6 +77,15 @@ function requireScope(principal: SyncPrincipal, ...scopes: string[]): void {
   if (!principal.scopes.has("sync:*") && !scopes.some((scope) => principal.scopes.has(scope))) throw new AuthorizationError(`one of these scopes is required: ${scopes.join(", ")}`);
 }
 
+function requireCompatibleClient(request: IncomingMessage): void {
+  const protocol = request.headers['x-ledgr-protocol-version'];
+  const payload = request.headers['x-ledgr-payload-version'];
+  const protocolValue = Array.isArray(protocol) ? protocol[0] : protocol;
+  const payloadValue = Array.isArray(payload) ? payload[0] : payload;
+  if (protocolValue !== undefined && Number(protocolValue) !== PROTOCOL_VERSION) throw new ProtocolError(`Unsupported sync protocol version; server supports ${PROTOCOL_VERSION}. Upgrade Ledgr before syncing.`, 426);
+  if (payloadValue !== undefined && Number(payloadValue) !== PAYLOAD_VERSION) throw new ProtocolError(`Unsupported sync payload version; server supports ${PAYLOAD_VERSION}. Upgrade Ledgr before syncing.`, 426);
+}
+
 type SyncRole = "owner" | "admin" | "accountant" | "editor" | "viewer" | "auditor";
 
 type DeviceAdministration = Authorizer & {
@@ -182,6 +191,8 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
         json(response, 200, { protocolVersion: PROTOCOL_VERSION, payloadVersion: PAYLOAD_VERSION, maxBatchSize: MAX_BATCH_SIZE, features: ["cursor-pull", "idempotent-operations", "semantic-operations", "per-operation-results", "aggregate-revisions", "epoch-recovery", "snapshots", "checkpoint-verification", "conflict-resolution", "device-revocation", "one-time-enrollment", "location-scopes", "operations-health", ...(options.production ? ["oidc-auth", "postgres-event-store", "accounting-arbitration"] : ["in-memory-reference-store"])], productionReady: options.production === true });
         return;
       }
+
+      if (url.pathname.startsWith('/v1/sync/')) requireCompatibleClient(request);
 
       if (request.method === "POST" && url.pathname === "/v1/sync/enrollment-codes") {
         if (!devices.createEnrollmentCode) throw new ProtocolError("one-time enrollment codes are unavailable", 501);
