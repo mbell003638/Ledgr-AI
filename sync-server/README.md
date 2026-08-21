@@ -1,10 +1,17 @@
 # Ledgr self-hosted sync server
 
-This service provides the server side of Ledgr's offline-first semantic sync protocol. Devices continue to write SQLite locally and retry durable outbox operations; the server assigns an immutable per-book sequence and deduplicates retries by `opId` and `payloadHash`.
+This service coordinates Ledgr's optional offline-first semantic sync. Devices
+continue to write their local SQLite database without a network connection and
+retry immutable outbox operations. The server authenticates the caller and
+enrolled device, validates accounting intent against canonical state, assigns a
+per-book sequence, and preserves conflicts instead of using last-write-wins.
+
+Never synchronize SQLite files directly.
 
 ## Development mode
 
-Without `DATABASE_URL` and OIDC settings, `npm start` uses the in-memory store and anonymous access. This mode is for protocol tests and local development only:
+Without PostgreSQL and OIDC configuration, the service uses the in-memory
+reference store and anonymous development authentication:
 
 ```sh
 npm install
@@ -12,38 +19,94 @@ npm test
 npm start
 ```
 
-## Self-hosted PostgreSQL + OIDC mode
+Memory mode is not durable, multi-instance, or approved for real data.
 
-Set all of the following in the runtime environment:
+## Production configuration
 
-- `DATABASE_URL` (PostgreSQL 14+; migrations run automatically at startup)
-- `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_JWKS_URL` (signed bearer JWT verification)
-- `CORS_ORIGIN` (an explicit app origin; wildcard CORS is not accepted in production)
-- `NODE_ENV=production`
+Set `NODE_ENV=production` and configure:
 
-Optional settings include `PORT`, `HOST`, `DB_POOL_MAX`, `DB_SSL=require`, and `DB_SSL_REJECT_UNAUTHORIZED=false` only for a deliberately configured private CA. Production startup fails closed if the database, OIDC, or CORS settings are missing. The OIDC token must contain a `books` or `book_ids` claim (or `sync:*` scope) for book membership; `scope`/`scp` claims are accepted for pull/push permissions.
+- `DATABASE_URL` or `DATABASE_URL_FILE` for PostgreSQL.
+- `OIDC_ISSUER`, `OIDC_AUDIENCE`, and `OIDC_JWKS_URL`; issuer and JWKS
+  must use HTTPS.
+- One explicit `CORS_ORIGIN`; wildcard production CORS is rejected.
+- `METRICS_TOKEN` or `METRICS_TOKEN_FILE` for `/readyz` and `/metrics`.
 
-The PostgreSQL adapter (`src/postgres.ts`) uses a transaction and row lock per book, enforces the book epoch, device-sequence uniqueness, and aggregate `baseRevision` checks, and stores the complete canonical operation plus `aggregate_revision` in `sync_events`. Pull responses include a deterministic event-history checkpoint hash. `PostgresBookAuthorizer` can enforce the `sync_memberships` table and enroll or reject revoked devices through `sync_devices` (token book/scope claims remain a bootstrap/admin fast path). Apply `migrations/001_sync.sql` through the startup migration runner; take backups and test restore before onboarding real data.
+Optional bounded settings are `PORT`, `HOST`, `DB_POOL_MAX`,
+`DB_SSL=require`, `DB_SSL_REJECT_UNAUTHORIZED`,
+`RATE_LIMIT_REQUESTS`, `RATE_LIMIT_WINDOW_MS`, `MAX_BODY_BYTES`, and
+`DEVICE_ENROLLMENT_TTL_DAYS` (90 by default).
+Production startup fails closed when any required boundary is absent.
 
-## Accounting arbitration boundary
+JWTs use `books`/`book_ids` claims and `scope`/`scp` permissions.
+Database memberships provide Owner, Admin, Accountant, Editor, Viewer, and
+Auditor roles. The first request for a device must use explicit enrollment;
+push, pull, recovery, conflict, checkpoint, and administration calls reject an
+unknown, revoked, wrong-subject, or stale-epoch device.
+Enrollment also has a bounded server-side expiry and must be explicitly renewed.
 
-`DefaultAccountingArbitrator` rejects malformed or unbalanced `journal.create`/`journal.post` operations, actor impersonation, missing revisions for revision-sensitive commands, invalid inventory counts, malformed allocations, invalid location transfers, malformed capital entries, invalid reversals, and period-close operations without a base revision. It remains a deterministic payload baseline: canonical invoice open amounts, inventory availability, capital ownership, location balances, period authority, and audited correction workflows still require domain-state integration behind `AccountingArbitrator` before production accounting rollout. The HTTP layer returns `409 accounting_conflict` and never silently overwrites a concurrent operation.
+The mobile client supports OIDC Authorization Code + PKCE at
+`ledgr://sync-oidc`, stores access/refresh credentials only in SecureStore,
+and automatically rotates a refresh token before an expired access token is
+used. A manually pasted access token remains available only as a development
+or operator fallback.
 
-## Endpoints
+## Durable accounting boundary
+
+PostgreSQL transactions serialize each book, enforce epoch and device
+sequences, deduplicate `opId` plus payload hash, validate dependencies and
+aggregate base revisions, and append complete immutable operations.
+
+Production arbitration fails closed unless canonical accounting state can be
+reconstructed from a validated active-epoch snapshot and the later event
+stream. It validates balanced journals and audited corrections, invoice
+allocation availability, stock and location availability, capital ownership,
+duplicate reversals, inventory counts, opening policy, and period-close
+barriers. Conflicts retain local and canonical evidence and can only be closed
+through an authorized keep-canonical, permitted merge, or new audited
+correction operation.
+
+For the first device in an empty epoch, enrollment does not upload data. The
+client remains disabled until the user explicitly publishes the initial
+snapshot, and the server requires snapshot-administrator authority. The server
+computes the snapshot aggregate-revision map from canonical active-epoch events
+through the supplied checkpoint; it never accepts authoritative revisions from
+the client.
+
+## HTTP surface
 
 - `GET /healthz`
+- `GET /readyz` and `GET /metrics` with the operations bearer token
 - `GET /v1/capabilities`
-- `POST /v1/sync/push` with `{ "bookId": "...", "operations": [...] }`
-- `GET /v1/sync/pull?bookId=...&deviceId=...&after=0&limit=100`
-- `POST /v1/sync/devices/revoke` with `{ "bookId": "...", "deviceId": "..." }` for principals with the `sync:device-admin` scope
+- `POST /v1/sync/enroll`
+- `POST /v1/sync/push`
+- `GET /v1/sync/pull`
+- `GET|POST /v1/sync/snapshot`
+- `POST /v1/sync/checkpoints/verify`
+- `POST /v1/sync/epoch/advance`
+- `GET /v1/sync/devices`
+- `POST /v1/sync/devices/revoke`
+- `GET /v1/sync/conflicts`
+- `POST /v1/sync/conflicts/resolve`
 
-All sync endpoints require a bearer token in OIDC mode. TLS termination, rate limiting, encrypted backups, audit log retention, and network policy belong at the deployment boundary (for example Caddy or a cloud load balancer). Never synchronize SQLite files directly.
+All production sync endpoints require OIDC bearer authentication. Every
+endpoint except enrollment also verifies the current enrolled device.
 
-## Docker
+## Self-host deployment
 
-```sh
-docker build -t ledgr-sync-server .
-docker run --rm -p 8787:8787 --env-file .env ledgr-sync-server
-```
+The `deploy/` directory contains:
 
-The image contains the compiled service and migration file. The in-memory mode remains available for automated tests, but it is not a durable or multi-instance deployment.
+- PostgreSQL 16, the sync service, private networks, secrets, health checks,
+  read-only runtime settings, and Caddy in `docker-compose.yml`.
+- Automatic TLS and security headers in `Caddyfile`.
+- An environment template plus age-encrypted backup and isolated restore-drill
+  scripts. Each backup includes an encrypted reconciliation manifest whose
+  canonical counts and hashes are automatically compared after restoration.
+- `RUNBOOK.md` for rotation, monitoring, incident response, upgrades,
+  rollback, and the evidence required before production onboarding.
+
+Create `deploy/secrets/postgres_password`, `deploy/secrets/database_url`,
+and `deploy/secrets/metrics_token` outside version control, copy
+`config.production.example` to the host environment file, then follow the
+runbook. The provided scripts and topology are implementation foundations;
+operators must still execute and retain real staging and disaster-recovery
+evidence.

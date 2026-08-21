@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ledgr_sync}
+      POSTGRES_USER: ${POSTGRES_USER:-ledgr_sync}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+
+  sync:
+    build:
+      context: ..
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      HOST: 0.0.0.0
+      DATABASE_URL_FILE: /run/secrets/database_url
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      METRICS_TOKEN_FILE: /run/secrets/metrics_token
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-300}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-26214400}
+      DEVICE_ENROLLMENT_TTL_DAYS: ${DEVICE_ENROLLMENT_TTL_DAYS:-90}
+      TRUST_PROXY: "true"
+    secrets:
+      - database_url
+      - metrics_token
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private, edge]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SYNC_DOMAIN: ${SYNC_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [sync]
+    networks: [edge]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  private:
+    internal: true
+  edge:
+
+volumes:
+  postgres_data:
+  backups:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  database_url:
+    file: ./secrets/database_url
+  metrics_token:
+    file: ./secrets/metrics_token

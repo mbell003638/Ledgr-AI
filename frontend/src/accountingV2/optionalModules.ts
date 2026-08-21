@@ -3,6 +3,18 @@ import { OPTIONAL_FEATURE_KEYS, type FeatureKey } from '../utils/featureFlags';
 import { featureKeysForCapabilities } from '../utils/capabilities';
 
 export type OptionalModuleKey = (typeof OPTIONAL_FEATURE_KEYS)[number];
+export type V2BookPrefs = { enabledFeatures?: string[]; activeLocationId?: string };
+export const v2PrefsKey = (bookId: string) => `v2_prefs:${bookId}`;
+function parsePrefs(raw?: string | null): V2BookPrefs | null { try { const parsed = raw ? JSON.parse(raw) : null; return parsed && typeof parsed === 'object' ? parsed as V2BookPrefs : null; } catch { return null; } }
+export async function readV2BookPrefs(db: SqlRunner, bookId: string): Promise<V2BookPrefs | null> {
+  const row = await db.first<{ value: string }>('SELECT value FROM settings WHERE key=?', [v2PrefsKey(bookId)]);
+  return parsePrefs(row?.value);
+}
+export async function writeV2BookPrefs(db: SqlRunner, bookId: string, patch: V2BookPrefs): Promise<void> {
+  const current = (await readV2BookPrefs(db, bookId)) || {};
+  const next: V2BookPrefs = { ...current, ...(patch.enabledFeatures === undefined ? {} : { enabledFeatures: patch.enabledFeatures }), ...(patch.activeLocationId === undefined ? {} : { activeLocationId: patch.activeLocationId }) };
+  await db.run('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', [v2PrefsKey(bookId), JSON.stringify(next)]);
+}
 
 /** True only when the user explicitly enabled the module in Customize Features. */
 export async function isOptionalModuleEnabled(db: SqlRunner, key: OptionalModuleKey): Promise<boolean> {

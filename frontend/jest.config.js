@@ -12,5 +12,7 @@ module.exports = {
   // the real api.ts layer end-to-end, not just the pure engine.
   moduleNameMapper: {
     '^@/(.*)$': path.join(__dirname, '$1'),
+    '^expo-auth-session$': path.join(__dirname, '__tests__/mocks/expo-auth-session.ts'),
+    '^expo-web-browser$': path.join(__dirname, '__tests__/mocks/expo-web-browser.ts'),
   },
 };

@@ -1,8 +1,8 @@
 import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Source } from './types';
 import { V2SqlRepository } from './repository';
 import { round2 } from '../money';
+import { accountingRuntimeId as uid } from './runtimeIds';
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 function withLocation<T extends Record<string, unknown>>(metadata: T | undefined, locationId?: string): T & { locationId?: string } {
   return locationId ? { ...(metadata || {} as T), locationId } : (metadata || {} as T);
@@ -122,7 +122,7 @@ export async function postInvoice(repo: V2SqlRepository, input: { bookId: string
   const journal = appliedTotal > 0
     ? await repo.postSourceJournalWithAllocations(source, journalInput, advanceAllocations)
     : await repo.postSourceJournal(source, journalInput);
-  return { source, journal, advanceApplied: appliedTotal };
+  return { source, journal, advanceApplied: appliedTotal, allocations: advanceAllocations };
 }
 
 export async function postReceipt(repo: V2SqlRepository, input: { bookId: string; periodId: string; partyId: string; date: string; amount: number; method: V2PaymentMethod; reference?: string; allocations?: { invoiceSourceId: string; amount: number }[]; metadata?: Record<string, unknown>; locationId?: string }) {

@@ -1,5 +1,7 @@
 import type { SqlRunner } from '../db/schema';
+import { withDeterministicAccountingIds } from '../accountingV2/runtimeIds';
 import { createSyncId } from './ids';
+import { withSyncDatabaseMutationLock } from './databaseMutex';
 import { assertSyncOperation, SYNC_PAYLOAD_VERSION, SYNC_PROTOCOL_VERSION, type SyncBookState, type SyncOperation, type SyncOperationStatus, type SyncOutboxRow } from './protocol';
 
 let savepointSequence = 0;
@@ -53,12 +55,17 @@ export async function enqueueSyncOperation(db: SqlRunner, operation: SyncOperati
 }
 
 /** Apply a local domain mutation and enqueue its semantic operation atomically. */
-export async function withSyncOperation<T>(db: SqlRunner, operation: SyncOperation, apply: () => Promise<T>): Promise<T> {
+export async function withSyncOperation<T>(db: SqlRunner, operation: SyncOperation, apply: () => Promise<T>, finalize?: (result: T, operation: SyncOperation) => SyncOperation, status: SyncOperationStatus = 'pending'): Promise<T> {
+  return withSyncDatabaseMutationLock(() => withSyncOperationLocked(db, operation, apply, finalize, status));
+}
+
+/** Caller already owns the global SQLite mutation lock. */
+export async function withSyncOperationLocked<T>(db: SqlRunner, operation: SyncOperation, apply: () => Promise<T>, finalize?: (result: T, operation: SyncOperation) => SyncOperation, status: SyncOperationStatus = 'pending'): Promise<T> {
   const savepoint = `sync_outbox_${++savepointSequence}`;
   await db.exec(`SAVEPOINT ${savepoint}`);
   try {
-    const result = await apply();
-    await enqueueSyncOperation(db, operation);
+    const result = await withDeterministicAccountingIds(operation.opId, apply);
+    await enqueueSyncOperation(db, finalize ? finalize(result, operation) : operation, status);
     await db.exec(`RELEASE SAVEPOINT ${savepoint}`);
     return result;
   } catch (error) {
@@ -89,10 +96,10 @@ function mapOutbox(row: any): SyncOutboxRow {
   };
 }
 
-export async function listPendingSyncOperations(db: SqlRunner, bookId: string, limit = 100): Promise<SyncOutboxRow[]> {
+export async function listPendingSyncOperations(db: SqlRunner, bookId: string, limit = 100, bookEpoch?: string): Promise<SyncOutboxRow[]> {
   const rows = await db.all<any>(
-    `SELECT * FROM sync_outbox WHERE book_id=? AND status IN ('pending','retryable') AND (next_retry_at IS NULL OR next_retry_at<=?) ORDER BY device_sequence LIMIT ?`,
-    [bookId, nowIso(), Math.max(1, Math.min(500, Math.floor(limit)))],
+    `SELECT * FROM sync_outbox WHERE book_id=?${bookEpoch ? ' AND book_epoch=?' : ''} AND status IN ('pending','retryable') AND (next_retry_at IS NULL OR next_retry_at<=?) ORDER BY device_sequence LIMIT ?`,
+    [bookId, ...(bookEpoch ? [bookEpoch] : []), nowIso(), Math.max(1, Math.min(500, Math.floor(limit)))],
   );
   return rows.map(mapOutbox);
 }
@@ -112,13 +119,13 @@ export async function markSyncOperationFailed(db: SqlRunner, opId: string, statu
 export async function readSyncBookState(db: SqlRunner, bookId: string): Promise<SyncBookState | null> {
   const row = await db.first<any>('SELECT * FROM sync_book_state WHERE book_id=?', [bookId]);
   if (!row) return null;
-  return { bookId, bookEpoch: String(row.book_epoch), serverCursor: Number(row.server_cursor || 0), ...(row.snapshot_hash ? { snapshotHash: String(row.snapshot_hash) } : {}), updatedAt: String(row.updated_at) };
+  return { bookId, bookEpoch: String(row.book_epoch), serverCursor: Number(row.server_cursor || 0), ...(row.snapshot_hash ? { snapshotHash: String(row.snapshot_hash) } : {}), ...(row.projection_hash ? { projectionHash: String(row.projection_hash) } : {}), ...(row.last_verified_at ? { lastVerifiedAt: String(row.last_verified_at) } : {}), ...(row.epoch_number == null ? {} : { epochNumber: Number(row.epoch_number) }), epochStartSequence: Number(row.epoch_start_sequence || 0), updatedAt: String(row.updated_at) };
 }
 
 export async function writeSyncBookState(db: SqlRunner, state: SyncBookState): Promise<void> {
   await db.run(
-    `INSERT INTO sync_book_state(book_id,book_epoch,server_cursor,snapshot_hash,updated_at) VALUES(?,?,?,?,?)
-     ON CONFLICT(book_id) DO UPDATE SET book_epoch=excluded.book_epoch,server_cursor=excluded.server_cursor,snapshot_hash=excluded.snapshot_hash,updated_at=excluded.updated_at`,
-    [state.bookId, state.bookEpoch, state.serverCursor, state.snapshotHash || null, state.updatedAt],
+    `INSERT INTO sync_book_state(book_id,book_epoch,server_cursor,snapshot_hash,projection_hash,last_verified_at,epoch_number,epoch_start_sequence,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(book_id) DO UPDATE SET book_epoch=excluded.book_epoch,server_cursor=excluded.server_cursor,snapshot_hash=excluded.snapshot_hash,projection_hash=excluded.projection_hash,last_verified_at=excluded.last_verified_at,epoch_number=excluded.epoch_number,epoch_start_sequence=excluded.epoch_start_sequence,updated_at=excluded.updated_at`,
+    [state.bookId, state.bookEpoch, state.serverCursor, state.snapshotHash || null, state.projectionHash || null, state.lastVerifiedAt || null, state.epochNumber ?? null, state.epochStartSequence || 0, state.updatedAt],
   );
 }

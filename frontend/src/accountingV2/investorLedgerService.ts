@@ -2,13 +2,13 @@ import type { SqlRunner } from '../db/schema';
 import { V2SqlRepository } from './repository';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from './types';
 import { round2 } from '../money';
+import { accountingRuntimeId as uid } from './runtimeIds';
 import { buildPersistentV2Reports } from './persistentReports';
 import { partnershipProfitFromReports, postedCommissionFromReports } from './reports';
 import { V2BookConfigRepository } from './bookConfigRepository';
 import { V2DocumentService } from './documentService';
 
 const cents = round2;
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const paymentMethod = (value?: string): Exclude<V2PaymentMethod, 'other'> => value === 'upi' ? 'mobile' : ['cash', 'bank', 'card', 'mobile'].includes(String(value)) ? value as Exclude<V2PaymentMethod, 'other'> : 'cash';
 const paymentCode = (value?: string) => ({
   cash: V2_ACCOUNT_CODES.CASH,

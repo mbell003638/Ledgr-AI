@@ -9,6 +9,7 @@ import type { PartyDomainService } from './partyDomainService';
 import type { InvoiceDomainService } from './invoiceDomainService';
 import { ProductDomainService } from './productDomainService';
 import { resolveWriteLocationId } from './locationDomainService';
+import { accountingRuntimeId } from '../runtimeIds';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -195,6 +196,8 @@ export class SaleDomainService {
       debtorId: originalRole === 'customer' ? originalPartyId : undefined,
       supplierId: originalRole === 'supplier' ? originalPartyId : undefined,
       invoiceSourceId: prior.invoiceSourceId || null,
+      locationId: input.locationId ?? prior.locationId,
+      method: input.method ?? prior.method,
     }));
   }
 
@@ -254,7 +257,7 @@ export class SaleDomainService {
     await this.repo.ensureDefaultAccounts(context.bookId);
     const isIn = input.direction === 'in';
     const source: any = {
-      id: 'manual_cash_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+      id: accountingRuntimeId('manual_cash'),
       bookId: context.bookId,
       type: isIn ? 'manual_cash_income' : 'manual_cash_expense',
       date: input.date,

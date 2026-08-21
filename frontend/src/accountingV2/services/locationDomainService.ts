@@ -3,6 +3,7 @@ import { V2SqlRepository } from '../repository';
 import { bookOptionalSettings, isOptionalModuleEnabledForBook, requireOptionalModule } from '../optionalModules';
 import { V2_ACCOUNT_CODES, type V2PaymentMethod } from '../types';
 import { mulMoney, round2 } from '../../money';
+import { accountingRuntimeId as uid } from '../runtimeIds';
 
 type ActiveContext = { bookId: string; periodId: string };
 
@@ -31,7 +32,6 @@ export type StockTransferInput = {
   notes?: string;
 };
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const acct = (bookId: string, code: string) => `${bookId}:account:${code}`;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
 const method = (value: any): V2PaymentMethod => (methods.has(value) ? value : 'cash');

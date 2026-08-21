@@ -1,8 +1,8 @@
 import { emptyV2Store, isBalanced, journalTotals, type V2MemoryStore } from './schema';
 import type { V2Account, V2Book, V2JournalEntry, V2JournalLine, V2Party, V2PartyRole } from './types';
 import { round2 } from '../money';
+import { accountingRuntimeId as uid } from './runtimeIds';
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 
 export class V2Ledger {

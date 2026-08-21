@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 export const PROTOCOL_VERSION = 1;
+export const PAYLOAD_VERSION = 1;
 export const MAX_BATCH_SIZE = 100;
 export const MAX_PAYLOAD_BYTES = 256 * 1024;
 
@@ -34,12 +35,18 @@ export type PushResult = { accepted: CanonicalEvent[]; cursor: number };
 export type PullResult = { events: CanonicalEvent[]; cursor: number; hasMore: boolean; checkpointHash?: string };
 
 export function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`);
-  return `{${entries.join(",")}}`;
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError("sync payload must be JSON serializable");
+  const normalized = JSON.parse(serialized) as unknown;
+  const order = (item: unknown): string => {
+    if (item === null || typeof item !== "object") return JSON.stringify(item);
+    if (Array.isArray(item)) return `[${item.map(order).join(",")}]`;
+    const entries = Object.entries(item as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, child]) => `${JSON.stringify(key)}:${order(child)}`);
+    return `{${entries.join(",")}}`;
+  };
+  return order(normalized);
 }
 
 export function hashPayload(payload: unknown): string {
@@ -79,9 +86,9 @@ export function validateOperation(value: unknown): SyncOperation {
     payloadHash: requireString(op.payloadHash, "payloadHash", 128).toLowerCase(),
     clientCreatedAt: requireString(op.clientCreatedAt, "clientCreatedAt", 80),
   };
-  if (!Number.isSafeInteger(op.payloadVersion) || (op.payloadVersion as number) < 1) throw new ProtocolError("payloadVersion must be a positive safe integer");
+  if (op.payloadVersion !== PAYLOAD_VERSION) throw new ProtocolError(`unsupported payloadVersion; expected ${PAYLOAD_VERSION}`);
   if (op.payload === undefined) throw new ProtocolError("payload is required");
-  if (!Number.isSafeInteger(op.deviceSequence) || (op.deviceSequence as number) < 0) throw new ProtocolError("deviceSequence must be a non-negative safe integer");
+  if (!Number.isSafeInteger(op.deviceSequence) || (op.deviceSequence as number) < 1) throw new ProtocolError("deviceSequence must be a positive safe integer");
   if (op.baseRevision !== undefined && op.baseRevision !== null && (!Number.isSafeInteger(op.baseRevision) || (op.baseRevision as number) < 0)) throw new ProtocolError("baseRevision must be a non-negative safe integer");
   result.baseRevision = op.baseRevision as number | null | undefined;
   if (op.dependencies !== undefined) {

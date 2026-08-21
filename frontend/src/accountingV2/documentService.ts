@@ -2,10 +2,10 @@ import { V2_ACCOUNT_CODES, type V2PaymentMethod, type V2Party, type V2Source } f
 import { V2SqlRepository } from './repository';
 import { ProductDomainService } from './services/productDomainService';
 import { round2 } from '../money';
+import { accountingRuntimeId as uid, withDeterministicReplacementSourceId } from './runtimeIds';
 import { validatePostingInvariants, type JournalLineInput } from './invariants';
 import { localTodayIso } from '../utils/dateValidation';
 
-const uid = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 const positive = (n: number, label = 'Amount') => { const value = cents(n); if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be positive`); return value; };
 const today = () => localTodayIso();
@@ -109,7 +109,7 @@ export class V2DocumentService {
       const source = await this.sourceRow(sourceId, expectedType);
       await new ProductDomainService(this.repo.db, this.repo, async () => null).reverseMovesForSource(source.book_id, source.id);
       await this.reverseSource(sourceId, expectedType, memo);
-      return createReplacement();
+      return withDeterministicReplacementSourceId(createReplacement);
     });
   }
 
@@ -143,7 +143,7 @@ export class V2DocumentService {
         throw new Error(`$${allocated.toFixed(2)} already received against this invoice — delete/adjust the receipt first or set the total to $${allocated.toFixed(2)} or more.`);
       }
       await this.reverseSource(sourceId, 'invoice', memo, false, { allowAllocations: true });
-      const replacement = await createReplacement();
+      const replacement = await withDeterministicReplacementSourceId(createReplacement);
       // Re-point the preserved direct receipt allocations onto the replacement invoice.
       if (directReceiptAllocs.length) {
         for (const alloc of directReceiptAllocs) {
@@ -167,7 +167,7 @@ export class V2DocumentService {
       const journals = await this.journalsForSource(receiptSourceId);
       let reversal = await this.insertReversal(old, journals[0], 'Edit receipt');
       for (const extra of journals.slice(1)) reversal = await this.insertReversal(old, extra, 'Edit receipt');
-      const next = await this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId });
+      const next = await withDeterministicReplacementSourceId(() => this.postReceiptInCurrentTransaction({ ...input, bookId: old.book_id, partyId: input.partyId || JSON.parse(old.metadata || '{}').partyId }));
       await this.repo.db.run('UPDATE v2_sources SET metadata=json_set(COALESCE(metadata,\'{}\'),\'$.reversed\',1,\'$.reversalSourceId\',?) WHERE id=?', [reversal.source.id, receiptSourceId]);
       return { reversal, replacement: next };
     });

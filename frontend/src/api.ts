@@ -6,19 +6,29 @@ import { round2 } from '@/src/money';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig } from '@/src/db/ai';
-import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
+import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
 import type { PersonaId } from '@/src/accountingV2/config';
+import { getEnabledFeatures, type FeatureKey } from '@/src/utils/featureFlags';
+import { assertFeatureDisableAllowed } from '@/src/accountingV2/featureDisableGuards';
+import { readV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { partnershipDisplayFromReports } from './accountingV2/reports';
 import { buildPersistentV2Reports } from '@/src/accountingV2/persistentReports';
 import { resetAllV2AccountingData, factoryResetV2Data } from '@/src/accountingV2/resetBook';
 import { V2InvestorLedgerService, type InvestorLedgerDetail } from '@/src/accountingV2/investorLedgerService';
 import { selfHostedSync } from '@/src/accountingV2/services/selfHostedSyncService';
+import { V2SqlRepository } from '@/src/accountingV2/repository';
+import { resolveWriteLocationId } from '@/src/accountingV2/services/locationDomainService';
+import { V2DocumentService } from '@/src/accountingV2/documentService';
 import { v2Services } from '@/src/accountingV2/runtime';
-import { configureSync, disableSync, getSyncStatus, listSyncConflicts, markSyncRecoveryRequired, resolveSyncConflict, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
+import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecoveryRequired, retrySyncNow, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
+import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
+import { installServerSnapshot, publishServerSnapshot, verifyProjectionCheckpoint } from '@/src/sync/recovery';
+import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import type { SyncOperation } from '@/src/sync/protocol';
+import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -261,6 +271,13 @@ async function buildAiSnapshot(from: string, to: string, mode: AiDataMode = 'sum
 }
 
 /** Settings store preferences only. Accounting state and configuration live in V2. */
+async function assertRequestedFeaturesAllowed(runner: NonNullable<ReturnType<typeof activeSqlRunner>>, bookId: string, nextFeatures: readonly FeatureKey[]): Promise<void> {
+  const scoped = await readV2BookPrefs(runner, bookId);
+  const currentSettings = await preferenceSettings();
+  const previous = (scoped?.enabledFeatures || getEnabledFeatures(currentSettings)) as FeatureKey[];
+  await assertFeatureDisableAllowed(runner, bookId, previous, nextFeatures);
+}
+
 async function preferenceSettings() {
   const settings = await db.getSettings();
   const runner = activeSqlRunner();
@@ -279,13 +296,23 @@ async function preferenceSettings() {
   };
 }
 type AppCreateName = 'createSale'|'createInvoice'|'createReceipt'|'createBill'|'createPayment'|'createExpense';
+async function resolvedSharedLocation(runner: NonNullable<ReturnType<typeof activeSqlRunner>>, input: any, date?: string): Promise<any> {
+  const service = new V2AppService(runner);
+  const context = await service.activeContext(date || input?.date);
+  if (!context) return { ...input };
+  const locationId = await resolveWriteLocationId(runner, context.bookId, input?.locationId);
+  const withoutLocation = { ...(input || {}) };
+  delete withoutLocation.locationId;
+  return { ...withoutLocation, ...(locationId ? { locationId } : {}) };
+}
+
 async function createTransaction(name: AppCreateName, payload: any) {
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const service = new V2AppService(runner);
   const writes = createAppWriteRouter(service);
 
-  const injected = { ...payload };
+  const injected = await resolvedSharedLocation(runner, payload, payload?.date);
   const partyId = name === 'createBill' || name === 'createPayment'
     ? injected.supplierId
     : name === 'createInvoice' || name === 'createReceipt'
@@ -301,7 +328,7 @@ async function createTransaction(name: AppCreateName, payload: any) {
 
   const mutation: SyncMutation = {
     commandType: 'transaction.create', aggregateType: 'source', aggregateId: String(injected.id || `${name}:${Date.now()}`),
-    payload: { name, input: injected }, businessDate: injected.date,
+    payload: { name, input: injected }, businessDate: injected.date, operationIdentity: !injected.id,
   };
   const result = await withSyncedMutation(runner, mutation, () => writes[name](injected));
   bumpDataVersion();
@@ -312,10 +339,39 @@ type AppMutationName = 'updateReceipt'|'deleteReceipt'|'markInvoicePaid'|'update
 async function mutateTransaction(name: AppMutationName, ...args: any[]) {
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
+  if (name === 'updateInvoice' && args[1]?.status != null && args[1]?.total == null && args[1]?.amount == null) {
+    const result = await (createAppMutationRouter(new V2AppService(runner)) as any)[name](...args);
+    bumpDataVersion();
+    return result;
+  }
+  let mutationArgs = args;
+  if (name.startsWith('update')) {
+    const row = await runner.first<any>('SELECT book_id,type,date,location_id,metadata FROM v2_sources WHERE id=?', [args[0]]);
+    if (!row) throw new Error('Accounting source not found');
+    let prior: any = {};
+    try { prior = JSON.parse(String(row.metadata || '{}')); } catch { prior = {}; }
+    const supplied = args[1] || {};
+    const suppliedWithoutLocation = { ...supplied };
+    delete suppliedWithoutLocation.locationId;
+    const requestedLocation = supplied.locationId ?? prior.locationId ?? row.location_id;
+    const resolvedLocation = await resolveWriteLocationId(runner, String(row.book_id), requestedLocation);
+    mutationArgs = [args[0], {
+      ...suppliedWithoutLocation,
+      date: supplied.date ?? row.date,
+      ...(supplied.productLines == null && Array.isArray(prior.productLines) ? { productLines: prior.productLines } : {}),
+      ...(supplied.partyId == null && supplied.debtorId == null && prior.partyId != null ? { partyId: prior.partyId, debtorId: prior.partyId } : {}),
+      ...(supplied.method == null && prior.method != null ? { method: prior.method } : {}),
+      ...(supplied.paymentType == null && prior.paymentType != null ? { paymentType: prior.paymentType } : {}),
+      ...(supplied.isExpense == null && prior.isExpense != null ? { isExpense: prior.isExpense } : {}),
+      ...(supplied.billType == null && prior.billType != null ? { billType: prior.billType } : {}),
+      ...(resolvedLocation ? { locationId: resolvedLocation } : {}),
+      ...(name === 'updateNote' ? { amount: supplied.amount ?? prior.total, role: prior.role === 'supplier' ? 'supplier' : 'customer', noteType: row.type } : {}),
+    }];
+  }
   const r = await withSyncedMutation(runner, {
     commandType: 'transaction.mutate', aggregateType: 'source', aggregateId: String(args[0] || name),
-    payload: { name, args }, businessDate: args[1]?.date,
-  }, () => (createAppMutationRouter(new V2AppService(runner)) as any)[name](...args));
+    payload: { name, args: mutationArgs }, businessDate: mutationArgs[1]?.date,
+  }, () => (createAppMutationRouter(new V2AppService(runner)) as any)[name](...mutationArgs));
   bumpDataVersion();
   return r;
 }
@@ -331,7 +387,7 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
   const isSupplier = raw.supplierId != null || raw.role === 'supplier';
   const partyId = raw.debtorId || raw.customerId || raw.supplierId || raw.partyId;
   const partyName = raw.clientName || raw.customerName || raw.supplierName || raw.partyName || '';
-  const mapped = {
+  let mapped = {
     ...raw,
     debtorId: partyId,
     partyId,
@@ -342,9 +398,10 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const v2 = new V2AppService(runner);
+  mapped = await resolvedSharedLocation(runner, mapped, mapped.date);
   const v2Res = await withSyncedMutation(runner, {
     commandType: 'transaction.create', aggregateType: 'source', aggregateId: String(mapped.id || `${name}:${Date.now()}`),
-    payload: { name, input: mapped }, businessDate: mapped.date,
+    payload: { name, input: mapped }, businessDate: mapped.date, operationIdentity: !mapped.id,
   }, () => name === 'createCreditNote' ? v2.createCreditNote(mapped) : v2.createDebitNote(mapped));
   bumpDataVersion();
   const total = Number(v2Res.source?.metadata?.total ?? mapped.amount);
@@ -357,6 +414,20 @@ async function createNote(name: 'createCreditNote'|'createDebitNote', raw: any) 
 async function applyRemoteSyncOperation(dbRunner: NonNullable<ReturnType<typeof activeSqlRunner>>, operation: SyncOperation): Promise<void> {
   const service = new V2AppService(dbRunner);
   const body: any = operation.payload;
+  if (operation.commandType === 'accounting.correction.post') {
+    const posting = body?.posting; const date = String(posting?.date || operation.businessDate || '');
+    const context = await service.activeContext(date); if (!context) throw new Error('Correction date is outside an open accounting period');
+    const repo = new V2SqlRepository(dbRunner);
+    await repo.postSourceJournal({ id: operation.opId, bookId: context.bookId, type: 'accounting_correction', date, metadata: { reason: body.reason, conflictId: body.conflictId, correctsOperationId: body.correctsOperationId, correctsSourceId: body.correctsSourceId } }, { bookId: context.bookId, periodId: context.periodId, date, memo: String(posting.memo || body.reason), lines: posting.lines });
+    return;
+  }
+  if (operation.commandType === 'accounting.correction.reverse') {
+    const sourceId = String(body?.sourceId || body?.originalSourceId || '');
+    const source = await dbRunner.first<{ type: string }>('SELECT type FROM v2_sources WHERE id=?', [sourceId]);
+    if (!source) throw new Error('Correction reversal source is unavailable');
+    await new V2DocumentService(new V2SqlRepository(dbRunner)).reverseSource(sourceId, source.type, String(body.reason || 'Audited correction reversal'));
+    return;
+  }
   if (operation.commandType === 'transaction.create' && body?.name && body?.input) {
     const writes = createAppWriteRouter(service) as any;
     if (body.name === 'createCreditNote' || body.name === 'createDebitNote') {
@@ -373,7 +444,12 @@ async function applyRemoteSyncOperation(dbRunner: NonNullable<ReturnType<typeof 
     return;
   }
   const direct: Record<string, (value: any) => Promise<unknown>> = {
-    'party.create': (value) => service.ensureParty(String(value.name), (value.roles || ['customer'])[0], { phone: value.phone, email: value.email }),
+    'party.create': async (value) => {
+      const roles = Array.isArray(value.roles) && value.roles.length ? value.roles : ['customer'];
+      let result: unknown;
+      for (const role of roles) result = await service.ensureParty(String(value.name), role === 'supplier' ? 'supplier' : 'customer', { phone: value.phone, email: value.email });
+      return result;
+    },
     'party.patch': (value) => service.updateParty(String(value.id), value.patch || {}),
     'party.archive': (value) => service.archiveParty(String(value.id)),
     'cash.create': (value) => service.recordManualCash(value),
@@ -396,12 +472,22 @@ async function applyRemoteSyncOperation(dbRunner: NonNullable<ReturnType<typeof 
     'opening_balances.post': (value) => service.postOpeningBalances(value),
     'opening_balances.update': (value) => service.updateOpeningBalances(value),
     'closing_balances.import': (value) => service.importClosingBalances(value),
+    'period.close': (value) => createCloseBooksRouter(service)(value),
     'scan.transaction.import': (value) => service.importScanTransaction(value),
     'inventory.count.record': (value) => service.recordInventoryCount(value),
     'manual.asset.create': (value) => service.recordManualAsset(value),
     'manual.liability.create': (value) => service.recordManualLiability(value),
     'manual.balance.delete': (value) => service.deleteManualBalanceTransaction(String(value.sourceId)),
     'manual.balance.update': (value) => service.updateManualBalanceTransaction(String(value.sourceId), value.input || {}),
+    'inventory.count.delete': (value) => service.deleteV2InventoryCount(String(value.id)),
+    'book.config.patch': async (value) => {
+      const context = await service.activeContext(); if (!context) throw new Error('No active versioned V2 book');
+      if (value.activePersona) return new V2BookConfigRepository(dbRunner).setActivePersona(context.bookId, value.activePersona);
+      let applied = false;
+      if (value.config) { await service.updateActiveBookConfig(value.config); applied = true; }
+      if (Array.isArray(value.enabledFeatures)) { await writeV2BookPrefs(dbRunner, context.bookId, { enabledFeatures: value.enabledFeatures }); applied = true; }
+      if (!applied) throw new Error('Unsupported book configuration patch');
+    },
   };
   const handler = direct[operation.commandType];
   if (handler) { await handler(body); return; }
@@ -503,7 +589,10 @@ export const api = {
   setV2Persona: async (bookId: string, type: PersonaId) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2BookConfigRepository(runner).setActivePersona(bookId, type);
+    const currentSettings = await preferenceSettings();
+    const nextFeatures = getEnabledFeatures({ ...currentSettings, activePersona: type });
+    await assertRequestedFeaturesAllowed(runner, bookId, nextFeatures);
+    const r = await withSyncedMutation(runner, { commandType: 'book.config.patch', aggregateType: 'book', aggregateId: bookId, payload: { activePersona: type } }, () => new V2BookConfigRepository(runner).setActivePersona(bookId, type));
     bumpDataVersion();
     return r;
   },
@@ -515,7 +604,12 @@ export const api = {
   updateV2BookConfig: async (config: V2BookConfigUpdate) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await new V2AppService(runner).updateActiveBookConfig(config);
+    const service = new V2AppService(runner);
+    const context = await service.activeContext();
+    if (!context) throw new Error('No active versioned V2 book');
+    const nextFeatures = getEnabledFeatures({ ...(await preferenceSettings()), selectedPersonas: config.selectedPersonas, activePersona: config.activePersona });
+    await assertRequestedFeaturesAllowed(runner, context.bookId, nextFeatures);
+    const r = await withSyncedMutation(runner, { commandType: 'book.config.patch', aggregateType: 'book', aggregateId: context.bookId, payload: { config } }, () => service.updateActiveBookConfig(config));
     bumpDataVersion();
     return r;
   },
@@ -532,30 +626,33 @@ export const api = {
   postV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const resolved = { ...input, date: input.date || localTodayIso() };
     const r = await withSyncedMutation(runner, {
-      commandType: 'opening_balances.post', aggregateType: 'opening_balance', aggregateId: `opening:${input.date || localTodayIso()}`,
-      payload: input, businessDate: input.date,
-    }, () => new V2AppService(runner).postOpeningBalances(input));
+      commandType: 'opening_balances.post', aggregateType: 'opening_balance', aggregateId: `opening:${beActiveBookId()}`,
+      payload: resolved, businessDate: resolved.date,
+    }, () => new V2AppService(runner).postOpeningBalances(resolved));
     bumpDataVersion();
     return r;
   },
   updateV2OpeningBalances: async (input: { date?: string; cash: number; inventory: number; otherAssets?: number; assetBreakdown?: { name: string; amount: number }[]; accountsPayable?: number; otherLiabilities?: number; liabilityBreakdown?: { name: string; amount: number; type: "creditor" | "other" }[]; ownerCapital?: number; retainedEarnings?: number; memo?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const resolved = { ...input, date: input.date || localTodayIso() };
     const r = await withSyncedMutation(runner, {
-      commandType: 'opening_balances.update', aggregateType: 'opening_balance', aggregateId: `opening:${input.date || localTodayIso()}`,
-      payload: input, businessDate: input.date,
-    }, () => new V2AppService(runner).updateOpeningBalances(input));
+      commandType: 'opening_balances.update', aggregateType: 'opening_balance', aggregateId: `opening:${beActiveBookId()}`,
+      payload: resolved, businessDate: resolved.date,
+    }, () => new V2AppService(runner).updateOpeningBalances(resolved));
     bumpDataVersion();
     return r;
   },
   importV2ClosingBalances: async (input: V2ClosingBalancesImportInput) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const resolved = { ...input, date: input.date || localTodayIso() };
     const r = await withSyncedMutation(runner, {
-      commandType: 'closing_balances.import', aggregateType: 'closing_balance', aggregateId: `closing:${input.date || localTodayIso()}`,
-      payload: input, businessDate: input.date,
-    }, () => new V2AppService(runner).importClosingBalances(input));
+      commandType: 'closing_balances.import', aggregateType: 'closing_balance', aggregateId: `closing:${resolved.date}`,
+      payload: resolved, businessDate: resolved.date,
+    }, () => new V2AppService(runner).importClosingBalances(resolved));
     bumpDataVersion();
     return r;
   },
@@ -567,21 +664,23 @@ export const api = {
   importV2ScanTransaction: async (input: V2ScanTransactionImportInput) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const resolved = await resolvedSharedLocation(runner, input, input.date);
     const r = await withSyncedMutation(runner, {
       commandType: 'scan.transaction.import', aggregateType: 'scan_transaction',
-      aggregateId: `scan:${input.entryType}:${input.date}:${input.partyName || ''}:${input.amount}:${input.method || ''}`,
-      payload: input, businessDate: input.date,
-    }, () => new V2AppService(runner).importScanTransaction(input));
+      aggregateId: `scan:${resolved.entryType}:${resolved.date}:${resolved.partyName || ''}:${resolved.amount}:${resolved.method || ''}`,
+      payload: resolved, businessDate: resolved.date, operationIdentity: true,
+    }, () => new V2AppService(runner).importScanTransaction(resolved));
     bumpDataVersion();
     return r;
   },
   recordV2InventoryCount: async (input: { date: string; value: number; notes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const resolved = await resolvedSharedLocation(runner, input, input.date);
     const r = await withSyncedMutation(runner, {
       commandType: 'inventory.count.record', aggregateType: 'inventory_count',
-      aggregateId: `inventory:${input.date}:${input.locationId || 'global'}`, payload: input, businessDate: input.date,
-    }, () => new V2AppService(runner).recordInventoryCount(input));
+      aggregateId: `inventory:${resolved.date}:${resolved.locationId || 'global'}`, payload: resolved, businessDate: resolved.date,
+    }, () => new V2AppService(runner).recordInventoryCount(resolved));
     bumpDataVersion();
     return r;
   },
@@ -590,7 +689,7 @@ export const api = {
     if (!runner) throw new Error('Manual asset transactions require SQLite storage');
     const r = await withSyncedMutation(runner, {
       commandType: 'manual.asset.create', aggregateType: 'manual_asset', aggregateId: `manual-asset:${input.date}:${input.name}:${input.amount}`,
-      payload: input, businessDate: input.date,
+      payload: input, businessDate: input.date, operationIdentity: true,
     }, () => new V2AppService(runner).recordManualAsset(input));
     bumpDataVersion();
     return r;
@@ -600,7 +699,7 @@ export const api = {
     if (!runner) throw new Error('Manual liability transactions require SQLite storage');
     const r = await withSyncedMutation(runner, {
       commandType: 'manual.liability.create', aggregateType: 'manual_liability', aggregateId: `manual-liability:${input.date}:${input.name}:${input.amount}`,
-      payload: input, businessDate: input.date,
+      payload: input, businessDate: input.date, operationIdentity: true,
     }, () => new V2AppService(runner).recordManualLiability(input));
     bumpDataVersion();
     return r;
@@ -622,9 +721,13 @@ export const api = {
   updateManualBalanceTransaction: async (sourceId: string, input: any) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Manual balance transactions require SQLite storage');
+    const existing = await runner.first<{ metadata: string }>('SELECT metadata FROM v2_sources WHERE id=?', [sourceId]);
+    let prior: any = {};
+    try { prior = JSON.parse(existing?.metadata || '{}'); } catch { prior = {}; }
+    const resolved = { ...prior, ...input };
     const r = await withSyncedMutation(runner, {
       commandType: 'manual.balance.update', aggregateType: 'source', aggregateId: sourceId,
-      payload: { sourceId, input }, businessDate: input?.date,
+      payload: { sourceId, input: resolved }, businessDate: resolved.date,
     }, () => new V2AppService(runner).updateManualBalanceTransaction(sourceId, input));
     bumpDataVersion();
     return r;
@@ -632,49 +735,45 @@ export const api = {
   getSettings: () => preferenceSettings(),
   updateSettings: async (s: any) => {
     const runner = activeSqlRunner();
-    if (runner && (Array.isArray(s.enabledFeatures) || Array.isArray(s.enabledCapabilities) || s.activeLocationId !== undefined || s.activePersona !== undefined || s.businessType !== undefined)) {
-      const service = new V2AppService(runner);
-      const context = await service.activeContext();
-      if (context) {
-        const personaRow = await runner.first<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND active=1 LIMIT 1', [context.bookId]);
-        if (personaRow) {
-          let personaConfig: any = {}; try { personaConfig = JSON.parse(personaRow.config || '{}'); } catch { personaConfig = {}; }
-          if (Array.isArray(s.enabledFeatures)) personaConfig.enabledFeatures = [...new Set(s.enabledFeatures.map(String))];
-          if (Array.isArray(s.enabledCapabilities)) personaConfig.enabledCapabilities = [...new Set(s.enabledCapabilities.map(String))];
-          if (s.activeLocationId !== undefined) personaConfig.activeLocationId = s.activeLocationId ? String(s.activeLocationId) : '';
-          await runner.run('UPDATE v2_personas SET config=? WHERE id=? AND book_id=?', [JSON.stringify(personaConfig), personaRow.id, context.bookId]);
-        }
-        if (Array.isArray(s.selectedPersonas) || s.activePersona !== undefined || s.businessType !== undefined) {
-          const current = await new V2BookConfigRepository(runner).getBookConfig(context.bookId);
-          const requestedPersonas = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas : (s.businessType ? [s.businessType] : current.selectedPersonas);
-          const nextActivePersona = s.activePersona || s.businessType || current.activePersona;
-          const update: V2BookConfigUpdate = {
-            style: current.style,
-            basis: current.basis,
-            selectedPersonas: [...new Set(requestedPersonas.map(String))] as PersonaId[],
-            activePersona: String(nextActivePersona) as PersonaId,
-            retailPartnership: current.retailPartnership,
-          };
-          await new V2BookConfigRepository(runner).updateBookConfig(context.bookId, update);
-        }
-      }
-    }
-    if (runner && s.managerCommissionPct !== undefined) {
+    if (runner) {
       const service = new V2AppService(runner);
       const context = await service.activeContext();
       if (context) {
         const repo = new V2BookConfigRepository(runner);
-        const config = await repo.getBookConfig(context.bookId);
-        await repo.updateBookConfig(context.bookId, {
-          style: config.style,
-          basis: config.basis,
-          selectedPersonas: config.selectedPersonas,
-          activePersona: config.activePersona,
-          retailPartnership: {
-            ...config.retailPartnership,
-            commissionPct: Number(s.managerCommissionPct || 0),
-          },
-        });
+        const personaRow = await runner.first<{ id: string; config: string }>('SELECT id,config FROM v2_personas WHERE book_id=? AND enabled=1 AND active=1 LIMIT 1', [context.bookId]);
+        const personaPrefsChanged = Array.isArray(s.enabledFeatures) || Array.isArray(s.enabledCapabilities) || s.activeLocationId !== undefined;
+        if (personaRow && personaPrefsChanged) {
+          let personaConfig: any = {}; try { personaConfig = JSON.parse(personaRow.config || '{}'); } catch { personaConfig = {}; }
+          if (Array.isArray(s.enabledFeatures)) personaConfig.enabledFeatures = [...new Set(s.enabledFeatures.map(String))];
+          if (Array.isArray(s.enabledCapabilities)) personaConfig.enabledCapabilities = [...new Set(s.enabledCapabilities.map(String))];
+          if (s.activeLocationId !== undefined) personaConfig.activeLocationId = s.activeLocationId ? String(s.activeLocationId) : '';
+          const nextFeatures = Array.isArray(s.enabledFeatures)
+            ? s.enabledFeatures as FeatureKey[]
+            : getEnabledFeatures({ ...(await preferenceSettings()), enabledCapabilities: s.enabledCapabilities });
+          await assertRequestedFeaturesAllowed(runner, context.bookId, nextFeatures);
+          await withSyncedMutation(runner, {
+            commandType: 'book.config.patch', aggregateType: 'book', aggregateId: context.bookId,
+            payload: { ...(Array.isArray(s.enabledFeatures) ? { enabledFeatures: s.enabledFeatures } : {}), ...(Array.isArray(s.enabledCapabilities) ? { enabledCapabilities: s.enabledCapabilities } : {}), ...(s.activeLocationId !== undefined ? { activeLocationId: s.activeLocationId } : {}) },
+          }, async () => {
+            await runner.run('UPDATE v2_personas SET config=? WHERE id=? AND book_id=?', [JSON.stringify(personaConfig), personaRow.id, context.bookId]);
+            if (Array.isArray(s.enabledFeatures)) await writeV2BookPrefs(runner, context.bookId, { enabledFeatures: s.enabledFeatures.map(String) });
+            if (s.activeLocationId !== undefined) await writeV2BookPrefs(runner, context.bookId, { activeLocationId: String(s.activeLocationId || '') });
+          });
+        }
+        if (Array.isArray(s.selectedPersonas) || s.activePersona !== undefined || s.businessType !== undefined) {
+          const current = await repo.getBookConfig(context.bookId);
+          const requestedPersonas = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas : (s.businessType ? [s.businessType] : current.selectedPersonas);
+          const nextActivePersona = s.activePersona || s.businessType || current.activePersona;
+          const update: V2BookConfigUpdate = { style: current.style, basis: current.basis, selectedPersonas: [...new Set(requestedPersonas.map(String))] as PersonaId[], activePersona: String(nextActivePersona) as PersonaId, retailPartnership: current.retailPartnership };
+          const nextFeatures = getEnabledFeatures({ ...(await preferenceSettings()), selectedPersonas: update.selectedPersonas, activePersona: update.activePersona });
+          await assertRequestedFeaturesAllowed(runner, context.bookId, nextFeatures);
+          await withSyncedMutation(runner, { commandType: 'book.config.patch', aggregateType: 'book', aggregateId: context.bookId, payload: { config: update } }, () => repo.updateBookConfig(context.bookId, update));
+        }
+        if (s.managerCommissionPct !== undefined) {
+          const config = await repo.getBookConfig(context.bookId);
+          const update: V2BookConfigUpdate = { style: config.style, basis: config.basis, selectedPersonas: config.selectedPersonas, activePersona: config.activePersona, retailPartnership: { ...config.retailPartnership, commissionPct: Number(s.managerCommissionPct || 0) } };
+          await withSyncedMutation(runner, { commandType: 'book.config.patch', aggregateType: 'book', aggregateId: context.bookId, payload: { config: update } }, () => repo.updateBookConfig(context.bookId, update));
+        }
       }
     }
     const r = await db.updateSettings(s);
@@ -682,10 +781,18 @@ export const api = {
     bumpDataVersion();
     return { ...r, ...preferences };
   },
-  configureSync: async (input: { serverUrl: string; userId: string; actorId?: string; accessToken?: string; enabled?: boolean }) => {
+  configureSync: async (input: { serverUrl: string; userId: string; actorId?: string; accessToken?: string; enabled?: boolean; oidcIssuer?: string; oidcClientId?: string; oidcScopes?: string }) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
     const profile = await configureSync(runner, { ...input, bookId: beActiveBookId() });
+    bumpDataVersion();
+    return profile;
+  },
+  authorizeSyncOidc: async (input: { serverUrl: string; userId: string; actorId?: string; oidcIssuer: string; oidcClientId: string; oidcScopes?: string }) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const profile = await configureSync(runner, { ...input, bookId: beActiveBookId(), enabled: false });
+    await runSyncOidcAuthorization(profile);
     bumpDataVersion();
     return profile;
   },
@@ -697,7 +804,7 @@ export const api = {
   },
   getSyncStatus: async () => {
     const runner = activeSqlRunner();
-    if (!runner) return { enabled: false, configured: false, pending: 0, conflicts: 0 };
+    if (!runner) return { enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 };
     return getSyncStatus(runner, beActiveBookId());
   },
   syncNow: async () => {
@@ -707,15 +814,61 @@ export const api = {
     bumpDataVersion();
     return status;
   },
+  retrySyncNow: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const status = await retrySyncNow(runner, beActiveBookId(), applyRemoteSyncOperation);
+    bumpDataVersion();
+    return status;
+  },
+  publishSyncSnapshot: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    return publishServerSnapshot(runner, beActiveBookId(), async (dbRunner, bookId) => {
+      const payload = await exportBookProjection(dbRunner, bookId);
+      return { schemaVersion: BOOK_PROJECTION_SCHEMA_VERSION, payload, projectionHash: await hashBookProjection(dbRunner, bookId) };
+    });
+  },
+  enableSync: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await enableSync(runner, beActiveBookId());
+    return getSyncStatus(runner, beActiveBookId());
+  },
+  installSyncSnapshot: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const snapshot = await installServerSnapshot(runner, beActiveBookId(), async (dbRunner, payload, candidate) => {
+      await installBookProjection(dbRunner, payload, candidate);
+      const installedHash = await hashBookProjection(dbRunner, candidate.bookId);
+      if (candidate.projectionHash && installedHash !== candidate.projectionHash) throw new Error('Installed projection hash does not match the validated snapshot');
+    }, applyRemoteSyncOperation);
+    bumpDataVersion();
+    return snapshot;
+  },
+  verifySyncCheckpoint: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    return verifyProjectionCheckpoint(runner, beActiveBookId(), hashBookProjection);
+  },
   listSyncConflicts: async () => {
     const runner = activeSqlRunner();
     if (!runner) return [];
-    return listSyncConflicts(runner, beActiveBookId());
+    return listOpenSyncConflicts(runner, beActiveBookId());
   },
-  resolveSyncConflict: async (conflictId: string) => {
+  listSyncCorrectionAccounts: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return [];
+    return listSyncCorrectionAccounts(runner, beActiveBookId());
+  },
+  resolveSyncConflict: async (conflictId: string, resolutionType: ConflictResolutionType = 'keep_canonical', payload?: unknown, correctionCommandType?: 'accounting.correction.post' | 'accounting.correction.reverse') => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
-    await resolveSyncConflict(runner, conflictId);
+    await resolveSyncConflictDecision(runner, beActiveBookId(), conflictId, {
+      type: resolutionType,
+      ...(payload === undefined ? {} : { payload }),
+      ...(correctionCommandType ? { correctionCommandType } : {}),
+    });
     bumpDataVersion();
   },
   testKey: async () => ai.testKey(await getAIConfig()),
@@ -814,7 +967,8 @@ export const api = {
     if (!ctx) throw new Error('No active versioned V2 book with an open accounting period');
     const roles: string[] = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
     const primaryRole = roles.includes('supplier') && !roles.includes('customer') ? 'supplier' : 'customer';
-    return withSyncedMutation(runner, { commandType: 'party.create', aggregateType: 'party', aggregateId: String(p.id || name), payload: p }, async () => {
+    const aggregateId = String(p.id || stablePartyId(primaryRole, { [primaryRole === 'customer' ? 'clientName' : 'supplierName']: name }, ctx.bookId));
+    return withSyncedMutation(runner, { commandType: 'party.create', aggregateType: 'party', aggregateId, payload: { ...p, id: aggregateId, name, roles } }, async () => {
       const party = await service.ensureParty(name, primaryRole, { phone: p.phone, email: p.email });
       for (const r of roles) {
         if (r !== primaryRole && (r === 'customer' || r === 'supplier')) await service.ensureParty(name, r, { phone: p.phone, email: p.email });
@@ -836,9 +990,11 @@ export const api = {
     if (!context) throw new Error('No active versioned V2 book with an open accounting period');
     await service.assertPartyNameAvailable(name, context.bookId);
     const existing = (await service.listParties()).find((party: any) => norm(party.name) === norm(name));
-    const party = existing || await service.ensureParty(name, role, details);
+    const aggregateId = existing?.id || stablePartyId(role, { [role === 'customer' ? 'clientName' : 'supplierName']: name }, context.bookId);
+    const party = existing && (Array.isArray(existing.roles) ? existing.roles : JSON.parse(existing.roles || '[]')).includes(role)
+      ? existing
+      : await withSyncedMutation(runner, { commandType: 'party.create', aggregateType: 'party', aggregateId, payload: { id: aggregateId, name, roles: [role], ...details } }, () => service.ensureParty(name, role, details));
     const roles: string[] = Array.isArray(party.roles) ? party.roles : JSON.parse(party.roles || '[]');
-    if (!roles.includes(role)) await service.ensureParty(name, role, details);
     return { id: party.id, name: party.name, role: roles.length > 1 ? 'both' : role };
   },
 
@@ -947,7 +1103,9 @@ export const api = {
   deleteV2InventoryCount: async (id: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).deleteV2InventoryCount(id);
+    const result = await withSyncedMutation(runner, { commandType: 'inventory.count.delete', aggregateType: 'inventory_count', aggregateId: id, payload: { id } }, () => new V2AppService(runner).deleteV2InventoryCount(id));
+    bumpDataVersion();
+    return result;
   },
   // Cash Book (manual cash in/out ledger)
   listCashEntries: async () => {
@@ -981,7 +1139,8 @@ export const api = {
     if (runner) {
       const service = new V2AppService(runner);
       if (await service.activeContext(e.date)) {
-        const result = await withSyncedMutation(runner, { commandType: 'cash.create', aggregateType: 'source', aggregateId: String(e.id || `cash:${Date.now()}`), payload: e, businessDate: e.date }, () => service.recordManualCash(e));
+        const resolved = await resolvedSharedLocation(runner, e, e.date);
+        const result = await withSyncedMutation(runner, { commandType: 'cash.create', aggregateType: 'source', aggregateId: String(resolved.id || `cash:${Date.now()}`), payload: resolved, businessDate: resolved.date, operationIdentity: !resolved.id }, () => service.recordManualCash(resolved));
         bumpDataVersion();
         return result;
       }
@@ -990,7 +1149,10 @@ export const api = {
   },
   updateCashEntry: async (id: string, e: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const result = await withSyncedMutation(runner, { commandType: 'cash.patch', aggregateType: 'source', aggregateId: id, payload: { id, input: e }, businessDate: e.date }, () => new V2AppService(runner).updateManualCash(id, e)); bumpDataVersion(); return result;
+    const row = await runner.first<any>('SELECT date,location_id,metadata FROM v2_sources WHERE id=?', [id]);
+    let prior: any = {}; try { prior = JSON.parse(String(row?.metadata || '{}')); } catch { prior = {}; }
+    const resolved = await resolvedSharedLocation(runner, { ...prior, ...e, date: e.date ?? row?.date, locationId: e.locationId ?? prior.locationId ?? row?.location_id }, e.date ?? row?.date);
+    const result = await withSyncedMutation(runner, { commandType: 'cash.patch', aggregateType: 'source', aggregateId: id, payload: { id, input: resolved }, businessDate: resolved.date }, () => new V2AppService(runner).updateManualCash(id, resolved)); bumpDataVersion(); return result;
   },
   deleteCashEntry: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1007,7 +1169,7 @@ export const api = {
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);
       if (context) {
-        const result = await withSyncedMutation(runner, { commandType: 'capital.deposit', aggregateType: 'member', aggregateId: id, payload: { memberId: id, input: { ...input, bookId: context.bookId } }, businessDate: input.date }, () => new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id }));
+        const result = await withSyncedMutation(runner, { commandType: 'capital.deposit', aggregateType: 'member', aggregateId: id, payload: { memberId: id, input: { ...input, bookId: context.bookId } }, businessDate: input.date, operationIdentity: true }, () => new V2InvestorLedgerService(runner).deposit({ ...input, bookId: context.bookId, memberId: id }));
         bumpDataVersion();
         return result;
       }
@@ -1039,7 +1201,7 @@ export const api = {
     if (runner) {
       const app = new V2AppService(runner); const context = await app.activeContext(input.date);
       if (context) {
-        const result = await withSyncedMutation(runner, { commandType: 'capital.draw', aggregateType: 'member', aggregateId: id, payload: { memberId: id, input: { ...input, bookId: context.bookId } }, businessDate: input.date }, () => new V2InvestorLedgerService(runner).draw({ ...input, bookId: context.bookId, memberId: id }));
+        const result = await withSyncedMutation(runner, { commandType: 'capital.draw', aggregateType: 'member', aggregateId: id, payload: { memberId: id, input: { ...input, bookId: context.bookId } }, businessDate: input.date, operationIdentity: true }, () => new V2InvestorLedgerService(runner).draw({ ...input, bookId: context.bookId, memberId: id }));
         bumpDataVersion();
         return result;
       }
@@ -1247,7 +1409,17 @@ export const api = {
     const service = new V2AppService(runner);
     const closeBooks = createCloseBooksRouter(service);
     const overview = await service.inventoryOverview();
-    const result = await withSyncedMutation(runner, { commandType: 'period.close', aggregateType: 'period', aggregateId: String(date || localTodayIso()), payload: { actualStock, commissionPct, notes, date }, businessDate: date }, () => closeBooks({ actualStock, openingInventory: Number(overview?.openingInventory || 0), commissionPct, notes, date }));
+    const closeDate = date || localTodayIso();
+    const syncStatus = await getSyncStatus(runner, beActiveBookId());
+    const closeInput = {
+      actualStock,
+      openingInventory: Number(overview?.openingInventory || 0),
+      commissionPct,
+      notes,
+      date: closeDate,
+      ...(syncStatus.enabled ? { expectedBookSequence: Number(syncStatus.cursor || 0) } : {}),
+    };
+    const result = await withSyncedMutation(runner, { commandType: 'period.close', aggregateType: 'period', aggregateId: closeDate, payload: closeInput, businessDate: closeDate }, () => closeBooks(closeInput));
     bumpDataVersion();
     return result;
   },
@@ -1257,7 +1429,7 @@ export const api = {
   },
   upsertEmployee: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'employee.upsert', aggregateType: 'employee', aggregateId: String(input.id || input.name), payload: input }, () => new V2AppService(runner).upsertEmployee(input)); bumpDataVersion(); return r;
+    const r = await withSyncedMutation(runner, { commandType: 'employee.upsert', aggregateType: 'employee', aggregateId: String(input.id || input.name), payload: input, operationIdentity: !input.id }, () => new V2AppService(runner).upsertEmployee(input)); bumpDataVersion(); return r;
   },
   archiveEmployee: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1265,7 +1437,8 @@ export const api = {
   },
   runPayroll: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'payroll.run', aggregateType: 'pay_run', aggregateId: String(input.id || input.date || Date.now()), payload: input, businessDate: input.date }, () => new V2AppService(runner).runPayroll(input)); bumpDataVersion(); return r;
+    const resolved = await resolvedSharedLocation(runner, input, input.date);
+    const r = await withSyncedMutation(runner, { commandType: 'payroll.run', aggregateType: 'pay_run', aggregateId: String(resolved.id || resolved.date || Date.now()), payload: resolved, businessDate: resolved.date, operationIdentity: !resolved.id }, () => new V2AppService(runner).runPayroll(resolved)); bumpDataVersion(); return r;
   },
   listPayRuns: async () => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1289,7 +1462,7 @@ export const api = {
   },
   createLocation: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'location.create', aggregateType: 'location', aggregateId: String(input.id || input.name), payload: input }, () => new V2AppService(runner).createLocation(input)); bumpDataVersion(); return r;
+    const r = await withSyncedMutation(runner, { commandType: 'location.create', aggregateType: 'location', aggregateId: String(input.id || input.name), payload: input, operationIdentity: !input.id }, () => new V2AppService(runner).createLocation(input)); bumpDataVersion(); return r;
   },
   archiveLocation: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1297,11 +1470,11 @@ export const api = {
   },
   transferLocationCash: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'location.transfer_cash', aggregateType: 'location', aggregateId: String(input.locationId || input.fromLocationId || Date.now()), payload: input, businessDate: input.date }, () => new V2AppService(runner).transferLocationCash(input)); bumpDataVersion(); return r;
+    const r = await withSyncedMutation(runner, { commandType: 'location.transfer_cash', aggregateType: 'location', aggregateId: String(input.locationId || input.fromLocationId || Date.now()), payload: input, businessDate: input.date, operationIdentity: true }, () => new V2AppService(runner).transferLocationCash(input)); bumpDataVersion(); return r;
   },
   transferLocationStock: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'location.transfer_stock', aggregateType: 'location', aggregateId: String(input.productId || input.fromLocationId || Date.now()), payload: input, businessDate: input.date }, () => new V2AppService(runner).transferLocationStock(input)); bumpDataVersion(); return r;
+    const r = await withSyncedMutation(runner, { commandType: 'location.transfer_stock', aggregateType: 'location', aggregateId: String(input.productId || input.fromLocationId || Date.now()), payload: input, businessDate: input.date, operationIdentity: true }, () => new V2AppService(runner).transferLocationStock(input)); bumpDataVersion(); return r;
   },
   listStockTransfers: async () => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1309,7 +1482,9 @@ export const api = {
   },
   upsertProduct: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'product.upsert', aggregateType: 'product', aggregateId: String(input.id || input.sku || input.name), payload: input }, () => new V2AppService(runner).upsertProduct(input)); bumpDataVersion(); return r;
+    const hasQuantity = input.openingQty != null || input.qty != null || input.locationId != null;
+    const resolved = hasQuantity ? await resolvedSharedLocation(runner, input, input.date || localTodayIso()) : { ...input };
+    const r = await withSyncedMutation(runner, { commandType: 'product.upsert', aggregateType: 'product', aggregateId: String(resolved.id || resolved.sku || resolved.name), payload: resolved, operationIdentity: !resolved.id }, () => new V2AppService(runner).upsertProduct(resolved)); bumpDataVersion(); return r;
   },
   archiveProduct: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1317,7 +1492,8 @@ export const api = {
   },
   adjustProductQty: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const r = await withSyncedMutation(runner, { commandType: 'product.adjust_qty', aggregateType: 'product', aggregateId: String(input.productId || input.id), payload: input, businessDate: input.date }, () => new V2AppService(runner).adjustProductQty(input)); bumpDataVersion(); return r;
+    const resolved = await resolvedSharedLocation(runner, input, input.date);
+    const r = await withSyncedMutation(runner, { commandType: 'product.adjust_qty', aggregateType: 'product', aggregateId: String(resolved.productId || resolved.id), payload: resolved, businessDate: resolved.date, operationIdentity: true }, () => new V2AppService(runner).adjustProductQty(resolved)); bumpDataVersion(); return r;
   },
   // Clears books and ledgers only; device preferences and AI credentials remain.
   clearAccountingData: async () => {
@@ -1425,12 +1601,12 @@ export const api = {
   updateDebtor: async (id: string, d: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'customer')) throw new Error('Customer not found');
-    return service.updateParty(id, d);
+    return withSyncedMutation(runner, { commandType: 'party.patch', aggregateType: 'party', aggregateId: id, payload: { id, patch: d } }, () => service.updateParty(id, d));
   },
   deleteDebtor: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'customer')) throw new Error('Customer not found');
-    return service.archiveParty(id);
+    return withSyncedMutation(runner, { commandType: 'party.archive', aggregateType: 'party', aggregateId: id, payload: { id } }, () => service.archiveParty(id));
   },
   getDebtorStatement: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
@@ -1469,7 +1645,7 @@ export const api = {
   createInvoice: (inv: any) => createTransaction('createInvoice', inv),
   updateInvoice: (id: string, inv: any) => mutateTransaction('updateInvoice', id, inv),
   deleteInvoice: (id: string) => mutateTransaction('deleteInvoice', id),
-  markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, input || {}),
+  markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, { ...(input || {}), date: input?.date || localTodayIso(), method: input?.method || 'cash' }),
   overdueInvoices: async () => (await api.listInvoices()).filter((invoice: any) => invoice.status !== 'paid' && invoice.dueDate && invoice.dueDate < localTodayIso()),
 
   // Receipts (money actually received)

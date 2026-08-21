@@ -5,6 +5,7 @@ import { V2_ACCOUNT_CODES } from '../types';
 import { mulMoney, round2 } from '../../money';
 import { localTodayIso } from '../../utils/dateValidation';
 import { qtyAtLocation, resolveWriteLocationId } from './locationDomainService';
+import { accountingRuntimeId as uid } from '../runtimeIds';
 
 type ActiveContext = { bookId: string; periodId: string };
 type ProductRow = {
@@ -46,7 +47,6 @@ export type PurchaseProductLine = { productId: string; qty: number; unitCost: nu
 export type SaleProductLine = { productId: string; qty: number };
 export type AdjustQtyInput = { productId: string; date: string; qtyDelta: number; notes?: string };
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const acct = (bookId: string, code: string) => `${bookId}:account:${code}`;
 
 function mapProduct(row: ProductRow): ProductRecord {

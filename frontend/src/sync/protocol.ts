@@ -9,12 +9,30 @@ export type SyncOperation = {
   clientCreatedAt: string; businessDate?: string;
 };
 export type SyncOutboxRow = SyncOperation & { status: SyncOperationStatus; attempts: number; nextRetryAt?: string; lastError?: string; acceptedBookSequence?: number; createdAt: string; updatedAt: string };
-export type SyncBookState = { bookId: string; bookEpoch: string; serverCursor: number; snapshotHash?: string; updatedAt: string };
+export type SyncBookState = {
+  bookId: string; bookEpoch: string; serverCursor: number; snapshotHash?: string;
+  projectionHash?: string; lastVerifiedAt?: string; epochNumber?: number;
+  epochStartSequence?: number; updatedAt: string;
+};
+export type CanonicalSyncOperation = SyncOperation & { bookSequence: number; aggregateRevision?: number; acceptedAt?: string };
+export type SyncSnapshot = {
+  snapshotId: string; bookId: string; bookEpoch: string; throughSequence: number;
+  schemaVersion: number; payload: unknown; payloadHash: string; checkpointHash: string;
+  /** Server-computed max aggregate revision at throughSequence, keyed by aggregateId. */
+  aggregateRevisions: Record<string, number>;
+  projectionHash?: string; createdAt: string;
+};
 
 export function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError('Sync payload must be JSON serializable');
+  const normalized = JSON.parse(serialized) as unknown;
+  const order = (item: unknown): string => {
+    if (item === null || typeof item !== 'object') return JSON.stringify(item);
+    if (Array.isArray(item)) return `[${item.map(order).join(',')}]`;
+    return `{${Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => `${JSON.stringify(key)}:${order(child)}`).join(',')}}`;
+  };
+  return order(normalized);
 }
 
 /** SHA-256 without a native dependency so the same envelope works in Expo and Jest. */

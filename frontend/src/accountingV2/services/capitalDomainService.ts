@@ -8,6 +8,8 @@ import { V2_ACCOUNT_CODES } from '../types';
 import { round2 } from '../../money';
 import type { AccountingPeriodPolicy } from '../config';
 import type { PartyDomainService } from './partyDomainService';
+import { requireLocation } from './locationDomainService';
+import { accountingRuntimeId } from '../runtimeIds';
 
 type AnyRecord = Record<string, any>;
 type PeriodRow = { id: string; start_date: string; end_date: string };
@@ -270,7 +272,7 @@ export class CapitalDomainService {
       const canonicalId = `${bookId}:opening:${target.id}`;
       if (total === 0) return { sourceId: live[0]?.id ?? canonicalId, alreadyPosted: false, journal: null };
       const occupied = await this.db.first('SELECT id FROM v2_sources WHERE id=?', [canonicalId]);
-      const sourceId = occupied ? `${canonicalId}:${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}` : canonicalId;
+      const sourceId = occupied ? `${canonicalId}:${accountingRuntimeId('replacement')}` : canonicalId;
       const source: any = { id: sourceId, bookId, type: 'opening_balance', date, metadata: { cash, inventory, otherAssets, assetBreakdown, accountsPayable, otherLiabilities, liabilityBreakdown: linkedLiabilityBreakdown, ownerCapital, retainedEarnings, date } };
       const lines: any[] = [];
       if (cash) lines.push({ accountId: `${bookId}:account:${V2_ACCOUNT_CODES.CASH}`, debit: cash, credit: 0 });
@@ -313,7 +315,7 @@ export class CapitalDomainService {
       : input.funding === 'liability' ? V2_ACCOUNT_CODES.OTHER_LIABILITIES
       : V2_ACCOUNT_CODES.CASH;
     const source: any = {
-      id: `manual_asset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: accountingRuntimeId('manual_asset'),
       bookId: context.bookId,
       type: 'manual_asset',
       date: input.date,
@@ -343,7 +345,7 @@ export class CapitalDomainService {
       : input.recognition === 'creditor' ? V2_ACCOUNT_CODES.INVENTORY
       : V2_ACCOUNT_CODES.CASH;
     const source: any = {
-      id: `manual_liability_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: accountingRuntimeId('manual_liability'),
       bookId: context.bookId,
       type: 'manual_liability',
       date: input.date,
