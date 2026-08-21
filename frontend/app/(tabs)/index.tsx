@@ -46,26 +46,29 @@ type WorkflowTile = {
 };
 
 const WORKFLOW_TILES: WorkflowTile[] = [
-  { key: "sales", label: "Sales", subtitle: "Record a sale", icon: "trending-up-outline", color: "#34D399", capability: "commerce", route: "/sales" },
-  { key: "purchases", label: "Purchases", subtitle: "Supplier bills", icon: "cart-outline", color: "#F59E0B", capability: "procurement", route: "/bills" },
-  { key: "payments", label: "Payments", subtitle: "Pay suppliers", icon: "card-outline", color: "#60A5FA", capability: "procurement", route: "/payments" },
-  { key: "expenses", label: "Expenses", subtitle: "Track spending", icon: "wallet-outline", color: "#F87171", capability: "core_ledger", route: "/expenses" },
-  { key: "stock", label: "Stock", subtitle: "Products and counts", icon: "cube-outline", color: "#2DD4BF", capability: "inventory", route: "/products" },
-  { key: "accounts", label: "Accounts", subtitle: "Customers and suppliers", icon: "people-outline", color: "#A78BFA", capability: "customers", route: "/suppliers" },
-  { key: "invoices", label: "Invoices", subtitle: "Bill customers", icon: "document-text-outline", color: "#38BDF8", capability: "invoicing", route: "/invoices" },
-  { key: "quotes", label: "Quotes", subtitle: "Prepare estimates", icon: "pricetag-outline", color: "#C084FC", capability: "invoicing", route: "/quotes" },
-  { key: "receipts", label: "Receipts", subtitle: "Record collections", icon: "receipt-outline", color: "#22D3EE", capability: "invoicing", route: "/receipts" },
-  { key: "delivery", label: "Delivery notes", subtitle: "Dispatch and returns", icon: "car-outline", color: "#FB923C", capability: "shipping_returns", route: "/delivery-notes" },
-  { key: "pos", label: "POS sessions", subtitle: "Open shop drawers", icon: "storefront-outline", color: "#FBBF24", capability: "multi_location", route: "/pos-sessions" },
+  { key: "purchases", label: "Purchases", subtitle: "", icon: "receipt-outline", color: "#34D399", capability: "procurement", route: "/bills" },
+  { key: "sales", label: "Sales", subtitle: "", icon: "trending-up-outline", color: "#FBBF24", capability: "commerce", route: "/sales" },
+  { key: "receipts", label: "Receipts", subtitle: "", icon: "arrow-down-outline", color: "#60A5FA", capability: "customers", route: "/receipts" },
+  { key: "payments", label: "Payments", subtitle: "", icon: "card-outline", color: "#F87171", capability: "procurement", route: "/payments" },
+  { key: "cashbook", label: "Cash Book", subtitle: "", icon: "swap-horizontal-outline", color: "#C084FC", capability: "cashbook", route: "/cashbook" },
+  { key: "invoices", label: "Invoices", subtitle: "", icon: "document-text-outline", color: "#38BDF8", capability: "invoicing", route: "/invoices" },
+  { key: "quotes", label: "Quotes", subtitle: "", icon: "pricetag-outline", color: "#FBBF24", capability: "invoicing", route: "/quotes" },
+  { key: "delivery", label: "Delivery Notes", subtitle: "", icon: "cube-outline", color: "#A7F3D0", capability: "shipping_returns", route: "/delivery-notes" },
+  { key: "expenses", label: "Expenses", subtitle: "", icon: "wallet-outline", color: "#F87171", capability: "core_ledger", route: "/expenses" },
+  { key: "stock", label: "Stock", subtitle: "", icon: "cube-outline", color: "#34D399", capability: "inventory", route: "/products" },
+  { key: "assets", label: "Assets & Liabilities", subtitle: "", icon: "pie-chart-outline", color: "#818CF8", capability: "core_ledger", route: "/assets" },
+  { key: "daybook", label: "Day Book", subtitle: "", icon: "book-outline", color: "#EC4899", capability: "core_ledger", route: "/daybook" },
+  { key: "reports", label: "Reports", subtitle: "", icon: "bar-chart-outline", color: "#FBBF24", capability: "reporting", route: "/reports" },
+  { key: "monthly-report", label: "Monthly Report", subtitle: "", icon: "calendar-outline", color: "#F97316", capability: "reporting", route: "/monthly-summary" },
+  { key: "ask-ai", label: "Ask AI", subtitle: "", icon: "sparkles-outline", color: "#A7F3D0", capability: "ai_assistant", route: "/ask" },
+  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: "mic-outline", color: "#A7F3D0", capability: "ai_assistant", route: "/voice" },
 ];
 
 function workflowTilesFor(settings: any): WorkflowTile[] {
   const hasCommerce = isCapabilityEnabled(settings, "commerce");
-  const hasCustomers = isCapabilityEnabled(settings, "customers");
   return WORKFLOW_TILES.filter((tile) => {
-    if (tile.key === "accounts") return hasCustomers || isCapabilityEnabled(settings, "procurement");
     if (tile.key === "sales") return hasCommerce;
-    if (tile.key === "receipts") return hasCustomers || isCapabilityEnabled(settings, "invoicing");
+    if (tile.key === "receipts") return isCapabilityEnabled(settings, "customers") || isCapabilityEnabled(settings, "invoicing");
     return isCapabilityEnabled(settings, tile.capability as any);
   });
 }
@@ -444,22 +447,16 @@ export default function Dashboard() {
               {stockEnabled ? <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} /> : null}
             </View>
 
-            {workflowTiles.length > 0 ? <Card style={styles.workflowCard} testID="home-workflow-shortcuts">
-              <View style={styles.workflowHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitleInline}>Your workflows</Text>
-                  <Text style={styles.workflowHint}>Shortcuts for the capabilities enabled in your workspace.</Text>
-                </View>
-                <Pressable accessibilityRole="button" accessibilityLabel="Open all business tools" onPress={() => router.push("/modules" as any)} style={styles.workflowMore}><Text style={styles.workflowMoreText}>More</Text><Ionicons name="chevron-forward" size={15} color={theme.color.brandPrimary} /></Pressable>
-              </View>
-              <View style={styles.workflowGrid}>
-                {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => router.push(tile.route as any)} style={({ pressed }) => [styles.workflowTile, pressed && { opacity: 0.82 }]}>
-                  <View style={[styles.workflowIcon, { backgroundColor: `${tile.color}20` }]}><Ionicons name={tile.icon as any} size={19} color={tile.color} /></View>
-                  <View style={styles.workflowCopy}><Text numberOfLines={1} style={styles.workflowTitle}>{tile.label}</Text><Text numberOfLines={1} style={styles.workflowSubtitle}>{tile.subtitle}</Text></View>
-                  <Ionicons name="chevron-forward" size={15} color={theme.color.muted} />
+            {workflowTiles.length > 0 ? <View testID="home-workflow-shortcuts">
+              <Text style={styles.quickWorkspaceTitle}>Quick Workspaces</Text>
+              <Text style={styles.quickWorkspaceHint}>Hold any tile to organize &amp; sort</Text>
+              <View style={styles.quickWorkspaceGrid}>
+                {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => router.push(tile.route as any)} style={({ pressed }) => [styles.quickWorkspaceTile, tile.key === "ai-assistant" && styles.quickWorkspaceTileFeatured, pressed && styles.quickWorkspaceTilePressed]}>
+                  <View style={[styles.quickWorkspaceIcon, { backgroundColor: tile.key === "ai-assistant" ? "rgba(255,255,255,0.24)" : "rgba(96, 96, 91, 0.52)" }]}><Ionicons name={tile.icon as any} size={25} color={tile.key === "ai-assistant" ? "#0b1110" : tile.color} /></View>
+                  <Text numberOfLines={2} style={[styles.quickWorkspaceLabel, tile.key === "ai-assistant" && styles.quickWorkspaceLabelFeatured]}>{tile.label}</Text>
                 </Pressable>)}
               </View>
-            </Card> : null}
+            </View> : null}
 
             {salesEnabled ? <Card style={{ marginTop: theme.spacing.lg }}>
               <Text style={styles.sectionTitleInline}>Sales Trend</Text>
@@ -570,16 +567,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfStrong: { borderTopWidth: 1, borderTopColor: theme.color.divider, marginTop: 4, paddingTop: 8 },
   pfLabel: { color: theme.color.onSurfaceTertiary, fontSize: 14 },
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
-  workflowCard: { marginTop: theme.spacing.md, marginBottom: theme.spacing.lg, padding: theme.spacing.md, borderRadius: theme.radius.lg, backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border },
-  workflowHeader: { flexDirection: "row", alignItems: "flex-start", marginBottom: theme.spacing.sm },
-  workflowHint: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: -7 },
-  workflowMore: { flexDirection: "row", alignItems: "center", gap: 2, paddingVertical: 4, paddingLeft: 8 },
-  workflowMoreText: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "800" },
-  workflowGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  workflowTile: { width: "48.5%", minHeight: 68, flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
-  workflowIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  workflowCopy: { flex: 1, minWidth: 0 },
-  workflowTitle: { color: theme.color.onSurface, fontSize: 12, fontWeight: "800" },
-  workflowSubtitle: { color: theme.color.muted, fontSize: 9.5, marginTop: 2 },
+  quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
+  quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
+  quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: theme.spacing.md },
+  quickWorkspaceTile: { width: "48.5%", minHeight: 145, borderRadius: theme.radius.lg, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between" },
+  quickWorkspaceTileFeatured: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  quickWorkspaceTilePressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  quickWorkspaceIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  quickWorkspaceLabel: { color: theme.color.onSurface, fontSize: 16, fontWeight: "700", marginTop: theme.spacing.md },
+  quickWorkspaceLabelFeatured: { color: theme.color.onBrandPrimary },
   organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
 }); }

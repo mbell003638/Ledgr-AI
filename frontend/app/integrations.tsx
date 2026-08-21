@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenHeader, Card } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -27,7 +27,6 @@ function parseCsv(text: string) {
 
 export default function IntegrationsScreen() {
   const theme = useTheme();
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [feed, setFeed] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
@@ -85,15 +84,6 @@ export default function IntegrationsScreen() {
           {busy ? <ActivityIndicator style={{ marginTop: 12 }} color={theme.color.brandPrimary} /> : null}
         </Card>
 
-        <Card style={{ padding: 16, marginBottom: 14 }} testID="self-host-sync-card">
-          <Text style={{ color: theme.color.brandPrimary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7 }}>Optional and user-owned</Text>
-          <Text style={{ color: theme.color.onSurface, fontSize: 19, fontWeight: '800', marginTop: 5 }}>Semantic self-host sync</Text>
-          <Text style={{ color: theme.color.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Use your own sync server for offline-first multi-device accounting. Ledgr synchronizes validated operations, preserves conflicts, and never synchronizes SQLite files directly.</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open self-host sync settings" testID="open-semantic-sync-settings" onPress={() => router.push('/sync-settings' as any)} style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: theme.color.brandPrimary }}>
-            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12, textAlign: 'center' }}>Open sync settings</Text>
-          </Pressable>
-          <Text style={{ color: theme.color.muted, fontSize: 10, lineHeight: 15, marginTop: 8 }}>Configure server access, device enrollment, push/pull, checkpoint verification, and conflict resolution from the dedicated sync workspace.</Text>
-        </Card>
 
         <Text style={{ color: theme.color.onSurface, fontSize: 17, fontWeight: '800', marginBottom: 8 }}>Configured locally</Text>
         {integrations.length ? integrations.map((item: any) => <Card key={item.id} style={{ padding: 12, marginBottom: 8 }}><Text style={{ color: theme.color.onSurface, fontWeight: '800' }}>{item.display_name}</Text><Text style={{ color: theme.color.muted, fontSize: 11, marginTop: 3 }}>{item.provider} · {item.kind} · {item.enabled ? 'Enabled' : 'Disabled'}</Text></Card>) : <Text style={{ color: theme.color.muted, fontSize: 12, marginBottom: 14 }}>No provider is configured yet.</Text>}

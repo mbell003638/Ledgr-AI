@@ -190,14 +190,15 @@ describe('V2 UI contracts', () => {
     expect(preferences).toContain("enabledCapabilities: selectedCapabilities");
   });
 
-  it('the dashboard stays focused on financial cards and location-aware summaries, leaving backup notices and workspace metrics out of Home', () => {
+  it('the dashboard keeps financial cards and the original Quick Workspace shortcuts without backup notices or workspace metrics', () => {
     const source = readApp('(tabs)/index.tsx');
     expect(source).not.toContain('Action needed');
     expect(source).not.toContain('Workspace metrics');
     expect(source).toContain('KpiTile label="Sales"');
     expect(source).toContain('KpiTile label="Purchases"');
     expect(source).toContain('locationId');
-    expect(source).not.toContain('Quick Workspaces');
+    expect(source).toContain('Quick Workspaces');
+    expect(source).toContain('Hold any tile to organize &amp; sort');
     expect(source).not.toContain('Featured tools');
     expect(source).not.toContain('ReorderableWorkspaceGrid');
   });
@@ -529,12 +530,13 @@ describe('V2 UI contracts', () => {
   it('exposes semantic self-host sync without removing local integrations', () => {
     const integrations = readApp('integrations.tsx');
     const syncSettings = readApp('sync-settings.tsx');
+    const advanced = readApp('advanced-settings.tsx');
+    const hostingCard = readSource('src/components/HostingModeCard.tsx');
     const syncService = readSource('src/accountingV2/services/selfHostedSyncService.ts');
     const apiFacade = readSource('src/api.ts');
-    expect(integrations).toContain('testID="self-host-sync-card"');
-    expect(integrations).toContain('Semantic self-host sync');
-    expect(integrations).toContain('testID="open-semantic-sync-settings"');
-    expect(integrations).toContain("router.push('/sync-settings'");
+    expect(integrations).not.toContain('testID="self-host-sync-card"');
+    expect(integrations).not.toContain('Semantic self-host sync');
+    expect(integrations).not.toContain('open-semantic-sync-settings');
     expect(integrations).toContain('Local CSV');
     expect(integrations).not.toContain('Save server');
     expect(integrations).not.toContain('Push local');
@@ -546,6 +548,9 @@ describe('V2 UI contracts', () => {
     expect(syncService).toContain('SecureStore');
     expect(apiFacade).toContain('configureSync');
     expect(apiFacade).toContain('resolveSyncConflict');
+    expect(advanced).toContain('HostingModeCard');
+    expect(hostingCard).toContain('testID="open-private-sync"');
+    expect(hostingCard).toContain('testID="open-backup-recovery"');
   });
 
   it('keeps Quick Actions as the center control and keeps workspace metrics out of Home', () => {
@@ -591,11 +596,14 @@ describe('hosting mode and Backup & Recovery UI contracts', () => {
     expect(onboarding).toContain('private sync later');
   });
 
-  it('shows hosting status and direct recovery/private-sync routes from Settings', () => {
+  it('keeps hosting status and recovery/private-sync routes under Advanced Settings', () => {
     const settings = readApp('(tabs)/settings.tsx');
+    const advanced = readApp('advanced-settings.tsx');
     const card = readSource('src/components/HostingModeCard.tsx');
     const hosting = readSource('src/utils/hostingMode.ts');
-    expect(settings).toContain('<HostingModeCard />');
+    expect(settings).not.toContain('<HostingModeCard />');
+    expect(settings).not.toContain('Self-hosted Sync');
+    expect(advanced).toContain('<HostingModeCard />');
     expect(card).toContain('testID="hosting-mode-card"');
     expect(card).toContain('testID="open-backup-recovery"');
     expect(card).toContain('testID="open-private-sync"');
@@ -676,8 +684,8 @@ describe('roadmap phases 7–8 sync UX contracts', () => {
     const server = readSource('../sync-server/src/server.ts');
     expect(settings).toContain('testID="sync-enrollment-code"');
     expect(settings).toContain('testID="redeem-sync-enrollment-code"');
-    expect(admin).toContain('Generate 15-minute code');
-    expect(admin).toContain('Share this code once');
+    expect(admin).toContain('Create QR invitation');
+    expect(admin).toContain('Invitation code behind the QR');
     expect(recovery).toContain('redeemSyncEnrollmentCode');
     expect(server).toContain('/v1/sync/enrollment-codes');
     expect(server).toContain('/v1/sync/enroll-code/redeem');
@@ -735,7 +743,36 @@ describe('beginner-first private sync UI contracts', () => {
     expect(settings).toContain('Simple setup');
     expect(settings).toContain('Choose a path');
     expect(settings).toContain('I already have a server — show sign-in fields');
-    expect(guide).toContain('Think of your business book like a notebook.');
+    expect(guide).toContain('Your business can keep the server.');
     expect(guide).toContain('Go to Private sync');
+  });
+});
+
+
+describe('QR private sync onboarding contracts', () => {
+  it('keeps QR invitations short-lived, token-free, and validated', () => {
+    const admin = readApp('sync-admin.tsx');
+    const scanner = readApp('sync-scan.tsx');
+    const settings = readApp('sync-settings.tsx');
+    const qr = readSource('src/sync/qrEnrollment.ts');
+    const qrCode = readSource('src/components/SyncQrCode.tsx');
+    const layout = readApp('_layout.tsx');
+    const guide = readApp('private-sync-guide.tsx');
+    expect(admin).toContain('Create QR invitation');
+    expect(admin).toContain('Scan to join this business');
+    expect(admin).toContain('never contains this administrator’s access token');
+    expect(scanner).toContain('Scan invitation');
+    expect(scanner).toContain('CameraView');
+    expect(scanner).toContain('Paste an invitation');
+    expect(settings).toContain('testID="scan-sync-invitation"');
+    expect(settings).toContain('decodeLedgrSyncQrInvite');
+    expect(qr).toContain("LEDGR_SYNC_QR_KIND = 'ledgr.sync.enrollment'");
+    expect(qr).toContain('This Ledgr invitation has expired');
+    expect(qrCode).toContain('QRCode.toString');
+    expect(layout).toContain('name="sync-scan"');
+    expect(guide).toContain('Office computer');
+    expect(guide).toContain('VPS');
+    expect(guide).toContain('NAS');
+    expect(guide).toContain('Docker Compose v2');
   });
 });

@@ -180,6 +180,7 @@ function ThemedStack() {
           <Stack.Protected guard={canOpen("core_ledger")}>
             <Stack.Screen name="backup-recovery" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
+            <Stack.Screen name="sync-scan" options={{ presentation: "card" }} />
             <Stack.Screen name="private-sync-migration" options={{ presentation: "card" }} />
             <Stack.Screen name="private-sync-guide" options={{ presentation: "card" }} />
             <Stack.Screen name="sync-admin" options={{ presentation: "card" }} />
