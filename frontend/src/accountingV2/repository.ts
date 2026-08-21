@@ -2,6 +2,7 @@ import type { V2Account, V2Book, V2JournalEntry, V2Party, V2Source } from './typ
 import { defaultAccounts } from './schema';
 import type { SqlRunner } from '../db/schema';
 import { round2 } from '../money';
+import { accountingRuntimeId as uid } from './runtimeIds';
 import { validatePostingInvariants } from './invariants';
 
 export type V2DateRange = { from?: string; to?: string };
@@ -12,7 +13,6 @@ export type V2ReconciliationError = {
   journalId?: string;
 };
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 function sourceLocationId(source: V2Source): string | null {
   const fromField = String(source.locationId || '').trim();

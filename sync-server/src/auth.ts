@@ -43,7 +43,8 @@ export class AnonymousAuthenticator implements Authenticator {
 
 export class BookMembershipAuthorizer implements Authorizer {
   authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", _deviceId?: string): void {
-    const allowed = principal.books.has("*") || principal.books.has(bookId) || principal.scopes.has("sync:*") || principal.scopes.has(`sync:${action}`);
+    const bookClaim = principal.books.has("*") || principal.books.has(bookId);
+    const allowed = principal.scopes.has("sync:*") || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
     if (!allowed) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
   }
 }

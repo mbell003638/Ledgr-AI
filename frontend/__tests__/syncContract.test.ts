@@ -34,6 +34,7 @@ async function setup(id: string) {
 describe('semantic operation contract', () => {
   it('uses the same deterministic SHA-256 payload hash as the server', () => {
     expect(hashPayload({ b: 2, a: 1 })).toBe('43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777');
+    expect(hashPayload({ b: undefined, a: [undefined, 1] })).toBe(hashPayload({ a: [null, 1] }));
   });
 
   it('keeps source, journal and lines atomic when a retried operation fails', async () => {

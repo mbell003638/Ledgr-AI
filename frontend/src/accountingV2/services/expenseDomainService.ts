@@ -8,6 +8,7 @@ import { round2 } from '../../money';
 import type { PartyDomainService } from './partyDomainService';
 import { ProductDomainService } from './productDomainService';
 import { resolveWriteLocationId } from './locationDomainService';
+import { accountingRuntimeId } from '../runtimeIds';
 
 type AnyRecord = Record<string, any>;
 const methods = new Set<V2PaymentMethod>(['cash', 'bank', 'card', 'mobile']);
@@ -152,7 +153,7 @@ export class ExpenseDomainService {
         : paymentMethod === 'mobile' ? V2_ACCOUNT_CODES.MOBILE
         : V2_ACCOUNT_CODES.CASH;
       const source: any = {
-        id: 'commission_payment_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+        id: accountingRuntimeId('commission_payment'),
         bookId: c.bookId,
         type: 'commission_payment',
         date: input.date,

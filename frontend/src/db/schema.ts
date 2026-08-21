@@ -17,7 +17,7 @@ export const COLLECTIONS = [
   'debtors', 'invoices', 'quotes', 'receipts', 'creditNotes', 'debitNotes', 'deliveryNotes', 'cashEntries',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 14;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -150,7 +150,7 @@ export function schemaSql(): string {
 
     CREATE TABLE IF NOT EXISTS sync_profiles (
       id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, device_id TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', book_epoch TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0,
-      recovery_required INTEGER NOT NULL DEFAULT 0, recovery_reason TEXT, protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      recovery_required INTEGER NOT NULL DEFAULT 0, recovery_reason TEXT, last_sync_at TEXT, oidc_issuer TEXT, oidc_client_id TEXT, oidc_scopes TEXT, protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_device_state (
       book_id TEXT NOT NULL, device_id TEXT NOT NULL, book_epoch TEXT NOT NULL,
@@ -169,11 +169,13 @@ export function schemaSql(): string {
     );
     CREATE TABLE IF NOT EXISTS sync_applied_ops (
       op_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, book_sequence INTEGER NOT NULL,
-      applied_at TEXT NOT NULL, UNIQUE(book_id, book_sequence)
+      applied_at TEXT NOT NULL, aggregate_revision INTEGER, apply_mode TEXT NOT NULL DEFAULT 'replayed', resolution_conflict_id TEXT,
+      UNIQUE(book_id, book_sequence)
     );
     CREATE TABLE IF NOT EXISTS sync_book_state (
       book_id TEXT PRIMARY KEY, book_epoch TEXT NOT NULL, server_cursor INTEGER NOT NULL DEFAULT 0,
-      snapshot_hash TEXT, updated_at TEXT NOT NULL
+      snapshot_hash TEXT, projection_hash TEXT, last_verified_at TEXT, epoch_number INTEGER,
+      epoch_start_sequence INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_entity_revisions (
       book_id TEXT NOT NULL, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL,
@@ -182,9 +184,20 @@ export function schemaSql(): string {
     );
     CREATE TABLE IF NOT EXISTS sync_conflicts (
       conflict_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, op_id TEXT NOT NULL,
-      canonical_op_id TEXT, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+      canonical_op_id TEXT, aggregate_id TEXT, command_type TEXT, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
       base_payload TEXT, local_payload TEXT NOT NULL, canonical_payload TEXT,
-      created_at TEXT NOT NULL, resolved_at TEXT
+      remote_operation TEXT, blocking_book_sequence INTEGER, canonical_revision INTEGER, resolution_type TEXT,
+      resolution_op_id TEXT, created_at TEXT NOT NULL, resolved_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sync_bootstrap_history (
+      snapshot_id TEXT PRIMARY KEY, book_id TEXT NOT NULL, book_epoch TEXT NOT NULL,
+      through_sequence INTEGER NOT NULL, payload_hash TEXT NOT NULL, checkpoint_hash TEXT NOT NULL,
+      projection_hash TEXT, installed_at TEXT NOT NULL, replay_operation_ids TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE IF NOT EXISTS sync_conflict_resolutions (
+      resolution_id TEXT PRIMARY KEY, conflict_id TEXT NOT NULL, book_id TEXT NOT NULL,
+      resolution_type TEXT NOT NULL, resolution_op_id TEXT, status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_tombstones (
       book_id TEXT NOT NULL, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL,
@@ -225,6 +238,24 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await addColumnIfMissing(db, 'sync_profiles', 'book_epoch', "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(db, 'sync_profiles', 'recovery_required', 'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing(db, 'sync_profiles', 'recovery_reason', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'last_sync_at', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'oidc_issuer', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'oidc_client_id', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'oidc_scopes', 'TEXT');
+  await addColumnIfMissing(db, 'sync_applied_ops', 'aggregate_revision', 'INTEGER');
+  await addColumnIfMissing(db, 'sync_applied_ops', 'apply_mode', "TEXT NOT NULL DEFAULT 'replayed'");
+  await addColumnIfMissing(db, 'sync_applied_ops', 'resolution_conflict_id', 'TEXT');
+  await addColumnIfMissing(db, 'sync_book_state', 'projection_hash', 'TEXT');
+  await addColumnIfMissing(db, 'sync_book_state', 'last_verified_at', 'TEXT');
+  await addColumnIfMissing(db, 'sync_book_state', 'epoch_number', 'INTEGER');
+  await addColumnIfMissing(db, 'sync_book_state', 'epoch_start_sequence', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing(db, 'sync_conflicts', 'aggregate_id', 'TEXT');
+  await addColumnIfMissing(db, 'sync_conflicts', 'command_type', 'TEXT');
+  await addColumnIfMissing(db, 'sync_conflicts', 'remote_operation', 'TEXT');
+  await addColumnIfMissing(db, 'sync_conflicts', 'blocking_book_sequence', 'INTEGER');
+  await addColumnIfMissing(db, 'sync_conflicts', 'canonical_revision', 'INTEGER');
+  await addColumnIfMissing(db, 'sync_conflicts', 'resolution_type', 'TEXT');
+  await addColumnIfMissing(db, 'sync_conflicts', 'resolution_op_id', 'TEXT');
   const personaColumns = await db.all<{ name: string }>('PRAGMA table_info(v2_personas)');
   if (!personaColumns.some((column) => column.name === 'active')) {
     await db.exec('ALTER TABLE v2_personas ADD COLUMN active INTEGER NOT NULL DEFAULT 0;');

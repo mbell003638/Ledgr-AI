@@ -4,8 +4,8 @@ import { isOptionalModuleEnabled, requireOptionalModule } from '../optionalModul
 import { V2_ACCOUNT_CODES, type V2JournalEntry, type V2Source } from '../types';
 import { round2 } from '../../money';
 import { resolveWriteLocationId } from './locationDomainService';
+import { accountingRuntimeId as uid } from '../runtimeIds';
 
-const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const cents = round2;
 
 type EmployeeRow = {

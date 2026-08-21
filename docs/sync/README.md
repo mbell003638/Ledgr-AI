@@ -8,13 +8,19 @@ the API and storage can evolve as long as these invariants remain true.
 
 ## Current implementation status
 
-The current `codex-sol` slice adds the numbered SQLite sync tables, operation
-envelope, atomic outbox helper, replay metadata, and a self-hosted server with
-PostgreSQL persistence, OIDC JWT verification, book membership authorization,
-and deterministic accounting-arbitration hooks. The in-memory server remains
-available for tests only. Existing accounting commands and full domain conflict
-resolution still need command-bus rollout before production accounting use;
-follow `sync-server/README.md` for required deployment controls.
+The current `codex-sol` working tree implements the local sync schema,
+deterministic semantic command/outbox boundary, client coordinator, conflict
+inbox and audited correction flow, validated snapshot recovery, server-
+authoritative epochs, PostgreSQL persistence, OIDC JWT verification, explicit
+device enrollment/revocation, stateful accounting arbitration, and the
+self-hosted deployment/runbook foundation. The in-memory server remains for
+development and automated tests only.
+
+Implementation is not the same as production acceptance. The validation suite
+has intentionally not yet been run for this work cycle, and a real operator
+must still record the PostgreSQL/OIDC multi-device, encrypted backup/restore,
+key-rotation, monitoring, and disaster-recovery evidence described in
+`sync-server/deploy/RUNBOOK.md` before onboarding production data.
 
 ## Current boundary
 
@@ -151,9 +157,17 @@ are not retried forever.
 ## Bootstrap and recovery
 
 Enrollment must identify one Business Account/book and one `bookEpoch`.
-Existing data is reconciled before the first snapshot is accepted. A new device
-downloads a validated snapshot, installs it atomically, then replays any local
-outbox created after snapshot creation.
+When the server epoch is empty, enrollment records only the server-issued epoch
+and keeps sync disabled. The user must review the self-hosted destination and
+explicitly choose **Publish initial snapshot** before any local accounting data
+is uploaded or sync is enabled. A new device joining a populated epoch downloads
+a validated snapshot, installs it atomically, then replays any local outbox
+created after snapshot creation.
+
+The server derives each snapshot's aggregate-revision map from canonical events
+in the active epoch at or before its checkpoint; a client-supplied map is never
+trusted. Snapshot installation restores those revisions atomically with the
+one-book projection so later edits compare against the correct canonical base.
 
 An owner reset, restore or delete advances the epoch. Devices holding the old
 epoch must stop pushing and pulling until re-enrolled; stale outbox entries are
