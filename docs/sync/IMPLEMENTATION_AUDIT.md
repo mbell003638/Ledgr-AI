@@ -77,6 +77,8 @@ These checks validate the source-level UI contracts. They do not replace device-
 | Sync-server build and tests | **36 tests passed** | Includes protocol, arbitration, revisions, snapshots, epochs, devices, conflicts, and recovery tests. |
 | Deployment asset checks | **Passed statically** | Required files exist, shell scripts pass `bash -n`, and migration markers are present. Docker was unavailable in the validation environment, so Compose/build execution was not claimed. |
 | `git diff --check` | **Passed** | Working tree content has no whitespace errors. |
+| Sync endpoint documentation | **Corrected** | Pull documentation now matches the implementation: `bookId`, required `deviceId`, `after`, and `limit`. |
+| Automated release gate | **Added** | `.github/workflows/sync-release-gate.yml` runs frontend/server checks and Docker Compose/image validation on GitHub-hosted runners. |
 
 ## Remaining evidence gates
 
@@ -84,7 +86,7 @@ The following remain deliberately unclaimed:
 
 1. Real PostgreSQL/OIDC two-device convergence, token rotation, membership changes,
    revocation, stale epochs, projection reconciliation, and crash/restart exercises.
-2. Docker image build and Compose validation in an environment with Docker.
+2. The new GitHub Actions release gate must execute successfully in a Docker-enabled runner to close the Compose/image evidence gate.
 3. Encrypted backup restoration, monitoring alerts, key rotation,
    incident-response, and disaster-recovery records in the production topology.
 4. Physical or isolated-device verification of the Android enrollment layout,

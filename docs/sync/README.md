@@ -134,8 +134,9 @@ may notify the app that data is available, but it must not replace pull.
 
 `POST /v1/sync/push` accepts an ordered batch and returns, for each operation,
 one of `accepted`, `duplicate`, `conflict`, `rejected` or `retryable`, together
-with the canonical sequence or conflict ID. `GET /v1/sync/pull?book_id=...&after=...`
-returns canonical events after the last committed cursor. A batch is applied
+with the canonical sequence or conflict ID. `GET /v1/sync/pull?bookId=...&deviceId=...&after=...&limit=...`
+returns canonical events after the last committed cursor. The `deviceId` is required
+so the server can enforce explicit enrollment, expiry, and revocation. A batch is applied
 only after all dependency IDs are present; dependency gaps are retried rather
 than partially applied.
 
