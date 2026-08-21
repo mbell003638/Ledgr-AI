@@ -16,8 +16,11 @@ device enrollment/revocation, stateful accounting arbitration, and the
 self-hosted deployment/runbook foundation. The in-memory server remains for
 development and automated tests only.
 
-Implementation is not the same as production acceptance. The validation suite
-has intentionally not yet been run for this work cycle, and a real operator
+Implementation is not the same as production acceptance. The available local
+validation gate has passed: frontend tests, TypeScript, lint, Expo Doctor,
+dependency audit, sync-server build/tests, migration markers, deployment asset
+checks, shell syntax, and diff checks. Docker Compose/image validation could not
+run because Docker is unavailable in the validation environment. A real operator
 must still record the PostgreSQL/OIDC multi-device, encrypted backup/restore,
 key-rotation, monitoring, and disaster-recovery evidence described in
 `sync-server/deploy/RUNBOOK.md` before onboarding production data.

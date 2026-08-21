@@ -305,22 +305,23 @@ sequenceDiagram
 
 ### What is left
 
-- **Validation is intentionally pending user approval.** No test, typecheck,
-  lint, build, Expo Doctor, audit, Docker, or restore-drill command has been run
-  for this work cycle. Historical pass counts are not evidence for this tree.
-- After approval, run the complete Phase 10 automated gate: frontend unit and
-  integration tests, TypeScript, lint, Expo Doctor, dependency audit, server
-  build/tests, migration checks, and focused two-device, conflict, snapshot,
-  epoch, authorization, and crash/retry suites.
-- Production acceptance additionally requires operator-controlled evidence from
-  a real PostgreSQL/OIDC staging topology: two physical or isolated devices,
-  TLS/DNS, membership and token rotation, revocation, stale epochs, projection
+- The available local Phase 10 gate has now been run on the `codex-sol` tree:
+  frontend tests (83 suites, 613 tests), TypeScript, lint, Expo Doctor (18/18),
+  dependency audit, sync-server build/tests (36 tests), migration markers,
+  deployment asset checks, shell syntax, and `git diff --check` all passed.
+- Docker image and Compose validation could not run because Docker is not
+  installed in the validation environment. This remains an environment/tooling
+  gate, not an application-code claim.
+- Production acceptance still requires operator-controlled evidence from a real
+  PostgreSQL/OIDC staging topology: two physical or isolated devices, TLS/DNS,
+  membership and token rotation, revocation, stale epochs, projection
   reconciliation, encrypted backup/restore, alerting, key rotation, and
   disaster-recovery drills. Code cannot truthfully pre-complete those external
   operational records.
-- Commit and push remain pending until the approved validation gate completes
-  successfully.
+- Physical-device verification remains required for Android enrollment layout,
+  keyboard avoidance, and screen-size behavior.
 
 Therefore, all planned implementation phases are represented in the working
-tree, while Phase 10 validation and the real-environment portion of Phase 9
-remain unclaimed until their evidence is produced.
+ tree and the available local validation gate has passed. The remaining Phase 9
+ and Phase 10 items are external environment and production-acceptance evidence,
+not identified missing application code in this tree.
