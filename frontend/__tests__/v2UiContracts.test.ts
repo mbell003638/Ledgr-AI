@@ -622,6 +622,9 @@ describe('hosting mode and Backup & Recovery UI contracts', () => {
     expect(backup).toContain('Encrypted backup');
     expect(backup).toContain('Restore dry-run');
     expect(backup).toContain('No data has been changed');
+    expect(backup).toContain('testID="backup-recovery-header"');
+    expect(backup).toContain('style={styles.scrollView}');
+    expect(backup).not.toContain('<View style={styles.header}>');
   });
 
   it('requires integrity and recent encrypted backup before private sync activation', () => {

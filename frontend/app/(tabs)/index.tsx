@@ -452,7 +452,7 @@ export default function Dashboard() {
               <Text style={styles.quickWorkspaceHint}>Hold any tile to organize &amp; sort</Text>
               <View style={styles.quickWorkspaceGrid}>
                 {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => router.push(tile.route as any)} style={({ pressed }) => [styles.quickWorkspaceTile, tile.key === "ai-assistant" && styles.quickWorkspaceTileFeatured, pressed && styles.quickWorkspaceTilePressed]}>
-                  <View style={[styles.quickWorkspaceIcon, { backgroundColor: tile.key === "ai-assistant" ? "rgba(255,255,255,0.24)" : "rgba(96, 96, 91, 0.52)" }]}><Ionicons name={tile.icon as any} size={25} color={tile.key === "ai-assistant" ? "#0b1110" : tile.color} /></View>
+                  <View style={[styles.quickWorkspaceIcon, { backgroundColor: tile.key === "ai-assistant" ? "rgba(255,255,255,0.24)" : "rgba(96, 96, 91, 0.52)" }]}><Ionicons name={tile.icon as any} size={22} color={tile.key === "ai-assistant" ? "#0b1110" : tile.color} /></View>
                   <Text numberOfLines={2} style={[styles.quickWorkspaceLabel, tile.key === "ai-assistant" && styles.quickWorkspaceLabelFeatured]}>{tile.label}</Text>
                 </Pressable>)}
               </View>
@@ -569,12 +569,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
   quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
   quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
-  quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: theme.spacing.md },
-  quickWorkspaceTile: { width: "48.5%", minHeight: 145, borderRadius: theme.radius.lg, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between" },
+  quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
+  quickWorkspaceTile: { width: "48.5%", height: 115, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between" },
   quickWorkspaceTileFeatured: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   quickWorkspaceTilePressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
-  quickWorkspaceIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  quickWorkspaceLabel: { color: theme.color.onSurface, fontSize: 16, fontWeight: "700", marginTop: theme.spacing.md },
+  quickWorkspaceIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  quickWorkspaceLabel: { color: theme.color.onSurface, fontSize: 14, fontWeight: "700", marginTop: 12 },
   quickWorkspaceLabelFeatured: { color: theme.color.onBrandPrimary },
   organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
 }); }
