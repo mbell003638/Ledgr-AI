@@ -20,7 +20,8 @@ set +a
 [ -n "${OIDC_ISSUER:-}" ] || fail "OIDC_ISSUER is required."
 [ -n "${OIDC_AUDIENCE:-}" ] || fail "OIDC_AUDIENCE is required."
 [ -n "${OIDC_JWKS_URL:-}" ] || fail "OIDC_JWKS_URL is required."
-[ "${CORS_ORIGIN:-}" != "*" ] || fail "CORS_ORIGIN must be explicit."
+[ -n "${CORS_ORIGIN:-}" ] || fail "CORS_ORIGIN is required."
+[ "${CORS_ORIGIN}" != "*" ] || fail "CORS_ORIGIN must be explicit."
 case "${MODE}" in
   single-node) docker compose config --quiet ;;
   advanced) grep -Eiq '(^|[?&])sslmode=(require|verify-ca|verify-full)($|&)' secrets/database_url || fail "Advanced DATABASE_URL must declare TLS sslmode."; docker compose -f docker-compose.advanced.yml config --quiet ;;
