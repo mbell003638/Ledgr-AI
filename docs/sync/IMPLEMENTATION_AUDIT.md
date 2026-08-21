@@ -41,6 +41,32 @@ claim. Tests and operational drills have not yet been run for this work cycle.
 | Security | Production fails closed without PostgreSQL, HTTPS OIDC/JWKS, explicit CORS, and metrics token; the client implements Authorization Code + PKCE and refresh rotation in SecureStore; every non-enrollment sync/admin call requires a current, non-revoked, non-expired device. |
 | Operations | TLS proxy, rate/body limits, protected readiness/metrics, redacted logs, secret files, encrypted backup/restore scripts, automatic restored-count/hash reconciliation, and production runbook are present. |
 
+## UI gap investigation and scoped fixes applied
+
+The attached device screenshots exposed three sync-plan UI issues: the self-hosted sync title and subtitle wrapped into narrow fragments on the target portrait layout; the software keyboard could cover the manual access-token field and enrollment controls; and Self-hosted Sync was exposed both in main Settings and inside Advanced Settings → System & Workflows.
+
+Only the sync-plan UI scope was changed in this work cycle:
+
+| Screenshot finding | Scoped implementation change | Evidence |
+|---|---|---|
+| Self-hosted Sync header wraps awkwardly | Added a sync-specific compact header style with constrained title sizing, reduced header padding, and a flexible header layout that preserves the business-account pill area. | `frontend/app/sync-settings.tsx` |
+| Keyboard covers manual access-token controls | Wrapped the form in `KeyboardAvoidingView`, enabled Android height behavior and iOS padding behavior, added keyboard dismissal on drag, increased bottom scroll padding, and scrolls to the form end when the manual-token field receives focus. | `frontend/app/sync-settings.tsx` |
+| Duplicate Self-hosted Sync navigation entries | Removed the redundant main Settings tile while retaining the single sync entry in Advanced Settings → System & Workflows and retaining the separate conflict inbox entry. | `frontend/app/(tabs)/settings.tsx`, `frontend/app/advanced-settings.tsx` |
+| UI regressions were not contract-tested | Added a focused UI contract suite covering keyboard avoidance, compact header styles, single-entry navigation, and conflict-inbox retention. | `frontend/__tests__/syncUiContracts.test.ts` |
+
+The implementation intentionally does not change sync protocol, accounting commands, server arbitration, snapshot/recovery logic, device lifecycle, or deployment behavior. It is limited to the screenshot-confirmed navigation and enrollment-form presentation issues required by the codex-sol sync plan.
+
+## UI-scope validation
+
+| Check | Result |
+|---|---:|
+| Focused sync UI contract test | **Passed: 2 tests** |
+| Frontend TypeScript check | **Passed** |
+| Frontend lint with zero warnings | **Passed** |
+| `git diff --check` | **Passed** |
+
+These checks validate the source-level UI contracts. They do not replace device-level verification on the target Android screen, especially keyboard behavior across different IME sizes and screen widths.
+
 ## Remaining evidence gates
 
 The following are deliberately not marked passed:
