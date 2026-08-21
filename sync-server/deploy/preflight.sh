@@ -12,15 +12,17 @@ free_kb="$(df -Pk . | awk 'NR==2 {print $4}')"
 [ -s secrets/metrics_token ] || fail "Missing secrets/metrics_token."
 [ -s secrets/database_url ] || fail "Missing secrets/database_url."
 chmod 600 secrets/metrics_token secrets/database_url
-set -a
-# shellcheck disable=SC1091
-. ./.env
-set +a
-[ -n "${SYNC_DOMAIN:-}" ] || fail "SYNC_DOMAIN is required."
-[ -n "${OIDC_ISSUER:-}" ] || fail "OIDC_ISSUER is required."
-[ -n "${OIDC_AUDIENCE:-}" ] || fail "OIDC_AUDIENCE is required."
-[ -n "${OIDC_JWKS_URL:-}" ] || fail "OIDC_JWKS_URL is required."
-[ -n "${CORS_ORIGIN:-}" ] || fail "CORS_ORIGIN is required."
+read_env() { sed -n "s/^${1}=\(.*\)$/\1/p" .env | tail -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+SYNC_DOMAIN="$(read_env SYNC_DOMAIN)"
+OIDC_ISSUER="$(read_env OIDC_ISSUER)"
+OIDC_AUDIENCE="$(read_env OIDC_AUDIENCE)"
+OIDC_JWKS_URL="$(read_env OIDC_JWKS_URL)"
+CORS_ORIGIN="$(read_env CORS_ORIGIN)"
+[ -n "${SYNC_DOMAIN}" ] || fail "SYNC_DOMAIN is required."
+[ -n "${OIDC_ISSUER}" ] || fail "OIDC_ISSUER is required."
+[ -n "${OIDC_AUDIENCE}" ] || fail "OIDC_AUDIENCE is required."
+[ -n "${OIDC_JWKS_URL}" ] || fail "OIDC_JWKS_URL is required."
+[ -n "${CORS_ORIGIN}" ] || fail "CORS_ORIGIN is required."
 [ "${CORS_ORIGIN}" != "*" ] || fail "CORS_ORIGIN must be explicit."
 case "${MODE}" in
   single-node) docker compose config --quiet ;;
