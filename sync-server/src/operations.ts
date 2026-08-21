@@ -63,6 +63,8 @@ export class SyncMetrics {
 
   set(name: "ready" | "inflight_requests", value: number): void { this.gauges.set(name, value); }
 
+  get(name: "ready" | "inflight_requests"): number { return this.gauges.get(name) ?? 0; }
+
   render(): string {
     const lines: string[] = [];
     for (const [name, value] of [...this.counters.entries()].sort(([a], [b]) => a.localeCompare(b))) lines.push(`# TYPE ledgr_sync_${name} counter`, `ledgr_sync_${name} ${value}`);

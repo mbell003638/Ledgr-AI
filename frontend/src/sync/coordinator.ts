@@ -38,6 +38,9 @@ export type SyncProfile = {
   recoveryRequired: boolean;
   recoveryReason?: string;
   lastSyncAt?: string;
+  lastSyncAttemptAt?: string;
+  lastSyncError?: string;
+  lastSyncErrorAt?: string;
   oidcIssuer?: string;
   oidcClientId?: string;
   oidcScopes?: string;
@@ -68,6 +71,9 @@ export type SyncStatus = {
   projectionHash?: string;
   lastVerifiedAt?: string;
   lastSyncAt?: string;
+  lastSyncAttemptAt?: string;
+  lastSyncError?: string;
+  lastSyncErrorAt?: string;
   oidcIssuer?: string;
   oidcClientId?: string;
   oidcScopes?: string;
@@ -111,6 +117,9 @@ export async function getSyncProfile(db: SqlRunner, bookId: string): Promise<Syn
     recoveryRequired: Boolean(row.recovery_required),
     ...(row.recovery_reason ? { recoveryReason: String(row.recovery_reason) } : {}),
     ...(row.last_sync_at ? { lastSyncAt: String(row.last_sync_at) } : {}),
+    ...(row.last_sync_attempt_at ? { lastSyncAttemptAt: String(row.last_sync_attempt_at) } : {}),
+    ...(row.last_sync_error ? { lastSyncError: String(row.last_sync_error) } : {}),
+    ...(row.last_sync_error_at ? { lastSyncErrorAt: String(row.last_sync_error_at) } : {}),
     ...(row.oidc_issuer ? { oidcIssuer: String(row.oidc_issuer) } : {}),
     ...(row.oidc_client_id ? { oidcClientId: String(row.oidc_client_id) } : {}),
     ...(row.oidc_scopes ? { oidcScopes: String(row.oidc_scopes) } : {}),
@@ -171,7 +180,7 @@ export async function getSyncStatus(db: SqlRunner, bookId: string): Promise<Sync
   const errorRow = await db.first<{ last_error?: string }>("SELECT last_error FROM sync_outbox WHERE book_id=? AND last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 1", [bookId]);
   const conflictRow = await db.first<{ count: number }>("SELECT COUNT(*) AS count FROM sync_conflicts WHERE book_id=? AND status='open'", [bookId]);
   return {
-    enabled: Boolean(profile?.enabled), configured: Boolean(profile), ...(profile ? { serverUrl: profile.serverUrl, userId: profile.userId, deviceId: profile.deviceId, bookEpoch: profile.bookEpoch, ...(profile.lastSyncAt ? { lastSyncAt: profile.lastSyncAt } : {}), ...(profile.oidcIssuer ? { oidcIssuer: profile.oidcIssuer } : {}), ...(profile.oidcClientId ? { oidcClientId: profile.oidcClientId } : {}), ...(profile.oidcScopes ? { oidcScopes: profile.oidcScopes } : {}) } : {}),
+    enabled: Boolean(profile?.enabled), configured: Boolean(profile), ...(profile ? { serverUrl: profile.serverUrl, userId: profile.userId, deviceId: profile.deviceId, bookEpoch: profile.bookEpoch, ...(profile.lastSyncAt ? { lastSyncAt: profile.lastSyncAt } : {}), ...(profile.lastSyncAttemptAt ? { lastSyncAttemptAt: profile.lastSyncAttemptAt } : {}), ...(profile.lastSyncError ? { lastSyncError: profile.lastSyncError } : {}), ...(profile.lastSyncErrorAt ? { lastSyncErrorAt: profile.lastSyncErrorAt } : {}), ...(profile.oidcIssuer ? { oidcIssuer: profile.oidcIssuer } : {}), ...(profile.oidcClientId ? { oidcClientId: profile.oidcClientId } : {}), ...(profile.oidcScopes ? { oidcScopes: profile.oidcScopes } : {}) } : {}),
     ...(state ? { cursor: state.serverCursor, checkpointHash: state.snapshotHash, projectionHash: state.projectionHash, lastVerifiedAt: state.lastVerifiedAt } : {}),
     pending: Number(pendingRow?.count || 0), retryable: Number(pendingRow?.retryable || 0), conflicts: Number(conflictRow?.count || 0),
     ...(errorRow?.last_error ? { lastError: errorRow.last_error } : {}),
@@ -347,7 +356,12 @@ const activeSyncRuns = new Map<string, Promise<SyncStatus>>();
 export async function syncNow(db: SqlRunner, bookId: string, applyRemote?: RemoteOperationApplier): Promise<SyncStatus> {
   const existing = activeSyncRuns.get(bookId);
   if (existing) return existing;
-  const run = syncNowSerialized(db, bookId, applyRemote).finally(() => {
+  const run = syncNowSerialized(db, bookId, applyRemote).catch(async (error: any) => {
+    const message = String(error?.message || 'Sync failed').slice(0, 1000);
+    const timestamp = now();
+    await db.run('UPDATE sync_profiles SET last_sync_error=?,last_sync_error_at=?,updated_at=? WHERE id=?', [message, timestamp, timestamp, bookId]).catch(() => undefined);
+    throw error;
+  }).finally(() => {
     if (activeSyncRuns.get(bookId) === run) activeSyncRuns.delete(bookId);
   });
   activeSyncRuns.set(bookId, run);
@@ -359,6 +373,8 @@ async function syncNowSerialized(db: SqlRunner, bookId: string, applyRemote?: Re
   if (!profile?.enabled) return getSyncStatus(db, bookId);
   if (profile.recoveryRequired) throw new Error(profile.recoveryReason || 'Sync recovery requires explicit re-enrollment');
   const token = await getValidSyncAccessToken(profile);
+  const attemptAt = now();
+  await db.run('UPDATE sync_profiles SET last_sync_attempt_at=?,last_sync_error=NULL,last_sync_error_at=NULL,updated_at=? WHERE id=?', [attemptAt, attemptAt, bookId]);
 
   // Pull first so the local projection observes the server order before this
   // device pushes operations that may depend on the current canonical state.
@@ -415,7 +431,7 @@ async function syncNowSerialized(db: SqlRunner, bookId: string, applyRemote?: Re
   // applied before the durable cursor is considered complete.
   await pullUntilCurrent(db, profile, bookId, token, state, applyRemote);
   const completedAt = now();
-  await db.run('UPDATE sync_profiles SET last_sync_at=?,updated_at=? WHERE id=?', [completedAt, completedAt, bookId]);
+  await db.run('UPDATE sync_profiles SET last_sync_at=?,last_sync_error=NULL,last_sync_error_at=NULL,updated_at=? WHERE id=?', [completedAt, completedAt, bookId]);
   return getSyncStatus(db, bookId);
 }
 

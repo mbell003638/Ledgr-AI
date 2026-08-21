@@ -1,6 +1,5 @@
+# Advanced profile: use an external PostgreSQL service and keep it private/VPN-only.
 SYNC_DOMAIN=sync.example.com
-POSTGRES_DB=ledgr_sync
-POSTGRES_USER=ledgr_sync
 OIDC_ISSUER=https://identity.example.com/
 OIDC_AUDIENCE=ledgr-sync
 OIDC_JWKS_URL=https://identity.example.com/.well-known/jwks.json
@@ -9,5 +8,4 @@ RATE_LIMIT_REQUESTS=300
 RATE_LIMIT_WINDOW_MS=60000
 MAX_BODY_BYTES=26214400
 DEVICE_ENROLLMENT_TTL_DAYS=90
-# Written atomically by deploy/backup.sh and read read-only by the sync service.
 BACKUP_STATUS_FILE=/backups/status.json

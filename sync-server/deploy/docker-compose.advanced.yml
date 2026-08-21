@@ -1,23 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ledgr_sync}
-      POSTGRES_USER: ${POSTGRES_USER:-ledgr_sync}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets:
-      - postgres_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - backups:/backups
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks: [private]
-
   sync:
     build:
       context: ..
@@ -38,15 +19,10 @@ services:
       DEVICE_ENROLLMENT_TTL_DAYS: ${DEVICE_ENROLLMENT_TTL_DAYS:-90}
       BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-/backups/status.json}
       TRUST_PROXY: "true"
-    secrets:
-      - database_url
-      - metrics_token
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks: [private, edge]
+    secrets: [database_url, metrics_token]
     volumes:
       - backups:/backups:ro
+    networks: [private, edge]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -75,14 +51,11 @@ networks:
   edge:
 
 volumes:
-  postgres_data:
   backups:
   caddy_data:
   caddy_config:
 
 secrets:
-  postgres_password:
-    file: ./secrets/postgres_password
   database_url:
     file: ./secrets/database_url
   metrics_token:

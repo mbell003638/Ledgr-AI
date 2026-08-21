@@ -18,7 +18,7 @@ export const COLLECTIONS = [
   'locations', 'posSessions', 'stockTransfers',
 ] as const;
 export type CollectionName = typeof COLLECTIONS[number];
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const V2_TABLES = [
   'v2_books', 'v2_personas', 'v2_parties', 'v2_accounts', 'v2_periods', 'v2_sources',
@@ -329,7 +329,7 @@ export function schemaSql(): string {
 
     CREATE TABLE IF NOT EXISTS sync_profiles (
       id TEXT PRIMARY KEY, server_url TEXT NOT NULL, user_id TEXT, device_id TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', book_epoch TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0,
-      recovery_required INTEGER NOT NULL DEFAULT 0, recovery_reason TEXT, last_sync_at TEXT, oidc_issuer TEXT, oidc_client_id TEXT, oidc_scopes TEXT, protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      recovery_required INTEGER NOT NULL DEFAULT 0, recovery_reason TEXT, last_sync_at TEXT, last_sync_attempt_at TEXT, last_sync_error TEXT, last_sync_error_at TEXT, oidc_issuer TEXT, oidc_client_id TEXT, oidc_scopes TEXT, protocol_version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sync_device_state (
       book_id TEXT NOT NULL, device_id TEXT NOT NULL, book_epoch TEXT NOT NULL,
@@ -417,6 +417,9 @@ export async function initSchema(db: SqlRunner): Promise<void> {
   await addColumnIfMissing(db, 'sync_profiles', 'recovery_required', 'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing(db, 'sync_profiles', 'recovery_reason', 'TEXT');
   await addColumnIfMissing(db, 'sync_profiles', 'last_sync_at', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'last_sync_attempt_at', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'last_sync_error', 'TEXT');
+  await addColumnIfMissing(db, 'sync_profiles', 'last_sync_error_at', 'TEXT');
   await addColumnIfMissing(db, 'sync_profiles', 'oidc_issuer', 'TEXT');
   await addColumnIfMissing(db, 'sync_profiles', 'oidc_client_id', 'TEXT');
   await addColumnIfMissing(db, 'sync_profiles', 'oidc_scopes', 'TEXT');

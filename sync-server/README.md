@@ -75,7 +75,7 @@ the client.
 ## HTTP surface
 
 - `GET /healthz`
-- `GET /readyz` and `GET /metrics` with the operations bearer token
+- `GET /readyz`, `GET /metrics`, and `GET /v1/ops/health` with the operations bearer token
 - `GET /v1/capabilities`
 - `POST /v1/sync/enroll`
 - `POST /v1/sync/push`
@@ -85,6 +85,11 @@ the client.
 - `POST /v1/sync/epoch/advance`
 - `GET /v1/sync/devices`
 - `POST /v1/sync/devices/revoke`
+- `POST /v1/sync/devices/rename`
+- `GET /v1/sync/memberships`
+- `POST /v1/sync/memberships`
+- `POST /v1/sync/memberships/remove`
+- `POST /v1/sync/memberships/locations`
 - `GET /v1/sync/conflicts`
 - `POST /v1/sync/conflicts/resolve`
 
@@ -103,6 +108,9 @@ The `deploy/` directory contains:
   canonical counts and hashes are automatically compared after restoration.
 - `RUNBOOK.md` for rotation, monitoring, incident response, upgrades,
   rollback, and the evidence required before production onboarding.
+- `install.sh` for fail-before-start single-node setup, `upgrade.sh` for a
+  verified-backup-gated upgrade, and `docker-compose.advanced.yml` for the
+  external-PostgreSQL profile. `deploy/README.md` explains when to use each.
 
 Create `deploy/secrets/postgres_password`, `deploy/secrets/database_url`,
 and `deploy/secrets/metrics_token` outside version control, copy

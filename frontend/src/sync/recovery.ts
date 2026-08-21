@@ -10,7 +10,8 @@ const now = () => new Date().toISOString();
 let savepointSequence = 0;
 
 export type SyncEpochState = { bookId: string; bookEpoch: string; epochNumber: number; epochStartSequence: number; currentSequence: number };
-export type SyncDevice = { deviceId: string; subject?: string; enrolledAt?: string; expiresAt?: string; lastSeenAt?: string; revokedAt?: string | null; current?: boolean };
+export type SyncDevice = { deviceId: string; subject?: string; enrolledAt?: string; expiresAt?: string; lastSeenAt?: string; revokedAt?: string | null; current?: boolean; displayName?: string; platform?: string };
+export type SyncMembership = { bookId: string; subject: string; role: 'owner' | 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor'; locationIds: string[]; updatedAt: string };
 export type ProjectionVerification = { bookId: string; bookEpoch: string; throughSequence: number; serverEventHash: string; eventHashMatches: boolean; projectionHashMatches?: boolean; verifiedAt: string };
 export type SnapshotInstaller = (db: SqlRunner, payload: unknown, snapshot: SyncSnapshot) => Promise<void>;
 export type SnapshotReplayer = (db: SqlRunner, operation: SyncOperation) => Promise<void>;
@@ -193,7 +194,34 @@ export async function advanceSyncEpoch(db: SqlRunner, bookId: string, reason: st
 export async function listSyncDevices(db: SqlRunner, bookId: string): Promise<SyncDevice[]> {
   const profile = await getSyncProfile(db, bookId); if (!profile) return [];
   const result = await request(profile, `/v1/sync/devices?bookId=${encodeURIComponent(bookId)}&deviceId=${encodeURIComponent(profile.deviceId)}`, { method: 'GET' });
-  return (Array.isArray(result.devices) ? result.devices : []).map((item: any) => ({ deviceId: String(item.deviceId), subject: item.subject, enrolledAt: item.enrolledAt, expiresAt: item.expiresAt, lastSeenAt: item.lastSeenAt, revokedAt: item.revokedAt == null ? null : String(item.revokedAt), current: String(item.deviceId) === profile.deviceId }));
+  return (Array.isArray(result.devices) ? result.devices : []).map((item: any) => ({ deviceId: String(item.deviceId), subject: item.subject, enrolledAt: item.enrolledAt, expiresAt: item.expiresAt, lastSeenAt: item.lastSeenAt, revokedAt: item.revokedAt == null ? null : String(item.revokedAt), ...(item.displayName ? { displayName: String(item.displayName) } : {}), ...(item.platform ? { platform: String(item.platform) } : {}), current: String(item.deviceId) === profile.deviceId }));
+}
+
+export async function renameSyncDevice(db: SqlRunner, bookId: string, targetDeviceId: string, displayName: string, platform?: string): Promise<void> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Sync is not configured');
+  await request(profile, '/v1/sync/devices/rename', { method: 'POST', body: JSON.stringify({ bookId, deviceId: targetDeviceId, callerDeviceId: profile.deviceId, displayName, ...(platform ? { platform } : {}) }) });
+}
+
+export async function listSyncMemberships(db: SqlRunner, bookId: string): Promise<SyncMembership[]> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) return [];
+  const result = await request(profile, `/v1/sync/memberships?bookId=${encodeURIComponent(bookId)}&deviceId=${encodeURIComponent(profile.deviceId)}`, { method: 'GET' });
+  return (Array.isArray(result.memberships) ? result.memberships : []).map((item: any) => ({ bookId: String(item.bookId || bookId), subject: String(item.subject), role: item.role, locationIds: Array.isArray(item.locationIds) ? item.locationIds.map(String) : [], updatedAt: String(item.updatedAt) }));
+}
+
+export async function upsertSyncMembership(db: SqlRunner, bookId: string, subject: string, role: SyncMembership['role']): Promise<SyncMembership> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Sync is not configured');
+  const result = await request(profile, '/v1/sync/memberships', { method: 'POST', body: JSON.stringify({ bookId, deviceId: profile.deviceId, subject, role }) });
+  return { ...(result.membership as SyncMembership), bookId, subject, role, locationIds: Array.isArray(result.membership?.locationIds) ? result.membership.locationIds.map(String) : [], updatedAt: String(result.membership?.updatedAt || now()) };
+}
+
+export async function removeSyncMembership(db: SqlRunner, bookId: string, subject: string): Promise<void> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Sync is not configured');
+  await request(profile, '/v1/sync/memberships/remove', { method: 'POST', body: JSON.stringify({ bookId, deviceId: profile.deviceId, subject }) });
+}
+
+export async function setSyncMembershipLocations(db: SqlRunner, bookId: string, subject: string, locationIds: string[]): Promise<void> {
+  const profile = await getSyncProfile(db, bookId); if (!profile) throw new Error('Sync is not configured');
+  await request(profile, '/v1/sync/memberships/locations', { method: 'POST', body: JSON.stringify({ bookId, deviceId: profile.deviceId, subject, locationIds }) });
 }
 
 export async function revokeSyncDevice(db: SqlRunner, bookId: string, targetDeviceId: string): Promise<void> {

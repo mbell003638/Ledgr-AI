@@ -27,7 +27,9 @@ manifest="${target}.manifest.age"
 temporary_manifest="$(mktemp "${BACKUP_DIR}/.ledgr-sync-${stamp}.XXXXXX.manifest")"
 temporary_manifest_encrypted="${manifest}.tmp"
 temporary_manifest_checksum="${manifest}.sha256.tmp"
-trap 'rm -f "${temporary_dump}" "${temporary_encrypted}" "${temporary_checksum}" "${temporary_manifest}" "${temporary_manifest_encrypted}" "${temporary_manifest_checksum}"' EXIT
+status_file="${BACKUP_STATUS_FILE:-${BACKUP_DIR}/status.json}"
+temporary_status="${status_file}.tmp"
+trap 'rm -f "${temporary_dump}" "${temporary_encrypted}" "${temporary_checksum}" "${temporary_manifest}" "${temporary_manifest_encrypted}" "${temporary_manifest_checksum}" "${temporary_status}"' EXIT
 umask 077
 pg_dump --format=custom --no-owner --no-acl --file="${temporary_dump}" --dbname="${POSTGRES_DB}" --username="${POSTGRES_USER}"
 pg_restore --list "${temporary_dump}" >/dev/null
@@ -40,4 +42,9 @@ sha256sum "${target}" | awk '{print $1}' > "${temporary_checksum}"
 mv "${temporary_checksum}" "${target}.sha256"
 sha256sum "${manifest}" | awk '{print $1}' > "${temporary_manifest_checksum}"
 mv "${temporary_manifest_checksum}" "${manifest}.sha256"
+mkdir -p "$(dirname "${status_file}")"
+cat > "${temporary_status}" <<EOF
+{"status":"healthy","lastSuccessAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","verifiedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","backupFile":"$(basename "${target}")"}
+EOF
+mv "${temporary_status}" "${status_file}"
 echo "Encrypted backup and reconciliation manifest written to ${target}"

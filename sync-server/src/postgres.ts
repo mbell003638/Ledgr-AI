@@ -10,7 +10,8 @@ import { AggregateRevisionMap, BookEpochState, CheckpointVerification, Checkpoin
 export type PgResult<T> = { rows: T[] };
 export type PgClient = { query<T = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<PgResult<T>>; release(): void };
 export type PgPool = { query<T = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<PgResult<T>>; connect(): Promise<PgClient> };
-export type SyncDeviceRecord = { bookId: string; deviceId: string; subject: string; enrolledEpoch: string; enrolledAt: string; expiresAt: string; lastSeenAt?: string; revokedAt?: string; revocationReason?: string };
+export type SyncDeviceRecord = { bookId: string; deviceId: string; subject: string; enrolledEpoch: string; enrolledAt: string; expiresAt: string; lastSeenAt?: string; revokedAt?: string; revocationReason?: string; displayName?: string; platform?: string };
+export type SyncMembershipRecord = { bookId: string; subject: string; role: 'owner' | 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor'; locationIds: string[]; updatedAt: string };
 
 /** PostgreSQL membership and epoch-scoped device authorization. */
 export class PostgresBookAuthorizer implements Authorizer {
@@ -57,7 +58,7 @@ export class PostgresBookAuthorizer implements Authorizer {
   async listDevices(principal: SyncPrincipal, bookId: string): Promise<SyncDeviceRecord[]> {
     const role = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, principal.subject])).rows[0]?.role;
     if (!principal.scopes.has("sync:device-admin") && !principal.scopes.has("sync:*") && role !== "owner" && role !== "admin") throw new AuthorizationError("device administration permission is required");
-    return (await this.pool.query<any>("SELECT book_id,device_id,subject,enrolled_epoch,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason FROM sync_devices WHERE book_id=$1 ORDER BY enrolled_at", [bookId])).rows.map((row) => ({ bookId: row.book_id, deviceId: row.device_id, subject: row.subject, enrolledEpoch: row.enrolled_epoch, enrolledAt: new Date(row.enrolled_at).toISOString(), expiresAt: new Date(row.expires_at).toISOString(), ...(row.last_seen_at ? { lastSeenAt: new Date(row.last_seen_at).toISOString() } : {}), ...(row.revoked_at ? { revokedAt: new Date(row.revoked_at).toISOString() } : {}), ...(row.revocation_reason ? { revocationReason: row.revocation_reason } : {}) }));
+    return (await this.pool.query<any>("SELECT book_id,device_id,subject,enrolled_epoch,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,display_name,platform FROM sync_devices WHERE book_id=$1 ORDER BY enrolled_at", [bookId])).rows.map((row) => ({ bookId: row.book_id, deviceId: row.device_id, subject: row.subject, enrolledEpoch: row.enrolled_epoch, enrolledAt: new Date(row.enrolled_at).toISOString(), expiresAt: new Date(row.expires_at).toISOString(), ...(row.last_seen_at ? { lastSeenAt: new Date(row.last_seen_at).toISOString() } : {}), ...(row.revoked_at ? { revokedAt: new Date(row.revoked_at).toISOString() } : {}), ...(row.revocation_reason ? { revocationReason: row.revocation_reason } : {}), ...(row.display_name ? { displayName: row.display_name } : {}), ...(row.platform ? { platform: row.platform } : {}) }));
   }
 
   async revokeDevice(principal: SyncPrincipal, bookId: string, deviceId: string, reason = "operator_revoked"): Promise<void> {
@@ -65,6 +66,67 @@ export class PostgresBookAuthorizer implements Authorizer {
     if (!principal.scopes.has("sync:device-admin") && !principal.scopes.has("sync:*") && role !== "owner" && role !== "admin") throw new AuthorizationError("device administration permission is required");
     const result = await this.pool.query<{ device_id: string }>("UPDATE sync_devices SET revoked_at=now(),revocation_reason=$3 WHERE book_id=$1 AND device_id=$2 RETURNING device_id", [bookId, deviceId, reason]);
     if (!result.rows.length) throw new AuthorizationError(`device ${deviceId} is not registered for book ${bookId}`);
+  }
+
+  private async authorizeAdministration(principal: SyncPrincipal, bookId: string): Promise<void> {
+    if (principal.scopes.has("sync:*") || principal.scopes.has("sync:device-admin") || principal.scopes.has("sync:book-admin")) return;
+    const role = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, principal.subject])).rows[0]?.role;
+    if (role !== "owner" && role !== "admin") throw new AuthorizationError("book administration permission is required");
+  }
+
+  async renameDevice(principal: SyncPrincipal, bookId: string, deviceId: string, displayName: string, platform?: string): Promise<void> {
+    await this.authorizeAdministration(principal, bookId);
+    if (!displayName.trim() || displayName.length > 120) throw new AuthorizationError("device name is invalid");
+    const result = await this.pool.query("UPDATE sync_devices SET display_name=$3,platform=COALESCE($4,platform) WHERE book_id=$1 AND device_id=$2 RETURNING device_id", [bookId, deviceId, displayName.trim(), platform?.trim() || null]);
+    if (!result.rows.length) throw new AuthorizationError(`device ${deviceId} is not registered for book ${bookId}`);
+  }
+
+  async listMemberships(principal: SyncPrincipal, bookId: string): Promise<SyncMembershipRecord[]> {
+    await this.authorizeAdministration(principal, bookId);
+    const rows = (await this.pool.query<any>(`SELECT m.book_id,m.subject,m.role,m.updated_at,COALESCE(array_agg(l.location_id) FILTER (WHERE l.location_id IS NOT NULL),'{}') AS location_ids FROM sync_memberships m LEFT JOIN sync_membership_locations l ON l.book_id=m.book_id AND l.subject=m.subject WHERE m.book_id=$1 GROUP BY m.book_id,m.subject,m.role,m.updated_at ORDER BY m.subject`, [bookId])).rows;
+    return rows.map((row) => ({ bookId: row.book_id, subject: row.subject, role: row.role, locationIds: Array.isArray(row.location_ids) ? row.location_ids.map(String) : [], updatedAt: new Date(row.updated_at).toISOString() }));
+  }
+
+  async upsertMembership(principal: SyncPrincipal, bookId: string, subject: string, role: SyncMembershipRecord['role']): Promise<SyncMembershipRecord> {
+    await this.authorizeAdministration(principal, bookId);
+    if (!subject.trim()) throw new AuthorizationError("member subject is required");
+    if (role === 'owner' && principal.scopes.has('sync:*') === false) {
+      const current = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, principal.subject])).rows[0]?.role;
+      if (current !== 'owner') throw new AuthorizationError("only the book owner can assign ownership");
+    }
+    const row = (await this.pool.query<any>("INSERT INTO sync_memberships(book_id,subject,role,updated_at) VALUES($1,$2,$3,now()) ON CONFLICT(book_id,subject) DO UPDATE SET role=EXCLUDED.role,updated_at=now() RETURNING book_id,subject,role,updated_at", [bookId, subject.trim(), role])).rows[0];
+    return { bookId: row.book_id, subject: row.subject, role: row.role, locationIds: [], updatedAt: new Date(row.updated_at).toISOString() };
+  }
+
+  async removeMembership(principal: SyncPrincipal, bookId: string, subject: string): Promise<void> {
+    await this.authorizeAdministration(principal, bookId);
+    const current = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, subject])).rows[0]?.role;
+    if (!current) return;
+    if (current === 'owner') throw new AuthorizationError("the book owner cannot be removed");
+    await this.pool.query("DELETE FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, subject]);
+  }
+
+  async setMembershipLocations(principal: SyncPrincipal, bookId: string, subject: string, locationIds: string[]): Promise<void> {
+    await this.authorizeAdministration(principal, bookId);
+    const member = (await this.pool.query("SELECT 1 FROM sync_memberships WHERE book_id=$1 AND subject=$2", [bookId, subject])).rows[0];
+    if (!member) throw new AuthorizationError("member must be assigned a role before location access");
+    const normalized = [...new Set(locationIds.map((value) => String(value).trim()).filter(Boolean))].slice(0, 500);
+    const client = await this.pool.connect();
+    try { await client.query('BEGIN'); await client.query("DELETE FROM sync_membership_locations WHERE book_id=$1 AND subject=$2", [bookId, subject]); for (const locationId of normalized) await client.query("INSERT INTO sync_membership_locations(book_id,subject,location_id) VALUES($1,$2,$3)", [bookId, subject, locationId]); await client.query('COMMIT'); }
+    catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    finally { client.release(); }
+  }
+
+  async authorizeOperation(principal: SyncPrincipal, operation: SyncOperation): Promise<void> {
+    if (principal.scopes.has('sync:*') || principal.scopes.has('sync:book-admin')) return;
+    const role = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [operation.bookId, principal.subject])).rows[0]?.role;
+    if (role === 'owner' || role === 'admin') return;
+    const locationIds = operationLocationIds(operation.payload);
+    if (!locationIds.length) return;
+    const rows = (await this.pool.query<{ location_id: string }>("SELECT location_id FROM sync_membership_locations WHERE book_id=$1 AND subject=$2 AND location_id=ANY($3::text[])", [operation.bookId, principal.subject, locationIds])).rows;
+    const allowed = new Set(rows.map((row) => row.location_id));
+    const denied = locationIds.find((locationId) => !allowed.has(locationId));
+    if (denied) throw new AuthorizationError(`principal is not authorized for location ${denied}`);
   }
 
   async authorizeBookAdmin(principal: SyncPrincipal, bookId: string, capability: "epoch" | "snapshot"): Promise<void> {
@@ -83,6 +145,20 @@ type ConflictRow = { conflict_id: string | number; book_id: string; book_epoch: 
 const jsonValue = <T>(value: T | string | null): T | null => typeof value === "string" ? JSON.parse(value) as T : value;
 function event(row: EventRow): CanonicalEvent { const operation = jsonValue<SyncOperation>(row.operation); if (!operation) throw new Error("canonical event operation is missing"); return { ...operation, aggregateRevision: Number(row.aggregate_revision), bookSequence: Number(row.book_sequence), acceptedAt: new Date(row.accepted_at).toISOString() }; }
 function epochState(bookId: string, row: BookRow): BookEpochState { return { bookId, bookEpoch: row.book_epoch, epochNumber: Number(row.epoch_number), epochStartSequence: Number(row.start_sequence || 1), currentSequence: Number(row.next_sequence) - 1, startedAt: new Date(row.epoch_started_at).toISOString() }; }
+function operationLocationIds(value: unknown): string[] {
+  const found = new Set<string>();
+  const visit = (item: unknown) => {
+    if (!item || typeof item !== 'object') return;
+    if (Array.isArray(item)) { item.forEach(visit); return; }
+    for (const [key, nested] of Object.entries(item as Record<string, unknown>)) {
+      if ((key === 'locationId' || key === 'location_id') && typeof nested === 'string' && nested.trim()) found.add(nested.trim());
+      else if (nested && typeof nested === 'object') visit(nested);
+    }
+  };
+  visit(value);
+  return [...found];
+}
+
 function aggregateRevisionMap(value: AggregateRevisionMap | string): AggregateRevisionMap {
   const parsed: unknown = typeof value === "string" ? JSON.parse(value) : value;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("snapshot aggregate revisions are malformed");

@@ -1,4 +1,5 @@
 import { createServer } from "./server.js";
+import { readFile } from "node:fs/promises";
 import { MemoryEventStore } from "./store.js";
 import { OidcAuthenticator } from "./auth.js";
 import { PostgresBookAuthorizer, PostgresEventStore, runSyncMigrations, type PgPool } from "./postgres.js";
@@ -58,6 +59,17 @@ const server = createServer(store, {
   maxBodyBytes: integerEnv("MAX_BODY_BYTES", 25 * 1024 * 1024, 1024, 100 * 1024 * 1024),
   readiness: async () => {
     if (pool) await pool.query("SELECT 1");
+  },
+  health: async () => {
+    if (!pool) return { status: 'unhealthy', database: { status: 'not_configured' }, backup: { status: 'not_configured' } };
+    await pool.query('SELECT 1');
+    let backup: Record<string, unknown> = { status: 'unknown', message: 'Set BACKUP_STATUS_FILE after installing the encrypted backup job' };
+    const backupStatusFile = process.env.BACKUP_STATUS_FILE?.trim();
+    if (backupStatusFile) {
+      try { const parsed = JSON.parse(await readFile(backupStatusFile, 'utf8')) as Record<string, unknown>; backup = { status: parsed.status === 'healthy' ? 'healthy' : 'degraded', lastSuccessAt: parsed.lastSuccessAt, verifiedAt: parsed.verifiedAt, ageHours: parsed.ageHours }; }
+      catch { backup = { status: 'degraded', message: 'Backup status file is missing or invalid' }; }
+    }
+    return { status: 'healthy', database: { status: 'healthy', provider: 'postgresql' }, backup, identity: { status: issuer ? 'configured' : 'not_configured' }, storage: { status: 'managed_by_host' } };
   },
 });
 server.listen(port, host, () => console.log(JSON.stringify({ level: "info", event: "server_started", host, port, production: isProduction })));

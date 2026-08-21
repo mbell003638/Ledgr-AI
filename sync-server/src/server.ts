@@ -77,10 +77,18 @@ function requireScope(principal: SyncPrincipal, ...scopes: string[]): void {
   if (!principal.scopes.has("sync:*") && !scopes.some((scope) => principal.scopes.has(scope))) throw new AuthorizationError(`one of these scopes is required: ${scopes.join(", ")}`);
 }
 
+type SyncRole = "owner" | "admin" | "accountant" | "editor" | "viewer" | "auditor";
+
 type DeviceAdministration = Authorizer & {
   enrollDevice?: (principal: SyncPrincipal, bookId: string, deviceId: string) => Promise<unknown>;
   listDevices?: (principal: SyncPrincipal, bookId: string) => Promise<unknown[]>;
   revokeDevice?: (principal: SyncPrincipal, bookId: string, deviceId: string, reason?: string) => Promise<void>;
+  renameDevice?: (principal: SyncPrincipal, bookId: string, deviceId: string, displayName: string, platform?: string) => Promise<void>;
+  listMemberships?: (principal: SyncPrincipal, bookId: string) => Promise<unknown[]>;
+  upsertMembership?: (principal: SyncPrincipal, bookId: string, subject: string, role: SyncRole) => Promise<unknown>;
+  removeMembership?: (principal: SyncPrincipal, bookId: string, subject: string) => Promise<void>;
+  setMembershipLocations?: (principal: SyncPrincipal, bookId: string, subject: string, locationIds: string[]) => Promise<void>;
+  authorizeOperation?: (principal: SyncPrincipal, operation: SyncOperation) => Promise<void>;
   authorizeBookAdmin?: (principal: SyncPrincipal, bookId: string, capability: "epoch" | "snapshot") => Promise<void>;
 };
 
@@ -98,6 +106,7 @@ export type ServerOptions = {
   operationsToken?: string;
   maxBodyBytes?: number;
   trustProxy?: boolean;
+  health?: () => Promise<Record<string, unknown>>;
 };
 
 type PushItemResult = { opId: string; status: "accepted" | "duplicate" | "conflict" | "rejected" | "retryable"; bookSequence?: number; conflictId?: string; message?: string };
@@ -155,6 +164,16 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
       if (request.method === "GET" && url.pathname === "/metrics") {
         requireOperationsToken(request, options.operationsToken);
         text(response, 200, metrics.render(), "text/plain; version=0.0.4; charset=utf-8");
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/v1/ops/health") {
+        requireOperationsToken(request, options.operationsToken);
+        let dependencies: Record<string, unknown> = { status: 'not_configured' };
+        try { dependencies = await options.health?.() || dependencies; } catch (error) { dependencies = { status: 'unhealthy', message: error instanceof Error ? error.message : 'dependency check failed' }; }
+        let ready = metrics.get('ready') === 1;
+        if (!ready) { try { await options.readiness?.(); metrics.set('ready', 1); ready = true; } catch { metrics.set('ready', 0); } }
+        const status = ready && dependencies.status !== 'unhealthy' ? 'healthy' : 'degraded';
+        json(response, status === 'healthy' ? 200 : 503, { status, at: new Date().toISOString(), liveness: { status: 'healthy' }, readiness: { status: ready ? 'ready' : 'not_ready' }, sync: { status: 'healthy', metrics: metrics.render() }, dependencies });
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
@@ -258,6 +277,71 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
         return;
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/sync/devices/rename") {
+        if (!devices.renameDevice) throw new ProtocolError("device renaming is unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const bookId = requiredString(input.bookId, "bookId", 120);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const callerDeviceId = requiredString(input.callerDeviceId, "callerDeviceId", 120);
+        const displayName = requiredString(input.displayName, "displayName", 120);
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "push", callerDeviceId);
+        await devices.renameDevice(principal, bookId, deviceId, displayName, typeof input.platform === "string" ? input.platform : undefined);
+        json(response, 200, { renamed: true, bookId, deviceId, displayName });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/sync/memberships") {
+        if (!devices.listMemberships) throw new ProtocolError("membership administration is unavailable", 501);
+        const bookId = requiredString(url.searchParams.get("bookId"), "bookId", 120);
+        const deviceId = requiredString(url.searchParams.get("deviceId"), "deviceId", 120);
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "pull", deviceId);
+        json(response, 200, { memberships: await devices.listMemberships(principal, bookId) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sync/memberships") {
+        if (!devices.upsertMembership) throw new ProtocolError("membership administration is unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const bookId = requiredString(input.bookId, "bookId", 120);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const subject = requiredString(input.subject, "subject", 200);
+        const role = requiredString(input.role, "role", 30);
+        if (!["owner", "admin", "accountant", "editor", "viewer", "auditor"].includes(role)) throw new ProtocolError("role is invalid");
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "push", deviceId);
+        json(response, 200, { membership: await devices.upsertMembership(principal, bookId, subject, role as SyncRole) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sync/memberships/remove") {
+        if (!devices.removeMembership) throw new ProtocolError("membership administration is unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const bookId = requiredString(input.bookId, "bookId", 120);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const subject = requiredString(input.subject, "subject", 200);
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "push", deviceId);
+        await devices.removeMembership(principal, bookId, subject);
+        json(response, 200, { removed: true, bookId, subject });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sync/memberships/locations") {
+        if (!devices.setMembershipLocations) throw new ProtocolError("location-scope administration is unavailable", 501);
+        const input = record(await body(request, maxBodyBytes));
+        const bookId = requiredString(input.bookId, "bookId", 120);
+        const deviceId = requiredString(input.deviceId, "deviceId", 120);
+        const subject = requiredString(input.subject, "subject", 200);
+        if (!Array.isArray(input.locationIds) || input.locationIds.some((value) => typeof value !== "string")) throw new ProtocolError("locationIds must be an array of strings");
+        const principal = await authenticator.authenticate(request.headers);
+        await authorizer.authorize(principal, bookId, "push", deviceId);
+        await devices.setMembershipLocations(principal, bookId, subject, input.locationIds as string[]);
+        json(response, 200, { updated: true, bookId, subject, locationIds: input.locationIds });
+        return;
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/sync/conflicts") {
         if (!recovery) throw new ProtocolError("server conflict history is unavailable", 501);
         const bookId = requiredString(url.searchParams.get("bookId"), "bookId", 120);
@@ -297,6 +381,7 @@ export function createServer(store: EventStore, options: ServerOptions = {}): Se
         const results: PushItemResult[] = [];
         for (const operation of requestValue.operations) {
           try {
+            if (devices.authorizeOperation) await devices.authorizeOperation(principal, operation);
             const events = await store.append(requestValue.bookId, [operation], (validation) => arbitrator.validate({ bookId: requestValue.bookId, operations: validation.operations, principal, accountingStateReader: validation.accountingStateReader }));
             const item = events[0];
             if (!item) throw new Error("event store did not return an accepted operation");

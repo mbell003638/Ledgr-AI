@@ -25,7 +25,7 @@ import { V2DocumentService } from '@/src/accountingV2/documentService';
 import { v2Services } from '@/src/accountingV2/runtime';
 import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecoveryRequired, retrySyncNow, syncNow, withSyncedMutation, type SyncMutation } from '@/src/sync/coordinator';
 import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
-import { installServerSnapshot, publishServerSnapshot, verifyProjectionCheckpoint } from '@/src/sync/recovery';
+import { installServerSnapshot, listSyncDevices, listSyncMemberships, publishServerSnapshot, removeSyncMembership, renameSyncDevice, revokeSyncDevice, setSyncMembershipLocations, upsertSyncMembership, verifyProjectionCheckpoint } from '@/src/sync/recovery';
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import type { SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
@@ -825,6 +825,14 @@ export const api = {
     if (!runner) return { enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 };
     return getSyncStatus(runner, beActiveBookId());
   },
+  getServerHealth: async (operationsToken: string) => {
+    const local = await api.getSyncStatus();
+    if (!local.serverUrl) throw new Error('Configure private sync before checking server health.');
+    const response = await fetch(`${String(local.serverUrl).replace(/\/+$/u, '')}/v1/ops/health`, { headers: { authorization: `Bearer ${operationsToken.trim()}` } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(body?.dependencies?.message || body?.message || `Server health request failed (${response.status})`));
+    return { local, server: body };
+  },
   syncNow: async () => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
@@ -875,6 +883,41 @@ export const api = {
       `backup:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`, beActiveBookId(), eventType, 'local-user', JSON.stringify(payload), new Date().toISOString(),
     ]);
     return true;
+  },
+  listSyncDevices: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return [];
+    return listSyncDevices(runner, beActiveBookId());
+  },
+  renameSyncDevice: async (deviceId: string, displayName: string, platform?: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await renameSyncDevice(runner, beActiveBookId(), deviceId, displayName, platform);
+  },
+  listSyncMemberships: async () => {
+    const runner = activeSqlRunner();
+    if (!runner) return [];
+    return listSyncMemberships(runner, beActiveBookId());
+  },
+  upsertSyncMembership: async (subject: string, role: 'owner' | 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor') => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    return upsertSyncMembership(runner, beActiveBookId(), subject, role);
+  },
+  removeSyncMembership: async (subject: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await removeSyncMembership(runner, beActiveBookId(), subject);
+  },
+  setSyncMembershipLocations: async (subject: string, locationIds: string[]) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await setSyncMembershipLocations(runner, beActiveBookId(), subject, locationIds);
+  },
+  revokeSyncDevice: async (deviceId: string) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await revokeSyncDevice(runner, beActiveBookId(), deviceId);
   },
   verifySyncCheckpoint: async () => {
     const runner = activeSqlRunner();

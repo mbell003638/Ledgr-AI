@@ -76,5 +76,23 @@ before enrolling a real Business Account.
 
 Record the date, operator, image digest, schema version, OIDC issuer/audience,
 backup checksum, restore-drill result, two-device convergence result, revoked-
-device result, stale-epoch result, and projection-hash result. Production sync
-is not approved until every item has evidence.
+device result, stale-epoch result, and projection-hash result. Production sync is not approved until every item has evidence.
+
+## Guided single-node installer
+
+From the checked-out release package, create `.env` from `config.production.example`, replace every example value, create the three files in `deploy/secrets/` with mode `0600`, and run:
+
+```text
+cd sync-server/deploy
+./install.sh
+```
+
+The installer fails before starting containers when Docker Compose, required environment values, production OIDC settings, explicit CORS, or secret files are missing. It validates the interpolated Compose configuration before building the stack. The PostgreSQL service is on an internal Docker network only; the public edge exposes the sync API through Caddy TLS.
+
+## Operations and health
+
+`GET /healthz` is liveness and is intentionally public. `GET /readyz`, `GET /metrics`, and `GET /v1/ops/health` require the operations bearer token. The health response separates process liveness, database readiness, sync metrics, identity configuration, storage, and encrypted-backup status. Configure `BACKUP_STATUS_FILE=/backups/status.json`; `backup.sh` writes this file atomically only after `pg_restore --list`, encryption, checksums, and the reconciliation manifest complete.
+
+The device and access administration endpoints are protected by the authenticated book/device flow: `/v1/sync/devices`, `/v1/sync/devices/rename`, `/v1/sync/devices/revoke`, `/v1/sync/memberships`, `/v1/sync/memberships/remove`, and `/v1/sync/memberships/locations`. These endpoints do not delete historical accounting operations. Location scopes are explicit and must be enforced by the application’s domain authorization layer before accepting location-sensitive operations.
+
+The mobile client’s Sync Health screen keeps the operations token session-only and displays local queue/error state even when the server is unavailable. The Sync Administration screen exposes device naming/revocation and role/location scope management only after the private sync profile is configured.

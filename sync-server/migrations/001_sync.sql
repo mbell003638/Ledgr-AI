@@ -185,3 +185,16 @@ UPDATE sync_devices SET expires_at = enrolled_at + interval '90 days' WHERE expi
 ALTER TABLE sync_devices ALTER COLUMN expires_at SET NOT NULL;
 UPDATE sync_devices SET enrolled_epoch = (SELECT book_epoch FROM sync_books WHERE sync_books.book_id = sync_devices.book_id) WHERE enrolled_epoch IS NULL;
 ALTER TABLE sync_devices ALTER COLUMN enrolled_epoch SET NOT NULL;
+
+ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS platform TEXT;
+ALTER TABLE sync_memberships ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE TABLE IF NOT EXISTS sync_membership_locations (
+  book_id TEXT NOT NULL REFERENCES sync_books(book_id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  location_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (book_id, subject, location_id)
+);
+CREATE INDEX IF NOT EXISTS sync_membership_locations_subject_idx ON sync_membership_locations(book_id, subject);
+CREATE INDEX IF NOT EXISTS sync_devices_book_status_idx ON sync_devices(book_id, revoked_at, expires_at);

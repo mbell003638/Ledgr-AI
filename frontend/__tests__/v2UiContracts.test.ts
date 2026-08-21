@@ -626,3 +626,43 @@ describe('hosting mode and Backup & Recovery UI contracts', () => {
     expect(sync).toContain('encrypted backup before connecting private sync');
   });
 });
+
+
+describe('phases 3–6 self-hosting UI contracts', () => {
+  it('exposes sync administration and health routes from the private sync workspace', () => {
+    const layout = readApp('_layout.tsx');
+    const sync = readApp('sync-settings.tsx');
+    const admin = readApp('sync-admin.tsx');
+    const health = readApp('sync-health.tsx');
+    expect(layout).toContain('name="sync-admin"');
+    expect(layout).toContain('name="sync-health"');
+    expect(sync).toContain('testID="open-sync-admin"');
+    expect(sync).toContain('testID="open-sync-health"');
+    expect(admin).toContain('Sync Administration');
+    expect(admin).toContain('Save location scope');
+    expect(admin).toContain('Revoke');
+    expect(health).toContain('testID="check-server-health"');
+    expect(health).toContain('Check server health');
+    expect(health).toContain('never stored');
+  });
+
+  it('keeps sync administration and health behind the authenticated core-ledger guard', () => {
+    const layout = readApp('_layout.tsx');
+    const guardStart = layout.lastIndexOf('<Stack.Protected guard={canOpen("core_ledger")}>');
+    const guardEnd = layout.indexOf('</Stack.Protected>', guardStart);
+    const block = layout.slice(guardStart, guardEnd);
+    expect(block).toContain('name="sync-admin"');
+    expect(block).toContain('name="sync-health"');
+    expect(block).toContain('name="sync-settings"');
+  });
+
+  it('surfaces durable sync attempt and error telemetry in the coordinator', () => {
+    const schema = readSource('src/db/schema.ts');
+    const coordinator = readSource('src/sync/coordinator.ts');
+    expect(schema).toContain("'sync_profiles', 'last_sync_attempt_at'");
+    expect(schema).toContain("'sync_profiles', 'last_sync_error'");
+    expect(coordinator).toContain('lastSyncAttemptAt');
+    expect(coordinator).toContain('lastSyncError');
+    expect(coordinator).toContain('last_sync_error_at');
+  });
+});
