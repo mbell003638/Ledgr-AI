@@ -411,9 +411,13 @@ describe('V2 UI contracts', () => {
   });
   it('keeps Ask AI history per business book, exposes clear history, and avoids the stuck Android keyboard layout', () => {
     const source = readApp('ask.tsx');
+    const advanced = readApp('advanced-settings.tsx');
     const appConfig = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
     expect(source).toContain('AsyncStorage.getItem(historyKey)');
     expect(source).toContain('askHistoryStorageKey(api.activeBookId())');
+    expect(source).toContain('AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(next)))');
+    expect(source).toContain('AsyncStorage.removeItem(historyKey)');
+    expect(source).toContain('if (!rememberHistory)');
     expect(source).toContain('Clear Ask AI history');
     expect(source).toContain('enabled={Platform.OS === "ios"}');
     expect(source).toContain('behavior={Platform.OS === "ios" ? "padding" : undefined}');
@@ -425,6 +429,8 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('setKeyboardHeight(height)');
     expect(source).toContain('composerBottomPad');
     expect(source).toContain('Platform.OS === "android" ? keyboardHeight : 0');
+    expect(advanced).toContain('toggleAiRememberHistory');
+    expect(advanced).toContain('AsyncStorage.removeItem(askHistoryStorageKey(api.activeBookId()))');
     expect(appConfig.expo.android.softwareKeyboardLayoutMode).toBe('resize');
     expect(appConfig.expo.android.edgeToEdgeEnabled).toBe(true);
   });

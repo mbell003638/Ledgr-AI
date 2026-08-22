@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard,
@@ -6,7 +6,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Href, useRouter } from "expo-router";
+import { Href, useRouter, useFocusEffect } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
@@ -331,7 +331,7 @@ export default function AskBooks() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
-  const historyKey = useMemo(() => askHistoryStorageKey(api.activeBookId()), []);
+  const [historyKey, setHistoryKey] = useState(() => askHistoryStorageKey(api.activeBookId()));
   const historyLoaded = useRef(false);
 
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -344,6 +344,26 @@ export default function AskBooks() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [rememberHistory, setRememberHistory] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    const nextKey = askHistoryStorageKey(api.activeBookId());
+    if (nextKey !== historyKey) {
+      historyLoaded.current = false;
+      setMessages([]);
+      setHistoryKey(nextKey);
+    }
+    return undefined;
+  }, [historyKey]));
+
+  const commitMessages = useCallback((update: (previous: Msg[]) => Msg[]) => {
+    setMessages((previous) => {
+      const next = update(previous);
+      if (rememberHistory && historyLoaded.current) {
+        void AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(next))).catch(() => {});
+      }
+      return next;
+    });
+  }, [historyKey, rememberHistory]);
 
   useEffect(() => {
     let active = true;
@@ -359,7 +379,11 @@ export default function AskBooks() {
 
   useEffect(() => {
     let active = true;
-    if (!rememberHistory) { historyLoaded.current = true; return () => { active = false; }; }
+    if (!rememberHistory) {
+      historyLoaded.current = true;
+      void AsyncStorage.removeItem(historyKey).catch(() => {});
+      return () => { active = false; };
+    }
     historyLoaded.current = false;
     AsyncStorage.getItem(historyKey)
       .then((raw) => {
@@ -452,9 +476,9 @@ export default function AskBooks() {
         }
       }
       setPendingProposal(null);
-      setMessages((m) => [...m, { role: "assistant", text: String(result) }]);
+      commitMessages((m) => [...m, { role: "assistant", text: String(result) }]);
     } catch (err: any) {
-      setMessages((m) => [...m, { role: "assistant", text: `I couldn't apply that change: ${err?.message || "error"}` }]);
+      commitMessages((m) => [...m, { role: "assistant", text: `I couldn't apply that change: ${err?.message || "error"}` }]);
     } finally {
       applyingProposalRef.current = false;
       setApplyingProposal(false);
@@ -464,7 +488,7 @@ export default function AskBooks() {
 
   const cancelPendingProposal = (includeUserMessage = false) => {
     setPendingProposal(null);
-    setMessages((m) => [
+    commitMessages((m) => [
       ...m,
       ...(includeUserMessage ? [{ role: "user" as const, text: "Cancel" }] : []),
       { role: "assistant", text: "Okay — I did not change your books." },
@@ -477,7 +501,7 @@ export default function AskBooks() {
 
     if (pendingProposal && /^(yes\b|y$|i confirm\b|confirm\b|apply\b|proceed\b|ok(?:ay)?\b|please (?:apply|record|enter|save)\b)/i.test(q)) {
       setInput("");
-      setMessages((m) => [...m, { role: "user", text: q }]);
+      commitMessages((m) => [...m, { role: "user", text: q }]);
       await applyPendingProposal();
       return;
     }
@@ -493,7 +517,7 @@ export default function AskBooks() {
       : q;
     if (priorProposal) setPendingProposal(null);
     setInput("");
-    setMessages((m) => [...m, { role: "user", text: q }]);
+    commitMessages((m) => [...m, { role: "user", text: q }]);
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
@@ -501,17 +525,17 @@ export default function AskBooks() {
       const res: any = await api.askBooks(questionForAi, context);
       const answer = typeof res === "string" ? res : res?.answer || "";
       const action = typeof res === "string" ? null : res?.action || null;
-      if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
+      if (answer) commitMessages((m) => [...m, { role: "assistant", text: answer }]);
       if (action && action.type) {
         const proposal = validateAssistantProposal(action, "ai");
         if (!proposal.ok) {
-          setMessages((m) => [...m, { role: "assistant", text: `I need one more detail before I can prepare that change: ${proposal.errors[0]}.` }]);
+          commitMessages((m) => [...m, { role: "assistant", text: `I need one more detail before I can prepare that change: ${proposal.errors[0]}.` }]);
         } else {
           setPendingProposal(proposal);
         }
       }
     } catch (e: any) {
-      setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);
+      commitMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);
     } finally {
       setLoading(false);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);

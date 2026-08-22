@@ -7,6 +7,8 @@ import { router } from "expo-router";
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { askHistoryStorageKey } from "@/src/utils/askHistory";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader } from "@/src/components/UI";
 import { HostingModeCard } from "@/src/components/HostingModeCard";
@@ -166,6 +168,19 @@ export default function AdvancedSettingsScreen() {
   }, [setMode]);
 
   useEffect(() => { load(); }, [load]);
+
+  const toggleAiRememberHistory = async () => {
+    const next = !aiRememberHistory;
+    setAiRememberHistory(next);
+    try {
+      await api.updateSettings({ aiRememberHistory: next });
+      if (!next) await AsyncStorage.removeItem(askHistoryStorageKey(api.activeBookId()));
+      setStatus({ ok: true, msg: next ? "Ask AI history will be remembered on this device." : "Ask AI history was removed from this device." });
+    } catch (e: any) {
+      setAiRememberHistory(!next);
+      setStatus({ ok: false, msg: e?.message || "Could not update Ask AI history setting." });
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -621,7 +636,7 @@ export default function AdvancedSettingsScreen() {
                     <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'summary' }} onPress={() => setAiDataMode('summary')} style={[styles.modeBtn, aiDataMode === 'summary' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'summary' && styles.modeTextActive]}>Summary only</Text></Pressable>
                     <Pressable accessibilityRole="radio" accessibilityState={{ selected: aiDataMode === 'detailed' }} onPress={() => setAiDataMode('detailed')} style={[styles.modeBtn, aiDataMode === 'detailed' && styles.modeBtnActive]}><Text style={[styles.modeText, aiDataMode === 'detailed' && styles.modeTextActive]}>Detailed context</Text></Pressable>
                   </View>
-                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: aiRememberHistory }} onPress={() => setAiRememberHistory((value) => !value)} style={styles.securityCheckRow}>
+                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: aiRememberHistory }} onPress={() => { void toggleAiRememberHistory(); }} style={styles.securityCheckRow}>
                     <Ionicons name={aiRememberHistory ? "checkbox" : "square-outline"} size={20} color={aiRememberHistory ? theme.color.brandPrimary : theme.color.muted} />
                     <Text style={styles.securityCheckText}>Remember Ask AI conversation on this device.</Text>
                   </Pressable>
