@@ -319,17 +319,24 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    @page { size: A4${input.landscape ? ' landscape' : ''}; margin: 18mm 16mm; }
+    @page { size: A4${input.landscape ? ' landscape' : ''}; margin: 10mm; }
     @media print {
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      body { background: #FBFAF5 !important; }
+      html, body { background: #fff !important; }
+      body { padding: 0 !important; }
+      .paper { max-width: none !important; min-height: 0 !important; padding: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+      .report-section { break-inside: auto; page-break-inside: auto; }
+      .header, .hero-card, .summary-card { break-inside: avoid; page-break-inside: avoid; }
+      .tb-table { break-inside: auto; page-break-inside: auto; }
+      .tb-table tr { break-inside: avoid; page-break-inside: avoid; }
     }
     :root { --ink: ${p.ink}; --muted: ${p.muted}; --rule: ${p.rule}; }
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      margin: 0; padding: 28px; color: var(--ink); background: #FBFAF5; font-size: 13px; line-height: 1.4;
+      margin: 0; padding: 0; color: var(--ink); background: #eef1ee; font-size: 13px; line-height: 1.4;
     }
+    .paper { width: 100%; max-width: 920px; margin: 0 auto; padding: 24px; background: #FBFAF5; min-height: 100vh; }
     .num {
       font-family: 'Courier New', 'SFMono-Regular', Menlo, Consolas, monospace;
       font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
@@ -338,7 +345,7 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
     .header { margin-bottom: 22px; }
     .period-title { font-size: 22px; font-weight: 800; margin: 0; color: var(--ink); }
     .period-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
-    .report-section { margin-bottom: 26px; break-inside: avoid; }
+    .report-section { margin-bottom: 22px; break-inside: auto; }
     .section-label {
       font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
       color: ${p.sectionLabel}; margin-bottom: 8px;
@@ -394,9 +401,22 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
     }
     .summary-heading { color: ${p.heading}; font-weight: 800; font-size: 15px; margin-bottom: 6px; }
     .summary-text { margin: 0; color: var(--ink); line-height: 1.55; }
+    @media screen and (max-width: 600px) {
+      .paper { padding: 16px; min-height: 100vh; }
+      .period-title { font-size: 20px; }
+      .period-sub { font-size: 11px; line-height: 1.45; }
+      .hero-card { padding: 4px 14px; }
+      .hero-row, .line-row { padding: 8px 0; gap: 8px; }
+      .hero-net-value { font-size: 22px; }
+      .tb-table { font-size: 11px; }
+      .tb-table th, .tb-table td { padding: 6px 0; }
+      .tb-table td.num, .tb-table th.num { padding-left: 8px; }
+      .summary-card { padding: 14px 16px; }
+    }
   </style>
 </head>
 <body>
+  <main class="paper">
   <div class="header">
     <h1 class="period-title">Custom Report</h1>
     <div class="period-sub">${escapeHtml(from)} &ndash; ${escapeHtml(to)} &middot; Generated ${escapeHtml(generated)} &middot; ${escapeHtml(input.businessName || 'Ledgr')}</div>
@@ -404,6 +424,7 @@ export function buildCustomReportHtml(input: CustomReportDocumentInput, theme?: 
 
   ${sectionsHtml}
   ${summaryHtml}
+  </main>
 </body>
 </html>`;
 }

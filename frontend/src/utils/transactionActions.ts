@@ -64,12 +64,18 @@ export function transactionHtml(doc: TransactionDocument, themeColors?: any, biz
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
+    @page { size: A4 portrait; margin: 10mm; }
     @media print {
       * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
       body { background: #fff !important; padding: 0 !important; }
+      .page-container { max-width: none !important; }
+      .content { padding: 0 !important; }
+      table { break-inside: auto; page-break-inside: auto; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      .footer-bar { break-inside: avoid; page-break-inside: avoid; }
     }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; color: #333; background: #fff; }
     .page-container { width: 100%; max-width: 800px; margin: 0 auto; background: #fff; position: relative; }
@@ -104,6 +110,34 @@ export function transactionHtml(doc: TransactionDocument, themeColors?: any, biz
     .amount-words { background: #fff; padding: 12px 14px; font-size: 11px; font-style: italic; color: #555; text-align: right; border-top: 2px solid ${accent}; margin-top: 10px; }
     .footer-bar { background: ${primary}; color: #fff; padding: 24px 40px; font-size: 10px; border-top: 6px solid ${accent}; }
     .thank-you { color: ${accent}; font-weight: 800; font-size: 13px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    @media screen and (max-width: 600px) {
+      .page-container { max-width: 100%; }
+      .top-bg-container { height: 205px; }
+      .bg-dark { height: 122px; }
+      .bg-white-slant { height: 122px; }
+      .bg-yellow-slant, .bg-yellow-rect { top: 122px; height: 83px; }
+      .bg-yellow-border { top: 202px; }
+      .header-content { height: 122px; }
+      .header-left { padding: 20px 14px; }
+      .header-right { padding: 18px 14px; }
+      .header-logo-text { font-size: 27px; letter-spacing: 1px; }
+      .header-logo { max-height: 54px; max-width: 120px; }
+      .doc-to-title { font-size: 10px; margin-bottom: 5px; }
+      .biz-name { font-size: 12px; }
+      .contact-item { font-size: 9px; }
+      .banner-content { height: 83px; }
+      .banner-left { padding: 0 14px; }
+      .doc-heading { font-size: 20px; letter-spacing: 1px; }
+      .banner-right { padding: 0 14px 0 10px; }
+      .banner-label { font-size: 9px; }
+      .banner-val { font-size: 11px; }
+      .content { padding: 18px 14px; }
+      table { font-size: 11px; margin-bottom: 16px; }
+      th { padding: 8px 7px; font-size: 9px; }
+      td { padding: 8px 7px; }
+      .footer-bar { padding: 16px 14px; font-size: 9px; }
+      .thank-you { font-size: 11px; }
+    }
   </style>
 </head>
 <body>

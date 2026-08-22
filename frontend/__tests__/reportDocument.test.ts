@@ -71,6 +71,10 @@ describe('buildMonthlyReportHtml — structure', () => {
     // A4 print CSS + monospace numerals
     expect(html).toContain('@page');
     expect(html).toContain("'Courier New'");
+    expect(html).toContain('@page { size: A4; margin: 10mm; }');
+    expect(html).toContain('body { padding: 0 !important; }');
+    expect(html).toContain('.body-grid { display: block; }');
+    expect(html).toContain('@media screen and (max-width: 600px)');
   });
 
   it('formats money with thousands separators and $ symbol', () => {

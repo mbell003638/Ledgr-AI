@@ -397,17 +397,23 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    @page { size: A4; margin: 18mm 16mm; }
+    @page { size: A4; margin: 10mm; }
     @media print {
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      body { background: #FBFAF5 !important; }
+      html, body { background: #fff !important; }
+      body { padding: 0 !important; }
+      .paper { max-width: none !important; min-height: 0 !important; padding: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+      .hero-card, .recon-card { break-inside: avoid; page-break-inside: avoid; }
+      .body-grid { break-inside: auto; page-break-inside: auto; }
+      .line-row { break-inside: avoid; page-break-inside: avoid; }
     }
     :root { --ink: ${p.ink}; --muted: ${p.muted}; --rule: ${p.rule}; }
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      margin: 0; padding: 28px; color: var(--ink); background: #FBFAF5; font-size: 13px; line-height: 1.4;
+      margin: 0; padding: 0; color: var(--ink); background: #eef1ee; font-size: 13px; line-height: 1.4;
     }
+    .paper { width: 100%; max-width: 920px; margin: 0 auto; padding: 24px; background: #FBFAF5; min-height: 100vh; }
     .num {
       font-family: 'Courier New', 'SFMono-Regular', Menlo, Consolas, monospace;
       font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
@@ -431,7 +437,7 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
       font-family: 'Courier New', monospace; font-variant-numeric: tabular-nums;
       font-size: 26px; font-weight: 800; text-align: right; color: var(--ink); letter-spacing: -0.5px;
     }
-    .body-grid { display: flex; gap: 48px; margin-bottom: 26px; }
+    .body-grid { display: flex; gap: 32px; margin-bottom: 22px; }
     .body-col { flex: 1; min-width: 0; }
     .section-label {
       font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
@@ -456,9 +462,21 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
     .recon-sep { border-top: 2px solid ${p.reconBorder}; margin-top: 6px; padding-top: 12px; }
     .recon-partner .line-row { border-bottom: 1px solid ${p.reconBorder}; }
     .recon-partner .line-row:last-child { border-bottom: none; }
+    @media screen and (max-width: 600px) {
+      .paper { padding: 16px; min-height: 100vh; }
+      .period-title { font-size: 20px; }
+      .period-sub { font-size: 11px; line-height: 1.45; }
+      .hero-card { padding: 4px 14px; }
+      .hero-row, .line-row { padding: 8px 0; gap: 8px; }
+      .hero-net-value { font-size: 22px; }
+      .body-grid { display: block; }
+      .body-col + .body-col { margin-top: 18px; }
+      .recon-card { padding: 14px 16px; }
+    }
   </style>
 </head>
 <body>
+  <main class="paper">
   <div class="header">
     <h1 class="period-title">${escapeHtml(input.periodTitle)}</h1>
     <div class="period-sub">${escapeHtml(input.periodStart)} &middot; Saved ${escapeHtml(input.savedAt)}</div>
@@ -474,6 +492,7 @@ export function buildMonthlyReportHtml(input: MonthlyReportData, theme: InvoiceT
   </div>
 
   ${reconBlock}
+  </main>
 </body>
 </html>`;
 }

@@ -176,9 +176,13 @@ describe('buildCustomReportHtml — balance sheet, registers, summary, header', 
     expect(html).toContain('@page');
   });
 
-  it('supports landscape A4', () => {
+  it('supports landscape A4 and compact responsive print flow', () => {
     const html2 = buildCustomReportHtml({ ...baseInput(), landscape: true }, 'navy_gold');
     expect(html2).toContain('A4 landscape');
+    expect(html2).toContain('.paper { width: 100%;');
+    expect(html2).toContain('body { padding: 0 !important; }');
+    expect(html2).toContain('@media screen and (max-width: 600px)');
+    expect(html2).toContain('.tb-table { break-inside: auto;');
   });
 
   it('renders individual opening balances and their reconciled account subtotal in Both mode', () => {

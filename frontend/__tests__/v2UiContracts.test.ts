@@ -97,6 +97,23 @@ describe('V2 UI contracts', () => {
     expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
   });
 
+  it('all shared report and transaction documents support mobile and print layouts', () => {
+    const custom = readSource('src/utils/customReportDocument.ts');
+    const monthly = readSource('src/utils/reportDocument.ts');
+    const statement = readSource('src/utils/statementDocument.ts');
+    const transaction = readSource('src/utils/transactionActions.ts');
+    expect(custom).toContain('@media screen and (max-width: 600px)');
+    expect(custom).toContain('body { padding: 0 !important; }');
+    expect(custom).toContain('.tb-table { break-inside: auto;');
+    expect(monthly).toContain('@media screen and (max-width: 600px)');
+    expect(monthly).toContain('.body-grid { display: block; }');
+    expect(statement).toContain('@media screen and (max-width:600px)');
+    expect(statement).toContain('.columns{grid-template-columns:1fr}');
+    expect(transaction).toContain('@media screen and (max-width: 600px)');
+    expect(transaction).toContain('@page { size: A4 portrait; margin: 10mm; }');
+    expect(transaction).toContain('table { break-inside: auto;');
+  });
+
   it('onboarding has one multi-location control and asks for the accounting model', () => {
     const onboarding = readApp('onboarding.tsx');
     expect(onboarding).toContain('I operate multiple stores or POS points');
