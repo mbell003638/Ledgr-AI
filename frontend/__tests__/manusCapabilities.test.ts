@@ -41,6 +41,16 @@ describe('Manus persona capabilities', () => {
     expect(saasFeatures).not.toContain('bills');
   });
 
+  it('keeps voice assistant opt-in while leaving Ask AI available by default', () => {
+    const settings = { activePersona: 'retail', selectedPersonas: ['retail'] };
+    const defaults = getPersonaCapabilityDefaults(settings);
+    expect(defaults).toContain('ai_assistant');
+    expect(defaults).not.toContain('voice_assistant');
+    expect(featureKeysForCapabilities(settings)).not.toContain('voice');
+    expect(isCapabilityEnabled(settings, 'ai_assistant')).toBe(true);
+    expect(isCapabilityEnabled({ ...settings, enabledCapabilities: ['voice_assistant'] }, 'voice_assistant')).toBe(true);
+  });
+
   it('maps legacy business types to safe modern personas', () => {
     expect(activePersonaFor({ businessType: 'freelancer' })).toBe('content_creator');
     expect(activePersonaFor({ businessType: 'shop' })).toBe('retail');

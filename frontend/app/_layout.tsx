@@ -190,8 +190,10 @@ function ThemedStack() {
           </Stack.Protected>
           <Stack.Protected guard={canOpen("ai_assistant")}>
             <Stack.Screen name="ask" options={{ presentation: "card" }} />
-            <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
             <Stack.Screen name="scan-import" options={{ presentation: "card" }} />
+          </Stack.Protected>
+          <Stack.Protected guard={canOpen("voice_assistant")}>
+            <Stack.Screen name="voice" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
           </Stack.Protected>
           <Stack.Protected guard={canOpen("payroll")}><Stack.Screen name="payroll" options={{ presentation: "card" }} /></Stack.Protected>
           <Stack.Protected guard={canOpen("fixed_assets")}><Stack.Screen name="fixed-assets" options={{ presentation: "card" }} /></Stack.Protected>

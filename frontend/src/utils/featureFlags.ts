@@ -200,7 +200,7 @@ export const ALL_FEATURES: FeatureMeta[] = [
 
 const DEFAULT_ALL_KEYS: FeatureKey[] = ALL_FEATURES
   .map((f) => f.key)
-  .filter((key) => !OPTIONAL_FEATURE_KEYS.includes(key));
+  .filter((key) => key !== "voice" && !OPTIONAL_FEATURE_KEYS.includes(key));
 
 // Baseline tile set for a pure service/professional persona: no stock, no
 // supplier bills lead — invoice + receipt driven.
@@ -214,7 +214,6 @@ const SERVICE_BASE: FeatureKey[] = [
   "reports",
   "monthly",
   "ask",
-  "voice",
 ];
 
 /**
@@ -239,7 +238,6 @@ export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
     "reports",
     "monthly",
     "ask",
-    "voice",
     "assets",
   ],
   // Retail & wholesale hold stock and buy from suppliers → full set.
@@ -257,7 +255,6 @@ export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
     "reports",
     "monthly",
     "ask",
-    "voice",
   ],
   // Handyman: jobs & materials — cash sales + invoices, buys some materials,
   // but no shelf inventory.
@@ -272,7 +269,6 @@ export const PERSONA_DEFAULT_FEATURES: Record<string, FeatureKey[]> = {
     "reports",
     "monthly",
     "ask",
-    "voice",
   ],
   // Pure service personas — invoice-led, no stock.
   professional_service: SERVICE_BASE,

@@ -9,7 +9,7 @@ import {
 } from "../src/utils/featureFlags";
 import { PERSONA_CAPABILITY_DEFAULTS, featureKeysForCapabilities } from "../src/utils/capabilities";
 
-const ALL_KEYS = ALL_FEATURES.map((f) => f.key).filter((key) => !OPTIONAL_FEATURE_KEYS.includes(key));
+const ALL_KEYS = ALL_FEATURES.map((f) => f.key).filter((key) => key !== "voice" && !OPTIONAL_FEATURE_KEYS.includes(key));
 
 describe("persona → dashboard tiles mapping", () => {
   it("resolves the canonical PersonaId values written by onboarding/settings", () => {

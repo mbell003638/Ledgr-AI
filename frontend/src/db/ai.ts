@@ -18,6 +18,7 @@ export interface AIConfig {
   provider: ProviderId;
   apiKey: string;
   model: string;
+  transcriptionModel?: string;
   baseUrl?: string; // OpenAI-compatible or Anthropic-compatible endpoint
 }
 
@@ -50,7 +51,7 @@ export const PROVIDERS: ProviderMeta[] = [
     defaultModel: '',
     keyHint: 'Bearer key — OpenRouter, Groq, OpenAI, or any /v1 host',
     supportsVision: true,
-    supportsAudio: false,
+    supportsAudio: true,
     api: 'openai',
   },
   {
@@ -307,6 +308,27 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
   return data?.choices?.[0]?.message?.content || '';
 }
 
+async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: string): Promise<{ transcript?: string; text?: string }> {
+  const base = resolveBaseUrl(cfg);
+  const extension = mimeType.includes('webm') ? 'webm' : mimeType.includes('wav') ? 'wav' : 'm4a';
+  const binary = globalThis.atob(audioBase64);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const audioBlob = new Blob([bytes], { type: mimeType });
+  const form = new FormData();
+  form.append('file', audioBlob, `ledgr-voice.${extension}`);
+  form.append('model', cfg.transcriptionModel || 'whisper-1');
+  const res = await fetchAI(`${base}/audio/transcriptions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.apiKey}` },
+    body: form,
+  });
+  const text = await res.text();
+  let data: any = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) throw aiHttpError(res.status, res.statusText, data);
+  return data || {};
+}
+
 // ---------------- Anthropic ----------------
 async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
   const base = resolveBaseUrl(cfg);
@@ -434,11 +456,14 @@ export async function ocrReceipt(cfg: AIConfig, imageBase64: string, mimeType = 
 }
 
 export async function transcribe(cfg: AIConfig, audioBase64: string, mimeType = 'audio/m4a') {
-  // Only Gemini reliably accepts raw audio inline. For non-Gemini providers,
-  // caller should keep Gemini configured for voice, or use device STT.
-  if (resolveApi(cfg) !== 'gemini') {
+  const provider = resolveApi(cfg);
+  if (provider === 'openai') {
+    const result = await transcribeOpenAI(cfg, audioBase64, mimeType);
+    return { transcript: String(result.transcript || result.text || '').trim() };
+  }
+  if (provider === 'anthropic') {
     const err: any = new Error(
-      `Voice transcription needs Google Gemini. The selected provider (${getProviderMeta(cfg.provider).label}) can't process audio directly. Switch AI provider to Gemini for voice, or type the entry.`
+      'Anthropic does not provide a speech-to-text endpoint. Voice recording is available, but transcription requires Google Gemini or an OpenAI-compatible provider with /audio/transcriptions. Switch provider in Advanced Settings or type the entry.'
     );
     err.status = 400;
     throw err;

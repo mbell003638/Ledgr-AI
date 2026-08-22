@@ -47,6 +47,7 @@ import {
 const AI_PROVIDER_KEY = 'ai_provider';
 const AI_API_KEY_KEY  = 'ai_api_key';
 const AI_MODEL_KEY    = 'ai_model';
+const AI_TRANSCRIPTION_MODEL_KEY = 'ai_transcription_model';
 const AI_BASE_URL_KEY = 'ai_base_url';
 
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
@@ -75,11 +76,12 @@ let webSessionAiKey = '';
 const isWebRuntime = typeof window !== 'undefined' && typeof document !== 'undefined';
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, baseUrl] = await Promise.all([
+  const [provider, secureKey, storedKey, model, transcriptionModel, baseUrl] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     isWebRuntime ? Promise.resolve(webSessionAiKey) : storage.secureGet(AI_API_KEY_KEY, ''),
     isWebRuntime ? Promise.resolve(null) : AsyncStorage.getItem(AI_API_KEY_KEY),
     AsyncStorage.getItem(AI_MODEL_KEY),
+    AsyncStorage.getItem(AI_TRANSCRIPTION_MODEL_KEY),
     AsyncStorage.getItem(AI_BASE_URL_KEY),
   ]);
   if (isWebRuntime) await AsyncStorage.removeItem(AI_API_KEY_KEY).catch(() => {});
@@ -94,6 +96,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     provider: ai.normalizeProviderId(provider),
     apiKey: resolvedKey,
     model: model ?? ai.DEFAULT_GEMINI_MODEL,
+    transcriptionModel: transcriptionModel ?? undefined,
     baseUrl: baseUrl ?? undefined,
   };
 }
@@ -115,6 +118,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
     }
   }
   if (cfg.model !== undefined) ops.push(AsyncStorage.setItem(AI_MODEL_KEY, cfg.model));
+  if (cfg.transcriptionModel !== undefined) ops.push(AsyncStorage.setItem(AI_TRANSCRIPTION_MODEL_KEY, cfg.transcriptionModel));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
   const [secureOk] = await Promise.all([
     secureKeyWrite ?? Promise.resolve(true),
@@ -1660,7 +1664,7 @@ export const api = {
     await Promise.all([
       storage.secureRemove(AI_API_KEY_KEY),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_BASE_URL_KEY,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_BASE_URL_KEY,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,

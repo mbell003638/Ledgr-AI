@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
-import * as FileSystem from "expo-file-system/legacy";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -12,7 +11,8 @@ import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 
-import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
+import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { VoiceOrb } from "@/src/components/VoiceOrb";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -37,27 +37,16 @@ export default function VoiceModal() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
-      const permission = await runWithSystemPrompt(() => AudioModule.requestRecordingPermissionsAsync());
-      if (!permission.granted) {
-        throw new Error("Microphone access is required to use the voice assistant.");
-      }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+      await startVoiceRecorder(recorder);
       setPhase("recording");
-    } catch (e: any) { setError(e.message); setPhase("error"); }
+    } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
   };
 
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) throw new Error("No audio captured");
-      const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      // Determine mime
-      const mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
-      const t = await api.transcribe(audioBase64, mime);
+      const captured = await captureVoiceRecording(recorder);
+      const t = await api.transcribe(captured.audioBase64, captured.mime);
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
@@ -169,13 +158,16 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
+    void cancelVoiceRecorder(recorder);
     setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
   };
+
+  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-voice" accessibilityRole="button" accessibilityLabel="Close voice assistant" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable testID="btn-close-voice" accessibilityRole="button" accessibilityLabel="Close voice assistant" onPress={() => { void cancelVoiceRecorder(recorder); router.back(); }}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
@@ -188,16 +180,14 @@ export default function VoiceModal() {
 
           <View style={styles.micArea}>
             {phase === "recording" ? (
-              <Pressable testID="btn-stop-voice" accessibilityRole="button" accessibilityLabel="Stop recording and process voice note" onPress={stopAndProcess} style={[styles.micBtn, styles.micRecording]}>
-                <Ionicons name="stop" size={40} color="#fff" />
+              <Pressable testID="btn-stop-voice" accessibilityRole="button" accessibilityLabel="Stop recording and process voice note" onPress={stopAndProcess}>
+                <VoiceOrb phase="recording" theme={theme} />
               </Pressable>
             ) : phase === "processing" ? (
-              <View style={[styles.micBtn, { backgroundColor: theme.color.brandSecondary }]}>
-                <ActivityIndicator color="#fff" size="large" />
-              </View>
+              <VoiceOrb phase="processing" theme={theme} />
             ) : (
-              <Pressable testID="btn-start-voice" accessibilityRole="button" accessibilityLabel="Start voice recording" accessibilityHint="Records a transaction description for review" onPress={start} style={styles.micBtn}>
-                <Ionicons name="mic" size={40} color="#fff" />
+              <Pressable testID="btn-start-voice" accessibilityRole="button" accessibilityLabel="Start voice recording" accessibilityHint="Records a transaction description for review" onPress={start}>
+                <VoiceOrb phase="idle" theme={theme} />
               </Pressable>
             )}
             <Text style={styles.micLabel}>

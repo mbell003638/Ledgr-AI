@@ -1,24 +1,23 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
-import * as FileSystem from "expo-file-system/legacy";
-import { useAnimations, useTheme } from "@/src/context/ThemeContext";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
+import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
-import { BlurView } from "expo-blur";
-import { fmt } from "@/src/theme";
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
+import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
+import { VoiceOrb } from "@/src/components/VoiceOrb";
+import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { subscribeToVoiceAssistantRequest } from "@/src/utils/voiceAssistantRequest";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
 export default function VoiceFab() {
   const theme = useTheme();
-  const { motionEnabled } = useAnimations();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -30,67 +29,32 @@ export default function VoiceFab() {
 
   useEffect(() => {
     let active = true;
-    api.getSettings().then((settings) => { if (active) setAiEnabled(isCapabilityEnabled(settings, "ai_assistant")); }).catch(() => { if (active) setAiEnabled(false); });
+    api.getSettings().then((settings) => { if (active) setAiEnabled(isCapabilityEnabled(settings, "voice_assistant")); }).catch(() => { if (active) setAiEnabled(false); });
     return () => { active = false; };
   }, []);
 
-  const pulseScale = useSharedValue(1);
+  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
 
-  useEffect(() => {
-    if (phase === "recording") {
-      if (!motionEnabled) { pulseScale.value = 1; return; }
-      pulseScale.value = withRepeat(
-        withSequence(
-          withTiming(1.1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-          withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) })
-        ),
-        -1,
-        true
-      );
-    } else {
-      pulseScale.value = withTiming(1);
-    }
-  }, [motionEnabled, phase, pulseScale]);
+  const stopExistingRecorder = () => cancelVoiceRecorder(recorder);
 
-  const start = async () => {
+  const start = useCallback(async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
-      const perm = await AudioModule.requestRecordingPermissionsAsync();
-      if (!perm.granted) throw new Error("Microphone permission required.");
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+      await startVoiceRecorder(recorder);
       setPhase("recording");
-    } catch (e: any) { setError(e.message); setPhase("error"); }
-  };
+    } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
+  }, [recorder]);
+  const startRef = useRef(start);
+  useEffect(() => { startRef.current = start; }, [start]);
+  useEffect(() => subscribeToVoiceAssistantRequest(() => {
+    if (aiEnabled && phase === "idle") void startRef.current();
+  }), [aiEnabled, phase]);
 
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) throw new Error("No audio captured");
-      let audioBase64: string;
-      let mime: string;
-      if (Platform.OS === 'web') {
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        audioBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]); // Extract base64
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        mime = "audio/webm";
-      } else {
-        audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-        mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
-      }
-      
-      const t = await api.transcribe(audioBase64, mime);
+      const captured = await captureVoiceRecording(recorder);
+      const t = await api.transcribe(captured.audioBase64, captured.mime);
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
@@ -207,14 +171,9 @@ export default function VoiceFab() {
   };
 
   const reset = () => {
+    void stopExistingRecorder();
     setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
   };
-
-  const isModalOpen = phase !== "idle";
-
-  const animatedMicStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-  }));
 
   if (!aiEnabled) return null;
 
@@ -235,105 +194,55 @@ export default function VoiceFab() {
         <Ionicons name="mic" size={26} color={theme.color.onBrandPrimary} />
       </Pressable>
 
-      <Modal transparent visible={isModalOpen} animationType="fade" onRequestClose={reset}>
-        <View style={styles.overlayContainer}>
-          <Pressable style={styles.overlayPressable} onPress={reset}>
-            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
-          </Pressable>
-
-          <Animated.View entering={SlideInDown.duration(300).springify()} style={[styles.popupContainer, { backgroundColor: theme.color.surface }]}>
-            {/* Header / Dismiss */}
-            <View style={styles.popupHeader}>
-              <Text style={[styles.popupTitle, { color: theme.color.onSurface }]}>Voice Assistant</Text>
-              <Pressable onPress={reset} style={({pressed}) => [pressed && {opacity: 0.5}]}>
-                <Ionicons name="close-circle" size={28} color={theme.color.muted} />
+            {phase !== "idle" && (
+        <Animated.View entering={SlideInDown.duration(260).springify()} style={[styles.voiceDock, { backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border }]}>
+          <View style={styles.dockHeader}>
+            <Text style={[styles.dockTitle, { color: theme.color.onSurface }]}>Voice transaction</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close voice transaction" onPress={reset} hitSlop={8}>
+              <Ionicons name="close" size={20} color={theme.color.muted} />
+            </Pressable>
+          </View>
+          {phase === "recording" || phase === "processing" ? (
+            <View style={styles.listeningDock}>
+              <VoiceOrb phase={phase === "recording" ? "recording" : "processing"} theme={theme} compact />
+              <View style={styles.listeningCopy}>
+                <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>{phase === "recording" ? "Listening…" : "Transcribing…"}</Text>
+                <Text style={[styles.dockHint, { color: theme.color.muted }]}>{phase === "recording" ? "Tap stop when you are done" : "Turning your words into a draft"}</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={phase === "recording" ? "Stop recording" : "Cancel transcription"} onPress={phase === "recording" ? stopAndProcess : reset} style={[styles.stopButton, { borderColor: phase === "recording" ? theme.color.error : theme.color.border }]}>
+                <Ionicons name={phase === "recording" ? "stop" : "close"} size={18} color={phase === "recording" ? theme.color.error : theme.color.muted} />
               </Pressable>
             </View>
-
-            {phase === "recording" || phase === "processing" ? (
-              <View style={styles.recordingBox}>
-                <Text style={[styles.hintText, { color: theme.color.muted }]}>
-                  “Paid supplier 1000 USD on July 17”
-                </Text>
-                <Animated.View style={animatedMicStyle}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={phase === "recording" ? "Stop recording" : "Voice assistant microphone"}
-                    onPress={phase === "recording" ? stopAndProcess : undefined}
-                    style={[styles.bigMicBtn, { backgroundColor: phase === "recording" ? theme.color.error : theme.color.surfaceTertiary }]}
-                  >
-                    {phase === "processing" ? (
-                       <ActivityIndicator color={theme.color.onSurface} size="large" />
-                    ) : (
-                       <Ionicons name="stop" size={44} color="#fff" />
-                    )}
-                  </Pressable>
-                </Animated.View>
-                <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>
-                  {phase === "recording" ? "Listening... Tap to stop" : "Transcribing AI..."}
-                </Text>
+          ) : phase === "confirm" && parsed ? (
+            <View style={styles.reviewDock}>
+              {transcript ? <Text numberOfLines={2} style={[styles.transcriptLine, { color: theme.color.muted }]}>“{transcript}”</Text> : null}
+              <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Review {parsed.intent?.replace("_", " ")}</Text>
+              <Text numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
+              <View style={styles.btnRow}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}><Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>{saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>Save</Text>}</Pressable>
               </View>
-            ) : phase === "confirm" && parsed ? (
-              <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
-                {transcript ? (
-                  <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <Text style={{ fontStyle: "italic", color: theme.color.muted }}>“{transcript}”</Text>
-                  </View>
-                ) : null}
+            </View>
+          ) : (
+            <View style={styles.errorDock}>
+              <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
+              <Text numberOfLines={2} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>
+            </View>
+          )}
+        </Animated.View>
+      )}
 
-                <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Draft {parsed.intent?.replace("_", " ")}</Text>
-                <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
-                
-                <View style={styles.draftGrid}>
-                  {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, "USD")} theme={theme} />}
-                  {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
-                  {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
-                  {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
-                  {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
-                  {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
-                  {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
-                </View>
-
-                <View style={styles.btnRow}>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                    {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>Save</Text>}
-                  </Pressable>
-                </View>
-              </View>
-            ) : phase === "error" ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={32} color={theme.color.error} />
-                <Text style={styles.errorText}>{error}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
-                  <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </Animated.View>
-        </View>
-      </Modal>
     </>
   );
 }
 
-function DKV({ k, v, theme }: { k: string; v: string; theme: any }) {
-  return (
-    <View style={{ width: "50%", paddingVertical: 4 }}>
-      <Text style={{ fontSize: 11, color: theme.color.muted }}>{k}</Text>
-      <Text style={{ fontSize: 14, color: theme.color.onSurface, fontWeight: "600" }}>{v}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 100, // Matching its original location
+    bottom: 100,
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -346,117 +255,38 @@ const styles = StyleSheet.create({
     elevation: 6,
     zIndex: 110,
   },
-  overlayContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-  },
-  overlayPressable: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  popupContainer: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 500,
-    padding: 24,
-    paddingBottom: 48,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+  voiceDock: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 92,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 14,
+    zIndex: 120,
   },
-  popupHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  popupTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  recordingBox: {
-    alignItems: "center",
-    paddingVertical: 24,
-  },
-  hintText: {
-    fontSize: 14,
-    marginBottom: 24,
-    fontStyle: "italic",
-    textAlign: "center",
-  },
-  bigMicBtn: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  statusLabel: {
-    marginTop: 24,
-    fontSize: 15,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  draftBox: {
-    padding: 20,
-    borderRadius: 24,
-  },
-  transcriptBubble: {
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  draftLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  draftSummary: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  draftGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 24,
-  },
-  btnRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionText: {
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  errorBox: {
-    padding: 32,
-    backgroundColor: "#FBE8E5",
-    borderRadius: 24,
-    alignItems: "center",
-  },
-  errorText: {
-    color: "#e3342f",
-    fontSize: 16,
-    fontWeight: "500",
-    marginTop: 16,
-    textAlign: "center",
-  },
+  dockHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  dockTitle: { fontSize: 12, fontWeight: "700", letterSpacing: 0.2 },
+  listeningDock: { flexDirection: "row", alignItems: "center", minHeight: 48 },
+  listeningCopy: { flex: 1, minWidth: 0, marginLeft: 8 },
+  dockHint: { fontSize: 11, marginTop: 2 },
+  stopButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: "center", justifyContent: "center", marginLeft: 8 },
+  reviewDock: { paddingTop: 4 },
+  transcriptLine: { fontSize: 11, fontStyle: "italic", marginBottom: 6 },
+  statusLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
+  draftLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 },
+  draftSummary: { fontSize: 13, fontWeight: "600", marginTop: 4, marginBottom: 8 },
+  btnRow: { flexDirection: "row", gap: 8 },
+  actionBtn: { flex: 1, minHeight: 36, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  actionText: { fontWeight: "700", fontSize: 12 },
+  errorDock: { flexDirection: "row", alignItems: "center", minHeight: 42, gap: 8 },
+  errorText: { flex: 1, fontSize: 11, fontWeight: "600" },
+  retryButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderRadius: 10 },
+  retryText: { fontSize: 11, fontWeight: "700" },
 });

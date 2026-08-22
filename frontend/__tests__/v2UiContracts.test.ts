@@ -501,6 +501,8 @@ describe('V2 UI contracts', () => {
     const advanced = readApp('advanced-settings.tsx');
 
     expect(advanced).toContain('Google Gemini');
+    expect(advanced).toContain('voice-transcription-model');
+    expect(advanced).toContain('Anthropic handles chat and images, but does not provide speech-to-text.');
     expect(advanced).toContain('Custom Provider');
     expect(advanced).toContain('OpenAI Compatible');
     expect(advanced).toContain('Anthropic Compatible');
@@ -545,10 +547,14 @@ describe('V2 UI contracts', () => {
 
   it('remaining operational entry points preserve capability and location context', () => {
     const voice = readSource('src/components/VoiceFab.tsx');
+    const voiceOrb = readSource('src/components/VoiceOrb.tsx');
+    const capabilities = readSource('src/utils/capabilities.ts');
+    const home = readApp('(tabs)/index.tsx');
     const transfers = readApp('stock-transfers.tsx');
     const delivery = readApp('delivery-notes.tsx');
     const quick = readSource('src/components/QuickActionMenu.tsx');
     const rootLayout = readApp('_layout.tsx');
+    const ai = readSource('src/db/ai.ts');
 
     expect(voice).toContain('loadLocationsIfEnabled');
     expect(voice).toContain('locationFields');
@@ -558,7 +564,23 @@ describe('V2 UI contracts', () => {
     expect(delivery).toContain('LocationPicker');
     expect(delivery).toContain('finalLocationId');
     expect(quick).toContain('isCapabilityEnabled(settings, "ai_assistant") && <QuickActionRow');
+    expect(voice).toContain('isCapabilityEnabled(settings, "voice_assistant")');
+    expect(voice).toContain('styles.voiceDock');
+    expect(voice).not.toContain('<Modal');
+    expect(voiceOrb).toContain('withRepeat');
+    expect(voiceOrb).toContain('motionEnabled');
+    expect(capabilities).toContain("| 'voice_assistant'");
+    expect(capabilities).toContain("key: 'voice_assistant'");
+    expect(home).toContain('capability: "voice_assistant"');
+    expect(home).toContain('requestVoiceAssistant()');
+    expect(voice).toContain('subscribeToVoiceAssistantRequest');
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
+    expect(rootLayout).toContain('<Stack.Protected guard={canOpen("ai_assistant")}>');
+    expect(rootLayout).toContain('<Stack.Protected guard={canOpen("voice_assistant")}>');
+    expect(rootLayout).toMatch(/guard=\{canOpen\("ai_assistant"\)\}[\s\S]*name="ask"[\s\S]*name="scan-import"/);
+    expect(rootLayout).toMatch(/guard=\{canOpen\("voice_assistant"\)\}[\s\S]*name="voice"/);
+    expect(ai).toContain('/audio/transcriptions');
+    expect(ai).toContain('Anthropic does not provide a speech-to-text endpoint');
   });
 
   it('exposes semantic self-host sync without removing local integrations', () => {

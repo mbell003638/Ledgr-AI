@@ -21,7 +21,8 @@ export type OperationalModuleKey =
   | 'tax_compliance'
   | 'cash_flow'
   | 'industry_metrics'
-  | 'ai_copilot';
+  | 'ai_copilot'
+  | 'voice_copilot';
 
 export type OperationalModule = {
   key: OperationalModuleKey;
@@ -53,7 +54,8 @@ export const OPERATIONAL_MODULES: OperationalModule[] = [
   { key: 'tax_compliance', label: 'Tax and compliance', shortLabel: 'Tax', description: 'Apply country tax profiles, rates, registrations, and compliance reports.', requiredCapabilities: ['reporting'], routes: ['/planning', '/reports'], advanced: true },
   { key: 'cash_flow', label: 'Cash flow control', shortLabel: 'Cash flow', description: 'Understand cash movement, liquidity, and upcoming obligations.', requiredCapabilities: ['cashbook'], routes: ['/cashbook', '/reports'] },
   { key: 'industry_metrics', label: 'Industry metrics', shortLabel: 'Metrics', description: 'Show only relevant operational metrics with honest input requirements.', requiredCapabilities: ['reporting'], routes: ['/reports', '/metric-inputs'] },
-  { key: 'ai_copilot', label: 'AI accounting copilot', shortLabel: 'Ask AI', description: 'Prepare reviewable accounting actions without direct database access.', requiredCapabilities: ['ai_assistant'], routes: ['/ask', '/voice'], advanced: true },
+  { key: 'ai_copilot', label: 'AI accounting copilot', shortLabel: 'Ask AI', description: 'Prepare reviewable accounting actions without direct database access.', requiredCapabilities: ['ai_assistant'], routes: ['/ask'], advanced: true },
+  { key: 'voice_copilot', label: 'Voice transaction assistant', shortLabel: 'Voice', description: 'Turn spoken transactions into reviewable drafts without direct database access.', requiredCapabilities: ['voice_assistant'], routes: ['/voice'], advanced: true },
 ];
 
 const PERSONA_FEATURED: Partial<Record<PersonaId, OperationalModuleKey[]>> = {

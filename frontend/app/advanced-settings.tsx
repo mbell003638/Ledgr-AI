@@ -64,6 +64,7 @@ export default function AdvancedSettingsScreen() {
   const [provider, setProvider] = useState<ProviderId>("gemini");
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
+  const [transcriptionModelName, setTranscriptionModelName] = useState("whisper-1");
   const [baseUrl, setBaseUrl] = useState("");
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [aiRememberHistory, setAiRememberHistory] = useState(false);
@@ -132,6 +133,7 @@ export default function AdvancedSettingsScreen() {
       setProvider(cfg.provider);
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
+      setTranscriptionModelName(cfg.transcriptionModel || "whisper-1");
       setBaseUrl(cfg.baseUrl || "");
       setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
       setAiRememberHistory(s.aiRememberHistory === true);
@@ -208,6 +210,7 @@ export default function AdvancedSettingsScreen() {
         provider,
         apiKey: key.trim(),
         model: modelName.trim() || meta.defaultModel,
+        transcriptionModel: transcriptionModelName.trim() || "whisper-1",
         baseUrl: baseUrl.trim() || undefined,
       });
       try {
@@ -258,6 +261,7 @@ export default function AdvancedSettingsScreen() {
         provider,
         apiKey: key.trim(),
         model: modelName.trim() || meta.defaultModel,
+        transcriptionModel: transcriptionModelName.trim() || "whisper-1",
         baseUrl: baseUrl.trim() || undefined,
       });
       await api.testKey();
@@ -603,6 +607,15 @@ export default function AdvancedSettingsScreen() {
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
                   <TextInput value={modelName} onChangeText={setModelName} placeholder={PROVIDERS.find((item) => item.id === provider)?.defaultModel || "model name"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                  {provider === "openai" ? (
+                    <>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice transcription model</Text>
+                      <TextInput testID="voice-transcription-model" value={transcriptionModelName} onChangeText={setTranscriptionModelName} placeholder="whisper-1" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                      <Text style={styles.hint}>Voice uses this model at your compatible host /audio/transcriptions endpoint; it stays separate from the chat model.</Text>
+                    </>
+                  ) : provider === "anthropic" ? (
+                    <Text style={[styles.hint, { marginTop: theme.spacing.md }]}>Anthropic handles chat and images, but does not provide speech-to-text. Use Gemini or an OpenAI-compatible provider with /audio/transcriptions for voice.</Text>
+                  ) : null}
                   {isCustomProvider && (
                     <>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>

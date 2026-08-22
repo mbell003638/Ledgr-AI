@@ -15,6 +15,7 @@ import { ScreenHeader, KpiTile, Card } from "@/src/components/UI";
 import { sharePlainText } from "@/src/utils/share";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { showAlert } from "@/src/utils/alerts";
+import { requestVoiceAssistant } from "@/src/utils/voiceAssistantRequest";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import Animated from "react-native-reanimated";
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -62,7 +63,7 @@ const WORKFLOW_TILES: WorkflowTile[] = [
   { key: "reports", label: "Reports", subtitle: "", icon: "bar-chart-outline", color: "#FBBF24", capability: "reporting", route: "/reports" },
   { key: "monthly-report", label: "Monthly Report", subtitle: "", icon: "calendar-outline", color: "#F97316", capability: "reporting", route: "/monthly-summary" },
   { key: "ask-ai", label: "Ask AI", subtitle: "", icon: "sparkles-outline", color: "#A7F3D0", capability: "ai_assistant", route: "/ask" },
-  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: "mic-outline", color: "#A7F3D0", capability: "ai_assistant", route: "/voice" },
+  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: "mic-outline", color: "#A7F3D0", capability: "voice_assistant", route: "/voice" },
 ];
 
 function workflowTilesFor(settings: any): WorkflowTile[] {
@@ -452,7 +453,7 @@ export default function Dashboard() {
               <Text style={styles.quickWorkspaceTitle}>Quick Workspaces</Text>
               <Text style={styles.quickWorkspaceHint}>Hold any tile to organize &amp; sort</Text>
               <View style={styles.quickWorkspaceGrid}>
-                {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => router.push(tile.route as any)} style={({ pressed }) => [styles.quickWorkspaceTile, tile.key === "ai-assistant" && styles.quickWorkspaceTileFeatured, pressed && styles.quickWorkspaceTilePressed]}>
+                {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => tile.key === "ai-assistant" ? requestVoiceAssistant() : router.push(tile.route as any)} style={({ pressed }) => [styles.quickWorkspaceTile, tile.key === "ai-assistant" && styles.quickWorkspaceTileFeatured, pressed && styles.quickWorkspaceTilePressed]}>
                   <View style={[styles.quickWorkspaceIcon, { backgroundColor: tile.key === "ai-assistant" ? "rgba(255,255,255,0.24)" : "rgba(96, 96, 91, 0.52)" }]}><Ionicons name={tile.icon as any} size={22} color={tile.key === "ai-assistant" ? "#0b1110" : tile.color} /></View>
                   <Text numberOfLines={2} style={[styles.quickWorkspaceLabel, tile.key === "ai-assistant" && styles.quickWorkspaceLabelFeatured]}>{tile.label}</Text>
                 </Pressable>)}

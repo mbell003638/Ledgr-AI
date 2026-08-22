@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter, useFocusEffect } from "expo-router";
+import { RecordingPresets, useAudioRecorder } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
@@ -15,6 +16,8 @@ import { localTodayIso } from "@/src/utils/dateValidation";
 import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
+import { VoiceOrb } from "@/src/components/VoiceOrb";
+import { cancelVoiceRecorder, captureVoiceRecording, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 
 type Msg = { role: "user" | "assistant"; text: string };
 
@@ -344,6 +347,44 @@ export default function AskBooks() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [rememberHistory, setRememberHistory] = useState(false);
+  const voiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [voicePhase, setVoicePhase] = useState<"idle" | "recording" | "processing" | "error">("idle");
+  const [voiceError, setVoiceError] = useState("");
+
+  const startAskVoice = async () => {
+    setVoiceError("");
+    try {
+      await startVoiceRecorder(voiceRecorder);
+      setVoicePhase("recording");
+    } catch (e: any) {
+      setVoiceError(e?.message || "Could not start the microphone.");
+      setVoicePhase("error");
+    }
+  };
+
+  const stopAskVoice = async () => {
+    if (voicePhase !== "recording") return;
+    setVoicePhase("processing");
+    try {
+      const captured = await captureVoiceRecording(voiceRecorder);
+      const result = await api.transcribe(captured.audioBase64, captured.mime);
+      const transcript = String(result?.transcript || "").trim();
+      if (!transcript) throw new Error("Nothing was heard. Try again.");
+      setVoicePhase("idle");
+      await send(transcript);
+    } catch (e: any) {
+      setVoiceError(e?.message || "Voice transcription failed. Try again.");
+      setVoicePhase("error");
+    }
+  };
+
+  const cancelAskVoice = () => {
+    void cancelVoiceRecorder(voiceRecorder);
+    setVoicePhase("idle");
+    setVoiceError("");
+  };
+
+  useEffect(() => () => { void cancelVoiceRecorder(voiceRecorder); }, [voiceRecorder]);
 
   useFocusEffect(useCallback(() => {
     const nextKey = askHistoryStorageKey(api.activeBookId());
@@ -692,8 +733,19 @@ export default function AskBooks() {
               <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
+            ) : voicePhase !== "idle" ? (
+              <View style={styles.askVoiceInline}>
+                <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
+                <View style={styles.askVoiceCopy}>
+                  <Text style={[styles.askVoiceStatus, { color: voicePhase === "error" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : "Microphone error"}</Text>
+                  <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={1}>{voicePhase === "recording" ? "Tap stop when done" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : "Cancel Ask AI voice input"} onPress={voicePhase === "recording" ? stopAskVoice : cancelAskVoice} style={styles.askVoiceStop}>
+                  <Ionicons name={voicePhase === "recording" ? "stop" : "close"} size={17} color={voicePhase === "recording" ? theme.color.error : theme.color.muted} />
+                </Pressable>
+              </View>
             ) : (
-              <Pressable style={styles.micBtn} onPress={() => router.push("/voice")}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Ask AI voice input" style={styles.micBtn} onPress={startAskVoice}>
                 <Ionicons name="mic-outline" size={22} color={theme.color.muted} />
               </Pressable>
             )}
@@ -741,5 +793,10 @@ function makeStyles(theme: any) {
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
+    askVoiceInline: { flex: 1, minWidth: 0, minHeight: 40, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+    askVoiceCopy: { flex: 1, minWidth: 0, marginLeft: 4 },
+    askVoiceStatus: { fontSize: 12, fontWeight: "700" },
+    askVoiceHint: { fontSize: 10, marginTop: 2 },
+    askVoiceStop: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border, justifyContent: "center", alignItems: "center", marginLeft: 6 },
   });
 }

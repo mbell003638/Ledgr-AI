@@ -53,6 +53,7 @@ export type CapabilityKey =
   | 'cashbook'
   | 'reporting'
   | 'ai_assistant'
+  | 'voice_assistant'
   | 'payroll'
   | 'fixed_assets'
   | 'multi_location';
@@ -88,7 +89,8 @@ export const CAPABILITIES: CapabilityDefinition[] = [
   { key: 'reconciliation', label: 'Reconciliation', description: 'Match statements, payouts, receipts, and recorded ledger activity.', featureKeys: [], routes: ['/reconcile'] },
   { key: 'cashbook', label: 'Cash and bank', description: 'Manual cash movements, bank balances, and cash controls.', featureKeys: ['cashbook'], routes: ['/cashbook'] },
   { key: 'reporting', label: 'Financial reporting', description: 'Profit and Loss, Balance Sheet, Trial Balance, and summaries.', featureKeys: ['reports', 'monthly'], routes: ['/reports', '/monthly-summary', '/custom-report'] },
-  { key: 'ai_assistant', label: 'AI assistance', description: 'Reviewable voice, OCR, reconciliation suggestions, and finance questions.', featureKeys: ['ask', 'voice'], routes: ['/ask', '/voice', '/scan-import'] },
+  { key: 'ai_assistant', label: 'AI assistance', description: 'Ask AI finance chat, OCR, reconciliation suggestions, and reviewable answers.', featureKeys: ['ask'], routes: ['/ask', '/scan-import'] },
+  { key: 'voice_assistant', label: 'Voice AI Assistant', description: 'Record transactions by voice and review the draft before saving it.', featureKeys: ['voice'], routes: ['/voice'] },
   { key: 'payroll', label: 'Payroll', description: 'Employees, pay runs, payslips, and payroll reporting.', featureKeys: ['payroll'], routes: ['/payroll'] },
   { key: 'fixed_assets', label: 'Fixed assets', description: 'Equipment, vehicles, depreciation, and asset register.', featureKeys: ['fixedAssets'], routes: ['/fixed-assets'], metrics: ['roe'] },
   { key: 'multi_location', label: 'Multi-location retail', description: 'Stores, POS sessions, location-level sales, stock transfers, and consolidated reports.', featureKeys: ['sales', 'inventory', 'cashbook', 'reports', 'locations'], routes: ['/locations', '/pos-sessions', '/stock-transfers'], metrics: ['cogs', 'gross_margin', 'roi'] },
