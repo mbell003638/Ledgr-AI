@@ -78,11 +78,12 @@ export default function Onboarding() {
 
   useFocusEffect(useCallback(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      setStep((current) => current > 0 ? current - 1 : current);
+      if (step === 0) return false;
+      setStep((current) => current - 1);
       return true;
     });
     return () => subscription.remove();
-  }, []));
+  }, [step]));
 
   const toggleLock = async () => {
     if (lockEnabled) {

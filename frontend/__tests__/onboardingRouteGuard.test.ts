@@ -19,8 +19,9 @@ describe('onboarding route authorization', () => {
     expect(layout).toContain('<OnboardingGateProvider>');
   });
 
-  it('fails closed if persisted onboarding state cannot be read', () => {
+  it('routes only incomplete or unreadable persisted state to onboarding', () => {
     expect(context).toMatch(/catch\s*\{[\s\S]*?completed = false/);
+    expect(index).toMatch(/api\.getSettings\(\)[\s\S]*?s\.hasOnboarded \? "\/\(tabs\)" : "\/onboarding"/);
     expect(index).toMatch(/catch\s*\{[\s\S]*?setDest\("\/onboarding"\)/);
   });
 
@@ -29,9 +30,10 @@ describe('onboarding route authorization', () => {
     expect(onboarding).toMatch(/await api\.updateSettings\([\s\S]*?markOnboarded\(\);[\s\S]*?router\.replace\("\/\(tabs\)"\)/);
   });
 
-  it('consumes Android Back inside onboarding and moves only between setup steps', () => {
+  it('moves backward between onboarding steps and releases Back on the first step for app exit', () => {
     expect(onboarding).toContain('BackHandler.addEventListener("hardwareBackPress"');
-    expect(onboarding).toContain('setStep((current) => current > 0 ? current - 1 : current)');
-    expect(onboarding).toMatch(/hardwareBackPress[\s\S]*?return true/);
+    expect(onboarding).toContain('if (step === 0) return false;');
+    expect(onboarding).toContain('setStep((current) => current - 1)');
+    expect(onboarding).toMatch(/if \(step === 0\) return false;[\s\S]*?return true/);
   });
 });
