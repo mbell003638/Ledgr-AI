@@ -304,7 +304,10 @@ export function getPersonaBaselineFeatures(settings: any): FeatureKey[] {
   const modernPersonas = new Set(Object.keys(PERSONA_CAPABILITY_DEFAULTS).filter((persona) => persona !== "custom"));
   if ((Array.isArray(settings?.enabledCapabilities) && settings.enabledCapabilities.length) || rawPersonas.some((persona) => modernPersonas.has(persona))) {
     const capabilityKeys = featureKeysForCapabilities(settings) as FeatureKey[];
-    if (capabilityKeys.length) return DEFAULT_ALL_KEYS.filter((key) => capabilityKeys.includes(key));
+    if (capabilityKeys.length) {
+      const enabledKeys = new Set(capabilityKeys);
+      return ALL_FEATURES.map((feature) => feature.key).filter((key) => enabledKeys.has(key));
+    }
   }
 
   const union = new Set<FeatureKey>();

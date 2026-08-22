@@ -472,8 +472,16 @@ describe('V2 UI contracts', () => {
   });
   it('customize-features resets to the multi-persona baseline and persists a manual override', () => {
     const source = readApp('customize-features.tsx');
+    const capabilities = readSource('src/utils/capabilities.ts');
+    const products = readApp('products.tsx');
     expect(source).toContain('getPersonaBaselineFeatures');
     expect(source).toMatch(/updateSettings\(\{\s*enabledFeatures/);
+    expect(capabilities).toContain("key: 'live_product_stock'");
+    expect(capabilities).toContain("featureKeys: ['perpetualInventory']");
+    expect(source).toContain('CAPABILITIES.filter');
+    expect(capabilities).toContain("label: 'Live Product Stock'");
+    expect(products).toContain('Turn on in Customize Features');
+    expect(products).toContain('perpetualInventory');
   });
 
   it('Quick Action Create Invoice opens the invoices modal, not sale-form', () => {

@@ -9,7 +9,7 @@ import { api } from "@/src/api";
 import { setRequestedHostingMode } from "@/src/utils/hostingMode";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
-import { CAPABILITIES, CORE_CAPABILITIES, METRICS, getPersonaCapabilityDefaults, type CapabilityKey, type MetricKey } from "@/src/utils/capabilities";
+import { CAPABILITIES, CORE_CAPABILITIES, METRICS, getPersonaCapabilityDefaults, normalizeCapabilityDependencies, type CapabilityKey, type MetricKey } from "@/src/utils/capabilities";
 
 const CURRENCIES = ["USD", "INR", "EUR", "GBP", "AED", "CAD", "AUD", "NGN", "KES", "ZAR", "BDT", "PKR", "PHP", "MXN", "BRL"];
 const RECOMMENDED_PERSONA_IDS: PersonaId[] = ["mobile_invoicing", "dropshipper", "marketplace_seller", "entrepreneur", "startup", "developer", "content_creator", "manufacturer", "import_export", "retail"];
@@ -43,8 +43,8 @@ export default function Onboarding() {
   const selectedPersona = PERSONAS.find((item) => item.id === persona);
   const personaCapabilities = useMemo(() => persona ? getPersonaCapabilityDefaults({ activePersona: persona, selectedPersonas: [persona] }) : [], [persona]);
   const selectedCapabilities = useMemo(() => {
-    const base = customCapabilities || personaCapabilities;
-    return multiLocation ? [...new Set([...base, "multi_location" as const])] : base.filter((key) => key !== "multi_location");
+    const base = normalizeCapabilityDependencies(customCapabilities || personaCapabilities);
+    return multiLocation ? normalizeCapabilityDependencies([...base, "multi_location" as const]) : base.filter((key) => key !== "multi_location");
   }, [customCapabilities, multiLocation, personaCapabilities]);
   const recommendedPersonas = PERSONAS.filter((item) => RECOMMENDED_PERSONA_IDS.includes(item.id));
   const otherPersonas = PERSONAS.filter((item) => !RECOMMENDED_PERSONA_IDS.includes(item.id));
@@ -69,7 +69,7 @@ export default function Onboarding() {
     if (CORE_CAPABILITIES.includes(key)) return;
     const current = new Set(customCapabilities || personaCapabilities);
     if (current.has(key)) current.delete(key); else current.add(key);
-    setCustomCapabilities([...current]);
+    setCustomCapabilities(normalizeCapabilityDependencies([...current]));
   };
 
   const toggleMetric = (key: MetricKey) => {

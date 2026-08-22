@@ -6,6 +6,7 @@ export type OperationalModuleKey =
   | 'customer_accounts'
   | 'supplier_procurement'
   | 'inventory_catalog'
+  | 'live_stock_control'
   | 'shipping_returns'
   | 'marketplace_settlements'
   | 'projects_time'
@@ -39,6 +40,7 @@ export const OPERATIONAL_MODULES: OperationalModule[] = [
   { key: 'customer_accounts', label: 'Customer accounts', shortLabel: 'Customers', description: 'Track customer records, receivables, balances, and collection history.', requiredCapabilities: ['customers'], routes: ['/suppliers', '/debtors'] },
   { key: 'supplier_procurement', label: 'Procurement and suppliers', shortLabel: 'Purchases', description: 'Track purchasing, supplier bills, payments, and payables.', requiredCapabilities: ['procurement'], routes: ['/bills', '/payments'] },
   { key: 'inventory_catalog', label: 'Inventory and catalog', shortLabel: 'Inventory', description: 'Manage products, quantities, stock value, and inventory controls.', requiredCapabilities: ['inventory'], routes: ['/products', '/inventory-form'] },
+  { key: 'live_stock_control', label: 'Live product stock', shortLabel: 'Live stock', description: 'Update product quantities automatically when sales and purchases are posted.', requiredCapabilities: ['live_product_stock'], routes: ['/products', '/inventory-form'], advanced: true },
   { key: 'shipping_returns', label: 'Shipping and returns', shortLabel: 'Delivery', description: 'Manage dispatch, delivery, returns, refunds, and RTO workflows.', requiredCapabilities: ['shipping_returns'], routes: ['/delivery-notes', '/marketplace'] },
   { key: 'marketplace_settlements', label: 'Marketplace settlements', shortLabel: 'Settlements', description: 'Reconcile channels, platform fees, refunds, payouts, and clearing balances.', requiredCapabilities: ['marketplace'], routes: ['/marketplace'], advanced: true },
   { key: 'projects_time', label: 'Projects and time', shortLabel: 'Projects', description: 'Track projects, budgets, billable time, delivery costs, and margin.', requiredCapabilities: ['projects'], routes: ['/projects'], advanced: true },
@@ -48,7 +50,7 @@ export const OPERATIONAL_MODULES: OperationalModule[] = [
   { key: 'pos_locations', label: 'POS and locations', shortLabel: 'Locations', description: 'Manage stores, tills, stock transfers, location reporting, and consolidated books.', requiredCapabilities: ['multi_location'], routes: ['/locations', '/pos-sessions', '/stock-transfers'], advanced: true },
   { key: 'payroll', label: 'Payroll', shortLabel: 'Payroll', description: 'Manage employees, pay runs, payslips, taxes, and payroll journals.', requiredCapabilities: ['payroll'], routes: ['/payroll'], advanced: true },
   { key: 'fixed_assets', label: 'Fixed assets', shortLabel: 'Assets', description: 'Track equipment, vehicles, depreciation, and disposals.', requiredCapabilities: ['fixed_assets'], routes: ['/fixed-assets'], advanced: true },
-  { key: 'bank_reconciliation', label: 'Bank reconciliation', shortLabel: 'Reconcile', description: 'Stage bank feeds, match transactions, and review unmatched items.', requiredCapabilities: ['reconciliation'], routes: ['/reconcile', '/scan-import'] },
+  { key: 'bank_reconciliation', label: 'Bank reconciliation', shortLabel: 'Reconcile', description: 'Stage bank feeds, match transactions, and review unmatched items.', requiredCapabilities: ['reconciliation'], routes: ['/reconcile'] },
   { key: 'budgets_forecasts', label: 'Budgets and forecasts', shortLabel: 'Planning', description: 'Compare budgets to actuals and plan cash, margin, and growth.', requiredCapabilities: ['reporting'], routes: ['/planning', '/reports', '/custom-report'], advanced: true },
   { key: 'recurring_billing', label: 'Recurring billing', shortLabel: 'Recurring', description: 'Schedule repeat invoices, expenses, subscriptions, and local reminders.', requiredCapabilities: ['invoicing'], routes: ['/planning', '/invoices'], advanced: true },
   { key: 'tax_compliance', label: 'Tax and compliance', shortLabel: 'Tax', description: 'Apply country tax profiles, rates, registrations, and compliance reports.', requiredCapabilities: ['reporting'], routes: ['/planning', '/reports'], advanced: true },

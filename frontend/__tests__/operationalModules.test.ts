@@ -12,6 +12,14 @@ describe('progressive industry module coverage', () => {
     expect(advanced.map((module) => module.key)).toEqual(expect.arrayContaining(['budgets_forecasts', 'tax_compliance']));
   });
 
+  it('exposes live stock control only when the live product stock capability is enabled', () => {
+    const periodic = operationalModulesFor({ activePersona: 'retail', enabledCapabilities: ['inventory'] }).map((module) => module.key);
+    const live = operationalModulesFor({ activePersona: 'retail', enabledCapabilities: ['live_product_stock'] }).map((module) => module.key);
+    expect(periodic).not.toContain('live_stock_control');
+    expect(live).toContain('inventory_catalog');
+    expect(live).toContain('live_stock_control');
+  });
+
   it('gives a creator the creator workflow without showing manufacturing by default', () => {
     const settings = { activePersona: 'content_creator', selectedPersonas: ['content_creator'] };
     const featuredKeys = featuredOperationalModulesFor(settings).map((module) => module.key);

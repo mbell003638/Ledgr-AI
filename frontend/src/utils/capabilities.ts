@@ -41,6 +41,7 @@ export type CapabilityKey =
   | 'procurement'
   | 'customers'
   | 'inventory'
+  | 'live_product_stock'
   | 'marketplace'
   | 'shipping_returns'
   | 'projects'
@@ -77,12 +78,13 @@ export const CAPABILITIES: CapabilityDefinition[] = [
   { key: 'commerce', label: 'Sales and commerce', description: 'Cash sales, products, customers, and commercial orders.', featureKeys: ['sales'], routes: ['/sales', '/sale-form'] },
   { key: 'procurement', label: 'Purchases and suppliers', description: 'Supplier bills, purchase payments, and payable tracking.', featureKeys: ['bills', 'payments'], routes: ['/bills', '/payments'] },
   { key: 'customers', label: 'Customer accounts', description: 'Customer records, receivables, and collection history.', featureKeys: ['receipts'], routes: ['/suppliers', '/debtors'] },
-  { key: 'inventory', label: 'Inventory and products', description: 'Stock counts, products, stock value, and inventory controls.', featureKeys: ['inventory', 'perpetualInventory'], routes: ['/inventory-form', '/products'], metrics: ['cogs', 'gross_margin'] },
+  { key: 'inventory', label: 'Inventory and products', description: 'Periodic stock counts, products, stock value, and inventory controls.', featureKeys: ['inventory'], routes: ['/inventory-form', '/products'], metrics: ['cogs', 'gross_margin'] },
+  { key: 'live_product_stock', label: 'Live Product Stock', description: 'Let sales and purchases update product quantities automatically using live stock movements.', featureKeys: ['perpetualInventory'], routes: ['/products', '/inventory-form'], metrics: ['cogs', 'gross_margin'] },
   { key: 'marketplace', label: 'Marketplace operations', description: 'Marketplace orders, fees, settlement payouts, and refunds.', featureKeys: ['sales', 'invoices', 'receipts'], routes: ['/sales', '/reconcile', '/marketplace'], metrics: ['cogs', 'gross_margin', 'rto', 'roi'] },
   { key: 'shipping_returns', label: 'Shipping and returns', description: 'Dispatch, delivery, returns, and return-to-origin tracking.', featureKeys: ['delivery'], routes: ['/delivery-notes'], metrics: ['rto'] },
   { key: 'projects', label: 'Projects and billable work', description: 'Client projects, billable work, estimates, and project profitability.', featureKeys: ['invoices', 'quotes', 'expenses'], routes: ['/invoices', '/quotes', '/projects'], metrics: ['roi', 'gross_margin'] },
   { key: 'creator_revenue', label: 'Creator revenue', description: 'Brand deals, sponsorship invoices, platform payouts, and campaign costs.', featureKeys: ['invoices', 'receipts', 'expenses'], routes: ['/invoices', '/receipts', '/projects'], metrics: ['roi'] },
-  { key: 'manufacturing', label: 'Manufacturing', description: 'Materials, production work, finished goods, and unit-cost tracking.', featureKeys: ['inventory', 'perpetualInventory', 'bills'], routes: ['/inventory-form', '/products', '/bills'], metrics: ['cogs', 'gross_margin', 'roi', 'roe'] },
+  { key: 'manufacturing', label: 'Manufacturing', description: 'Materials, production work, finished goods, and unit-cost tracking.', featureKeys: ['inventory', 'bills'], routes: ['/inventory-form', '/products', '/bills'], metrics: ['cogs', 'gross_margin', 'roi', 'roe'] },
   { key: 'trade_landed_cost', label: 'Import and export trade', description: 'Shipments, freight, duties, foreign currency, and landed cost.', featureKeys: ['bills', 'inventory', 'invoices', 'delivery'], routes: ['/bills', '/inventory-form', '/invoices', '/delivery-notes'], metrics: ['cogs', 'gross_margin', 'rto', 'roi', 'roe'] },
   { key: 'cogs_margin', label: 'COGS and gross margin', description: 'Cost of goods sold, gross profit, and margin by period or workflow.', featureKeys: ['inventory', 'reports', 'monthly'], routes: ['/reports', '/monthly-summary'], metrics: ['cogs', 'gross_margin'] },
   { key: 'growth_analytics', label: 'Growth analytics', description: 'Acquisition cost, operating efficiency, campaign returns, and investor metrics.', featureKeys: ['reports', 'monthly'], routes: ['/reports', '/monthly-summary', '/custom-report'], metrics: ['cac', 'roi', 'roe', 'peg'] },
@@ -161,11 +163,55 @@ export function getPersonaCapabilityDefaults(settings: any): CapabilityKey[] {
   return [...keys];
 }
 
+const CAPABILITY_DEPENDENCIES: Partial<Record<CapabilityKey, CapabilityKey[]>> = {
+  live_product_stock: ['inventory'],
+  marketplace: ['commerce', 'invoicing', 'customers', 'reconciliation'],
+  projects: ['invoicing'],
+  creator_revenue: ['invoicing', 'customers', 'projects'],
+  manufacturing: ['inventory', 'procurement', 'live_product_stock'],
+  trade_landed_cost: ['procurement', 'inventory', 'invoicing', 'shipping_returns'],
+  cogs_margin: ['inventory', 'reporting'],
+  growth_analytics: ['reporting'],
+  multi_location: ['commerce', 'inventory', 'cashbook', 'reporting'],
+};
+
+export function normalizeCapabilityDependencies(keys: CapabilityKey[]): CapabilityKey[] {
+  const normalized = new Set<CapabilityKey>([...CORE_CAPABILITIES, ...keys]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const key of [...normalized]) {
+      for (const dependency of CAPABILITY_DEPENDENCIES[key] || []) {
+        if (!normalized.has(dependency)) {
+          normalized.add(dependency);
+          changed = true;
+        }
+      }
+    }
+  }
+  return [...normalized];
+}
+
+export function isCapabilityRequiredByEnabled(key: CapabilityKey, enabled: Iterable<CapabilityKey>): boolean {
+  const enabledSet = new Set(enabled);
+  return [...enabledSet].some((candidate) => (CAPABILITY_DEPENDENCIES[candidate] || []).includes(key));
+}
+
+function legacyOptionalCapabilities(settings: any): CapabilityKey[] {
+  const features = new Set(Array.isArray(settings?.enabledFeatures) ? settings.enabledFeatures.map(String) : []);
+  const inferred: CapabilityKey[] = [];
+  if (features.has('perpetualInventory')) inferred.push('live_product_stock');
+  if (features.has('locations')) inferred.push('multi_location');
+  if (features.has('payroll')) inferred.push('payroll');
+  if (features.has('fixedAssets')) inferred.push('fixed_assets');
+  return inferred;
+}
+
 export function getEnabledCapabilities(settings: any): CapabilityKey[] {
   if (Array.isArray(settings?.enabledCapabilities) && settings.enabledCapabilities.length) {
-    return [...new Set([...CORE_CAPABILITIES, ...settings.enabledCapabilities as CapabilityKey[]])];
+    return normalizeCapabilityDependencies([...new Set([...CORE_CAPABILITIES, ...settings.enabledCapabilities as CapabilityKey[]])]);
   }
-  return getPersonaCapabilityDefaults(settings);
+  return normalizeCapabilityDependencies([...getPersonaCapabilityDefaults(settings), ...legacyOptionalCapabilities(settings)]);
 }
 
 export function isCapabilityEnabled(settings: any, key: CapabilityKey): boolean {

@@ -10,6 +10,7 @@ import {
 import { PERSONA_CAPABILITY_DEFAULTS, featureKeysForCapabilities } from "../src/utils/capabilities";
 
 const ALL_KEYS = ALL_FEATURES.map((f) => f.key).filter((key) => key !== "voice" && !OPTIONAL_FEATURE_KEYS.includes(key));
+const ALL_CAPABILITY_KEYS: string[] = ALL_FEATURES.map((f) => f.key).filter((key) => key !== "voice");
 
 describe("persona → dashboard tiles mapping", () => {
   it("resolves the canonical PersonaId values written by onboarding/settings", () => {
@@ -33,7 +34,7 @@ describe("persona → dashboard tiles mapping", () => {
   it("every canonical industry persona resolves through the capability registry", () => {
     for (const persona of Object.keys(PERSONA_CAPABILITY_DEFAULTS).filter((id) => id !== "custom")) {
       const enabled = getEnabledFeatures({ activePersona: persona });
-      const expected = featureKeysForCapabilities({ activePersona: persona }).filter((key) => ALL_KEYS.includes(key as FeatureKey));
+      const expected = featureKeysForCapabilities({ activePersona: persona }).filter((key) => ALL_CAPABILITY_KEYS.includes(key as FeatureKey));
       expect(new Set(enabled)).toEqual(new Set(expected));
     }
     expect(getEnabledFeatures({ activePersona: "saas" })).not.toContain("inventory");

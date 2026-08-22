@@ -4,7 +4,10 @@ import {
   getPersonaCapabilityDefaults,
   featureKeysForCapabilities,
   isCapabilityEnabled,
+  CAPABILITIES,
+  PERSONA_CAPABILITY_DEFAULTS,
 } from '../src/utils/capabilities';
+import { getEnabledFeatures } from '../src/utils/featureFlags';
 import {
   calculateCac,
   calculateCogs,
@@ -41,6 +44,16 @@ describe('Manus persona capabilities', () => {
     expect(saasFeatures).not.toContain('bills');
   });
 
+  it('exposes live product stock separately from periodic inventory', () => {
+    const periodic = { activePersona: 'retail', selectedPersonas: ['retail'], enabledCapabilities: ['inventory'] };
+    const live = { ...periodic, enabledCapabilities: ['inventory', 'live_product_stock'] };
+    expect(featureKeysForCapabilities(periodic)).toContain('inventory');
+    expect(featureKeysForCapabilities(periodic)).not.toContain('perpetualInventory');
+    expect(featureKeysForCapabilities(live)).toEqual(expect.arrayContaining(['inventory', 'perpetualInventory']));
+    expect(isCapabilityEnabled(live, 'live_product_stock')).toBe(true);
+    expect(isCapabilityEnabled(live, 'inventory')).toBe(true);
+  });
+
   it('keeps voice assistant opt-in while leaving Ask AI available by default', () => {
     const settings = { activePersona: 'retail', selectedPersonas: ['retail'] };
     const defaults = getPersonaCapabilityDefaults(settings);
@@ -49,6 +62,29 @@ describe('Manus persona capabilities', () => {
     expect(featureKeysForCapabilities(settings)).not.toContain('voice');
     expect(isCapabilityEnabled(settings, 'ai_assistant')).toBe(true);
     expect(isCapabilityEnabled({ ...settings, enabledCapabilities: ['voice_assistant'] }, 'voice_assistant')).toBe(true);
+  });
+
+  it('activates every advertised capability feature across every persona', () => {
+    for (const persona of Object.keys(PERSONA_CAPABILITY_DEFAULTS)) {
+      const defaults = getPersonaCapabilityDefaults({ activePersona: persona });
+      const settings = { activePersona: persona, enabledCapabilities: defaults };
+      const features = getEnabledFeatures(settings);
+      for (const key of defaults) {
+        const definition = CAPABILITIES.find((item) => item.key === key);
+        expect(definition).toBeDefined();
+        for (const featureKey of definition?.featureKeys || []) expect(features).toContain(featureKey);
+      }
+    }
+  });
+
+  it('activates optional accounting packs only when their capability is selected', () => {
+    const base = { activePersona: 'retail', selectedPersonas: ['retail'], enabledCapabilities: ['inventory'] };
+    expect(getEnabledFeatures(base)).not.toContain('perpetualInventory');
+    expect(getEnabledFeatures({ ...base, enabledCapabilities: ['inventory', 'live_product_stock'] })).toContain('perpetualInventory');
+    expect(getEnabledFeatures({ ...base, enabledCapabilities: ['payroll'] })).toContain('payroll');
+    expect(getEnabledFeatures({ ...base, enabledCapabilities: ['fixed_assets'] })).toContain('fixedAssets');
+    expect(isCapabilityEnabled({ activePersona: 'retail', enabledFeatures: ['perpetualInventory'] }, 'live_product_stock')).toBe(true);
+    expect(isCapabilityEnabled({ activePersona: 'retail', enabledFeatures: ['locations'] }, 'multi_location')).toBe(true);
   });
 
   it('maps legacy business types to safe modern personas', () => {
