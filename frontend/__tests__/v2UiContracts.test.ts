@@ -101,6 +101,17 @@ describe('V2 UI contracts', () => {
     expect(advanced).toContain('Accounting Basis');
     expect(advanced).toContain('Accounting Style');
     expect(advanced).toContain('api.updateV2BookConfig');
+    expect(advanced).toContain('styles.advancedGroup');
+    expect(advanced).toContain('ON · Fingerprint / PIN');
+    expect(advanced).toContain('shadowOpacity: 0.12');
+    const sync = readApp('sync-settings.tsx');
+    expect(sync).toContain('padding: 16, gap: 12');
+    expect(sync).toContain('marginBottom: 2');
+    const theme = readSource('src/theme.ts');
+    expect(theme).toContain("muted: '#A0AAA2'");
+    expect(theme).toContain("muted: '#ADB5CC'");
+    const voiceFab = readSource('src/components/VoiceFab.tsx');
+    expect(voiceFab).toContain('bottom: 112');
   });
 
   it('all shared report and transaction documents support mobile and print layouts', () => {

@@ -10,7 +10,7 @@ import { api, getAIConfig, setAIConfig } from "@/src/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askHistoryStorageKey } from "@/src/utils/askHistory";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
-import { ScreenHeader } from "@/src/components/UI";
+import { ScreenHeader, Card } from "@/src/components/UI";
 import { HostingModeCard } from "@/src/components/HostingModeCard";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
@@ -50,7 +50,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </GlowPressable>
-      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
+      {isExpanded && <View style={{ marginHorizontal: 4, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 12, paddingTop: 4, borderWidth: 1, borderColor: theme.color.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 }}>{children}</View>}
     </View>
   );
 };
@@ -439,7 +439,7 @@ export default function AdvancedSettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <Card style={styles.advancedGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
               <HostingModeCard />
               <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
@@ -497,7 +497,7 @@ export default function AdvancedSettingsScreen() {
                   <Text style={styles.label}>Accounting Basis</Text>
                   <View style={styles.modeRow}>
                     {(["cash", "accrual"] as const).map((b) => (
-                      <Pressable key={b} onPress={() => setAccountingBasis(b)} style={[styles.modeBtn, accountingBasis === b && styles.modeBtnActive]}>
+                      <Pressable key={b} accessibilityRole="radio" accessibilityState={{ selected: accountingBasis === b }} onPress={() => setAccountingBasis(b)} style={[styles.modeBtn, accountingBasis === b && styles.modeBtnActive]}>
                         <Text style={[styles.modeText, accountingBasis === b && styles.modeTextActive]}>{b === "cash" ? "Cash Basis" : "Accrual Basis"}</Text>
                       </Pressable>
                     ))}
@@ -505,11 +505,11 @@ export default function AdvancedSettingsScreen() {
 
                   <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Style</Text>
                   <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
-                    <Pressable onPress={() => updateAccountingStyle('retail_partnership')} style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === 'retail_partnership' }} onPress={() => updateAccountingStyle('retail_partnership')} style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}>
                       <Ionicons name={accountingStyle === 'retail_partnership' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'retail_partnership' ? theme.color.brandPrimary : theme.color.muted} />
                       <View style={{ flex: 1 }}><Text style={styles.bookName}>Equity Split</Text></View>
                     </Pressable>
-                    <Pressable onPress={() => updateAccountingStyle('standard')} style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}>
+                    <Pressable accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === 'standard' }} onPress={() => updateAccountingStyle('standard')} style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}>
                       <Ionicons name={accountingStyle === 'standard' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'standard' ? theme.color.brandPrimary : theme.color.muted} />
                       <View style={{ flex: 1 }}><Text style={styles.bookName}>Standard Entity</Text></View>
                     </Pressable>
@@ -518,14 +518,14 @@ export default function AdvancedSettingsScreen() {
                   <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Periods</Text>
                   <Text style={styles.hint}>Choose when transactions become permanently locked. Flexible is the default for ongoing books. This setting never unlocks an already-closed period.</Text>
                   <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
-                    <Pressable testID="period-policy-flexible" onPress={() => setPeriodMode("flexible")} style={[styles.bookRow, periodMode === "flexible" && styles.bookRowActive]}>
+                    <Pressable testID="period-policy-flexible" accessibilityRole="radio" accessibilityState={{ selected: periodMode === "flexible" }} onPress={() => setPeriodMode("flexible")} style={[styles.bookRow, periodMode === "flexible" && styles.bookRowActive]}>
                       <Ionicons name={periodMode === "flexible" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "flexible" ? theme.color.brandPrimary : theme.color.muted} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.bookName}>Flexible (Recommended)</Text>
                         <Text style={styles.subLabel}>No assumed year-end. Keep entering dated records and close whenever you decide the period is complete.</Text>
                       </View>
                     </Pressable>
-                    <Pressable testID="period-policy-fixed" onPress={() => setPeriodMode("fixed")} style={[styles.bookRow, periodMode === "fixed" && styles.bookRowActive]}>
+                    <Pressable testID="period-policy-fixed" accessibilityRole="radio" accessibilityState={{ selected: periodMode === "fixed" }} onPress={() => setPeriodMode("fixed")} style={[styles.bookRow, periodMode === "fixed" && styles.bookRowActive]}>
                       <Ionicons name={periodMode === "fixed" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "fixed" ? theme.color.brandPrimary : theme.color.muted} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.bookName}>Fixed start and end dates</Text>
@@ -566,9 +566,9 @@ export default function AdvancedSettingsScreen() {
                   ) : null}
                 </View>
               </AccordionRow>
-            </View>
+            </Card>
 
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <Card style={styles.advancedGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
               <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
@@ -655,12 +655,12 @@ export default function AdvancedSettingsScreen() {
                   </Pressable>
                 </View>
               </AccordionRow>
-            </View>
+            </Card>
 
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <Card style={styles.advancedGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Security & Data</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Protect your sensitive actions and backups.</Text>
-              <AccordionRow title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="App Lock" subtitle={lockEnabled ? "ON · Fingerprint / PIN" : "OFF · Fingerprint / PIN"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   <Text style={styles.hint}>Use your phone’s fingerprint / face / PIN to protect sensitive actions.</Text>
                   <Pressable onPress={() => setLockEnabled((v) => !v)} style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}>
@@ -712,7 +712,7 @@ export default function AdvancedSettingsScreen() {
                   )}
                 </View>
               </AccordionRow>
-            </View>
+            </Card>
 
             {status && (
               <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
@@ -736,6 +736,7 @@ function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
     scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 60 },
+    advancedGroup: { marginTop: theme.spacing.lg, padding: 20 },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
     input: {

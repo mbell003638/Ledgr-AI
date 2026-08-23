@@ -55,7 +55,7 @@ export const darkColors: typeof lightColors = {
   border: '#252A25',
   borderStrong: '#3A403A',
   divider: '#252A25',
-  muted: '#7E877F',
+  muted: '#A0AAA2',
   successBg: '#1A2C21',
   errorBg: '#2C1A18',
 };
@@ -86,7 +86,7 @@ export const navyGoldColors: typeof lightColors = {
   border: '#1A1A20',
   borderStrong: '#2A2A35',
   divider: '#1A1A20',
-  muted: '#8e96b0',
+  muted: '#ADB5CC',
   successBg: '#0D1F14',
   errorBg: '#1F0D0B',
 };
@@ -117,7 +117,7 @@ export const amoledBlueColors: typeof lightColors = {
   border: '#151520',
   borderStrong: '#252535',
   divider: '#151520',
-  muted: '#6B7394',
+  muted: '#9AA5C0',
   successBg: '#0D1F17',
   errorBg: '#1F0D0D',
 };
