@@ -94,6 +94,13 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('Accounting Basis');
     expect(source).toContain('Open Accounting &amp; Workflow');
     expect(source).toContain('router.push("/advanced-settings")');
+    expect(source).not.toMatch(/onPress=\{\(\) => setAccountingStyle/);
+    expect(source).not.toMatch(/onPress=\{\(\) => setAccountingBasis/);
+    const advanced = readApp('advanced-settings.tsx');
+    expect(advanced).toContain('Accounting & Workflow');
+    expect(advanced).toContain('Accounting Basis');
+    expect(advanced).toContain('Accounting Style');
+    expect(advanced).toContain('api.updateV2BookConfig');
   });
 
   it('all shared report and transaction documents support mobile and print layouts', () => {
