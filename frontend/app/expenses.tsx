@@ -197,7 +197,7 @@ export default function Expenses() {
       <View style={styles.headerBar}>
         <Pressable onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>Expenses</Text>
-        <Pressable onPress={openNew}><Ionicons name="add" size={26} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create expense" accessibilityHint="Opens the new expense form" onPress={openNew}><Ionicons name="add" size={26} color={theme.color.brandPrimary} /></Pressable>
       </View>
       <FlatList
         data={expenses}
@@ -205,7 +205,7 @@ export default function Expenses() {
         contentContainerStyle={{ padding: theme.spacing.lg }}
         ListEmptyComponent={<Text style={{ color: theme.color.muted, textAlign: "center", marginTop: 40 }}>No expenses yet</Text>}
         renderItem={({ item }) => (
-          <Pressable onPress={() => setSelected(item)} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginBottom: theme.spacing.sm }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Open expense ${item.category}`} accessibilityHint="Opens expense details" onPress={() => setSelected(item)} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginBottom: theme.spacing.sm }]}>
             <Card>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <View style={{ flex: 1 }}>

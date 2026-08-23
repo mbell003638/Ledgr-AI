@@ -45,6 +45,7 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
       { scale: reduceMotion ? 1 : 1 - pressed.value * 0.015 },
     ],
   }), [reduceMotion]);
+  const PressableComponent: any = Platform.OS === "web" ? Pressable : AnimatedPressable;
 
   const setHover = (value: number) => {
     hover.value = reduceMotion ? value : withTiming(value, { duration: theme.motion.fast });
@@ -54,7 +55,7 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
   };
 
   return (
-    <AnimatedPressable
+    <PressableComponent
       onHoverIn={() => setHover(1)}
       onHoverOut={() => setHover(0)}
       onPressIn={() => {
@@ -62,6 +63,9 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
         if (hapticsEnabled && Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
       }}
       onPressOut={() => setPressed(0)}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={subtitle}
       onPress={onPress}
       style={[styles.actionRow, animatedStyle]}
     >
@@ -73,7 +77,7 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
         <Text style={[styles.actionSubtitle, { color: theme.color.muted }]}>{subtitle}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-    </AnimatedPressable>
+    </PressableComponent>
   );
 }
 
@@ -142,6 +146,8 @@ export default function QuickActionMenu() {
     ],
   }), [reduceMotion]);
 
+  const FabPressableComponent: any = isWeb ? Pressable : AnimatedPressable;
+
   const navigate = (route: string | { pathname: string; params?: Record<string, string> }) => {
     closeMenu();
     router.push(route as any);
@@ -150,7 +156,7 @@ export default function QuickActionMenu() {
   return (
     <>
       <View style={styles.fabContainer}>
-        <AnimatedPressable
+        <FabPressableComponent
           testID="quick-action-fab"
           onHoverIn={() => { fabHover.value = reduceMotion ? 1 : withTiming(1, { duration: theme.motion.standard }); }}
           onHoverOut={() => { fabHover.value = reduceMotion ? 0 : withTiming(0, { duration: theme.motion.standard }); }}
@@ -159,19 +165,20 @@ export default function QuickActionMenu() {
           onPress={toggleMenu}
           style={[
             styles.fab,
+            fabStyle,
             {
               backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary,
               ...(isWeb
                 ? { boxShadow: isOpen ? `0 4px 16px ${theme.color.muted}33` : `0 4px 16px ${theme.color.brandPrimary}55` }
                 : { shadowColor: isOpen ? theme.color.muted : theme.color.brandPrimary, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 12 }),
             },
-            fabStyle,
+            { opacity: 0.8 },
           ]}
         >
           <Animated.View style={fabIconStyle}>
             <Ionicons name="add" size={28} color={isOpen ? theme.color.onSurface : theme.color.onBrandPrimary} />
           </Animated.View>
-        </AnimatedPressable>
+        </FabPressableComponent>
       </View>
 
       <Modal transparent visible={isOpen} animationType="none" onRequestClose={closeMenu}>
@@ -196,7 +203,6 @@ export default function QuickActionMenu() {
           ]}
         >
           <LinearGradient
-            pointerEvents="none"
             colors={["transparent", theme.color.brandPrimary, "transparent"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
@@ -206,6 +212,9 @@ export default function QuickActionMenu() {
             {isCapabilityEnabled(settings, "ai_assistant") && <GlowPressable
               prominent
               haptic
+              accessibilityRole="button"
+              accessibilityLabel="Scan receipt or ask AI"
+              accessibilityHint="Opens Ask AI and document import tools"
               onPress={() => navigate("/ask")}
               style={[
                 styles.aiAction,
@@ -216,11 +225,10 @@ export default function QuickActionMenu() {
               ]}
             >
               <LinearGradient
-                pointerEvents="none"
                 colors={[theme.color.brandPrimary + "33", theme.color.brandPrimary + "0D"]}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]}
               />
-              <Text style={[styles.aiIcon, { textShadowColor: theme.color.brandPrimary + "80" }]}>✨</Text>
+              <Text style={[styles.aiIcon, Platform.OS === "web" ? ({ textShadow: `0 0 10px ${theme.color.brandPrimary}80` } as any) : { textShadowColor: theme.color.brandPrimary + "80", textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 }]}>✨</Text>
               <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
             </GlowPressable>}
 
@@ -298,6 +306,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 2,
     opacity: 0.8,
+    pointerEvents: "none",
   },
   menuInner: { padding: 12 },
   aiAction: {
@@ -312,8 +321,6 @@ const styles = StyleSheet.create({
   aiIcon: {
     fontSize: 22,
     marginRight: 10,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
   },
   aiText: { fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },
   actionRow: {

@@ -179,8 +179,9 @@ function AnimatedGlowPressable({
     };
   }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, theme]);
 
+  const PressableComponent: any = isWeb ? Pressable : AnimatedPressable;
   return (
-    <AnimatedPressable
+    <PressableComponent
       testID={testID}
       disabled={disabled}
       accessibilityRole={accessibilityRole}
@@ -189,16 +190,16 @@ function AnimatedGlowPressable({
       accessibilityState={accessibilityState}
       onHoverIn={Platform.OS === "web" ? () => animateHover(1) : undefined}
       onHoverOut={Platform.OS === "web" ? () => animateHover(0) : undefined}
-      onPress={(event) => onPress?.(event)}
-      onLongPress={(event) => onLongPress?.(event)}
-      onPressIn={(event) => {
+      onPress={(event: GestureResponderEvent) => onPress?.(event)}
+      onLongPress={(event: GestureResponderEvent) => onLongPress?.(event)}
+      onPressIn={(event: GestureResponderEvent) => {
         animatePress(1);
         if (haptic && Platform.OS !== "web") {
           Haptics.selectionAsync().catch(() => {});
         }
         onPressIn?.(event);
       }}
-      onPressOut={(event) => {
+      onPressOut={(event: GestureResponderEvent) => {
         animatePress(0);
         onPressOut?.(event);
       }}
@@ -215,7 +216,6 @@ function AnimatedGlowPressable({
     >
       {children}
       {topHighlight && isWeb ? <LinearGradient
-        pointerEvents="none"
         colors={["transparent", theme.color.brandPrimary, "transparent"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -228,8 +228,9 @@ function AnimatedGlowPressable({
           borderTopLeftRadius: theme.radius.card,
           borderTopRightRadius: theme.radius.card,
           opacity: theme.effects.topHighlightOpacity,
+          pointerEvents: "none",
         }}
       /> : null}
-    </AnimatedPressable>
+    </PressableComponent>
   );
 }

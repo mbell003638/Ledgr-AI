@@ -160,11 +160,9 @@ export default function TabsLayout() {
             paddingTop: 7,
             paddingBottom: tabBarBottomInset,
             paddingHorizontal: 10,
-            elevation: 8,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.05,
-            shadowRadius: 12,
+            ...(Platform.OS === "web"
+              ? { boxShadow: "0 -2px 10px rgba(0,0,0,0.10)" }
+              : { elevation: 8, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 12 }),
           },
           tabBarLabelPosition: "below-icon",
           tabBarLabel: (props) => <PrototypeTabLabel {...props} />,
@@ -195,7 +193,7 @@ export default function TabsLayout() {
           options={{
             title: "",
             tabBarIcon: () => null,
-            tabBarButton: () => <View accessible={false} pointerEvents="none" style={{ flex: 1 }} />,
+            tabBarButton: () => <View accessible={false} style={{ flex: 1, pointerEvents: "none" }} />,
           }}
         />
         <Tabs.Screen

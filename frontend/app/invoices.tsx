@@ -1172,7 +1172,7 @@ export default function InvoicesScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Invoices</Text>
-        <Pressable onPress={openNew}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create invoice" accessibilityHint="Opens the new invoice form" onPress={openNew}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
@@ -1186,7 +1186,7 @@ export default function InvoicesScreen() {
         {invoices.length === 0 ? (
           <Text style={styles.empty}>No invoices yet. Tap + to create one.</Text>
         ) : invoices.map((inv) => (
-          <Pressable key={inv.id} onPress={() => setSelected(inv)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}>
+          <Pressable key={inv.id} accessibilityRole="button" accessibilityLabel={`Open invoice ${inv.invoiceNumber}`} accessibilityHint="Opens invoice details" onPress={() => setSelected(inv)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{inv.clientName}</Text>
               <Text style={styles.sub}>{inv.invoiceNumber} · {shortDate(inv.date)}{inv.dueDate ? ` · Due ${shortDate(inv.dueDate)}` : ""}</Text>

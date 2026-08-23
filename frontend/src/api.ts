@@ -1069,6 +1069,13 @@ export const api = {
   createParty: async (p: any) => {
     const name = (p.name || '').trim();
     if (!name) throw new Error('Business account name is required');
+    if (isWebRuntime) {
+      const roles: string[] = p.roles || (p.type === 'customer' ? ['customer'] : ['supplier']);
+      const creator = roles.includes('supplier') && !roles.includes('customer') ? db.createSupplier : db.createDebtor;
+      const result = await creator({ ...p, name });
+      bumpDataVersion();
+      return { ...result, roles };
+    }
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1092,6 +1099,14 @@ export const api = {
     if (!name) return null;
     const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+    if (isWebRuntime) {
+      const parties = await api.listParties();
+      const existing = parties.find((party: any) => norm(party.name) === norm(name));
+      if (existing && existing.roles.includes(role)) return { id: existing.id, name: existing.name, role: existing.roles.length > 1 ? 'both' : role };
+      const created = await api.createParty({ name, type: role, roles: [role], ...(details || {}) });
+      return { id: created.id, name: created.name, role };
+    }
+
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1109,6 +1124,7 @@ export const api = {
 
   searchParties: async (query: string) => {
     const q = (query || '').trim().toLowerCase();
+    if (isWebRuntime) return (await api.listParties()).filter((party: any) => !q || party.name.toLowerCase().includes(q)).map((party: any) => ({ id: party.id, name: party.name, phone: party.phone || '', role: party.roles.length > 1 ? 'both' : party.roles[0] }));
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1120,6 +1136,13 @@ export const api = {
   },
 
   listParties: async (locationId?: string) => {
+    if (isWebRuntime) {
+      const [suppliers, customers] = await Promise.all([db.listSuppliers(), db.listDebtors()]);
+      return [
+        ...suppliers.map((party: any) => ({ ...party, roles: ['supplier'], role: 'supplier' })),
+        ...customers.map((party: any) => ({ ...party, roles: ['customer'], role: 'customer' })),
+      ];
+    }
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1154,6 +1177,7 @@ export const api = {
   },
   // Suppliers
   listSuppliers: async (locationId?: string) => {
+    if (isWebRuntime) return db.listSuppliers();
     const parties = (await api.listParties(locationId)).filter((party: any) => party.roles.includes('supplier'));
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1180,28 +1204,30 @@ export const api = {
     return withSyncedMutation(runner, { commandType: 'party.archive', aggregateType: 'party', aggregateId: id, payload: { id } }, () => service.archiveParty(id));
   },
   listBills: async () => {
+    if (isWebRuntime) return db.listBills();
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).listBills() as Promise<any[]>;
   },
-  createBill: (b: any) => createTransaction('createBill', b),
-  updateBill: (id: string, b: any) => mutateTransaction('updateBill', id, b),
-  deleteBill: (id: string) => mutateTransaction('deleteBill', id),
+  createBill: (b: any) => isWebRuntime ? db.createBill(b).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createBill', b),
+  updateBill: (id: string, b: any) => isWebRuntime ? db.updateBill(id, b).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updateBill', id, b),
+  deleteBill: (id: string) => isWebRuntime ? db.deleteBill(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deleteBill', id),
 
   listSales: async () => {
+    if (isWebRuntime) return db.listSales();
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     return service.listSalesAndInvoices();
   },
-  createSale: (s: any) => createTransaction('createSale', s),
-  updateSale: (id: string, s: any) => mutateTransaction('updateSale', id, s),
-  deleteSale: (id: string) => mutateTransaction('deleteSale', id),
+  createSale: (s: any) => isWebRuntime ? db.createSale(s).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createSale', s),
+  updateSale: (id: string, s: any) => isWebRuntime ? db.updateSale(id, s).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updateSale', id, s),
+  deleteSale: (id: string) => isWebRuntime ? db.deleteSale(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deleteSale', id),
 
-  listPayments: async () => (await v2SourceDocuments(['supplier_payment','drawing','commission_payment'])).map((row: any) => ({ ...row, supplierId: row.partyId, partnerName: row.partnerName || row.memberName })),
-  createPayment: (p: any) => createTransaction('createPayment', p),
-  updatePayment: (id: string, p: any) => mutateTransaction('updatePayment', id, p),
-  deletePayment: (id: string) => mutateTransaction('deletePayment', id),
+  listPayments: async () => isWebRuntime ? db.listPayments() : (await v2SourceDocuments(['supplier_payment','drawing','commission_payment'])).map((row: any) => ({ ...row, supplierId: row.partyId, partnerName: row.partnerName || row.memberName })),
+  createPayment: (p: any) => isWebRuntime ? db.createPayment(p).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createPayment', p),
+  updatePayment: (id: string, p: any) => isWebRuntime ? db.updatePayment(id, p).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updatePayment', id, p),
+  deletePayment: (id: string) => isWebRuntime ? db.deletePayment(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deletePayment', id),
 
   // Inventory
   v2InventoryOverview: async () => {
@@ -1218,6 +1244,7 @@ export const api = {
   },
   // Cash Book (manual cash in/out ledger)
   listCashEntries: async () => {
+    if (isWebRuntime) return db.listCashEntries();
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
@@ -1244,6 +1271,7 @@ export const api = {
     return [];
   },
   createCashEntry: async (e: any) => {
+    if (isWebRuntime) { const result = await db.createCashEntry(e); bumpDataVersion(); return result; }
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
@@ -1320,6 +1348,7 @@ export const api = {
 
   // Dashboard & reports
   dashboard: async (locationId?: string) => {
+    if (isWebRuntime) return db.dashboard();
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const ctx = await new V2AppService(runner).activeContext();
@@ -1327,6 +1356,7 @@ export const api = {
     return getV2Dashboard(runner, ctx.bookId, locationId);
   },
   pnl: async () => {
+    if (isWebRuntime) return db.pnl();
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
@@ -1343,6 +1373,7 @@ export const api = {
     throw new Error('No active versioned V2 book with an open accounting period');
   },
   balanceSheet: async () => {
+    if (isWebRuntime) return db.balanceSheet();
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
@@ -1359,6 +1390,7 @@ export const api = {
     throw new Error('No active versioned V2 book with an open accounting period');
   },
   trialBalance: async () => {
+    if (isWebRuntime) return db.trialBalance();
     const runner = activeSqlRunner();
     if (runner) {
       const service = new V2AppService(runner);
@@ -1410,7 +1442,7 @@ export const api = {
     return out;
   },
   assetDistribution: async () => {
-    const d = await api.dashboard();
+    const d: any = await api.dashboard();
     return [
       { label: 'Cash', value: d.cash }, { label: 'Inventory', value: d.inventoryValue },
       { label: 'Receivables', value: d.accountsReceivable }, { label: 'Other Assets', value: d.otherAssets },
@@ -1439,6 +1471,12 @@ export const api = {
     };
   },
   dailySummary: async (d: string) => {
+    if (isWebRuntime) {
+      const [range, sales, bills, payments, cashMovements] = await Promise.all([db.pnlRange(d, d), db.listSales(), db.listBills(), db.listPayments(), db.listCashEntries()]);
+      const onDate = (row: any) => String(row?.date || '').slice(0, 10) === d;
+      const netCash = round2(cashMovements.filter(onDate).reduce((sum: number, row: any) => sum + (row.direction === 'in' ? Number(row.amount || 0) : -Number(row.amount || 0)), 0));
+      return { date: d, revenue: range.revenue, purchases: range.purchases, grossProfit: range.grossProfit, expenses: range.expenses, netProfit: range.netProfit, netCash, salesCount: sales.filter(onDate).length, billsCount: bills.filter(onDate).length, paymentsCount: payments.filter(onDate).length };
+    }
     const runner = activeSqlRunner();
     if (!runner) throw new Error('No active versioned V2 book with an open accounting period');
     const service = new V2AppService(runner);
@@ -1695,13 +1733,16 @@ export const api = {
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
 
   // Expenses
-  listExpenses: async () => (await v2SourceDocuments(['expense'])).map((row: any) => ({ ...row, category: row.category || 'Expense' })),
-  createExpense: (e: any) => createTransaction('createExpense', e),
-  updateExpense: (id: string, e: any) => mutateTransaction('updateExpense', id, e),
-  deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
+  listExpenses: async () => isWebRuntime
+    ? db.listExpenses()
+    : (await v2SourceDocuments(['expense'])).map((row: any) => ({ ...row, category: row.category || 'Expense' })),
+  createExpense: (e: any) => isWebRuntime ? db.createExpense(e).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createExpense', e),
+  updateExpense: (id: string, e: any) => isWebRuntime ? db.updateExpense(id, e).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updateExpense', id, e),
+  deleteExpense: (id: string) => isWebRuntime ? db.deleteExpense(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deleteExpense', id),
 
   // Debtors
   listDebtors: async (locationId?: string) => {
+    if (isWebRuntime) return db.listDebtors();
     const parties = (await api.listParties(locationId)).filter((party: any) => party.roles.includes('customer'));
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
@@ -1753,6 +1794,7 @@ export const api = {
 
   // Invoices
   listInvoices: async () => {
+    if (isWebRuntime) return db.listInvoices();
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     const statuses = new Map((await service.listSalesAndInvoices()).filter((row: any) => row.type === 'invoice').map((row: any) => [row.id, row]));
@@ -1761,24 +1803,26 @@ export const api = {
       return { ...row, invoiceNumber: row.reference || row.id, status: live?.status || row.status || 'unpaid', openAmount: live?.openAmount ?? row.total, lines: Array.isArray(row.lines) ? row.lines : [] };
     });
   },
-  createInvoice: (inv: any) => createTransaction('createInvoice', inv),
-  updateInvoice: (id: string, inv: any) => mutateTransaction('updateInvoice', id, inv),
-  deleteInvoice: (id: string) => mutateTransaction('deleteInvoice', id),
-  markInvoicePaid: (id: string, input?: any) => mutateTransaction('markInvoicePaid', id, { ...(input || {}), date: input?.date || localTodayIso(), method: input?.method || 'cash' }),
+  createInvoice: (inv: any) => isWebRuntime ? db.createInvoice(inv).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createInvoice', inv),
+  updateInvoice: (id: string, inv: any) => isWebRuntime ? db.updateInvoice(id, inv).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updateInvoice', id, inv),
+  deleteInvoice: (id: string) => isWebRuntime ? db.deleteInvoice(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deleteInvoice', id),
+  markInvoicePaid: (id: string, input?: any) => isWebRuntime ? db.markInvoicePaid(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('markInvoicePaid', id, { ...(input || {}), date: input?.date || localTodayIso(), method: input?.method || 'cash' }),
   overdueInvoices: async () => (await api.listInvoices()).filter((invoice: any) => invoice.status !== 'paid' && invoice.dueDate && invoice.dueDate < localTodayIso()),
 
   // Receipts (money actually received)
   listReceipts: async () => {
+    if (isWebRuntime) return db.listReceipts();
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const receipts = await v2SourceDocuments(['receipt']);
     const ids = receipts.map((row: any) => row.id);
     const allocations = ids.length ? await runner.all<any>(`SELECT receipt_source_id,invoice_source_id,amount FROM v2_invoice_allocations WHERE receipt_source_id IN (${ids.map(() => '?').join(',')})`, ids) : [];
     return receipts.map((row: any) => ({ ...row, receiptNumber: row.reference || row.id, debtorId: row.partyId, mode: row.mode || (Number(row.advance) > 0 ? 'advance' : 'against_invoice'), allocations: allocations.filter((item: any) => item.receipt_source_id === row.id).map((item: any) => ({ invoiceId: item.invoice_source_id, invoiceSourceId: item.invoice_source_id, amountApplied: Number(item.amount), amount: Number(item.amount) })) }));
   },
-  createReceipt: (r: any) => createTransaction('createReceipt', r),
-  updateReceipt: (id: string, input: any) => mutateTransaction('updateReceipt', id, input),
-  deleteReceipt: (id: string) => mutateTransaction('deleteReceipt', id),
+  createReceipt: (r: any) => isWebRuntime ? db.createReceipt(r).then((result) => { bumpDataVersion(); return result; }) : createTransaction('createReceipt', r),
+  updateReceipt: (id: string, input: any) => isWebRuntime ? db.updateReceipt(id, input).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('updateReceipt', id, input),
+  deleteReceipt: (id: string) => isWebRuntime ? db.deleteReceipt(id).then((result) => { bumpDataVersion(); return result; }) : mutateTransaction('deleteReceipt', id),
   invoicePaidAmount: async (invoiceId: string) => {
+    if (isWebRuntime) return db.invoicePaidAmount(invoiceId);
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const row = await runner.first<{ total: number }>('SELECT COALESCE(SUM(amount),0) total FROM v2_invoice_allocations WHERE invoice_source_id=?', [invoiceId]);
     return Number(row?.total || 0);

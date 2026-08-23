@@ -148,7 +148,7 @@ export default function PaymentsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
         <Text style={styles.headerTitle}>Payments</Text>
-        <Pressable onPress={() => router.push("/payment-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Create payment" accessibilityHint="Opens the new payment form" onPress={() => router.push("/payment-form")}><Ionicons name="add" size={28} color={theme.color.brandPrimary} /></Pressable>
       </View>
       <View style={styles.summaryCard}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -169,7 +169,7 @@ export default function PaymentsScreen() {
         windowSize={7}
         removeClippedSubviews
         renderItem={({ item }) => (
-          <GlowPressable onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
+          <GlowPressable accessibilityRole="button" accessibilityLabel={`Open payment ${getRecipientName(item)}`} accessibilityHint="Opens payment details. Long press to reverse this payment." onPress={() => setSelected(item)} onLongPress={() => remove(item)} haptic topHighlight={false} restingBorderColor={theme.color.border} style={styles.row}>
             <View style={[styles.badge, { backgroundColor: item.type === "supplier_payment" ? "#F0D8D8" : "#E8E8E8" }]}>
               <Ionicons name={item.type === "supplier_payment" ? "arrow-up-circle-outline" : "wallet-outline"} size={18} color={theme.color.brandPrimary} />
             </View>

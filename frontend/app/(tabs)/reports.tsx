@@ -23,6 +23,7 @@ import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/util
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { isCapabilityEnabled, reportSegmentsFor, selectedWorkspaceMetrics, type ReportSegmentKey } from "@/src/utils/capabilities";
 import { metricsFromDashboard } from "@/src/utils/metrics";
+import * as localDb from "@/src/db/local";
 
 type Seg = ReportSegmentKey;
 
@@ -137,13 +138,63 @@ export default function ReportsScreen() {
     setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
-      if (isCapabilityEnabled(s, "multi_location")) {
+      if (Platform.OS !== "web" && isCapabilityEnabled(s, "multi_location")) {
         const rows = await api.listLocations().catch(() => []);
         setShops((Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
       } else {
         setShops([]);
       }
       const shopId = locationId || undefined;
+      if (Platform.OS === "web") {
+        const [range, current, pd] = await Promise.all([
+          localDb.pnlRange(from, to),
+          localDb.dashboard(),
+          localDb.listPeriods(),
+        ]);
+        if (requestId !== loadRequest.current) return;
+        setBizSettings({ ...s, accountingStyle: config?.style || s.accountingStyle || "standard" });
+        setCurrSym(getCurrencySymbol(s.currency || "USD"));
+        setBizName(s.businessName || "");
+        setProvisionalNotice("");
+        setDash({
+          totalSales: range.revenue,
+          totalPurchases: range.purchases,
+          grossProfit: range.grossProfit,
+          netProfit: range.netProfit,
+          cash: current.cash,
+          inventoryValue: current.inventoryValue,
+          accountsReceivable: current.accountsReceivable,
+          supplierAdvances: 0,
+          otherAssets: current.extraAssetsTotal || 0,
+          accountsPayable: current.liabilities,
+          customerAdvances: 0,
+          commissionPayable: current.outstandingCommission || 0,
+          otherLiabilities: current.extraLiabTotal || 0,
+          assets: current.assets,
+          netWorth: current.netWorth,
+          liabilities: current.totalLiabilities,
+          suppliers: current.suppliers,
+        });
+        setPnl({
+          revenue: range.revenue,
+          cogs: range.cogs,
+          grossProfit: range.grossProfit,
+          operatingExpenses: range.expenses,
+          managerCommissionPct: range.managerCommissionPct,
+          commission: range.commission,
+          drawings: range.drawings,
+          netProfit: range.netProfit,
+        });
+        setBs(await localDb.balanceSheet());
+        setTb(await localDb.trialBalance());
+        setAssetDist(await localDb.assetDistribution());
+        setPeriods(Array.isArray(pd) ? pd : []);
+        loadedSections.current.clear();
+        loadedVersion.current = getDataVersion();
+        hasLoaded.current = true;
+        setRangeNotice(`Showing ${from} to ${to} · Browser local summary`);
+        return;
+      }
       const [core, snapshotDash, pd] = await Promise.all([
         v2Reports({ from, to, locationId: shopId }),
         api.dashboard(shopId),
@@ -156,7 +207,7 @@ export default function ReportsScreen() {
       {
         const report = core.report;
         setProvisionalNotice(report.provisionalReason || "");
-        const current = snapshotDash;
+        const current: any = snapshotDash;
         const commissionPct = Number(config?.retailPartnership?.commissionPct ?? s.managerCommissionPct ?? 0);
         const profit = partnershipDisplayFromReports(report, commissionPct);
         setDash({
@@ -251,7 +302,35 @@ export default function ReportsScreen() {
     const requestId = ++sectionRequest.current;
     setSectionLoading(true);
     try {
-      if (section === "Summary" && bizSettings?.accountingStyle === "retail_partnership") {
+      if (Platform.OS === "web") {
+        if (section === "Summary" && bizSettings?.accountingStyle === "retail_partnership") {
+          const value = await localDb.capitalStatement(); if (requestId !== sectionRequest.current) return;
+          setCap(normalizeCapitalStatement(value));
+        } else if (section === "P&L") {
+          const trend: any = await localDb.monthlyProfitTrend(6);
+          if (requestId !== sectionRequest.current) return;
+          setProfitTrend((Array.isArray(trend) ? trend : []).map((item: any) => ({ label: item.label || String(item.month || "").slice(5), profit: Number(item.profit ?? item.netProfit ?? 0) })));
+        } else if (section === "Capital Statement") {
+          const value = await localDb.capitalStatement(); if (requestId !== sectionRequest.current) return;
+          setCap(normalizeCapitalStatement(value));
+        } else if (section === "Capital Withdrawals") {
+          const value = await localDb.drawingsHistory(); if (requestId !== sectionRequest.current) return; setDraws(Array.isArray(value) ? value : []);
+        } else if (section === "Suppliers") {
+          const value = await localDb.creditorsReport(from, to); if (requestId !== sectionRequest.current) return; setCreditors(Array.isArray(value) ? value : []);
+        } else if (section === "Customers") {
+          const value = await localDb.debtorsReport(from, to); if (requestId !== sectionRequest.current) return; setDebtors(Array.isArray(value) ? value : []);
+        } else if (section === "Tax") {
+          const value = await localDb.taxReport(from, to); if (requestId !== sectionRequest.current) return; setTaxRep(value);
+        } else if (section === "Sales Reg") {
+          const value: any = await localDb.salesRegister(from, to);
+          if (requestId !== sectionRequest.current) return;
+          setSalesReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [] });
+        } else if (section === "Receipts") {
+          const value: any = await localDb.receiptsRegister(from, to);
+          if (requestId !== sectionRequest.current) return;
+          setReceiptsReg({ ...(value || {}), rows: Array.isArray(value?.rows) ? value.rows : [], byMethod: value?.byMethod || {} });
+        }
+      } else if (section === "Summary" && bizSettings?.accountingStyle === "retail_partnership") {
         const value = await api.capitalStatement(); if (requestId !== sectionRequest.current) return;
         setCap(normalizeCapitalStatement(value));
       } else if (section === "P&L") {
@@ -469,16 +548,17 @@ export default function ReportsScreen() {
       />
       {shops.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+          <GlowPressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} topHighlight={false} haptic={false} hoverLift={0} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
             <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All locations</Text>
-          </Pressable>
+          </GlowPressable>
           {shops.map((shop) => (
-            <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+            <GlowPressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} topHighlight={false} haptic={false} hoverLift={0} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
               <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
-            </Pressable>
+            </GlowPressable>
           ))}
         </ScrollView>
       ) : null}
+      {Platform.OS === "web" ? <View accessibilityRole="alert" style={styles.browserNotice}><Ionicons name="information-circle-outline" size={18} color={theme.color.warning} /><Text style={styles.browserNoticeText}>Browser local summary — this view reads the device’s local AsyncStorage book. Native SQLite reports and location-scoped ledger filters are available in the mobile app.</Text></View> : null}
       {provisionalNotice && locationId ? <View accessibilityRole="alert" style={{ marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.color.warning + "66", backgroundColor: theme.color.surfaceSecondary, flexDirection: "row", gap: 8 }}><Ionicons name="information-circle-outline" size={18} color={theme.color.warning} /><Text style={{ flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 17 }}>{provisionalNotice}</Text></View> : null}
 
       {/* Report category segments */}
@@ -495,13 +575,16 @@ export default function ReportsScreen() {
               glowRadius={8}
               hoverScale={1.03}
               restingBorderColor={seg === s ? theme.color.brandPrimary : theme.color.border}
+              accessibilityRole="radio"
+              accessibilityLabel={`${s} report`}
+              accessibilityState={{ selected: seg === s }}
               onPress={() => setSeg(s)} style={[styles.seg, seg === s && styles.segActive]}>
               <Text style={[styles.segText, seg === s && styles.segTextActive]}>{s}</Text>
             </GlowPressable>
           ))}
         </ScrollView>
-        {segmentEdges.left && <LinearGradient pointerEvents="none" colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft]} />}
-        {segmentEdges.right && <LinearGradient pointerEvents="none" colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight]} />}
+        {segmentEdges.left && <LinearGradient colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft, { pointerEvents: "none" }]} />}
+        {segmentEdges.right && <LinearGradient colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight, { pointerEvents: "none" }]} />}
       </View>
 
       {/* Date range preset filters */}
@@ -517,13 +600,16 @@ export default function ReportsScreen() {
               hoverScale={1.03}
               glowRadius={8}
               restingBorderColor={rangePresetSel === p ? theme.color.brandPrimary : theme.color.border}
+              accessibilityRole="radio"
+              accessibilityLabel={`${p} date range`}
+              accessibilityState={{ selected: rangePresetSel === p }}
               onPress={() => applyPreset(p)} style={[styles.dateChip, rangePresetSel === p && styles.dateChipActive]}>
               <Text style={[styles.dateChipText, rangePresetSel === p && styles.dateChipTextActive]}>{p}</Text>
             </GlowPressable>
           ))}
         </ScrollView>
-        {dateEdges.left && <LinearGradient pointerEvents="none" colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft]} />}
-        {dateEdges.right && <LinearGradient pointerEvents="none" colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight]} />}
+        {dateEdges.left && <LinearGradient colors={[theme.color.surface, "transparent"]} style={[styles.railFade, styles.railFadeLeft, { pointerEvents: "none" }]} />}
+        {dateEdges.right && <LinearGradient colors={["transparent", theme.color.surface]} style={[styles.railFade, styles.railFadeRight, { pointerEvents: "none" }]} />}
       </View>
 
       {/* Custom date inputs (shown when Custom selected) */}
@@ -538,7 +624,7 @@ export default function ReportsScreen() {
             <Text style={styles.customLabel}>To</Text>
             <TextInput value={customTo} onChangeText={setCustomTo} onBlur={() => { if (customTo.trim()) setCustomTo(normalizeDateInput(customTo)); }} placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.customInput} autoCapitalize="none" />
           </View>
-          <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={() => applyCustomRange()} style={styles.applyBtn}>
+          <GlowPressable accessibilityRole="button" accessibilityLabel="Apply custom date range" topHighlight={false} prominent haptic hoverLift={-1} onPress={() => applyCustomRange()} style={styles.applyBtn}>
             <Text style={styles.applyText}>Apply</Text>
           </GlowPressable>
         </View>
@@ -548,23 +634,21 @@ export default function ReportsScreen() {
 
       {/* Share bar */}
       <View style={styles.shareBar}>
-        <GlowPressable topHighlight={false} haptic hoverLift={-1} onPress={shareWhatsApp} style={[styles.shareBtn, { backgroundColor: "#25D366" }]}>
+        <GlowPressable accessibilityRole="button" accessibilityLabel="Share report to WhatsApp" topHighlight={false} haptic hoverLift={-1} onPress={shareWhatsApp} style={[styles.shareBtn, { backgroundColor: "#25D366" }]}>
           <Ionicons name="logo-whatsapp" size={16} color="#fff" />
           <Text style={styles.shareBtnText}>WhatsApp</Text>
         </GlowPressable>
-        <GlowPressable topHighlight={false} prominent haptic hoverLift={-1} onPress={sharePdf} style={[styles.shareBtn, { backgroundColor: theme.color.brandPrimary }]}>
+        <GlowPressable accessibilityRole="button" accessibilityLabel="Export report PDF" topHighlight={false} prominent haptic hoverLift={-1} onPress={sharePdf} style={[styles.shareBtn, { backgroundColor: theme.color.brandPrimary }]}>
           <Ionicons name="document-outline" size={16} color="#fff" />
           <Text style={styles.shareBtnText}>PDF</Text>
         </GlowPressable>
       </View>
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { loadedSections.current.clear(); setRefreshing(true); load(); }} />}
-        >
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { loadedSections.current.clear(); setRefreshing(true); load(); }} />}
+      >
+          {loading ? <View accessibilityLiveRegion="polite" style={styles.inlineLoading}><ActivityIndicator color={theme.color.brandPrimary} /><Text style={styles.inlineLoadingText}>{hasLoaded.current ? "Refreshing report…" : "Loading report…"}</Text></View> : null}
           {loadError ? (
             <Card style={{ marginBottom: theme.spacing.md, borderColor: theme.color.error, borderWidth: 1 }}>
               <Text style={[styles.hint, { color: theme.color.error }]}>{loadError}</Text>
@@ -573,7 +657,7 @@ export default function ReportsScreen() {
               </Pressable>
             </Card>
           ) : null}
-          {sectionLoading ? <ActivityIndicator style={{ marginBottom: theme.spacing.md }} color={theme.color.brandPrimary} /> : null}
+          {sectionLoading ? <View accessibilityLiveRegion="polite" style={styles.inlineLoading}><ActivityIndicator color={theme.color.brandPrimary} /><Text style={styles.inlineLoadingText}>Refreshing report…</Text></View> : null}
           {seg === "Summary" && dash && (
             <>
               <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }}>
@@ -894,7 +978,6 @@ export default function ReportsScreen() {
 
           <View style={{ height: 120 }} />
         </ScrollView>
-      )}
     </SafeAreaView>
   );
 }
@@ -956,6 +1039,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
   groupHeader: { fontSize: 12, fontWeight: "700", color: theme.color.muted, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.md, fontSize: 13, fontStyle: "italic" },
   hint: { color: theme.color.muted, fontSize: 12, marginBottom: theme.spacing.sm },
+  browserNotice: { marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: theme.color.warning + "66", backgroundColor: theme.color.surfaceSecondary, flexDirection: "row", gap: 8 },
+  browserNoticeText: { flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 17 },
+  inlineLoading: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 10 },
+  inlineLoadingText: { color: theme.color.muted, fontSize: 12, fontWeight: "600" },
   reminderRow: { flexDirection: "row", gap: 16, marginTop: 4 },
   reminderLink: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "600" },
   legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 5 },

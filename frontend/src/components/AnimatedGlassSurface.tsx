@@ -126,7 +126,6 @@ function AnimatedGlassSurfaceImpl({
 
   const topEdge = topHighlight && Platform.OS === "web" ? (
     <LinearGradient
-      pointerEvents="none"
       colors={["transparent", theme.color.brandPrimary, "transparent"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
@@ -137,6 +136,7 @@ function AnimatedGlassSurfaceImpl({
         right: 0,
         height: 2,
         opacity: 0.35,
+        pointerEvents: "none",
       }}
     />
   ) : null;

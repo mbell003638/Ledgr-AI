@@ -402,27 +402,27 @@ export default function Dashboard() {
                 controls (day-nav arrows, Today, WhatsApp share) are Pressables of
                 their own, so they claim their touches first — the card press only
                 fires on the body and opens the Day Book. */}
-            <GlowPressable
-              testID="daily-card-press"
-              accessibilityRole="button"
-              topHighlight={false}
-              haptic={false}
-              clipSafe
-              pressScale={0.972}
-              restingBorderColor="transparent"
-              hoverBorderColor={theme.color.brandPrimary}
-              onPress={() => router.push("/daybook")}
-              style={{ borderRadius: theme.radius.lg, marginTop: theme.spacing.xs, marginBottom: theme.spacing.lg }}
-            >
-            <Card style={[styles.homeSummaryCard, styles.dailyCard, { marginTop: 0, marginBottom: 0, marginVertical: 0 }]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
+            <Card style={[styles.homeSummaryCard, styles.dailyCard, { marginTop: 0, marginBottom: theme.spacing.lg, marginVertical: 0 }]} testID="daily-card" surfaceColor={theme.color.surfaceSecondary} hoverSurfaceColor={theme.color.surfaceSecondary} restingBorderColor={theme.color.border}>
               <View style={styles.dailyHead}>
-                <View>
+                <GlowPressable
+                  testID="daily-card-press"
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Day Book daily summary"
+                  topHighlight={false}
+                  haptic={false}
+                  clipSafe
+                  pressScale={0.972}
+                  restingBorderColor="transparent"
+                  hoverBorderColor={theme.color.brandPrimary}
+                  onPress={() => router.push("/daybook")}
+                  style={styles.dailyBodyPressable}
+                >
                   <Text numberOfLines={1} style={styles.dailyLabel}>{isToday ? "Today" : "Daily"} — {dailyLabel}</Text>
                   <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.dailyValue}>{fmt(daily?.netCash ?? 0)}</Text>
                   <Text style={styles.dailySub}>
                     {[salesEnabled ? `${daily?.salesCount ?? 0} sales` : null, purchasesEnabled ? `${daily?.billsCount ?? 0} bills` : null, isCapabilityEnabled(settings, "cashbook") ? `${daily?.paymentsCount ?? 0} payments` : null].filter(Boolean).join(" • ")}
                   </Text>
-                </View>
+                </GlowPressable>
                 <View style={styles.dailyNav}>
                   <GlowPressable testID="btn-day-prev" accessibilityRole="button" accessibilityLabel="Previous day" onPress={() => shiftDay(-1)} haptic topHighlight={false} animateBorder={false} pressScale={0.972} restingBorderColor="transparent" style={styles.dailyNavBtn}>
                     <Ionicons name="chevron-back" size={18} color={theme.color.onSurface} />
@@ -456,7 +456,6 @@ export default function Dashboard() {
                 <Text style={styles.shareBtnText}>Share to WhatsApp</Text>
               </GlowPressable>
             </Card>
-            </GlowPressable>
 
             {!hasLedgerActivity && !quickStartDismissed ? <Card testID="dashboard-quick-start" style={styles.quickStartCard}>
               <View style={styles.quickStartIcon}><Ionicons name="rocket-outline" size={20} color={theme.color.brandPrimary} /></View>
@@ -576,6 +575,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   tileLabel: { fontSize: 14, fontWeight: "600", marginTop: 12 },
   emptyText: { color: theme.color.muted, fontSize: 13, textAlign: "center", paddingVertical: theme.spacing.lg },
   dailyCard: { marginBottom: theme.spacing.lg, padding: theme.spacing.lg },
+  dailyBodyPressable: { borderRadius: theme.radius.md, paddingBottom: theme.spacing.sm },
   dailyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   dailyLabel: { fontSize: 12, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
   homeSummaryCard: { marginBottom: theme.spacing.lg, marginVertical: theme.spacing.xs, padding: theme.spacing.lg, borderRadius: theme.radius.lg, backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border },

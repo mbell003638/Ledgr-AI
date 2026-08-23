@@ -79,11 +79,12 @@ describe('Source contracts — tile balance and entry points', () => {
     expect(partiesSource).toContain('Capital {fmt(item.capitalBalance || 0)}');
   });
 
-  it('api.listCashEntries returns only journal-derived V2 rows', () => {
+  it('api.listCashEntries keeps the native path journal-derived while allowing an explicit web fallback', () => {
     const listCashEntries = apiSource.slice(apiSource.indexOf('listCashEntries:'), apiSource.indexOf('createCashEntry:'));
-    expect(listCashEntries).toContain('return v2Entries');
-    expect(listCashEntries).not.toContain('db.listCashEntries');
-    expect(listCashEntries).not.toContain('dedupeLegacyMirrors');
+    const nativePath = listCashEntries.slice(listCashEntries.indexOf('const runner = activeSqlRunner();'));
+    expect(nativePath).toContain('return v2Entries');
+    expect(nativePath).not.toContain('db.listCashEntries');
+    expect(nativePath).not.toContain('dedupeLegacyMirrors');
   });
 
   it('capital deposits do not create a legacy settings or cash-entry mirror', () => {

@@ -273,10 +273,9 @@ describe('V2 UI contracts', () => {
     expect(dashboard).toMatch(
       /<GlowPressable[^>]*\n(?:[^>]*\n)*?\s*testID="daily-card-press"[\s\S]*?pressScale=\{0\.972\}[\s\S]*?onPress=\{\(\) => router\.push\("\/daybook"\)\}/
     );
-    const dailyPress = dashboard.slice(
-      dashboard.indexOf('testID="daily-card-press"'),
-      dashboard.indexOf('<Card style={[styles.homeSummaryCard, styles.dailyCard')
-    );
+    const dailyPressStart = dashboard.indexOf('testID="daily-card-press"');
+    const dailyPress = dashboard.slice(dailyPressStart, dailyPressStart + 900);
+    expect(dailyPress).toContain('accessibilityLabel="Open Day Book daily summary"');
     expect(dailyPress).toContain('haptic={false}');
     expect(dailyPress).toContain('clipSafe');
     expect(dailyPress).toContain('pressScale={0.972}');

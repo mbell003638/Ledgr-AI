@@ -428,11 +428,10 @@ function ReorderableWorkspaceTile({
           ]}
         >
           {isWeb && motionEnabled ? <LinearGradient
-            pointerEvents="none"
             colors={["transparent", solidBrand ? theme.color.onBrandPrimary : theme.color.brandPrimary, "transparent"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={[styles.topHighlight, { opacity: theme.effects.topHighlightOpacity }]}
+            style={[styles.topHighlight, { opacity: theme.effects.topHighlightOpacity, pointerEvents: "none" }]}
           /> : null}
           <Animated.View
             style={[
