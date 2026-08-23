@@ -74,7 +74,7 @@ export function GlowPressable(props: GlowPressableProps) {
         style={[
           { position: "relative", borderWidth: 1, borderColor: props.restingBorderColor ?? "transparent" },
           style,
-          { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
+          { shadowColor: "#000000", shadowOpacity: Platform.OS === "web" ? 0 : 0.14, shadowRadius: Platform.OS === "web" ? 0 : 7, shadowOffset: Platform.OS === "web" ? { width: 0, height: 0 } : { width: 0, height: 3 }, elevation: Platform.OS === "web" ? 0 : 4, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
         ]}
       >
         {children}
@@ -161,18 +161,19 @@ function AnimatedGlowPressable({
           )
         : restingBorderColor ?? theme.color.glassBorder,
       transform: [{ translateY }, { scale }],
-      shadowColor: glowColor ?? theme.color.brandPrimary,
+      shadowColor: isWeb ? (glowColor ?? theme.color.brandPrimary) : "#000000",
       shadowOpacity: isWeb ? interpolate(
         focus,
         [0, 1],
         [0, prominent ? 0.48 : theme.effects.glowOpacity],
-      ) : 0,
+      ) : 0.14,
       shadowRadius: isWeb ? interpolate(
         focus,
         [0, 1],
         [0, glowRadius ?? (prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius)],
-      ) : 0,
-      elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : 0,
+      ) : 7,
+      shadowOffset: isWeb ? { width: 0, height: 0 } : { width: 0, height: 3 },
+      elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : (prominent ? 7 : 4),
     };
   }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, theme]);
 

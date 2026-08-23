@@ -556,6 +556,8 @@ describe('V2 UI contracts', () => {
   it('remaining operational entry points preserve capability and location context', () => {
     const voice = readSource('src/components/VoiceFab.tsx');
     const voiceOrb = readSource('src/components/VoiceOrb.tsx');
+    const glassSurface = readSource('src/components/AnimatedGlassSurface.tsx');
+    const glowPressable = readSource('src/components/GlowPressable.tsx');
     const capabilities = readSource('src/utils/capabilities.ts');
     const home = readApp('(tabs)/index.tsx');
     const transfers = readApp('stock-transfers.tsx');
@@ -577,6 +579,10 @@ describe('V2 UI contracts', () => {
     expect(voice).not.toContain('<Modal');
     expect(voiceOrb).toContain('withRepeat');
     expect(voiceOrb).toContain('motionEnabled');
+    expect(glassSurface).toContain('staticElevation(theme, shadowEnabled)');
+    expect(glassSurface).toContain('shadowOpacity: 0.18');
+    expect(glowPressable).toContain('shadowOpacity: isWeb ? interpolate');
+    expect(glowPressable).toContain('elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : (prominent ? 7 : 4)');
     expect(capabilities).toContain("| 'voice_assistant'");
     expect(capabilities).toContain("key: 'voice_assistant'");
     expect(home).toContain('capability: "voice_assistant"');

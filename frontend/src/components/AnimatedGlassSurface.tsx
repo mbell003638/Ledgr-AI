@@ -44,7 +44,7 @@ export function AnimatedGlassSurface(props: AnimatedGlassSurfaceProps) {
         style={[
           { position: "relative", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder },
           style,
-          { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
+          staticElevation(theme, _shadowEnabled !== false),
         ]}
       >
         {children}
@@ -146,11 +146,7 @@ function AnimatedGlassSurfaceImpl({
             borderColor: restingBorderColor ?? theme.color.glassBorder,
           },
           style,
-          {
-            elevation: 0,
-            shadowOpacity: 0,
-            shadowRadius: 0,
-          },
+          staticElevation(theme, shadowEnabled),
         ]}
       >
         {children}
@@ -186,4 +182,18 @@ function AnimatedGlassSurfaceImpl({
       {topEdge}
     </AnimatedView>
   );
+}
+
+function staticElevation(theme: ReturnType<typeof useTheme>, enabled = true): ViewStyle {
+  if (!enabled) {
+    return { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) } as ViewStyle;
+  }
+  return {
+    shadowColor: "#000000",
+    shadowOpacity: 0.18,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    ...(Platform.OS === "web" ? { boxShadow: "0 4px 12px rgba(0,0,0,0.16)" } : {}),
+  } as ViewStyle;
 }
