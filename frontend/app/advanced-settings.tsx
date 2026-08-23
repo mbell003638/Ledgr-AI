@@ -21,7 +21,7 @@ import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/util
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
-    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
+    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: "transparent" }}>
       <GlowPressable
         topHighlight={false}
         haptic
@@ -50,7 +50,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </GlowPressable>
-      {isExpanded && <View style={{ marginHorizontal: 4, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 12, paddingTop: 4, borderWidth: 1, borderColor: theme.color.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, ...(Platform.OS === "web" ? { boxShadow: "0 3px 12px rgba(0,0,0,0.12)" } : { shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 }) }}>{children}</View>}
+      {isExpanded && <View style={{ marginHorizontal: 4, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 10, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
@@ -743,7 +743,7 @@ function makeStyles(theme: any) {
     scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 180 },
     advancedGroup: { marginTop: theme.spacing.lg, padding: 20 },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
-    hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+    hint: { fontSize: 12, lineHeight: 18, color: theme.color.muted, marginTop: 4 },
     input: {
       marginTop: theme.spacing.md,
       borderWidth: 1,
@@ -823,7 +823,7 @@ function makeStyles(theme: any) {
     entryInput: { flex: 1 },
     entryAmount: { width: 110 },
     memberCard: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, marginTop: theme.spacing.md },
-    subLabel: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+    subLabel: { fontSize: 11, lineHeight: 16, color: theme.color.muted, marginTop: 2 },
     lockToggle: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
       padding: theme.spacing.md, borderRadius: theme.radius.md,

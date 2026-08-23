@@ -61,6 +61,7 @@ export default function ReportsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
   const [seg, setSeg] = useState<Seg>("Summary");
+  const [displaySeg, setDisplaySeg] = useState<Seg>("Summary");
   const [dash, setDash] = useState<any>(null);
   const [periods, setPeriods] = useState<any[]>([]);
   const [pnl, setPnl] = useState<any>(null);
@@ -374,7 +375,12 @@ export default function ReportsScreen() {
   }, [load]));
 
   useEffect(() => {
-    if (!loading && hasLoaded.current) loadSection(seg);
+    if (loading || !hasLoaded.current) return;
+    let active = true;
+    void loadSection(seg).finally(() => {
+      if (active) setDisplaySeg(seg);
+    });
+    return () => { active = false; };
   }, [loadSection, loading, seg]);
 
   // Custom fields are drafts. Reports change only when Apply succeeds, so
@@ -547,13 +553,13 @@ export default function ReportsScreen() {
         }
       />
       {shops.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <GlowPressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} topHighlight={false} haptic={false} hoverLift={0} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
-            <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All locations</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationScroll} contentContainerStyle={styles.locationRow}>
+          <GlowPressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} topHighlight={false} haptic={false} hoverLift={0} style={[styles.locationChip, !locationId && styles.locationChipActive]}>
+            <Text style={[styles.locationChipText, !locationId && styles.locationChipTextActive]}>All locations</Text>
           </GlowPressable>
           {shops.map((shop) => (
-            <GlowPressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} topHighlight={false} haptic={false} hoverLift={0} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
-              <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
+            <GlowPressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} topHighlight={false} haptic={false} hoverLift={0} style={[styles.locationChip, locationId === shop.id && styles.locationChipActive]}>
+              <Text style={[styles.locationChipText, locationId === shop.id && styles.locationChipTextActive]}>{shop.name}</Text>
             </GlowPressable>
           ))}
         </ScrollView>
@@ -658,7 +664,7 @@ export default function ReportsScreen() {
             </Card>
           ) : null}
           {sectionLoading ? <View accessibilityLiveRegion="polite" style={styles.inlineLoading}><ActivityIndicator color={theme.color.brandPrimary} /><Text style={styles.inlineLoadingText}>Refreshing report…</Text></View> : null}
-          {seg === "Summary" && dash && (
+          {displaySeg === "Summary" && dash && (
             <>
               <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }}>
                 <Text style={[styles.rTitle, { color: theme.color.brandPrimary }]}>PROFIT (LIVE)</Text>
@@ -717,7 +723,7 @@ export default function ReportsScreen() {
             </>
           )}
 
-          {seg === "P&L" && pnl && (
+          {displaySeg === "P&L" && pnl && (
             <>
               <Card testID="report-pnl">
                 <Text style={styles.rTitle}>Profit &amp; Loss</Text>
@@ -758,7 +764,7 @@ export default function ReportsScreen() {
             </>
           )}
 
-          {seg === "Balance" && bs && (
+          {displaySeg === "Balance" && bs && (
             <>
               <Card testID="report-bs-assets">
                 <Text style={styles.rTitle}>Assets</Text>
@@ -807,7 +813,7 @@ export default function ReportsScreen() {
             </>
           )}
 
-          {seg === "Trial" && tb && (
+          {displaySeg === "Trial" && tb && (
             <Card testID="report-tb">
               <Text style={styles.rTitle}>Trial Balance</Text>
               <Text style={styles.groupHeader}>Debits</Text>
@@ -817,7 +823,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Capital Statement" && cap && (
+          {displaySeg === "Capital Statement" && cap && (
             <Card testID="report-capital">
               <Text style={styles.rTitle}>Capital Statement</Text>
               <RowKV label="Opening Capital (combined)" value={fmt(cap.openingCapital)} theme={theme} styles={styles} />
@@ -836,7 +842,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Capital Withdrawals" && (
+          {displaySeg === "Capital Withdrawals" && (
             <Card testID="report-drawings">
               <Text style={styles.rTitle}>Capital Withdrawals</Text>
               {draws.length === 0 ? (
@@ -855,7 +861,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Suppliers" && (
+          {displaySeg === "Suppliers" && (
             <Card testID="report-creditors">
               <Text style={styles.rTitle}>Supplier Balances</Text>
               <Text style={styles.hint}>{from} → {to}</Text>
@@ -887,7 +893,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Customers" && (
+          {displaySeg === "Customers" && (
             <Card testID="report-debtors">
               <Text style={styles.rTitle}>Customer Balances</Text>
               <Text style={styles.hint}>{from} → {to}</Text>
@@ -919,7 +925,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Tax" && taxRep && (
+          {displaySeg === "Tax" && taxRep && (
             <Card testID="report-tax">
               <Text style={styles.rTitle}>{taxRep.taxLabel} Report</Text>
               <Text style={styles.hint}>{from} → {to} · {taxRep.taxRate}% · {taxRep.basis} basis</Text>
@@ -935,7 +941,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Sales Reg" && salesReg && (
+          {displaySeg === "Sales Reg" && salesReg && (
             <Card testID="report-salesreg">
               <Text style={styles.rTitle}>Sales Register</Text>
               <Text style={styles.hint}>{from} → {to} · {salesReg.count} entries</Text>
@@ -954,7 +960,7 @@ export default function ReportsScreen() {
             </Card>
           )}
 
-          {seg === "Receipts" && receiptsReg && (
+          {displaySeg === "Receipts" && receiptsReg && (
             <Card testID="report-receiptsreg">
               <Text style={styles.rTitle}>Receipts Register</Text>
               <Text style={styles.hint}>{from} → {to} · {receiptsReg.count} receipts</Text>
@@ -995,7 +1001,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-  filterRail: { position: "relative" },
+  locationScroll: { height: 52, flexGrow: 0, marginBottom: 2, overflow: "hidden" },
+  locationRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 8 },
+  locationChip: { minHeight: 40, maxHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
+  locationChipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary },
+  locationChipText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
+  locationChipTextActive: { color: "#fff" },
+  filterRail: { position: "relative", height: 56 },
   railFade: { position: "absolute", top: 0, bottom: 0, width: 34, zIndex: 10 },
   railFadeLeft: { left: 0 },
   railFadeRight: { right: 0 },

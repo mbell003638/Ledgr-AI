@@ -195,6 +195,7 @@ function ReorderableWorkspaceTile({
   const solidBrand = tile.solidBrand === true;
   const isWeb = Platform.OS === "web";
   const TileIcon = tile.icon;
+  const TilePressableComponent: any = isWeb ? Pressable : AnimatedPressable;
   const hover = useSharedValue(0);
   const surfaceHover = useSharedValue(0);
   const iconHover = useSharedValue(0);
@@ -395,7 +396,7 @@ function ReorderableWorkspaceTile({
         layout={!motionEnabled || Platform.OS === "android" ? undefined : LinearTransition.springify().damping(18).stiffness(220)}
         style={[{ width: tileWidth, height: TILE_HEIGHT }, dragStyle]}
       >
-        <AnimatedPressable
+        <TilePressableComponent
           testID={`tile-${tile.key}`}
           accessibilityRole="button"
           accessibilityLabel={tile.label}
@@ -417,14 +418,19 @@ function ReorderableWorkspaceTile({
             styles.tile,
             editing && styles.tileEditing,
             tileSurfaceStyle,
-            !motionEnabled && {
-              backgroundColor: solidBrand ? theme.color.brandPrimary : theme.color.glassSurface,
-              borderColor: solidBrand ? theme.color.brandPrimary : theme.color.glassBorder,
-              shadowOpacity: 0,
-              shadowRadius: 0,
-              elevation: 0,
-              ...(Platform.OS === "web" ? { boxShadow: "none" } : {}),
-            },
+            !motionEnabled && (Platform.OS === "web"
+              ? {
+                  backgroundColor: solidBrand ? theme.color.brandPrimary : theme.color.glassSurface,
+                  borderColor: solidBrand ? theme.color.brandPrimary : theme.color.glassBorder,
+                  boxShadow: "none",
+                }
+              : {
+                  backgroundColor: solidBrand ? theme.color.brandPrimary : theme.color.glassSurface,
+                  borderColor: solidBrand ? theme.color.brandPrimary : theme.color.glassBorder,
+                  shadowOpacity: 0,
+                  shadowRadius: 0,
+                  elevation: 0,
+                }),
           ]}
         >
           {isWeb && motionEnabled ? <LinearGradient
@@ -457,7 +463,7 @@ function ReorderableWorkspaceTile({
               <Ionicons name="reorder-three" size={18} color={theme.color.brandPrimary} />
             </View>
           ) : null}
-        </AnimatedPressable>
+        </TilePressableComponent>
       </Animated.View>
     </GestureDetector>
   );
@@ -477,7 +483,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     justifyContent: "space-between",
-    shadowOffset: { width: 0, height: 0 },
   },
   tileEditing: {
     borderWidth: 1.5,

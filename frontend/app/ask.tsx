@@ -758,21 +758,24 @@ export default function AskBooks() {
               </Pressable>
             ) : voicePhase !== "idle" ? (
               <View testID="ask-voice-inline" style={styles.askVoiceInline}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : voicePhase === "setup" || voicePhase === "error" ? "Retry Ask AI voice input" : "Cancel Ask AI voice input"}
-                  onPress={voicePhase === "recording" ? stopAskVoice : voicePhase === "setup" || voicePhase === "error" ? startAskVoice : cancelAskVoice}
-                  disabled={voicePhase === "processing"}
-                  style={styles.askVoiceOrbButton}
-                >
-                  <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
-                </Pressable>
+                <View style={styles.askVoiceControls}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : voicePhase === "setup" || voicePhase === "error" ? "Retry Ask AI voice input" : "Processing Ask AI voice input"}
+                    onPress={voicePhase === "recording" ? stopAskVoice : voicePhase === "setup" || voicePhase === "error" ? startAskVoice : undefined}
+                    disabled={voicePhase === "processing"}
+                    style={[styles.askVoiceOrbButton, voicePhase === "processing" && styles.askVoiceOrbButtonDisabled]}
+                  >
+                    <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
+                  </Pressable>
+                  {voicePhase === "recording" && <Text style={styles.askVoiceAction}>Tap Stop to add</Text>}
+                </View>
                 <View style={styles.askVoiceCopy}>
                   <Text testID={voicePhase === "setup" ? "ask-voice-setup" : undefined} style={[styles.askVoiceStatus, { color: voicePhase === "error" || voicePhase === "setup" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : voicePhase === "setup" ? "Voice setup needed" : "Microphone error"}</Text>
                   <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={2}>{voicePhase === "recording" ? "Tap the circle to stop" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
                   {(voicePhase === "setup" || voicePhase === "error") && <Pressable accessibilityRole="button" accessibilityLabel="Open AI provider setup" onPress={openVoiceSetup} testID="ask-open-provider-setup" style={styles.askVoiceSetupLink}><Text style={styles.askVoiceSetupText}>Open AI provider setup</Text></Pressable>}
                 </View>
-                <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice input" onPress={cancelAskVoice} disabled={voicePhase === "processing"} style={styles.askVoiceStop}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice input" onPress={cancelAskVoice} disabled={voicePhase === "processing"} style={[styles.askVoiceStop, voicePhase === "processing" && { opacity: 0.4 }]}>
                   <Ionicons name="close" size={17} color={theme.color.muted} />
                 </Pressable>
               </View>
@@ -825,8 +828,11 @@ function makeStyles(theme: any) {
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.16)" } : { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 }) },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
-    askVoiceInline: { flex: 1, minWidth: 0, minHeight: 40, flexDirection: "row", alignItems: "center", overflow: "hidden" },
-    askVoiceOrbButton: { width: 104, height: 44, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+    askVoiceInline: { flex: 1, minWidth: 0, minHeight: 48, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+    askVoiceControls: { width: 86, minHeight: 44, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    askVoiceOrbButton: { width: 76, height: 44, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+    askVoiceOrbButtonDisabled: { opacity: 0.75 },
+    askVoiceAction: { position: "absolute", bottom: -1, fontSize: 8, fontWeight: "700", color: theme.color.brandPrimary },
     askVoiceCopy: { flex: 1, minWidth: 0, marginLeft: 4 },
     askVoiceStatus: { fontSize: 12, fontWeight: "700" },
     askVoiceHint: { fontSize: 10, marginTop: 2 },

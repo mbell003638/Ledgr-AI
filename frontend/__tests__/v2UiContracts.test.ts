@@ -105,7 +105,8 @@ describe('V2 UI contracts', () => {
     expect(advanced).toContain('api.updateV2BookConfig');
     expect(advanced).toContain('styles.advancedGroup');
     expect(advanced).toContain('ON · Fingerprint / PIN');
-    expect(advanced).toContain('shadowOpacity: 0.12');
+    expect(advanced).toContain('backgroundColor: "transparent"');
+    expect(advanced).toContain('lineHeight: 18');
     const sync = readApp('sync-settings.tsx');
     expect(sync).toContain('padding: 16, gap: 12');
     expect(sync).toContain('marginBottom: 2');
@@ -410,7 +411,7 @@ describe('V2 UI contracts', () => {
     const workspace = readSource('src/components/ReorderableWorkspaceGrid.tsx');
     const glass = readSource('src/components/AnimatedGlassSurface.tsx');
     const voiceFab = readSource('src/components/VoiceFab.tsx');
-    expect(workspace).toContain('!motionEnabled && {');
+    expect(workspace).toContain('!motionEnabled && (Platform.OS === "web"');
     expect(workspace).toContain('boxShadow: "none"');
     expect(workspace).toContain('isWeb && motionEnabled');
     expect(glow).toContain('boxShadow: "none"');
@@ -599,6 +600,8 @@ describe('V2 UI contracts', () => {
     expect(voice).not.toContain('<Modal');
     expect(voiceOrb).toContain('withRepeat');
     expect(voiceOrb).toContain('motionEnabled');
+    expect(voiceOrb).not.toContain('elevation: 8');
+    expect(voiceOrb).toContain('rootCompact');
     expect(glassSurface).toContain('staticElevation(theme, shadowEnabled)');
     expect(glassSurface).toContain('shadowOpacity: 0.18');
     expect(glowPressable).toContain('boxShadow: focus > 0');
@@ -614,11 +617,17 @@ describe('V2 UI contracts', () => {
     expect(ask).toContain('accessibilityLabel="Ask AI voice input"');
     expect(ask).toContain('VoiceOrb');
     expect(ask).toContain('testID="ask-voice-inline"');
+    expect(ask).toContain('Tap Stop to add');
+    expect(ask).toContain('Cancel Ask AI voice input');
     expect(ask).toContain('setVoicePhase("setup")');
     expect(ask).toContain('api.getAIConfig()');
     expect(ask).toContain('advanced-settings?section=ai-provider');
     expect(ask).toContain('send() appends the transcript as the user bubble');
     expect(ask).toContain('Nothing changes until you tap Apply.');
+    const reports = readApp('(tabs)/reports.tsx');
+    expect(reports).toContain('const [displaySeg, setDisplaySeg] = useState<Seg>("Summary")');
+    expect(reports).toContain('locationScroll');
+    expect(reports).toContain('setDisplaySeg(seg)');
     expect(advanced).toContain('ai-provider-recovery-hint');
     expect(apiFacade).toContain('getAIConfig: async () => getAIConfig()');
     expect(voice).toContain('subscribeToVoiceAssistantRequest');

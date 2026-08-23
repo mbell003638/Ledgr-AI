@@ -20,7 +20,8 @@ describe('Phase 4–6 remediation contracts', () => {
     expect(glass).toContain('0 4px');
     expect(glow).toContain('focus > 0');
     expect(workspace).toContain('Native shadow properties are intentionally excluded from the web worklet');
-    expect(ui).toContain('boxShadow: "0 2px 10px rgba(0,0,0,0.10)"');
+    expect(ui).toContain('boxShadow: "none"');
+    expect(ui).toContain('overflow: "hidden"');
     expect(quick).toContain('boxShadow: `0 -4px 24px');
   });
 

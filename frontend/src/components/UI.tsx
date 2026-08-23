@@ -138,7 +138,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 18,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.10)" } : { shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }),
+      ...(Platform.OS === "web" ? { boxShadow: "none", overflow: "hidden" } : {}),
       marginVertical: 0,
     },
     kpi: {
@@ -148,7 +148,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 14,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      ...(Platform.OS === "web" ? { boxShadow: "0 1px 8px rgba(0,0,0,0.08)" } : { shadowColor: "#000000", shadowOpacity: 0.10, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }),
+      ...(Platform.OS === "web" ? { boxShadow: "none", overflow: "hidden" } : {}),
     },
     kpiTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     kpiLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "700" },
