@@ -600,8 +600,9 @@ describe('V2 UI contracts', () => {
     expect(voiceOrb).toContain('motionEnabled');
     expect(glassSurface).toContain('staticElevation(theme, shadowEnabled)');
     expect(glassSurface).toContain('shadowOpacity: 0.18');
-    expect(glowPressable).toContain('shadowOpacity: isWeb ? interpolate');
-    expect(glowPressable).toContain('elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : (prominent ? 7 : 4)');
+    expect(glowPressable).toContain('boxShadow: focus > 0');
+    expect(glowPressable).toContain('elevation: prominent ? 7 : 4');
+    expect(glowPressable).not.toContain('shadowOpacity: isWeb ? interpolate');
     expect(capabilities).toContain("| 'voice_assistant'");
     expect(capabilities).toContain("key: 'voice_assistant'");
     expect(home).toContain('capability: "voice_assistant"');

@@ -97,10 +97,11 @@ export class LocationDomainService {
     private readonly getActiveContext: (date?: string) => Promise<ActiveContext | null>,
   ) {}
 
-  async listLocations(): Promise<LocationRecord[]> {
+  async listLocations(options: { includeArchived?: boolean } = {}): Promise<LocationRecord[]> {
     const c = await this.requireContext();
+    const archiveFilter = options.includeArchived ? '' : ' AND archived=0';
     const rows = await this.db.all<{ id: string; book_id: string; name: string; archived: number }>(
-      'SELECT id,book_id,name,archived FROM v2_locations WHERE book_id=? AND archived=0 ORDER BY name,id',
+      `SELECT id,book_id,name,archived FROM v2_locations WHERE book_id=?${archiveFilter} ORDER BY archived,name,id`,
       [c.bookId],
     );
     return rows.map((row) => ({ id: row.id, bookId: row.book_id, name: row.name, archived: Boolean(row.archived) }));
@@ -128,6 +129,32 @@ export class LocationDomainService {
     if (!row) throw new Error('Location not found');
     await this.db.run('UPDATE v2_locations SET archived=1 WHERE id=? AND book_id=?', [id, c.bookId]);
     return { id: row.id, bookId: c.bookId, name: row.name, archived: true };
+  }
+
+  async renameLocation(id: string, nameInput: string): Promise<LocationRecord> {
+    await this.requireModule();
+    const c = await this.requireContext();
+    const name = String(nameInput || '').trim();
+    if (!name) throw new Error('Location name is required');
+    const row = await this.db.first<{ id: string; archived: number }>('SELECT id,archived FROM v2_locations WHERE id=? AND book_id=?', [id, c.bookId]);
+    if (!row) throw new Error('Location not found');
+    if (row.archived) throw new Error('Restore the location before renaming it');
+    const dup = await this.db.first<{ id: string }>('SELECT id FROM v2_locations WHERE book_id=? AND archived=0 AND lower(name)=lower(?) AND id<>?', [c.bookId, name, id]);
+    if (dup) throw new Error('A location with that name already exists');
+    await this.db.run('UPDATE v2_locations SET name=? WHERE id=? AND book_id=?', [name, id, c.bookId]);
+    return { id, bookId: c.bookId, name, archived: false };
+  }
+
+  async reopenLocation(id: string): Promise<LocationRecord> {
+    await this.requireModule();
+    const c = await this.requireContext();
+    const row = await this.db.first<{ id: string; name: string; archived: number }>('SELECT id,name,archived FROM v2_locations WHERE id=? AND book_id=?', [id, c.bookId]);
+    if (!row) throw new Error('Location not found');
+    if (!row.archived) return { id: row.id, bookId: c.bookId, name: row.name, archived: false };
+    const dup = await this.db.first<{ id: string }>('SELECT id FROM v2_locations WHERE book_id=? AND archived=0 AND lower(name)=lower(?)', [c.bookId, row.name]);
+    if (dup) throw new Error('Rename the archived location before restoring it because an active location uses that name');
+    await this.db.run('UPDATE v2_locations SET archived=0 WHERE id=? AND book_id=?', [id, c.bookId]);
+    return { id: row.id, bookId: c.bookId, name: row.name, archived: false };
   }
 
   async listStockTransfers() {

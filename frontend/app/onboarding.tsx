@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal, KeyboardAvoidingView, Keyboard } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -33,6 +33,7 @@ export default function Onboarding() {
   const [currency, setCurrency] = useState("USD");
   const [lockEnabled, setLockEnabled] = useState(false);
   const [multiLocation, setMultiLocation] = useState(false);
+  const [initialLocationName, setInitialLocationName] = useState("Main Shop");
   const [accountingStyle, setAccountingStyle] = useState<"standard" | "retail_partnership">("standard");
   const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<MetricKey[]>([]);
@@ -62,7 +63,10 @@ export default function Onboarding() {
     setCustomCapabilities(null);
     setSelectedMetricKeys([]);
     setShowCustomize(false);
-    if (!RECOMMENDED_PERSONA_IDS.includes(nextPersona)) setMultiLocation(false);
+    if (!RECOMMENDED_PERSONA_IDS.includes(nextPersona)) {
+      setMultiLocation(false);
+      setInitialLocationName("Main Shop");
+    }
   };
 
   const toggleCapability = (key: CapabilityKey) => {
@@ -104,6 +108,12 @@ export default function Onboarding() {
   const finish = async () => {
     const finalPersona = persona || "entrepreneur";
     const finalBizName = bizName.trim() || "My Business";
+    const finalLocationName = initialLocationName.trim();
+    if (multiLocation && !finalLocationName) {
+      Alert.alert("Name your first location", "Enter a shop, POS, or warehouse name so every location-sensitive entry has a clear home.");
+      return;
+    }
+    Keyboard.dismiss();
     setSaving(true);
     try {
       if (lockEnabled && !(await deviceHasLock())) {
@@ -146,6 +156,12 @@ export default function Onboarding() {
         enabledCapabilities: selectedCapabilities,
         workspaceMetricKeys: selectedMetricKeys.filter((key) => metricOptions.some((metric) => metric.key === key)),
       });
+      if (multiLocation) {
+        const existingLocations = await api.listLocations().catch(() => []);
+        const firstLocation = Array.isArray(existingLocations) ? existingLocations[0] : null;
+        const location = firstLocation || await api.createLocation({ name: finalLocationName });
+        if (location?.id) await api.updateSettings({ activeLocationId: String(location.id) });
+      }
       markOnboarded();
       router.replace("/(tabs)");
     } catch (e: any) {
@@ -167,7 +183,9 @@ export default function Onboarding() {
       </View>
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 16}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
+
         {step === 0 && (
           <View>
             <Text style={styles.title}>What best describes your work?</Text>
@@ -250,23 +268,24 @@ export default function Onboarding() {
               </View>
               <Text style={styles.previewKicker}>STARTING CAPABILITIES</Text>
               <View style={styles.chipWrap}>{selectedCapabilityLabels.slice(0, 6).map((label) => <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{label}</Text></View>)}</View>
-              <Text style={styles.previewHint}>{selectedCapabilities.length} workflows are enabled for this workspace. Hidden workflows do not appear on Home but can be restored later.</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide workspace customization" : "Customize workspace capabilities"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide customization" : "Customize workspace"}</Text></Pressable>
+              <Text testID="onboarding-capability-summary" style={styles.previewHint}>{selectedCapabilities.length} workflows are enabled for this workspace. Ledgr keeps other workflows out of Home until you turn them on.</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={showCustomize ? "Hide advanced workflow customization" : "Customize advanced workflows"} onPress={() => setShowCustomize((value) => !value)} style={styles.customizeButton}><Ionicons name="options-outline" size={17} color={theme.color.brandPrimary} /><Text style={styles.customizeButtonText}>{showCustomize ? "Hide advanced workflows" : "Customize advanced workflows"}</Text></Pressable>
               {showCustomize ? <View style={styles.customizePanel}><Text style={styles.customizeTitle}>Choose the workflows you need</Text><Text style={styles.customizeHint}>Core accounting, cash controls, financial reporting, and multi-location are configured in their dedicated choices below.</Text>{CAPABILITIES.filter((item) => !CORE_CAPABILITIES.includes(item.key) && item.key !== "multi_location").map((item) => { const enabled = selectedCapabilities.includes(item.key); return <Pressable key={item.key} onPress={() => toggleCapability(item.key)} accessibilityRole="switch" accessibilityLabel={item.label} accessibilityState={{ checked: enabled }} style={[styles.customizeRow, enabled && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{item.label}</Text><Text style={styles.customizeRowDesc}>{item.description}</Text></View><View style={[styles.toggle, enabled && styles.toggleOn]}><View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} /></View></Pressable>; })}</View> : null}
               {metricOptions.length ? <View style={styles.metricPanel}><Text style={styles.customizeTitle}>Choose report metrics</Text><Text style={styles.customizeHint}>Select only the metrics you want in Reports. Unselected metrics stay hidden; they never appear on Home.</Text>{metricOptions.map((metric) => { const selected = selectedMetricKeys.includes(metric.key); return <Pressable key={metric.key} onPress={() => toggleMetric(metric.key)} accessibilityRole="checkbox" accessibilityLabel={`Show ${metric.label} in reports`} accessibilityState={{ checked: selected }} style={[styles.metricRow, selected && styles.customizeRowEnabled]}><View style={{ flex: 1, paddingRight: 10 }}><Text style={styles.customizeRowTitle}>{metric.label}</Text><Text style={styles.customizeRowDesc}>{metric.description}</Text></View><Ionicons name={selected ? "checkbox" : "square-outline"} size={22} color={selected ? theme.color.brandPrimary : theme.color.muted} /></Pressable>; })}</View> : null}
               <View style={[styles.tipCard, { marginTop: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary }]}><Ionicons name="cloud-offline-outline" size={20} color={theme.color.warning || theme.color.brandPrimary} /><Text style={styles.tipText}>Ledgr stores your books on this device. Android backup is not a substitute for a bookkeeping backup; export an encrypted backup from Settings after important work and keep a copy somewhere safe.</Text></View>
               <View testID="onboarding-hosting-mode" style={styles.hostingCard}><Text style={styles.hostingTitle}>Local-only mode</Text><Text style={styles.hostingText}>Ledgr works offline on this device by default. You can create an encrypted backup anytime, or enable private sync later when you need your own server for multiple devices.</Text></View>
             </View>
-            {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text></View><Pressable onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
+              {multiLocationEligible ? <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>I operate multiple stores or POS points</Text><Text style={styles.lockDesc}>Add locations, open drawers, transfer stock, and compare each shop later.</Text>{multiLocation ? <View testID="onboarding-initial-location" style={styles.locationSetup}><Text style={styles.customizeRowTitle}>Name your first location</Text><Text style={styles.customizeRowDesc}>Examples: Main Shop, Store A, or Warehouse 1.</Text><TextInput value={initialLocationName} onChangeText={setInitialLocationName} placeholder="Main Shop" placeholderTextColor={theme.color.muted} style={styles.locationInput} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} /></View> : null}</View><Pressable testID="onboarding-multi-location" onPress={() => setMultiLocation((value) => !value)} style={[styles.toggle, multiLocation && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: multiLocation }}><View style={[styles.toggleThumb, multiLocation && styles.toggleThumbOn]} /></Pressable></View> : null}
             <View style={styles.lockCard}><View style={{ flex: 1 }}><Text style={styles.lockTitle}>Protect sensitive actions</Text><Text style={styles.lockDesc}>Use your phone PIN, fingerprint, or face unlock before deleting or resetting data.</Text></View><Pressable onPress={toggleLock} style={[styles.toggle, lockEnabled && styles.toggleOn]} accessibilityRole="switch" accessibilityState={{ checked: lockEnabled }} accessibilityLabel="Protect sensitive actions with App Lock"><View style={[styles.toggleThumb, lockEnabled && styles.toggleThumbOn]} /></Pressable></View>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
 
       <View style={styles.footer}>
         {step > 0 ? <Pressable onPress={() => setStep((value) => value - 1)} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /><Text style={styles.backText}>Back</Text></Pressable> : <View />}
         <Pressable onPress={() => { if (step === 0 && !persona) return; if (step < LAST_STEP) setStep((value) => value + 1); else finish(); }} disabled={saving || (step === 0 && !persona)} style={[styles.nextBtn, (saving || (step === 0 && !persona)) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Open my workspace"}</Text>}</Pressable>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -274,6 +293,7 @@ export default function Onboarding() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
+    keyboardSafe: { flex: 1 },
     topBar: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
     brand: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "900", letterSpacing: 2 },
     kicker: { color: theme.color.muted, fontSize: 12, marginTop: 4 },
@@ -352,7 +372,9 @@ function makeStyles(theme: any) {
     accountingChoiceTitle: { color: theme.color.onSurface, fontSize: 12, fontWeight: "800" },
     accountingChoiceText: { color: theme.color.muted, fontSize: 10, lineHeight: 14, marginTop: 5 },
     previewHint: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 14 },
-    lockCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 15, marginTop: 14, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    lockCard: { flexDirection: "row", alignItems: "flex-start", gap: 14, padding: 15, marginTop: 14, borderRadius: 18, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    locationSetup: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.color.border },
+    locationInput: { borderWidth: 1, borderColor: theme.color.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: theme.color.onSurface, backgroundColor: theme.color.surface, marginTop: 8 },
     lockTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
     lockDesc: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
     toggle: { width: 50, height: 30, borderRadius: 15, padding: 3, justifyContent: "center", backgroundColor: theme.color.border },

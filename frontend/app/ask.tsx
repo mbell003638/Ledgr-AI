@@ -823,7 +823,7 @@ function makeStyles(theme: any) {
     attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
     inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
-    micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 },
+    micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.16)" } : { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 }) },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     askVoiceInline: { flex: 1, minWidth: 0, minHeight: 40, flexDirection: "row", alignItems: "center", overflow: "hidden" },
     askVoiceOrbButton: { width: 104, height: 44, justifyContent: "center", alignItems: "center", flexShrink: 0 },

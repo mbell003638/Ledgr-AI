@@ -466,7 +466,9 @@ async function applyRemoteSyncOperation(dbRunner: NonNullable<ReturnType<typeof 
     'cash.patch': (value) => service.updateManualCash(String(value.id), value.input || {}),
     'cash.delete': (value) => service.deleteManualCash(String(value.id)),
     'location.create': (value) => service.createLocation(value),
+    'location.rename': (value) => service.renameLocation(String(value.id), String(value.name || '')),
     'location.archive': (value) => service.archiveLocation(String(value.id)),
+    'location.reopen': (value) => service.reopenLocation(String(value.id)),
     'location.transfer_cash': (value) => service.transferLocationCash(value),
     'location.transfer_stock': (value) => service.transferLocationStock(value),
     'product.upsert': (value) => service.upsertProduct(value),
@@ -1563,17 +1565,25 @@ export const api = {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     return new V2AppService(runner).listProducts(locationId);
   },
-  listLocations: async () => {
+  listLocations: async (options?: { includeArchived?: boolean }) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    return new V2AppService(runner).listLocations();
+    return new V2AppService(runner).listLocations(options);
   },
   createLocation: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await withSyncedMutation(runner, { commandType: 'location.create', aggregateType: 'location', aggregateId: String(input.id || input.name), payload: input, operationIdentity: !input.id }, () => new V2AppService(runner).createLocation(input)); bumpDataVersion(); return r;
   },
+  renameLocation: async (id: string, name: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await withSyncedMutation(runner, { commandType: 'location.rename', aggregateType: 'location', aggregateId: id, payload: { id, name } }, () => new V2AppService(runner).renameLocation(id, name)); bumpDataVersion(); return r;
+  },
   archiveLocation: async (id: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const r = await withSyncedMutation(runner, { commandType: 'location.archive', aggregateType: 'location', aggregateId: id, payload: { id } }, () => new V2AppService(runner).archiveLocation(id)); bumpDataVersion(); return r;
+  },
+  reopenLocation: async (id: string) => {
+    const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
+    const r = await withSyncedMutation(runner, { commandType: 'location.reopen', aggregateType: 'location', aggregateId: id, payload: { id } }, () => new V2AppService(runner).reopenLocation(id)); bumpDataVersion(); return r;
   },
   transferLocationCash: async (input: any) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');

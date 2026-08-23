@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -269,7 +269,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700", color: theme.color.onSurface },
   hint: { fontSize: 13, color: theme.color.muted, marginTop: 6 },
   micArea: { alignItems: "center", paddingVertical: theme.spacing.xl, gap: 12 },
-  micBtn: { width: 96, height: 96, borderRadius: 48, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 },
+  micBtn: { width: 96, height: 96, borderRadius: 48, backgroundColor: theme.color.brandPrimary, justifyContent: "center", alignItems: "center", ...(Platform.OS === "web" ? { boxShadow: "0 6px 24px rgba(0,0,0,0.18)" } : { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }) },
   micRecording: { backgroundColor: theme.color.error },
   micLabel: { color: theme.color.muted, fontSize: 13, fontWeight: "500" },
   transcriptBox: { marginTop: 8, padding: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md },

@@ -161,19 +161,19 @@ function AnimatedGlowPressable({
           )
         : restingBorderColor ?? theme.color.glassBorder,
       transform: [{ translateY }, { scale }],
-      shadowColor: isWeb ? (glowColor ?? theme.color.brandPrimary) : "#000000",
-      shadowOpacity: isWeb ? interpolate(
-        focus,
-        [0, 1],
-        [0, prominent ? 0.48 : theme.effects.glowOpacity],
-      ) : 0.14,
-      shadowRadius: isWeb ? interpolate(
-        focus,
-        [0, 1],
-        [0, glowRadius ?? (prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius)],
-      ) : 7,
-      shadowOffset: isWeb ? { width: 0, height: 0 } : { width: 0, height: 3 },
-      elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : (prominent ? 7 : 4),
+      ...(isWeb
+        ? {
+            boxShadow: focus > 0
+              ? `0 4px ${glowRadius ?? (prominent ? 22 : 14)}px ${glowColor ?? theme.color.brandPrimary}33`
+              : "none",
+          }
+        : {
+            shadowColor: "#000000",
+            shadowOpacity: 0.14,
+            shadowRadius: 7,
+            shadowOffset: { width: 0, height: 3 },
+            elevation: prominent ? 7 : 4,
+          }),
     };
   }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, theme]);
 
@@ -205,7 +205,7 @@ function AnimatedGlowPressable({
           position: "relative",
           borderWidth: 1,
           borderColor: restingBorderColor ?? theme.color.glassBorder,
-          shadowOffset: { width: 0, height: 0 },
+          ...(isWeb ? { boxShadow: "none" } : {}),
         },
         style,
         animatedStyle,

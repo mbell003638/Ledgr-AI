@@ -237,27 +237,32 @@ function ReorderableWorkspaceTile({
 
   const tileSurfaceStyle = useAnimatedStyle(() => {
     const focus = Math.max(surfaceHover.value, pressed.value * 0.45);
-    const nativeStyle = {
+    const commonStyle = {
       backgroundColor: interpolateColor(focus, [0, 1], [solidBrand ? theme.color.brandPrimary : isBrand ? theme.color.brandPrimary + "14" : theme.color.glassSurface, solidBrand ? theme.color.brandSecondary : theme.color.glassSurfaceHover]),
       borderColor: interpolateColor(focus, [0, 1], [solidBrand ? theme.color.brandPrimary : isBrand ? theme.color.brandPrimary + "80" : theme.color.glassBorder, solidBrand ? theme.color.brandSecondary : theme.color.brandPrimary]),
       transform: reduceMotion ? [] : [
         { translateY: interpolate(hover.value, [0, 1], [0, -5]) },
         { scale: 1 + hover.value * 0.02 - pressed.value * 0.03 },
       ],
-      shadowColor: theme.color.brandPrimary,
-      shadowOpacity: isWeb ? interpolate(focus, [0, 1], [isBrand ? 0.16 : 0, theme.effects.glowOpacity]) : 0,
-      shadowRadius: isWeb ? interpolate(focus, [0, 1], [isBrand ? 8 : 0, theme.effects.glowRadius]) : 0,
-      elevation: isWeb ? interpolate(focus, [0, 1], [0, 8]) : 0,
     };
 
-    // Reanimated validates `boxShadow` on native even when its value is undefined.
-    // Only include the browser CSS shadow property in the web worklet result.
+    // Native shadow properties are intentionally excluded from the web worklet.
+    // React Native Web can serialize those properties as a detached rectangle;
+    // the browser receives one bounded CSS shadow instead.
     return isWeb
       ? {
-          ...nativeStyle,
-          boxShadow: `0px ${10 * focus}px ${25 * focus}px rgba(0,0,0,${0.6 * focus}), 0px 0px ${isBrand ? 10 + 10 * focus : 20 * focus}px ${theme.color.brandPrimary}${isBrand ? "40" : "59"}`,
+          ...commonStyle,
+          boxShadow: focus > 0
+            ? `0 4px ${isBrand ? 20 : 14}px ${theme.color.brandPrimary}2E`
+            : "none",
         }
-      : nativeStyle;
+      : {
+          ...commonStyle,
+          shadowColor: theme.color.brandPrimary,
+          shadowOpacity: isBrand ? 0.16 : 0,
+          shadowRadius: isBrand ? 8 : 0,
+          elevation: 4,
+        };
   }, [isBrand, isWeb, reduceMotion, solidBrand, theme]);
 
   const iconMotionStyle = useAnimatedStyle(() => ({

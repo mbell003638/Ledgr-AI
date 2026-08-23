@@ -247,7 +247,13 @@ export default function Dashboard() {
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
         ) : (
           <>
-            {shops.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}><Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => { setLocationId(""); void api.updateSettings({ activeLocationId: "" }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>{shops.map((shop) => <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => { setLocationId(shop.id); void api.updateSettings({ activeLocationId: shop.id }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}</ScrollView> : null}
+            {shops.length > 0 ? <View testID="dashboard-location-context" style={styles.locationContext}>
+              <View style={styles.locationContextHeader}><Ionicons name="location-outline" size={15} color={theme.color.brandPrimary} /><Text style={styles.locationContextLabel}>Reporting location</Text><Text style={styles.locationContextValue}>{locationId ? shops.find((shop) => shop.id === locationId)?.name || "Selected shop" : "All locations"}</Text></View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                <Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => { setLocationId(""); void api.updateSettings({ activeLocationId: "" }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>All locations</Text></Pressable>
+                {shops.map((shop) => <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => { setLocationId(shop.id); void api.updateSettings({ activeLocationId: shop.id }); }} style={{ paddingHorizontal: 11, paddingVertical: 7, borderRadius: 15, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}><Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontSize: 11, fontWeight: "800" }}>{shop.name}</Text></Pressable>)}
+              </ScrollView>
+            </View> : null}
             {/* Period Filter Bar */}
             <View style={{ marginBottom: theme.spacing.md }}>
               <View style={styles.periodRow}>
@@ -473,7 +479,6 @@ export default function Dashboard() {
                   hideRules
                   noOfSections={4}
                   yAxisTextStyle={{ color: theme.color.muted, fontSize: 10 }}
-                  xAxisLabelTextStyle={{ color: theme.color.muted, fontSize: 10 }}
                 />
               ) : (
                 <Text style={styles.emptyText}>No sales recorded yet. Add your first sale to see trends.</Text>
@@ -493,6 +498,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
   homeHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
   homeHeaderTitle: { fontSize: 28, fontWeight: "700", letterSpacing: -0.5 },
   homeHeaderSubtitle: { fontSize: 14, marginTop: 4 },
+  locationContext: { marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
+  locationContextHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 7 },
+  locationContextLabel: { color: theme.color.muted, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.7 },
+  locationContextValue: { flex: 1, color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800", textAlign: "right" },
   scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, width: "100%", maxWidth: 1160, alignSelf: "center" },
   periodRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center" },
   periodPill: {
@@ -539,11 +548,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: theme.color.surfaceSecondary,
     marginVertical: theme.spacing.xs,
-    elevation: Platform.OS === "web" ? 1 : 3,
-    shadowColor: "#000000",
-    shadowOpacity: Platform.OS === "web" ? 0.06 : 0.14,
-    shadowRadius: Platform.OS === "web" ? 3 : 7,
-    shadowOffset: { width: 0, height: Platform.OS === "web" ? 1 : 3 },
+    ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.10)" } : { elevation: 3, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 } }),
   },
   tileIcon: {
     width: 40, height: 40, borderRadius: 20,
@@ -572,7 +577,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
   quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
   quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  quickWorkspaceTile: { width: "48.5%", height: 115, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between", elevation: Platform.OS === "web" ? 1 : 3, shadowColor: "#000000", shadowOpacity: Platform.OS === "web" ? 0.06 : 0.14, shadowRadius: Platform.OS === "web" ? 3 : 7, shadowOffset: { width: 0, height: Platform.OS === "web" ? 1 : 3 } },
+  quickWorkspaceTile: { width: "48.5%", height: 115, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between", ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.10)" } : { elevation: 3, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 } }) },
   quickWorkspaceTileFeatured: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
   quickWorkspaceTilePressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
   quickWorkspaceIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },

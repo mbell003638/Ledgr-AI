@@ -85,6 +85,7 @@ export default function QuickActionMenu() {
   const accountsEnabled = isCapabilityEnabled(settings, "customers") || isCapabilityEnabled(settings, "procurement") || isCapabilityEnabled(settings, "invoicing");
   const router = useRouter();
   const theme = useTheme();
+  const isWeb = Platform.OS === "web";
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
   const progress = useSharedValue(0);
@@ -139,9 +140,7 @@ export default function QuickActionMenu() {
       { translateY: reduceMotion ? 0 : -3 * fabHover.value },
       { scale: reduceMotion ? 1 : 1 + fabHover.value * 0.08 - fabPressed.value * 0.04 },
     ],
-    shadowOpacity: 0.42 + fabHover.value * 0.18,
-    shadowRadius: theme.effects.glowRadius + fabHover.value * 8,
-  }), [reduceMotion, theme]);
+  }), [reduceMotion]);
 
   const navigate = (route: string | { pathname: string; params?: Record<string, string> }) => {
     closeMenu();
@@ -162,7 +161,9 @@ export default function QuickActionMenu() {
             styles.fab,
             {
               backgroundColor: isOpen ? theme.color.surfaceTertiary : theme.color.brandPrimary,
-              shadowColor: isOpen ? theme.color.muted : theme.color.brandPrimary,
+              ...(isWeb
+                ? { boxShadow: isOpen ? `0 4px 16px ${theme.color.muted}33` : `0 4px 16px ${theme.color.brandPrimary}55` }
+                : { shadowColor: isOpen ? theme.color.muted : theme.color.brandPrimary, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 12 }),
             },
             fabStyle,
           ]}
@@ -187,7 +188,9 @@ export default function QuickActionMenu() {
             {
               backgroundColor: theme.color.surfaceSecondary,
               borderColor: theme.color.brandPrimary,
-              shadowColor: theme.color.brandPrimary,
+              ...(isWeb
+                ? { boxShadow: `0 -4px 24px ${theme.color.brandPrimary}33` }
+                : { shadowColor: theme.color.brandPrimary, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.32, shadowRadius: 24, elevation: 18 }),
             },
             menuStyle,
           ]}
@@ -286,10 +289,6 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 26,
     borderWidth: 1,
     overflow: "hidden",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.42,
-    shadowRadius: 28,
-    elevation: 18,
     transformOrigin: "bottom",
   },
   menuHighlight: {
@@ -349,7 +348,5 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     justifyContent: "center",
     alignItems: "center",
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 12,
   },
 });

@@ -65,6 +65,7 @@ function AnimatedGlassSurfaceImpl({
   ...viewProps
 }: AnimatedGlassSurfaceProps) {
   const theme = useTheme();
+  const isWeb = Platform.OS === "web";
   const reduceMotion = useReducedMotion();
   const transformProgress = useSharedValue(0);
   const surfaceProgress = useSharedValue(0);
@@ -101,18 +102,26 @@ function AnimatedGlassSurfaceImpl({
     transform: [
       { scale: reduceMotion ? 1 : 1 - interpolate(transformProgress.value, [0, 1], [0, 0.012]) },
     ],
-    shadowColor: theme.color.brandPrimary,
-    shadowOpacity: shadowEnabled ? interpolate(
-      surfaceProgress.value,
-      [0, 1],
-      [0.08, prominent ? 0.48 : theme.effects.glowOpacity],
-    ) : 0,
-    shadowRadius: shadowEnabled ? interpolate(
-      surfaceProgress.value,
-      [0, 1],
-      [4, prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius],
-    ) : 0,
-    elevation: shadowEnabled ? interpolate(surfaceProgress.value, [0, 1], [2, prominent ? 12 : 8]) : 0,
+    ...(isWeb
+      ? {
+          boxShadow: shadowEnabled
+            ? `0 4px ${prominent ? 22 : 14}px rgba(0,0,0,${prominent ? 0.18 : 0.12})`
+            : "none",
+        }
+      : {
+          shadowColor: theme.color.brandPrimary,
+          shadowOpacity: shadowEnabled ? interpolate(
+            surfaceProgress.value,
+            [0, 1],
+            [0.08, prominent ? 0.48 : theme.effects.glowOpacity],
+          ) : 0,
+          shadowRadius: shadowEnabled ? interpolate(
+            surfaceProgress.value,
+            [0, 1],
+            [4, prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius],
+          ) : 0,
+          elevation: shadowEnabled ? interpolate(surfaceProgress.value, [0, 1], [2, prominent ? 12 : 8]) : 0,
+        }),
   }), [hoverSurfaceColor, prominent, reduceMotion, restingBorderColor, shadowEnabled, surfaceColor, theme]);
 
   const topEdge = topHighlight && Platform.OS === "web" ? (
@@ -168,11 +177,10 @@ function AnimatedGlassSurfaceImpl({
       style={[
         {
           position: "relative",
-          overflow: "hidden",
-          backgroundColor: surfaceColor ?? theme.color.glassSurface,
-          borderWidth: 1,
-          borderColor: restingBorderColor ?? theme.color.glassBorder,
-          shadowOffset: { width: 0, height: 0 },
+            backgroundColor: surfaceColor ?? theme.color.glassSurface,
+            borderWidth: 1,
+            borderColor: restingBorderColor ?? theme.color.glassBorder,
+            boxShadow: "none",
         },
         style,
         animatedStyle,
@@ -185,15 +193,15 @@ function AnimatedGlassSurfaceImpl({
 }
 
 function staticElevation(theme: ReturnType<typeof useTheme>, enabled = true): ViewStyle {
-  if (!enabled) {
-    return { shadowOpacity: 0, shadowRadius: 0, elevation: 0, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) } as ViewStyle;
+  if (Platform.OS === "web") {
+    return { boxShadow: enabled ? "0 4px 14px rgba(0,0,0,0.12)" : "none" } as ViewStyle;
   }
+  if (!enabled) return { shadowOpacity: 0, shadowRadius: 0, elevation: 0 } as ViewStyle;
   return {
     shadowColor: "#000000",
     shadowOpacity: 0.18,
     shadowRadius: 9,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
-    ...(Platform.OS === "web" ? { boxShadow: "0 4px 12px rgba(0,0,0,0.16)" } : {}),
   } as ViewStyle;
 }

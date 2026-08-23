@@ -15,7 +15,7 @@ import { getCurrencySymbol } from "@/src/utils/currency";
 import { confirmAction } from "@/src/utils/alerts";
 import { LocationPicker } from "@/src/components/LocationPicker";
 
-type Shop = { id: string; name: string };
+type Shop = { id: string; name: string; archived?: boolean };
 type Product = { id: string; name: string; qty: number };
 
 export default function LocationsScreen() {
@@ -26,11 +26,14 @@ export default function LocationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [shops, setShops] = useState<Shop[]>([]);
+  const [archivedShops, setArchivedShops] = useState<Shop[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingLocationId, setEditingLocationId] = useState("");
+  const [renameValue, setRenameValue] = useState("");
   const [currency, setCurrency] = useState("$");
 
   const [cashFrom, setCashFrom] = useState("");
@@ -52,10 +55,12 @@ export default function LocationsScreen() {
       setEnabled(on);
       setCurrency(getCurrencySymbol(settings.currency));
       setStockEnabled(getEnabledFeatures(settings).includes("perpetualInventory"));
-      if (!on) { setShops([]); setLoading(false); setRefreshing(false); return; }
-      const rows = await api.listLocations();
-      const next = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) }));
+      if (!on) { setShops([]); setArchivedShops([]); setLoading(false); setRefreshing(false); return; }
+      const rows = await api.listLocations({ includeArchived: true });
+      const mapped = (Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name), archived: Boolean(row.archived) }));
+      const next = mapped.filter((row: Shop) => !row.archived);
       setShops(next);
+      setArchivedShops(mapped.filter((row: Shop) => row.archived));
       const current = String(settings.activeLocationId || (next.length === 1 ? next[0]?.id : "") || "");
       setActiveId(current);
       if (getEnabledFeatures(settings).includes("perpetualInventory")) {
@@ -94,8 +99,22 @@ export default function LocationsScreen() {
     } finally { setSaving(false); }
   };
 
+  const rename = async (shop: Shop) => {
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setError("Enter a location name."); return; }
+    setSaving(true); setError("");
+    try {
+      await api.renameLocation(shop.id, trimmed);
+      setEditingLocationId("");
+      setRenameValue("");
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not rename this location.");
+    } finally { setSaving(false); }
+  };
+
   const archive = (shop: Shop) => {
-    confirmAction("Archive location?", `${shop.name} will be hidden. Past activity stays on the books.`, async () => {
+    confirmAction("Archive location?", `${shop.name} will be hidden from new entries. Past activity, stock counts, receivables, and payables stay auditable.`, async () => {
       try {
         await api.archiveLocation(shop.id);
         if (activeId === shop.id) {
@@ -105,6 +124,17 @@ export default function LocationsScreen() {
         await load();
       } catch (e: any) {
         setError(e?.message || "Could not archive this location.");
+      }
+    });
+  };
+
+  const reopen = (shop: Shop) => {
+    confirmAction("Reopen location?", `${shop.name} will be available for new entries again. Its previous history will remain unchanged.`, async () => {
+      try {
+        await api.reopenLocation(shop.id);
+        await load();
+      } catch (e: any) {
+        setError(e?.message || "Could not reopen this location.");
       }
     });
   };
@@ -162,12 +192,21 @@ export default function LocationsScreen() {
                 <FormActions primaryLabel={saving ? "Saving…" : "Add shop"} onPrimary={addShop} primaryBusy={saving} primaryDisabled={saving} />
                 {shops.map((shop) => (
                   <View key={shop.id} style={styles.shopRow}>
-                    <Pressable onPress={() => persistActive(shop.id)} style={{ flex: 1 }}>
-                      <Text style={styles.shopName}>{shop.name}{shop.id === activeId ? "  · current" : ""}</Text>
-                    </Pressable>
-                    <Pressable onPress={() => archive(shop)}><Ionicons name="trash-outline" size={18} color={theme.color.muted} /></Pressable>
+                    {editingLocationId === shop.id ? (
+                      <View style={styles.renameRow}>
+                        <FormField label="Rename location" value={renameValue} onChangeText={setRenameValue} />
+                        <View style={styles.renameActions}><Pressable onPress={() => rename(shop)} disabled={saving} style={styles.smallAction}><Text style={styles.linkText}>Save</Text></Pressable><Pressable onPress={() => { setEditingLocationId(""); setRenameValue(""); }} style={styles.smallAction}><Text style={styles.mutedAction}>Cancel</Text></Pressable></View>
+                      </View>
+                    ) : <>
+                      <Pressable onPress={() => persistActive(shop.id)} style={{ flex: 1 }}>
+                        <Text style={styles.shopName}>{shop.name}{shop.id === activeId ? "  · current" : ""}</Text>
+                      </Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Rename ${shop.name}`} onPress={() => { setEditingLocationId(shop.id); setRenameValue(shop.name); }} style={styles.iconAction}><Ionicons name="pencil-outline" size={18} color={theme.color.brandPrimary} /></Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Archive ${shop.name}`} onPress={() => archive(shop)} style={styles.iconAction}><Ionicons name="archive-outline" size={18} color={theme.color.muted} /></Pressable>
+                    </>}
                   </View>
                 ))}
+                {archivedShops.length ? <View style={styles.archivedBox}><Text style={styles.archivedTitle}>Archived locations</Text><Text style={styles.guide}>Archived locations cannot receive new entries, but their books remain available in historical reports.</Text>{archivedShops.map((shop) => <View key={shop.id} style={styles.archivedRow}><Text style={styles.shopName}>{shop.name}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Reopen ${shop.name}`} onPress={() => reopen(shop)}><Text style={styles.linkText}>Reopen</Text></Pressable></View>)}</View> : null}
                             </Card>
               <Card>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><View style={{ flex: 1 }}><Text style={styles.section}>POS sessions</Text><Text style={styles.guide}>Open and close each cash drawer by store and register.</Text></View><Pressable onPress={() => router.push("/pos-sessions")} style={styles.link}><Text style={styles.linkText}>Open POS</Text></Pressable></View>
@@ -220,6 +259,14 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     linkText: { color: theme.color.brandPrimary, fontWeight: "700" },
     section: { fontWeight: "700", fontSize: 16, color: theme.color.onSurface, marginBottom: 12 },
     shopRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.color.border },
+    iconAction: { padding: 7, marginLeft: 4 },
+    renameRow: { flex: 1 },
+    renameActions: { flexDirection: "row", gap: 14, alignItems: "center", marginTop: -4, marginBottom: 4 },
+    smallAction: { paddingVertical: 5 },
+    mutedAction: { color: theme.color.muted, fontWeight: "700" },
+    archivedBox: { marginTop: 12, padding: 12, borderRadius: 14, backgroundColor: theme.color.surfaceTertiary, borderWidth: 1, borderColor: theme.color.border },
+    archivedTitle: { color: theme.color.onSurface, fontWeight: "800", marginBottom: 4 },
+    archivedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.color.border },
     shopName: { color: theme.color.onSurface, fontWeight: "600" },
     hint: { color: theme.color.muted, fontSize: 13, fontWeight: "600", marginBottom: 8 },
     wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },

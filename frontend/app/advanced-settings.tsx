@@ -50,7 +50,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </GlowPressable>
-      {isExpanded && <View style={{ marginHorizontal: 4, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 12, paddingTop: 4, borderWidth: 1, borderColor: theme.color.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 }}>{children}</View>}
+      {isExpanded && <View style={{ marginHorizontal: 4, marginBottom: 10, paddingHorizontal: 10, paddingVertical: 12, paddingTop: 4, borderWidth: 1, borderColor: theme.color.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceTertiary, ...(Platform.OS === "web" ? { boxShadow: "0 3px 12px rgba(0,0,0,0.12)" } : { shadowColor: "#000000", shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 }) }}>{children}</View>}
     </View>
   );
 };

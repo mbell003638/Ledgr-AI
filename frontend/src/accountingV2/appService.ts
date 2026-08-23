@@ -281,9 +281,11 @@ export class V2AppService {
   archiveProduct(id: string) { return this.products.archiveProduct(id); }
   adjustProductQty(input: AnyRecord) { return this.products.adjustQty(input as any); }
 
-  listLocations() { return this.locations.listLocations(); }
+  listLocations(options?: { includeArchived?: boolean }) { return this.locations.listLocations(options); }
   createLocation(input: AnyRecord) { return this.locations.createLocation(input as any); }
+  renameLocation(id: string, name: string) { return this.locations.renameLocation(id, name); }
   archiveLocation(id: string) { return this.locations.archiveLocation(id); }
+  reopenLocation(id: string) { return this.locations.reopenLocation(id); }
   transferLocationCash(input: AnyRecord) { return this.locations.transferCash(input as any); }
   transferLocationStock(input: AnyRecord) { return this.locations.transferStock(input as any); }
   listLocationStockTransfers() { return this.locations.listStockTransfers(); }
