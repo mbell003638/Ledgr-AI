@@ -348,12 +348,33 @@ export default function AskBooks() {
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [rememberHistory, setRememberHistory] = useState(false);
   const voiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [voicePhase, setVoicePhase] = useState<"idle" | "recording" | "processing" | "error">("idle");
+  const [voicePhase, setVoicePhase] = useState<"idle" | "recording" | "processing" | "setup" | "error">("idle");
   const [voiceError, setVoiceError] = useState("");
+
+  const openVoiceSetup = () => {
+    Keyboard.dismiss();
+    router.push("/advanced-settings?section=ai-provider" as Href);
+  };
 
   const startAskVoice = async () => {
     setVoiceError("");
     try {
+      const config = await api.getAIConfig();
+      if (!config.apiKey.trim()) {
+        setVoiceError("Add an AI API key before using voice input. Your recording will stay in this chat.");
+        setVoicePhase("setup");
+        return;
+      }
+      if (config.provider === "anthropic") {
+        setVoiceError("Anthropic can answer text, but it does not provide speech-to-text. Choose Gemini or an OpenAI-compatible provider.");
+        setVoicePhase("setup");
+        return;
+      }
+      if (config.provider === "openai" && !config.baseUrl?.trim()) {
+        setVoiceError("Add the OpenAI-compatible Base URL before using voice input.");
+        setVoicePhase("setup");
+        return;
+      }
       await startVoiceRecorder(voiceRecorder);
       setVoicePhase("recording");
     } catch (e: any) {
@@ -371,10 +392,12 @@ export default function AskBooks() {
       const transcript = String(result?.transcript || "").trim();
       if (!transcript) throw new Error("Nothing was heard. Try again.");
       setVoicePhase("idle");
+      // send() appends the transcript as the user bubble and keeps the answer in this chat.
       await send(transcript);
     } catch (e: any) {
-      setVoiceError(e?.message || "Voice transcription failed. Try again.");
-      setVoicePhase("error");
+      const message = e?.message || "Voice transcription failed. Try again.";
+      setVoiceError(message);
+      setVoicePhase(/API key|speech-to-text|Base URL|provider|transcription endpoint/i.test(message) ? "setup" : "error");
     }
   };
 
@@ -734,19 +757,20 @@ export default function AskBooks() {
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : voicePhase !== "idle" ? (
-              <View style={styles.askVoiceInline}>
+              <View testID="ask-voice-inline" style={styles.askVoiceInline}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : "Cancel Ask AI voice input"}
-                  onPress={voicePhase === "recording" ? stopAskVoice : cancelAskVoice}
+                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : voicePhase === "setup" ? "Open Ask AI voice setup" : "Cancel Ask AI voice input"}
+                  onPress={voicePhase === "recording" ? stopAskVoice : voicePhase === "setup" ? openVoiceSetup : cancelAskVoice}
                   disabled={voicePhase === "processing"}
                   style={styles.askVoiceOrbButton}
                 >
                   <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
                 </Pressable>
                 <View style={styles.askVoiceCopy}>
-                  <Text style={[styles.askVoiceStatus, { color: voicePhase === "error" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : "Microphone error"}</Text>
-                  <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={1}>{voicePhase === "recording" ? "Tap the circle to stop" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
+                  <Text testID={voicePhase === "setup" ? "ask-voice-setup" : undefined} style={[styles.askVoiceStatus, { color: voicePhase === "error" || voicePhase === "setup" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : voicePhase === "setup" ? "Voice setup needed" : "Microphone error"}</Text>
+                  <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={2}>{voicePhase === "recording" ? "Tap the circle to stop" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
+                  {(voicePhase === "setup" || voicePhase === "error") && <Pressable accessibilityRole="button" accessibilityLabel="Open AI provider setup" onPress={openVoiceSetup} style={styles.askVoiceSetupLink}><Text style={styles.askVoiceSetupText}>Open AI provider setup</Text></Pressable>}
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice input" onPress={cancelAskVoice} disabled={voicePhase === "processing"} style={styles.askVoiceStop}>
                   <Ionicons name="close" size={17} color={theme.color.muted} />
@@ -806,6 +830,8 @@ function makeStyles(theme: any) {
     askVoiceCopy: { flex: 1, minWidth: 0, marginLeft: 4 },
     askVoiceStatus: { fontSize: 12, fontWeight: "700" },
     askVoiceHint: { fontSize: 10, marginTop: 2 },
+    askVoiceSetupLink: { alignSelf: "flex-start", marginTop: 4, paddingVertical: 2 },
+    askVoiceSetupText: { fontSize: 10, fontWeight: "700", color: theme.color.brandPrimary },
     askVoiceStop: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: theme.color.border, justifyContent: "center", alignItems: "center", marginLeft: 6 },
   });
 }

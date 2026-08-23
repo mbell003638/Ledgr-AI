@@ -582,6 +582,8 @@ describe('V2 UI contracts', () => {
     const quick = readSource('src/components/QuickActionMenu.tsx');
     const rootLayout = readApp('_layout.tsx');
     const ai = readSource('src/db/ai.ts');
+    const apiFacade = readSource('src/api.ts');
+    const advanced = readApp('advanced-settings.tsx');
 
     expect(voice).toContain('loadLocationsIfEnabled');
     expect(voice).toContain('locationFields');
@@ -608,6 +610,14 @@ describe('V2 UI contracts', () => {
     expect(ask).toContain('backgroundColor: theme.color.brandPrimary');
     expect(ask).toContain('accessibilityLabel="Ask AI voice input"');
     expect(ask).toContain('VoiceOrb');
+    expect(ask).toContain('testID="ask-voice-inline"');
+    expect(ask).toContain('setVoicePhase("setup")');
+    expect(ask).toContain('api.getAIConfig()');
+    expect(ask).toContain('advanced-settings?section=ai-provider');
+    expect(ask).toContain('send() appends the transcript as the user bubble');
+    expect(ask).toContain('Nothing changes until you tap Apply.');
+    expect(advanced).toContain('ai-provider-recovery-hint');
+    expect(apiFacade).toContain('getAIConfig: async () => getAIConfig()');
     expect(voice).toContain('subscribeToVoiceAssistantRequest');
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
     expect(rootLayout).toContain('<Stack.Protected guard={canOpen("ai_assistant")}>');

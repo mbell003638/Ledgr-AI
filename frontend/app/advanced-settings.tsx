@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
@@ -94,6 +94,7 @@ export default function AdvancedSettingsScreen() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const params = useLocalSearchParams<{ section?: string }>();
 
   const chooseProvider = (nextProvider: ProviderId) => {
     const meta = PROVIDERS.find((item) => item.id === nextProvider)!;
@@ -416,6 +417,9 @@ export default function AdvancedSettingsScreen() {
   };
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (params.section === "ai-provider") setExpandedKey("AI Provider");
+  }, [params.section]);
   const isCustomProvider = provider !== "gemini";
   const selectedProviderTitle = provider === "gemini"
     ? "Google Gemini"
@@ -573,6 +577,7 @@ export default function AdvancedSettingsScreen() {
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
               <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
+                  {params.section === "ai-provider" && <View testID="ai-provider-recovery-hint" style={{ marginBottom: theme.spacing.md, padding: theme.spacing.sm, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary + "18", borderWidth: 1, borderColor: theme.color.brandPrimary + "66" }}><Text style={{ color: theme.color.onSurface, fontSize: 12, lineHeight: 17 }}>Voice input needs a saved key and a provider with speech-to-text. Update the fields below, then tap Test Connection and Save Settings.</Text></View>}
                   <View style={styles.modeRow}>
                     <Pressable
                       onPress={() => chooseProvider("gemini")}

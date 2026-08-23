@@ -978,6 +978,7 @@ export const api = {
     bumpDataVersion();
   },
   testKey: async () => ai.testKey(await getAIConfig()),
+  getAIConfig: async () => getAIConfig(),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
   listBooks: (): Promise<BookMeta[]> => beListBooks(),
