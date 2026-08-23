@@ -781,9 +781,9 @@ function makeStyles(theme: any) {
       gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md,
       borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
     },
-    modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    modeBtnActive: { backgroundColor: theme.color.brandPrimary + "1C", borderColor: theme.color.brandPrimary },
     modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
-    modeTextActive: { color: theme.color.onBrandPrimary },
+    modeTextActive: { color: theme.color.brandPrimary },
     securityCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: theme.spacing.md, paddingVertical: 8 },
     securityCheckText: { flex: 1, fontSize: 12, lineHeight: 18, color: theme.color.onSurface },
     currencyChip: {
