@@ -90,9 +90,11 @@ describe('V2 UI contracts', () => {
     expect(save).not.toContain('api.updateV2BookConfig');
     expect(save).toContain('api.updateSettings');
     expect(source).toContain('testID="accounting-configuration-summary"');
-    expect(source).toContain('Accounting Style');
-    expect(source).toContain('Accounting Basis');
-    expect(source).toContain('Open Accounting &amp; Workflow');
+    expect(source).toContain('Accounting setup');
+    expect(source).toContain('read-only summary');
+    expect(source).toContain('Open Advanced Settings');
+    expect(source).not.toContain('Accounting Style</Text>');
+    expect(source).not.toContain('Accounting Basis</Text>');
     expect(source).toContain('router.push("/advanced-settings")');
     expect(source).not.toMatch(/onPress=\{\(\) => setAccountingStyle/);
     expect(source).not.toMatch(/onPress=\{\(\) => setAccountingBasis/);
@@ -601,7 +603,8 @@ describe('V2 UI contracts', () => {
     expect(glassSurface).toContain('staticElevation(theme, shadowEnabled)');
     expect(glassSurface).toContain('shadowOpacity: 0.18');
     expect(glowPressable).toContain('boxShadow: focus > 0');
-    expect(glowPressable).toContain('elevation: prominent ? 7 : 4');
+    expect(glowPressable).toContain('elevation: 7');
+    expect(glowPressable).toContain(': {}),');
     expect(glowPressable).not.toContain('shadowOpacity: isWeb ? interpolate');
     expect(capabilities).toContain("| 'voice_assistant'");
     expect(capabilities).toContain("key: 'voice_assistant'");

@@ -740,7 +740,7 @@ export default function AdvancedSettingsScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 60 },
+    scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 180 },
     advancedGroup: { marginTop: theme.spacing.lg, padding: 20 },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },

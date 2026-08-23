@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
+  const [quickStartDismissed, setQuickStartDismissed] = useState(false);
   const [locationId, setLocationId] = useState("");
   // Remember the (data version, dailyDate) at which the dashboard last loaded,
   // so a plain focus-return with nothing changed can skip the full re-read.
@@ -116,6 +117,7 @@ export default function Dashboard() {
     try {
       const s = await api.getSettings();
       setSettings(s);
+      setQuickStartDismissed(Boolean(s.quickStartDismissed));
       let shopId = locationId || (s.activeLocationId ? String(s.activeLocationId) : "");
       if (!locationId && shopId) setLocationId(shopId);
       if (isCapabilityEnabled(s, "multi_location")) {
@@ -152,6 +154,15 @@ export default function Dashboard() {
   }, [load, dailyDate]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  const dismissQuickStart = async () => {
+    setQuickStartDismissed(true);
+    try {
+      await api.updateSettings({ quickStartDismissed: true });
+    } catch {
+      setQuickStartDismissed(false);
+    }
+  };
 
   const shareDaily = async () => {
     if (!daily) return;
@@ -447,10 +458,11 @@ export default function Dashboard() {
             </Card>
             </GlowPressable>
 
-            {!hasLedgerActivity ? <Card testID="dashboard-quick-start" style={styles.quickStartCard}>
+            {!hasLedgerActivity && !quickStartDismissed ? <Card testID="dashboard-quick-start" style={styles.quickStartCard}>
               <View style={styles.quickStartIcon}><Ionicons name="rocket-outline" size={20} color={theme.color.brandPrimary} /></View>
               <View style={styles.quickStartCopy}><Text style={styles.quickStartTitle}>Start with your first entry</Text><Text style={styles.quickStartText}>Your dashboard will fill in as you record a sale, invoice, purchase, or expense.</Text></View>
               <Pressable accessibilityRole="button" accessibilityLabel="Create your first entry" onPress={() => router.push(quickStartRoute as any)} style={styles.quickStartButton}><Text style={styles.quickStartButtonText}>Start</Text></Pressable>
+              <Pressable testID="dismiss-dashboard-quick-start" accessibilityRole="button" accessibilityLabel="Dismiss first-entry reminder" hitSlop={8} onPress={dismissQuickStart} style={styles.quickStartDismiss}><Ionicons name="close" size={16} color={theme.color.muted} /></Pressable>
             </Card> : null}
             {/* KPI cards reflect only the selected persona capabilities. */}
             {salesEnabled || purchasesEnabled ? <View style={styles.kpiRow}>
@@ -581,13 +593,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfStrong: { borderTopWidth: 1, borderTopColor: theme.color.divider, marginTop: 4, paddingTop: 8 },
   pfLabel: { color: theme.color.onSurfaceTertiary, fontSize: 14 },
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
-  quickStartCard: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: theme.spacing.md, padding: 14, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
+  quickStartCard: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: theme.spacing.md, padding: 14, paddingRight: 46, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
   quickStartIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.brandPrimary + "18" },
   quickStartCopy: { flex: 1 },
   quickStartTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
   quickStartText: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 2 },
   quickStartButton: { minWidth: 58, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14 },
   quickStartButtonText: { color: theme.color.onBrandPrimary, fontSize: 12, fontWeight: "800" },
+  quickStartDismiss: { position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
   quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
   quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },

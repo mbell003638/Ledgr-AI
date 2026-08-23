@@ -74,7 +74,7 @@ export function GlowPressable(props: GlowPressableProps) {
         style={[
           { position: "relative", borderWidth: 1, borderColor: props.restingBorderColor ?? "transparent" },
           style,
-          { shadowColor: "#000000", shadowOpacity: Platform.OS === "web" ? 0 : 0.14, shadowRadius: Platform.OS === "web" ? 0 : 7, shadowOffset: Platform.OS === "web" ? { width: 0, height: 0 } : { width: 0, height: 3 }, elevation: Platform.OS === "web" ? 0 : 4, ...(Platform.OS === "web" ? { boxShadow: "none" } : {}) },
+          { ...(Platform.OS === "web" ? { boxShadow: "none" } : props.prominent ? { shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 4 } : {}) },
         ]}
       >
         {children}
@@ -167,13 +167,15 @@ function AnimatedGlowPressable({
               ? `0 4px ${glowRadius ?? (prominent ? 22 : 14)}px ${glowColor ?? theme.color.brandPrimary}33`
               : "none",
           }
-        : {
-            shadowColor: "#000000",
-            shadowOpacity: 0.14,
-            shadowRadius: 7,
-            shadowOffset: { width: 0, height: 3 },
-            elevation: prominent ? 7 : 4,
-          }),
+        : prominent
+          ? {
+              shadowColor: "#000000",
+              shadowOpacity: 0.14,
+              shadowRadius: 7,
+              shadowOffset: { width: 0, height: 3 },
+              elevation: 7,
+            }
+          : {}),
     };
   }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, theme]);
 

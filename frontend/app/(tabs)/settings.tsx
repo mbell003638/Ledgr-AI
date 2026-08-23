@@ -270,25 +270,11 @@ export default function SettingsScreen() {
 
             <Card style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
-              <AccordionRow title="Accounting configuration" subtitle={accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Accounting setup" subtitle={`${accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} · ${accountingBasis === "accrual" ? "Accrual" : "Cash"}`} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ gap: 10 }} testID="accounting-configuration-summary">
-                  <View style={styles.accountingSummaryRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.bookName}>Accounting Style</Text>
-                      <Text style={styles.subLabel}>{accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"}</Text>
-                    </View>
-                    <Ionicons name="lock-closed-outline" size={17} color={theme.color.muted} />
-                  </View>
-                  <View style={styles.accountingSummaryRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.bookName}>Accounting Basis</Text>
-                      <Text style={styles.subLabel}>{accountingBasis === "accrual" ? "Accrual Basis" : "Cash Basis"}</Text>
-                    </View>
-                    <Ionicons name="lock-closed-outline" size={17} color={theme.color.muted} />
-                  </View>
-                  <Text style={styles.hint}>Accounting workflow settings are managed in one place so the active book, reports, and postings stay consistent.</Text>
+                  <Text style={styles.hint}>This is a read-only summary. Edit accounting style, basis, periods, and capital accounts in Advanced Settings.</Text>
                   <GlowPressable topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={styles.openAdvancedAccounting}>
-                    <Text style={styles.openAdvancedAccountingText}>Open Accounting &amp; Workflow</Text>
+                    <Text style={styles.openAdvancedAccountingText}>Open Advanced Settings</Text>
                     <Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} />
                   </GlowPressable>
                 </View>
@@ -383,7 +369,7 @@ export default function SettingsScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    scroll: { paddingHorizontal: 18, paddingBottom: 60 },
+    scroll: { paddingHorizontal: 18, paddingBottom: 180 },
     settingsGroup: { marginTop: theme.spacing.lg, padding: 18, borderRadius: theme.radius.card },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },

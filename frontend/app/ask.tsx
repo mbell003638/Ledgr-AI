@@ -760,8 +760,8 @@ export default function AskBooks() {
               <View testID="ask-voice-inline" style={styles.askVoiceInline}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : voicePhase === "setup" ? "Open Ask AI voice setup" : "Cancel Ask AI voice input"}
-                  onPress={voicePhase === "recording" ? stopAskVoice : voicePhase === "setup" ? openVoiceSetup : cancelAskVoice}
+                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : voicePhase === "setup" || voicePhase === "error" ? "Retry Ask AI voice input" : "Cancel Ask AI voice input"}
+                  onPress={voicePhase === "recording" ? stopAskVoice : voicePhase === "setup" || voicePhase === "error" ? startAskVoice : cancelAskVoice}
                   disabled={voicePhase === "processing"}
                   style={styles.askVoiceOrbButton}
                 >
@@ -770,7 +770,7 @@ export default function AskBooks() {
                 <View style={styles.askVoiceCopy}>
                   <Text testID={voicePhase === "setup" ? "ask-voice-setup" : undefined} style={[styles.askVoiceStatus, { color: voicePhase === "error" || voicePhase === "setup" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : voicePhase === "setup" ? "Voice setup needed" : "Microphone error"}</Text>
                   <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={2}>{voicePhase === "recording" ? "Tap the circle to stop" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
-                  {(voicePhase === "setup" || voicePhase === "error") && <Pressable accessibilityRole="button" accessibilityLabel="Open AI provider setup" onPress={openVoiceSetup} style={styles.askVoiceSetupLink}><Text style={styles.askVoiceSetupText}>Open AI provider setup</Text></Pressable>}
+                  {(voicePhase === "setup" || voicePhase === "error") && <Pressable accessibilityRole="button" accessibilityLabel="Open AI provider setup" onPress={openVoiceSetup} testID="ask-open-provider-setup" style={styles.askVoiceSetupLink}><Text style={styles.askVoiceSetupText}>Open AI provider setup</Text></Pressable>}
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice input" onPress={cancelAskVoice} disabled={voicePhase === "processing"} style={styles.askVoiceStop}>
                   <Ionicons name="close" size={17} color={theme.color.muted} />
