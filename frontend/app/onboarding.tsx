@@ -7,7 +7,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
 import { setRequestedHostingMode } from "@/src/utils/hostingMode";
-import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
+import { PERSONAS, defaultAccountingStyleForPersonas, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
 import { CAPABILITIES, CORE_CAPABILITIES, METRICS, getPersonaCapabilityDefaults, normalizeCapabilityDependencies, type CapabilityKey, type MetricKey } from "@/src/utils/capabilities";
 
@@ -35,6 +35,7 @@ export default function Onboarding() {
   const [multiLocation, setMultiLocation] = useState(false);
   const [initialLocationName, setInitialLocationName] = useState("Main Shop");
   const [accountingStyle, setAccountingStyle] = useState<"standard" | "retail_partnership">("standard");
+  const [accountingStyleTouched, setAccountingStyleTouched] = useState(false);
   const [customCapabilities, setCustomCapabilities] = useState<CapabilityKey[] | null>(null);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<MetricKey[]>([]);
   const [showCustomize, setShowCustomize] = useState(false);
@@ -63,10 +64,16 @@ export default function Onboarding() {
     setCustomCapabilities(null);
     setSelectedMetricKeys([]);
     setShowCustomize(false);
+    if (!accountingStyleTouched) setAccountingStyle(defaultAccountingStyleForPersonas([nextPersona]));
     if (!RECOMMENDED_PERSONA_IDS.includes(nextPersona)) {
       setMultiLocation(false);
       setInitialLocationName("Main Shop");
     }
+  };
+
+  const chooseAccountingStyle = (nextStyle: "standard" | "retail_partnership") => {
+    setAccountingStyleTouched(true);
+    setAccountingStyle(nextStyle);
   };
 
   const toggleCapability = (key: CapabilityKey) => {
@@ -263,8 +270,8 @@ export default function Onboarding() {
               <View style={styles.previewHeader}><View style={styles.iconCircleSelected}><Ionicons name={(PERSONA_ICON[persona || "entrepreneur"] || "briefcase-outline") as any} size={22} color={theme.color.brandPrimary} /></View><View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.previewTitle}>{selectedPersona?.label || "Entrepreneur"}</Text><Text style={styles.previewSub}>{bizName.trim() || "My Business"} · {currency}</Text></View></View>
               <Text style={styles.previewKicker}>ACCOUNTING MODEL</Text>
               <View style={styles.accountingChoiceRow}>
-                <Pressable testID="onboarding-accounting-standard" onPress={() => setAccountingStyle("standard")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "standard" }} style={[styles.accountingChoice, accountingStyle === "standard" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "standard" && { color: theme.color.brandPrimary }]}>Standard entity</Text><Text style={styles.accountingChoiceText}>One business ledger with normal owner equity and liabilities.</Text></Pressable>
-                <Pressable testID="onboarding-accounting-equity-split" onPress={() => setAccountingStyle("retail_partnership")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "retail_partnership" }} style={[styles.accountingChoice, accountingStyle === "retail_partnership" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "retail_partnership" && { color: theme.color.brandPrimary }]}>Equity split</Text><Text style={styles.accountingChoiceText}>Track partner capital, ownership shares, drawings, and profit allocation.</Text></Pressable>
+                <Pressable testID="onboarding-accounting-standard" onPress={() => chooseAccountingStyle("standard")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "standard" }} style={[styles.accountingChoice, accountingStyle === "standard" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "standard" && { color: theme.color.brandPrimary }]}>Standard entity</Text><Text style={styles.accountingChoiceText}>One business ledger with normal owner equity and liabilities.</Text></Pressable>
+                <Pressable testID="onboarding-accounting-equity-split" onPress={() => chooseAccountingStyle("retail_partnership")} accessibilityRole="radio" accessibilityState={{ selected: accountingStyle === "retail_partnership" }} style={[styles.accountingChoice, accountingStyle === "retail_partnership" && styles.accountingChoiceSelected]}><Text style={[styles.accountingChoiceTitle, accountingStyle === "retail_partnership" && { color: theme.color.brandPrimary }]}>Equity split</Text><Text style={styles.accountingChoiceText}>Track partner capital, ownership shares, drawings, and profit allocation.</Text></Pressable>
               </View>
               <Text style={styles.previewKicker}>STARTING CAPABILITIES</Text>
               <View style={styles.chipWrap}>{selectedCapabilityLabels.slice(0, 6).map((label) => <View key={label} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{label}</Text></View>)}</View>

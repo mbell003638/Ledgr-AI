@@ -208,8 +208,8 @@ export class V2AppService {
   async assertPartyNameAvailable(name: string, bookId?: string) { return this.parties.assertPartyNameAvailable(name, bookId); }
   async preflightScanParties(requests: V2ScanPartyRequest[]) { return this.parties.preflightScanParties(requests); }
   async ensureParty(name: string, role: V2PartyRole, details: { phone?: string; email?: string } = {}) { return this.parties.ensureParty(name, role, details); }
-  async listParties() { return this.parties.listParties(); }
-  async getPartyDetail(id: string, role: 'customer' | 'supplier') { return this.parties.getPartyDetail(id, role); }
+  async listParties(locationId?: string) { return this.parties.listParties(locationId); }
+  async getPartyDetail(id: string, role: 'customer' | 'supplier', locationId?: string) { return this.parties.getPartyDetail(id, role, locationId); }
   async updateParty(id: string, patch: AnyRecord) { return this.parties.updateParty(id, patch); }
   async archiveParty(id: string) { return this.parties.archiveParty(id); }
 

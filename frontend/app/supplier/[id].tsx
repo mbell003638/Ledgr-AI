@@ -9,6 +9,7 @@ import { fmt as fmtBase, shortDate } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
+import { LocationPicker } from "@/src/components/LocationPicker";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { printHtml } from "@/src/utils/print";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
@@ -22,6 +23,7 @@ export default function SupplierDetail() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [biz, setBiz] = useState<any>({});
+  const [locationId, setLocationId] = useState("");
   const [currency, setCurrency] = useState("$");
   const [deleting, setDeleting] = useState(false);
 
@@ -66,14 +68,14 @@ export default function SupplierDetail() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [r, settings] = await Promise.all([api.getSupplier(id), api.getSettings()]);
+      const [r, settings] = await Promise.all([api.getSupplier(id, locationId || undefined), api.getSettings()]);
       setData(r);
       setBiz(settings);
       const code = settings.currency || "USD";
       setCurrency(getCurrencySymbol(code));
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
-  }, [id]);
+  }, [id, locationId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -333,6 +335,12 @@ export default function SupplierDetail() {
             </View>
           </View>
 
+          <View testID="supplier-ap-location-context" style={styles.locationScope}>
+            <Text style={styles.locationScopeTitle}>Accounts Payable view</Text>
+            <Text style={styles.locationScopeHelp}>One shared AP control account, filtered by location for operational review.</Text>
+            <LocationPicker label="Statement location" value={locationId} onChange={setLocationId} allowAll />
+          </View>
+
           <View style={styles.balBox}>
             <Text style={styles.balLabel}>OUTSTANDING BALANCE</Text>
             <Text style={[styles.balValue, { color: owing ? theme.color.error : theme.color.success }]} testID="supplier-balance">{fmt(data.balance)}</Text>
@@ -515,6 +523,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   avatarText: { color: theme.color.brandPrimary, fontWeight: "800", fontSize: 18 },
   name: { fontSize: 20, fontWeight: "700", color: theme.color.onSurface },
   sub: { fontSize: 13, color: theme.color.muted, marginTop: 2 },
+  locationScope: { marginTop: theme.spacing.lg, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
+  locationScopeTitle: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
+  locationScopeHelp: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 3, marginBottom: 8 },
   balBox: { marginTop: theme.spacing.lg, padding: theme.spacing.lg, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.lg, alignItems: "center" },
   balLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "700", letterSpacing: 0.5 },
   balValue: { fontSize: 32, fontWeight: "800", marginTop: 4 },

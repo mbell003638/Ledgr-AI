@@ -246,7 +246,7 @@ export default function ReportsScreen() {
   }, [from, to, locationId]);
 
   const loadSection = useCallback(async (section: Seg) => {
-    const key = `${from}|${to}|${section}|${bizSettings?.accountingStyle || 'standard'}`;
+    const key = `${from}|${to}|${section}|${locationId}|${bizSettings?.accountingStyle || 'standard'}`;
     if (loadedSections.current.has(key)) return;
     const requestId = ++sectionRequest.current;
     setSectionLoading(true);
@@ -267,9 +267,9 @@ export default function ReportsScreen() {
       } else if (section === "Capital Withdrawals") {
         const value = await api.drawingsHistory(); if (requestId !== sectionRequest.current) return; setDraws(Array.isArray(value) ? value : []);
       } else if (section === "Suppliers") {
-        const value = await api.creditorsReport(from, to); if (requestId !== sectionRequest.current) return; setCreditors(Array.isArray(value) ? value : []);
+        const value = await api.creditorsReport(from, to, locationId || undefined); if (requestId !== sectionRequest.current) return; setCreditors(Array.isArray(value) ? value : []);
       } else if (section === "Customers") {
-        const value = await api.debtorsReport(from, to); if (requestId !== sectionRequest.current) return; setDebtors(Array.isArray(value) ? value : []);
+        const value = await api.debtorsReport(from, to, locationId || undefined); if (requestId !== sectionRequest.current) return; setDebtors(Array.isArray(value) ? value : []);
       } else if (section === "Tax") {
         const value = await api.taxReport(from, to); if (requestId !== sectionRequest.current) return; setTaxRep(value);
       } else if (section === "Sales Reg") {
@@ -287,7 +287,7 @@ export default function ReportsScreen() {
     } finally {
       if (requestId === sectionRequest.current) setSectionLoading(false);
     }
-  }, [bizSettings?.accountingStyle, from, to]);
+  }, [bizSettings?.accountingStyle, from, locationId, to]);
 
   useFocusEffect(useCallback(() => {
     if (hasLoaded.current && loadedVersion.current === getDataVersion()) return;
@@ -452,7 +452,7 @@ export default function ReportsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScreenHeader 
         title="Reports" 
-        subtitle={locationId ? "This shop" : "All shops"}
+        subtitle={locationId ? "Selected location" : "All locations"}
         rightAction={
           <GlowPressable
             testID="btn-custom-report"
@@ -469,11 +469,11 @@ export default function ReportsScreen() {
       />
       {shops.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8, flexDirection: "row" }}>
-          <Pressable onPress={() => setLocationId("")} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
-            <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All shops</Text>
+          <Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: !locationId ? theme.color.brandPrimary : theme.color.border, backgroundColor: !locationId ? theme.color.brandPrimary : "transparent" }}>
+            <Text style={{ color: !locationId ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All locations</Text>
           </Pressable>
           {shops.map((shop) => (
-            <Pressable key={shop.id} onPress={() => setLocationId(shop.id)} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
+            <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} style={{ minHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: locationId === shop.id ? theme.color.brandPrimary : theme.color.border, backgroundColor: locationId === shop.id ? theme.color.brandPrimary : "transparent" }}>
               <Text style={{ color: locationId === shop.id ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>{shop.name}</Text>
             </Pressable>
           ))}

@@ -234,6 +234,8 @@ export default function Dashboard() {
   const stockEnabled = isCapabilityEnabled(settings, "inventory");
   const salesRoute = isCapabilityEnabled(settings, "commerce") ? "/sales" : "/invoices";
   const workflowTiles = workflowTilesFor(settings);
+  const hasLedgerActivity = Boolean(dash && [dash.totalSales, dash.totalPurchases, dash.supplierPayments, dash.drawings, dash.grossProfit].some((value) => Math.abs(Number(value || 0)) > 0.005));
+  const quickStartRoute = isCapabilityEnabled(settings, "commerce") ? "/sale-form" : isCapabilityEnabled(settings, "invoicing") ? "/invoices" : "/expenses";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -445,6 +447,11 @@ export default function Dashboard() {
             </Card>
             </GlowPressable>
 
+            {!hasLedgerActivity ? <Card testID="dashboard-quick-start" style={styles.quickStartCard}>
+              <View style={styles.quickStartIcon}><Ionicons name="rocket-outline" size={20} color={theme.color.brandPrimary} /></View>
+              <View style={styles.quickStartCopy}><Text style={styles.quickStartTitle}>Start with your first entry</Text><Text style={styles.quickStartText}>Your dashboard will fill in as you record a sale, invoice, purchase, or expense.</Text></View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Create your first entry" onPress={() => router.push(quickStartRoute as any)} style={styles.quickStartButton}><Text style={styles.quickStartButtonText}>Start</Text></Pressable>
+            </Card> : null}
             {/* KPI cards reflect only the selected persona capabilities. */}
             {salesEnabled || purchasesEnabled ? <View style={styles.kpiRow}>
               {salesEnabled ? <KpiTile label="Sales" value={fmt(dash?.totalSales)} valueColor={theme.color.success} icon={<TrendingUp width={14} height={14} color={theme.color.success} />} testID="kpi-sales" onPress={() => router.push(salesRoute as any)} /> : null}
@@ -574,6 +581,13 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfStrong: { borderTopWidth: 1, borderTopColor: theme.color.divider, marginTop: 4, paddingTop: 8 },
   pfLabel: { color: theme.color.onSurfaceTertiary, fontSize: 14 },
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
+  quickStartCard: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: theme.spacing.md, padding: 14, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
+  quickStartIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: theme.color.brandPrimary + "18" },
+  quickStartCopy: { flex: 1 },
+  quickStartTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: "800" },
+  quickStartText: { color: theme.color.muted, fontSize: 11, lineHeight: 15, marginTop: 2 },
+  quickStartButton: { minWidth: 58, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14 },
+  quickStartButtonText: { color: theme.color.onBrandPrimary, fontSize: 12, fontWeight: "800" },
   quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
   quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
   quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },

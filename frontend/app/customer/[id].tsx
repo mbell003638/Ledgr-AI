@@ -10,6 +10,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { shortDate } from "@/src/theme";
 import { Card } from "@/src/components/UI";
+import { LocationPicker } from "@/src/components/LocationPicker";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { amountToWords } from "@/src/utils/numberToWords";
@@ -133,6 +134,7 @@ export default function CustomerDetailScreen() {
   const [currency, setCurrency] = useState("$");
   const [currCode, setCurrCode] = useState("USD");
   const [biz, setBiz] = useState<any>({});
+  const [locationId, setLocationId] = useState("");
   const [deleting, setDeleting] = useState(false);
 
   // Note Modal state (Debit / Credit Note)
@@ -175,7 +177,7 @@ export default function CustomerDetailScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [customer, settings] = await Promise.all([id ? api.getCustomer(id) : null, api.getSettings()]);
+      const [customer, settings] = await Promise.all([id ? api.getCustomer(id, locationId || undefined) : null, api.getSettings()]);
       setBiz(settings);
       const code = settings.currency || "USD";
       setCurrCode(code);
@@ -186,14 +188,14 @@ export default function CustomerDetailScreen() {
         const paid = Number((customer as any).totalPaid) || 0;
         const found = { ...(customer as any), totalInvoiced: invoiced, totalPaid: paid, balance: (customer as any).balance ?? invoiced - paid };
         setSelected(found);
-        setStatement(await api.getDebtorStatement(found.id));
+        setStatement(await api.getDebtorStatement(found.id, locationId || undefined));
       } else {
         setSelected(null);
         setStatement(null);
       }
     } catch (e) { console.warn(e); }
     finally { setLoading(false); }
-  }, [id]);
+  }, [id, locationId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -302,6 +304,12 @@ export default function CustomerDetailScreen() {
               <Text style={styles.name} testID="customer-detail-name">{selected.name}</Text>
               <Text style={styles.sub}>{selected.phone || "No phone"}{selected.email ? ` • ${selected.email}` : ""}</Text>
             </View>
+          </View>
+
+          <View testID="customer-ar-location-context" style={styles.locationScope}>
+            <Text style={styles.locationScopeTitle}>Accounts Receivable view</Text>
+            <Text style={styles.locationScopeHelp}>One shared AR control account, filtered by location for operational review.</Text>
+            <LocationPicker label="Statement location" value={locationId} onChange={setLocationId} allowAll />
           </View>
 
           <View style={styles.balBox}>
@@ -479,6 +487,9 @@ function makeStyles(theme: any) {
     avatarText: { fontSize: 16, fontWeight: "800", color: theme.color.brandPrimary },
     name: { fontSize: 18, fontWeight: "800", color: theme.color.onSurface },
     sub: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
+    locationScope: { marginBottom: 12, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: theme.color.brandPrimary + "45", backgroundColor: theme.color.brandPrimary + "0B" },
+    locationScopeTitle: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800" },
+    locationScopeHelp: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 3, marginBottom: 8 },
     balBox: { backgroundColor: theme.color.surfaceSecondary, borderRadius: 12, padding: 16, marginBottom: 16, alignItems: "center" },
     balLabel: { fontSize: 11, fontWeight: "700", color: theme.color.muted, letterSpacing: 0.5 },
     balValue: { fontSize: 26, fontWeight: "800", marginVertical: 6 },

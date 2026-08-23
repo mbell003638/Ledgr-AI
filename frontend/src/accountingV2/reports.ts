@@ -34,7 +34,7 @@ export type V2AccountTotal = Pick<V2Account, 'id' | 'bookId' | 'code' | 'name' |
 export type V2ReportDetail = {
   journalId: string; sourceId?: string; date: string; memo: string;
   accountId: string; accountCode: string; accountName: string; accountType: V2AccountType;
-  partyId?: string; partyName?: string; sourceType?: string; sourceMetadata?: Record<string, unknown>; debit: number; credit: number;
+  partyId?: string; partyName?: string; locationId?: string; sourceType?: string; sourceMetadata?: Record<string, unknown>; debit: number; credit: number;
 };
 
 export type V2ReconciliationError = {
@@ -223,6 +223,7 @@ export function buildV2Reports(store: V2MemoryStore, options: V2ReportOptions): 
           memo: line.memo || journal.memo, accountId: account.id, accountCode: account.code,
           accountName: account.name, accountType: account.type, partyId: line.partyId,
           partyName: line.partyId ? partiesById.get(line.partyId)?.name : undefined,
+          locationId: line.locationId || (source?.metadata as any)?.locationId || undefined,
           sourceType: source?.type, sourceMetadata: source?.metadata, debit, credit });
       }
     }

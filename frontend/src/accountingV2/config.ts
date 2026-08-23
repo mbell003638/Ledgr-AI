@@ -68,3 +68,12 @@ export type V2BookConfig = {
 export function persona(id: PersonaId) { return PERSONAS.find((p) => p.id === id) || PERSONAS.find((p) => p.id === 'custom')!; }
 export function modulesFor(personas: PersonaId[]) { return [...new Set(personas.flatMap((id) => persona(id).modules))]; }
 export function defaultBookConfig(bookId: string): V2BookConfig { return { bookId, selectedPersonas: ['custom'], activePersona: 'custom', style: 'standard', basis: 'accrual', periodPolicy: { mode: 'flexible' }, retailPartnership: { enabled: false, commissionPct: 0, members: [], inventoryCadence: 'irregular' } }; }
+
+/**
+ * Startup workflows commonly need investor/partner capital reporting, but the
+ * recommendation must never silently rewrite an existing book. The onboarding
+ * choice remains explicit and Advanced Settings remains the canonical editor.
+ */
+export function defaultAccountingStyleForPersonas(personas: PersonaId[]): 'standard' | 'retail_partnership' {
+  return personas.includes('startup') ? 'retail_partnership' : 'standard';
+}

@@ -1119,12 +1119,12 @@ export const api = {
       .map((party: any) => ({ id: party.id, name: party.name, phone: party.phone || '', role: party.roles.length > 1 ? 'both' : party.roles[0] }));
   },
 
-  listParties: async () => {
+  listParties: async (locationId?: string) => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     if (!await service.activeContext()) throw new Error('No active versioned V2 book with an open accounting period');
-    return service.listParties();
+    return service.listParties(locationId);
   },
   listInvestors: async (): Promise<{ id: string; name: string; openingCapital: number; currentCapital: number; profitSharePct: number }[]> => {
     const runner = activeSqlRunner();
@@ -1153,12 +1153,12 @@ export const api = {
     return new V2AppService(runner).listSalesAndInvoices();
   },
   // Suppliers
-  listSuppliers: async () => {
-    const parties = (await api.listParties()).filter((party: any) => party.roles.includes('supplier'));
+  listSuppliers: async (locationId?: string) => {
+    const parties = (await api.listParties(locationId)).filter((party: any) => party.roles.includes('supplier'));
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     return Promise.all(parties.map(async (party: any) => {
-      const detail: any = await service.getPartyDetail(party.id, 'supplier');
+      const detail: any = await service.getPartyDetail(party.id, 'supplier', locationId);
       return { ...party, ...detail, balance: detail?.balance ?? party.payable ?? 0, payable: detail?.balance ?? party.payable ?? 0, totalBilled: detail?.billsTotal ?? 0, totalPaid: detail?.paymentsTotal ?? 0, advanceBalance: detail?.advanceBalance ?? 0 };
     }));
   },
@@ -1168,9 +1168,9 @@ export const api = {
     const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'supplier')) throw new Error('Supplier not found');
     return withSyncedMutation(runner, { commandType: 'party.patch', aggregateType: 'party', aggregateId: id, payload: { id, patch: s } }, () => service.updateParty(id, s));
   },
-  getSupplier: async (id: string) => {
+  getSupplier: async (id: string, locationId?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'supplier');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'supplier', locationId);
     if (!detail) throw new Error('Supplier not found');
     return detail;
   },
@@ -1701,18 +1701,18 @@ export const api = {
   deleteExpense: (id: string) => mutateTransaction('deleteExpense', id),
 
   // Debtors
-  listDebtors: async () => {
-    const parties = (await api.listParties()).filter((party: any) => party.roles.includes('customer'));
+  listDebtors: async (locationId?: string) => {
+    const parties = (await api.listParties(locationId)).filter((party: any) => party.roles.includes('customer'));
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
     const service = new V2AppService(runner);
     return Promise.all(parties.map(async (party: any) => {
-      const detail: any = await service.getPartyDetail(party.id, 'customer');
+      const detail: any = await service.getPartyDetail(party.id, 'customer', locationId);
       return { ...party, ...detail, balance: detail?.balance ?? party.receivable ?? 0, receivable: detail?.balance ?? party.receivable ?? 0, totalInvoiced: detail?.totalInvoiced ?? 0, totalPaid: detail?.totalPaid ?? 0, advanceBalance: detail?.advanceBalance ?? 0 };
     }));
   },
-  getCustomer: async (id: string) => {
+  getCustomer: async (id: string, locationId?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer', locationId);
     if (!detail) throw new Error('Customer not found');
     return detail;
   },
@@ -1727,9 +1727,9 @@ export const api = {
     const service = new V2AppService(runner); if (!await service.getPartyDetail(id, 'customer')) throw new Error('Customer not found');
     return withSyncedMutation(runner, { commandType: 'party.archive', aggregateType: 'party', aggregateId: id, payload: { id } }, () => service.archiveParty(id));
   },
-  getDebtorStatement: async (id: string) => {
+  getDebtorStatement: async (id: string, locationId?: string) => {
     const runner = activeSqlRunner(); if (!runner) throw new Error('V2 accounting requires SQLite storage');
-    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer');
+    const detail: any = await new V2AppService(runner).getPartyDetail(id, 'customer', locationId);
     if (!detail) throw new Error('Customer not found');
     return detail.statement;
   },
@@ -1748,8 +1748,8 @@ export const api = {
       netProfit: display.netProfit,
     };
   },
-  creditorsReport: async (_from?: string, _to?: string) => (await api.listSuppliers()).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0 })),
-  debtorsReport: async (_from?: string, _to?: string) => (await api.listDebtors()).map((party: any) => ({ id: party.id, name: party.name, balance: party.receivable || party.balance || 0 })),
+  creditorsReport: async (_from?: string, _to?: string, locationId?: string) => (await api.listSuppliers(locationId)).map((party: any) => ({ id: party.id, name: party.name, balance: party.payable || party.balance || 0, locationId: locationId || undefined })),
+  debtorsReport: async (_from?: string, _to?: string, locationId?: string) => (await api.listDebtors(locationId)).map((party: any) => ({ id: party.id, name: party.name, balance: party.receivable || party.balance || 0, locationId: locationId || undefined })),
 
   // Invoices
   listInvoices: async () => {

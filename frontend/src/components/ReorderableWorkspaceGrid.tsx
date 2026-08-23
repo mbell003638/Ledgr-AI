@@ -374,7 +374,7 @@ function ReorderableWorkspaceTile({
     const animatedX = active || reduceMotion ? translateX : withSpring(translateX, theme.motion.spring);
     const animatedY = active || reduceMotion ? translateY : withSpring(translateY, theme.motion.spring);
 
-    return {
+    const common = {
       zIndex: active ? 100 : 1,
       opacity: active ? 0.96 : 1,
       transform: [
@@ -383,11 +383,10 @@ function ReorderableWorkspaceTile({
         { scale: active && !reduceMotion ? withSpring(1.065, theme.motion.spring) : 1 },
         { rotate: active && !reduceMotion ? "-1deg" : "0deg" },
       ],
-      shadowColor: theme.color.brandPrimary,
-      shadowOpacity: isWeb && active ? 0.55 : 0,
-      shadowRadius: isWeb && active ? theme.effects.strongGlowRadius : 0,
-      elevation: isWeb && active ? 18 : 0,
     };
+    return isWeb
+      ? { ...common, boxShadow: active ? `0 6px ${theme.effects.strongGlowRadius}px ${theme.color.brandPrimary}66` : "none" }
+      : { ...common, shadowColor: theme.color.brandPrimary, shadowOpacity: active ? 0.18 : 0, shadowRadius: active ? 8 : 0, elevation: active ? 6 : 0 };
   }, [index, isWeb, reduceMotion, theme, tileWidth]);
 
   return (

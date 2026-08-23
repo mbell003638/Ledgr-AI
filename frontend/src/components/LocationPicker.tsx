@@ -23,10 +23,12 @@ export function LocationPicker({
   value,
   onChange,
   label = "Location",
+  allowAll = false,
 }: {
   value: string;
   onChange: (id: string) => void;
   label?: string;
+  allowAll?: boolean;
 }) {
   const theme = useTheme();
   const [enabled, setEnabled] = useState(false);
@@ -47,8 +49,8 @@ export function LocationPicker({
   }, []);
 
   useEffect(() => {
-    if (enabled && !value && activeId) onChange(activeId);
-  }, [enabled, value, activeId, onChange]);
+    if (enabled && !allowAll && !value && activeId) onChange(activeId);
+  }, [allowAll, enabled, value, activeId, onChange]);
 
   if (!enabled) return null;
 
@@ -58,9 +60,18 @@ export function LocationPicker({
       {locations.length === 0 ? (
         <Text style={{ color: theme.color.muted, fontSize: 13 }}>Add a shop in Locations first.</Text>
       ) : (
-        <View>
-          <View style={styles.row}>
-            {locations.map((loc) => {
+            <View>
+              <View style={styles.row}>
+                {allowAll ? <Pressable
+                  accessibilityRole="radio"
+                  accessibilityLabel="All locations"
+                  accessibilityState={{ selected: !value }}
+                  onPress={() => onChange("")}
+                  style={[styles.chip, { borderColor: !value ? theme.color.brandPrimary : theme.color.border, backgroundColor: !value ? theme.color.brandPrimary : "transparent" }]}
+                >
+                  <Text style={{ color: !value ? "#fff" : theme.color.onSurface, fontWeight: "600", fontSize: 13 }}>All locations</Text>
+                </Pressable> : null}
+                {locations.map((loc) => {
             const on = loc.id === value;
             return (
               <Pressable
@@ -76,7 +87,7 @@ export function LocationPicker({
             );
             })}
           </View>
-          {locations.length > 1 && !value ? <Text style={{ color: theme.color.warning, fontSize: 11, marginTop: 6 }}>Choose a location before saving this entry.</Text> : null}
+          {locations.length > 1 && !value && !allowAll ? <Text style={{ color: theme.color.warning, fontSize: 11, marginTop: 6 }}>Choose a location before saving this entry.</Text> : null}
         </View>
       )}
     </View>
