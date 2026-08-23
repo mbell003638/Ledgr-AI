@@ -25,11 +25,11 @@ export default function VoiceFab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
 
   useEffect(() => {
     let active = true;
-    api.getSettings().then((settings) => { if (active) setAiEnabled(isCapabilityEnabled(settings, "voice_assistant")); }).catch(() => { if (active) setAiEnabled(false); });
+    api.getSettings().then((settings) => { if (active) setVoiceAvailable(isCapabilityEnabled(settings, "ai_assistant")); }).catch(() => { if (active) setVoiceAvailable(false); });
     return () => { active = false; };
   }, []);
 
@@ -47,8 +47,8 @@ export default function VoiceFab() {
   const startRef = useRef(start);
   useEffect(() => { startRef.current = start; }, [start]);
   useEffect(() => subscribeToVoiceAssistantRequest(() => {
-    if (aiEnabled && phase === "idle") void startRef.current();
-  }), [aiEnabled, phase]);
+    if (voiceAvailable && phase === "idle") void startRef.current();
+  }), [voiceAvailable, phase]);
 
   const stopAndProcess = async () => {
     setPhase("processing");
@@ -175,7 +175,7 @@ export default function VoiceFab() {
     setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
   };
 
-  if (!aiEnabled) return null;
+  if (!voiceAvailable) return null;
 
   return (
     <>

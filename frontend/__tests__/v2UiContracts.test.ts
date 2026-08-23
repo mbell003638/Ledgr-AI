@@ -572,7 +572,7 @@ describe('V2 UI contracts', () => {
     expect(delivery).toContain('LocationPicker');
     expect(delivery).toContain('finalLocationId');
     expect(quick).toContain('isCapabilityEnabled(settings, "ai_assistant") && <QuickActionRow');
-    expect(voice).toContain('isCapabilityEnabled(settings, "voice_assistant")');
+    expect(voice).toContain('isCapabilityEnabled(settings, "ai_assistant")');
     expect(voice).toContain('styles.voiceDock');
     expect(voice).not.toContain('<Modal');
     expect(voiceOrb).toContain('withRepeat');
@@ -581,6 +581,10 @@ describe('V2 UI contracts', () => {
     expect(capabilities).toContain("key: 'voice_assistant'");
     expect(home).toContain('capability: "voice_assistant"');
     expect(home).toContain('requestVoiceAssistant()');
+    const ask = readApp('ask.tsx');
+    expect(ask).toContain('backgroundColor: theme.color.brandPrimary');
+    expect(ask).toContain('accessibilityLabel="Ask AI voice input"');
+    expect(ask).toContain('VoiceOrb');
     expect(voice).toContain('subscribeToVoiceAssistantRequest');
     expect(rootLayout).toMatch(/Stack\.Protected guard=\{canOpen\("customers"\) \|\| canOpen\("procurement"\) \|\| canOpen\("invoicing"\)\}/);
     expect(rootLayout).toContain('<Stack.Protected guard={canOpen("ai_assistant")}>');

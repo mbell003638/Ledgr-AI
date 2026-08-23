@@ -735,18 +735,26 @@ export default function AskBooks() {
               </Pressable>
             ) : voicePhase !== "idle" ? (
               <View style={styles.askVoiceInline}>
-                <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : "Cancel Ask AI voice input"}
+                  onPress={voicePhase === "recording" ? stopAskVoice : cancelAskVoice}
+                  disabled={voicePhase === "processing"}
+                  style={styles.askVoiceOrbButton}
+                >
+                  <VoiceOrb phase={voicePhase === "recording" ? "recording" : voicePhase === "processing" ? "processing" : "idle"} theme={theme} compact />
+                </Pressable>
                 <View style={styles.askVoiceCopy}>
                   <Text style={[styles.askVoiceStatus, { color: voicePhase === "error" ? theme.color.error : theme.color.brandPrimary }]} numberOfLines={1}>{voicePhase === "recording" ? "Listening…" : voicePhase === "processing" ? "Transcribing…" : "Microphone error"}</Text>
-                  <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={1}>{voicePhase === "recording" ? "Tap stop when done" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
+                  <Text style={[styles.askVoiceHint, { color: theme.color.muted }]} numberOfLines={1}>{voicePhase === "recording" ? "Tap the circle to stop" : voicePhase === "processing" ? "Adding it to this chat" : voiceError}</Text>
                 </View>
-                <Pressable accessibilityRole="button" accessibilityLabel={voicePhase === "recording" ? "Stop Ask AI voice input" : "Cancel Ask AI voice input"} onPress={voicePhase === "recording" ? stopAskVoice : cancelAskVoice} style={styles.askVoiceStop}>
-                  <Ionicons name={voicePhase === "recording" ? "stop" : "close"} size={17} color={voicePhase === "recording" ? theme.color.error : theme.color.muted} />
+                <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice input" onPress={cancelAskVoice} disabled={voicePhase === "processing"} style={styles.askVoiceStop}>
+                  <Ionicons name="close" size={17} color={theme.color.muted} />
                 </Pressable>
               </View>
             ) : (
-              <Pressable accessibilityRole="button" accessibilityLabel="Ask AI voice input" style={styles.micBtn} onPress={startAskVoice}>
-                <Ionicons name="mic-outline" size={22} color={theme.color.muted} />
+              <Pressable accessibilityRole="button" accessibilityLabel="Ask AI voice input" style={[styles.micBtn, { backgroundColor: theme.color.brandPrimary }]} onPress={startAskVoice}>
+                <Ionicons name="mic" size={22} color={theme.color.onBrandPrimary} />
               </Pressable>
             )}
           </View>
@@ -791,9 +799,10 @@ function makeStyles(theme: any) {
     attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
     inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
-    micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
+    micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
     askVoiceInline: { flex: 1, minWidth: 0, minHeight: 40, flexDirection: "row", alignItems: "center", overflow: "hidden" },
+    askVoiceOrbButton: { width: 104, height: 44, justifyContent: "center", alignItems: "center", flexShrink: 0 },
     askVoiceCopy: { flex: 1, minWidth: 0, marginLeft: 4 },
     askVoiceStatus: { fontSize: 12, fontWeight: "700" },
     askVoiceHint: { fontSize: 10, marginTop: 2 },

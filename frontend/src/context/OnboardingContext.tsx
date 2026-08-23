@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '@/src/api';
 
@@ -22,8 +22,10 @@ const OnboardingGateContext = createContext<OnboardingGateContextValue | null>(n
 export function OnboardingGateProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState(false);
+  const stateRequestId = useRef(0);
 
   const refreshOnboardingState = useCallback(async () => {
+    const requestId = ++stateRequestId.current;
     let completed = false;
     try {
       completed = Boolean((await api.getSettings()).hasOnboarded);
@@ -32,6 +34,7 @@ export function OnboardingGateProvider({ children }: { children: React.ReactNode
       // exposed as though onboarding had completed.
       completed = false;
     }
+    if (requestId !== stateRequestId.current) return completed;
     setHasOnboarded(completed);
     setReady(true);
     return completed;
@@ -46,10 +49,12 @@ export function OnboardingGateProvider({ children }: { children: React.ReactNode
     hasOnboarded,
     refreshOnboardingState,
     requireOnboarding: () => {
+      stateRequestId.current += 1;
       setHasOnboarded(false);
       setReady(true);
     },
     markOnboarded: () => {
+      stateRequestId.current += 1;
       setHasOnboarded(true);
       setReady(true);
     },

@@ -25,6 +25,13 @@ describe('onboarding route authorization', () => {
     expect(index).toMatch(/catch\s*\{[\s\S]*?setDest\("\/onboarding"\)/);
   });
 
+  it('ignores stale onboarding-state reads after an explicit transition', () => {
+    expect(context).toContain('const stateRequestId = useRef(0);');
+    expect(context).toContain('if (requestId !== stateRequestId.current) return completed;');
+    expect(context).toMatch(/requireOnboarding:[\s\S]*?stateRequestId\.current \+= 1/);
+    expect(context).toMatch(/markOnboarded:[\s\S]*?stateRequestId\.current \+= 1/);
+  });
+
   it('updates the live route guard only after successful reset or onboarding persistence', () => {
     expect(resetScreen).toMatch(/await api\.factoryReset\(\);[\s\S]*?requireOnboarding\(\);[\s\S]*?router\.replace\('\/onboarding'/);
     expect(onboarding).toMatch(/await api\.updateSettings\([\s\S]*?markOnboarded\(\);[\s\S]*?router\.replace\("\/\(tabs\)"\)/);
