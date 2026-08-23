@@ -13,7 +13,6 @@ import { CURRENCIES, type TaxLabel } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { deviceHasLock } from "@/src/utils/lock";
-import { type PersonaId } from "@/src/accountingV2/config";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -55,9 +54,6 @@ export default function SettingsScreen() {
   const [key, setKey] = useState("");
   const [modelName, setModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  // Members = the owners/investors who put in capital and share profit.
-  // Each: { name, amount (investment), profitSharePct (optional) }.
-  const [members, setMembers] = useState<{ name: string; amount: string; profitSharePct: string }[]>([]);
   const [lockEnabled, setLockEnabled] = useState(false);
   const [currency, setCurrency] = useState("USD");
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
@@ -67,11 +63,8 @@ export default function SettingsScreen() {
   const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("cash");
+  const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("accrual");
   const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
-  const [periodPolicy, setPeriodPolicy] = useState<{ mode: "flexible" | "fixed"; startDate?: string; endDate?: string }>({ mode: "flexible" });
-  const [selectedPersonas, setSelectedPersonas] = useState<PersonaId[]>(["custom"]);
-  const [activePersona, setActivePersona] = useState<PersonaId>("custom");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -84,18 +77,11 @@ export default function SettingsScreen() {
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
       setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
-      const configuredPersonas: PersonaId[] = Array.isArray(s.selectedPersonas) && s.selectedPersonas.length ? s.selectedPersonas as PersonaId[] : ["custom"];
-      setSelectedPersonas(configuredPersonas);
-      setActivePersona((s.activePersona as PersonaId) || configuredPersonas[0]);
       try {
         const v2 = await api.getV2BookConfig();
         if (v2) {
           setAccountingStyle(v2.style === "retail_partnership" ? "retail_partnership" : "standard");
           setAccountingBasis(v2.basis);
-          setPeriodPolicy(v2.periodPolicy || { mode: "flexible" });
-          setSelectedPersonas(v2.selectedPersonas);
-          setActivePersona(v2.activePersona);
-          setMembers(v2.retailPartnership.members.map((m) => ({ name: m.name, amount: m.openingContribution ? String(m.openingContribution) : "", profitSharePct: m.profitSharePct ? String(m.profitSharePct) : "" })));
         }
       } catch { /* the V2 configuration remains unavailable until storage is ready */ }
       setLockEnabled(!!s.lockEnabled);
@@ -147,24 +133,6 @@ export default function SettingsScreen() {
         model: modelName.trim() || meta.defaultModel,
         baseUrl: baseUrl.trim() || undefined,
       });
-      try {
-        const currentCfg = await api.getV2BookConfig().catch(() => null);
-        await api.updateV2BookConfig({
-          basis: accountingBasis,
-          style: accountingStyle,
-          periodPolicy,
-          selectedPersonas,
-          activePersona,
-          retailPartnership: {
-            enabled: accountingStyle === "retail_partnership",
-            commissionPct: currentCfg?.retailPartnership?.commissionPct ?? 0,
-            inventoryCadence: currentCfg?.retailPartnership?.inventoryCadence ?? "irregular",
-            members: members.map((m) => ({ name: m.name.trim(), openingContribution: m.amount.trim() ? parseFloat(m.amount) : 0, profitSharePct: m.profitSharePct.trim() ? parseFloat(m.profitSharePct) : 0 })).filter((m) => m.name),
-          },
-        });
-      } catch (e: any) {
-        if (!/V2 accounting requires SQLite|No active versioned V2 book/i.test(e?.message || "")) throw e;
-      }
       await api.updateSettings({
         lockEnabled,
         currency,
@@ -302,23 +270,27 @@ export default function SettingsScreen() {
 
             <Card style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
-              <AccordionRow title="Accounting Style" subtitle={accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View style={{ gap: 10 }}>
-                  <Pressable onPress={() => setAccountingStyle("standard")} style={[styles.bookRow, accountingStyle === "standard" && styles.bookRowActive]}>
-                    <Ionicons name={accountingStyle === "standard" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "standard" ? theme.color.brandPrimary : theme.color.muted} />
+              <AccordionRow title="Accounting configuration" subtitle={accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View style={{ gap: 10 }} testID="accounting-configuration-summary">
+                  <View style={styles.accountingSummaryRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.bookName}>Standard Entity</Text>
-                      <Text style={styles.subLabel}>One capital account or organization without profit splitting</Text>
+                      <Text style={styles.bookName}>Accounting Style</Text>
+                      <Text style={styles.subLabel}>{accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"}</Text>
                     </View>
-                  </Pressable>
-                  <Pressable onPress={() => setAccountingStyle("retail_partnership")} style={[styles.bookRow, accountingStyle === "retail_partnership" && styles.bookRowActive]}>
-                    <Ionicons name={accountingStyle === "retail_partnership" ? "radio-button-on" : "radio-button-off"} size={20} color={accountingStyle === "retail_partnership" ? theme.color.brandPrimary : theme.color.muted} />
+                    <Ionicons name="lock-closed-outline" size={17} color={theme.color.muted} />
+                  </View>
+                  <View style={styles.accountingSummaryRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.bookName}>Equity Split</Text>
-                      <Text style={styles.subLabel}>Track capital accounts, withdrawals, and profit-share percentages</Text>
+                      <Text style={styles.bookName}>Accounting Basis</Text>
+                      <Text style={styles.subLabel}>{accountingBasis === "accrual" ? "Accrual Basis" : "Cash Basis"}</Text>
                     </View>
-                  </Pressable>
-                  <Text style={styles.hint}>This changes the active book configuration. It does not store balances or journal entries in Settings.</Text>
+                    <Ionicons name="lock-closed-outline" size={17} color={theme.color.muted} />
+                  </View>
+                  <Text style={styles.hint}>Accounting workflow settings are managed in one place so the active book, reports, and postings stay consistent.</Text>
+                  <GlowPressable topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={styles.openAdvancedAccounting}>
+                    <Text style={styles.openAdvancedAccountingText}>Open Accounting &amp; Workflow</Text>
+                    <Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} />
+                  </GlowPressable>
                 </View>
               </AccordionRow>
               
@@ -415,6 +387,9 @@ function makeStyles(theme: any) {
     settingsGroup: { marginTop: theme.spacing.lg, padding: 18, borderRadius: theme.radius.card },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+    accountingSummaryRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary },
+    openAdvancedAccounting: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    openAdvancedAccountingText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "700" },
     input: {
       marginTop: theme.spacing.md,
       borderWidth: 1,

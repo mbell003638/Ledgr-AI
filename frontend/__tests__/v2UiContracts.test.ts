@@ -81,20 +81,19 @@ describe('V2 UI contracts', () => {
     expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
   });
 
-  it('Settings saves authoritative V2 book, persona, and member configuration', () => {
+  it('Settings shows accounting configuration read-only and delegates edits to Advanced Settings', () => {
     const source = readApp('(tabs)/settings.tsx');
     const saveStart = source.indexOf('const save = async () =>');
     const saveEnd = source.indexOf('\n  const pickLogo', saveStart);
     const save = source.slice(saveStart, saveEnd);
 
-    expect(save).toContain('api.updateV2BookConfig');
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?selectedPersonas/);
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?activePersona/);
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?retailPartnership/);
-    expect(save).toContain('openingContribution');
-    expect(save).toContain('profitSharePct');
+    expect(save).not.toContain('api.updateV2BookConfig');
+    expect(save).toContain('api.updateSettings');
+    expect(source).toContain('testID="accounting-configuration-summary"');
     expect(source).toContain('Accounting Style');
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
+    expect(source).toContain('Accounting Basis');
+    expect(source).toContain('Open Accounting &amp; Workflow');
+    expect(source).toContain('router.push("/advanced-settings")');
   });
 
   it('all shared report and transaction documents support mobile and print layouts', () => {
