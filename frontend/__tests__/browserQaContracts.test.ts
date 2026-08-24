@@ -12,7 +12,12 @@ describe("browser QA regression contracts", () => {
     expect(reports).toContain("localDb.pnlRange(from, to)");
     expect(reports).toContain("Browser local summary");
     expect(reports).toContain("Native SQLite reports and location-scoped ledger filters are available in the mobile app.");
-    expect(reports).toContain('Platform.OS !== "web" && isCapabilityEnabled(s, "multi_location")');
+    expect(reports).toContain('isCapabilityEnabled(s, "multi_location")');
+    expect(reports).toContain('api.listLocations()');
+    expect(reports).toContain('locationRail');
+    expect(reports).toContain('minWidth: 118');
+    expect(reports).toContain('flexShrink: 0');
+    expect(reports).toContain('accessibilityLabel="All locations"');
   });
 
   it("routes browser transaction reads and writes through legacy local storage", () => {

@@ -248,7 +248,9 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('Quick Workspaces');
     expect(source).toContain('Hold any tile to organize &amp; sort');
     expect(source).not.toContain('Featured tools');
-    expect(source).not.toContain('ReorderableWorkspaceGrid');
+    expect(source).toContain('ReorderableWorkspaceGrid');
+    expect(source).toContain('workflowTilesFor(settings)');
+    expect(source).toContain('onOrderChange={moveTile}');
   });
 
   it('all location-aware financial forms preserve location context across edit and save', () => {
@@ -679,7 +681,8 @@ describe('V2 UI contracts', () => {
     expect(tabs).toContain('name="quick_action_spacer"');
     expect(tabs).toMatch(/name="operations" options=\{\{ href: null \}\}/);
     expect(home).toContain('home-workflow-shortcuts');
-    expect(home).toContain('testID={`home-workflow-${tile.key}`}');
+    expect(home).toContain('items={visibleTiles}');
+    expect(home).toContain('onTilePress={handleTilePress}');
     expect(home).toContain('key: "sales"');
     expect(home).toContain('key: "purchases"');
     expect(home).toContain('key: "expenses"');

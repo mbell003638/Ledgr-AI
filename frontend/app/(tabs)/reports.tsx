@@ -141,14 +141,14 @@ export default function ReportsScreen() {
     setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
-      const locationRowsPromise = Platform.OS !== "web" && isCapabilityEnabled(s, "multi_location")
+      const locationRowsPromise = isCapabilityEnabled(s, "multi_location")
         ? api.listLocations().catch(() => [])
         : Promise.resolve([]);
       const shopId = locationId || undefined;
       const accountingStyle = config?.style || s.accountingStyle || "standard";
       const isPartnership = accountingStyle === "retail_partnership";
       if (Platform.OS === "web") {
-        const [range, current, pd, webBs, webTb, webAssetDist, webCapital] = await Promise.all([
+        const [range, current, pd, webBs, webTb, webAssetDist, webCapital, webLocations] = await Promise.all([
           localDb.pnlRange(from, to),
           localDb.dashboard(),
           localDb.listPeriods(),
@@ -156,8 +156,10 @@ export default function ReportsScreen() {
           localDb.trialBalance(),
           localDb.assetDistribution(),
           isPartnership ? localDb.capitalStatement() : Promise.resolve(null),
+          locationRowsPromise,
         ]);
         if (requestId !== loadRequest.current) return;
+        setShops((Array.isArray(webLocations) ? webLocations : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
         setBizSettings({ ...s, accountingStyle });
         setCurrSym(getCurrencySymbol(s.currency || "USD"));
         setBizName(s.businessName || "");
@@ -571,16 +573,18 @@ export default function ReportsScreen() {
         }
       />
       {shops.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationScroll} contentContainerStyle={styles.locationRow}>
-          <GlowPressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} topHighlight={false} haptic={false} hoverLift={0} style={[styles.locationChip, !locationId && styles.locationChipActive]}>
-            <Text style={[styles.locationChipText, !locationId && styles.locationChipTextActive]}>All locations</Text>
-          </GlowPressable>
-          {shops.map((shop) => (
-            <GlowPressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} topHighlight={false} haptic={false} hoverLift={0} style={[styles.locationChip, locationId === shop.id && styles.locationChipActive]}>
-              <Text style={[styles.locationChipText, locationId === shop.id && styles.locationChipTextActive]}>{shop.name}</Text>
-            </GlowPressable>
-          ))}
-        </ScrollView>
+        <View style={styles.locationRail}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationScroll} contentContainerStyle={styles.locationRow}>
+            <Pressable accessibilityRole="radio" accessibilityLabel="All locations" accessibilityState={{ selected: !locationId }} onPress={() => setLocationId("")} style={({ pressed }) => [styles.locationChip, !locationId && styles.locationChipActive, pressed && styles.locationChipPressed]}>
+              <Text style={[styles.locationChipText, !locationId && styles.locationChipTextActive]}>All locations</Text>
+            </Pressable>
+            {shops.map((shop) => (
+              <Pressable key={shop.id} accessibilityRole="radio" accessibilityLabel={shop.name} accessibilityState={{ selected: locationId === shop.id }} onPress={() => setLocationId(shop.id)} style={({ pressed }) => [styles.locationChip, locationId === shop.id && styles.locationChipActive, pressed && styles.locationChipPressed]}>
+                <Text style={[styles.locationChipText, locationId === shop.id && styles.locationChipTextActive]}>{shop.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
       ) : null}
       {Platform.OS === "web" ? <View accessibilityRole="alert" style={styles.browserNotice}><Ionicons name="information-circle-outline" size={18} color={theme.color.warning} /><Text style={styles.browserNoticeText}>Browser local summary — this view reads the device’s local AsyncStorage book. Native SQLite reports and location-scoped ledger filters are available in the mobile app.</Text></View> : null}
       {provisionalNotice && locationId ? <View accessibilityRole="alert" style={{ marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.color.warning + "66", backgroundColor: theme.color.surfaceSecondary, flexDirection: "row", gap: 8 }}><Ionicons name="information-circle-outline" size={18} color={theme.color.warning} /><Text style={{ flex: 1, color: theme.color.onSurface, fontSize: 12, lineHeight: 17 }}>{provisionalNotice}</Text></View> : null}
@@ -1019,10 +1023,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
-  locationScroll: { height: 52, flexGrow: 0, marginBottom: 2, overflow: "hidden" },
-  locationRow: { flexDirection: "row", alignItems: "center", paddingLeft: theme.spacing.lg, paddingRight: theme.spacing.xl, gap: 8 },
-  locationChip: { minWidth: 104, minHeight: 40, maxHeight: 40, flexShrink: 0, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
+  locationRail: { height: 52, marginBottom: 2, overflow: "visible" },
+  locationScroll: { height: 52, flexGrow: 0, overflow: "visible" },
+  locationRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.md, gap: 8 },
+  locationChip: { minWidth: 118, minHeight: 40, maxHeight: 40, flexShrink: 0, alignSelf: "center", justifyContent: "center", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
   locationChipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary },
+  locationChipPressed: { opacity: 0.84 },
   locationChipText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
   locationChipTextActive: { color: "#fff" },
   filterRail: { position: "relative", height: 56 },

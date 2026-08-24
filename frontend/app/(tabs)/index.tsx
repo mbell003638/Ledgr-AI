@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,12 +17,26 @@ import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { showAlert } from "@/src/utils/alerts";
 import { requestVoiceAssistant } from "@/src/utils/voiceAssistantRequest";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
-import Animated from "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
+import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
 import { GlowPressable } from "@/src/components/GlowPressable";
+import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
 import ArrowLeftRight from "lucide-react-native/icons/arrow-left-right";
+import Banknote from "lucide-react-native/icons/banknote";
+import BarChart2 from "lucide-react-native/icons/chart-no-axes-column";
+import BookOpen from "lucide-react-native/icons/book-open";
+import Calendar from "lucide-react-native/icons/calendar";
+import Cube from "lucide-react-native/icons/box";
+import FileText from "lucide-react-native/icons/file-text";
+import Mic from "lucide-react-native/icons/mic";
 import Package from "lucide-react-native/icons/package";
+import PieChart from "lucide-react-native/icons/chart-pie";
 import Receipt from "lucide-react-native/icons/receipt";
+import Sparkles from "lucide-react-native/icons/sparkles";
+import Tag from "lucide-react-native/icons/tag";
 import TrendingUp from "lucide-react-native/icons/trending-up";
+import Wallet from "lucide-react-native/icons/wallet";
 
 type Dash = {
   assets: number; liabilities: number; netWorth: number;
@@ -40,30 +54,32 @@ type WorkflowTile = {
   key: string;
   label: string;
   subtitle: string;
-  icon: string;
+  icon: WorkspaceTileItem["icon"];
   color: string;
   capability: string;
   route: string;
+  usesBrandIcon?: boolean;
+  solidBrand?: boolean;
 };
 
 const WORKFLOW_TILES: WorkflowTile[] = [
-  { key: "purchases", label: "Purchases", subtitle: "", icon: "receipt-outline", color: "#34D399", capability: "procurement", route: "/bills" },
-  { key: "sales", label: "Sales", subtitle: "", icon: "trending-up-outline", color: "#FBBF24", capability: "commerce", route: "/sales" },
-  { key: "receipts", label: "Receipts", subtitle: "", icon: "arrow-down-outline", color: "#60A5FA", capability: "customers", route: "/receipts" },
-  { key: "payments", label: "Payments", subtitle: "", icon: "card-outline", color: "#F87171", capability: "procurement", route: "/payments" },
-  { key: "cashbook", label: "Cash Book", subtitle: "", icon: "swap-horizontal-outline", color: "#C084FC", capability: "cashbook", route: "/cashbook" },
-  { key: "invoices", label: "Invoices", subtitle: "", icon: "document-text-outline", color: "#38BDF8", capability: "invoicing", route: "/invoices" },
-  { key: "quotes", label: "Quotes", subtitle: "", icon: "pricetag-outline", color: "#FBBF24", capability: "invoicing", route: "/quotes" },
-  { key: "delivery", label: "Delivery Notes", subtitle: "", icon: "cube-outline", color: "#A7F3D0", capability: "shipping_returns", route: "/delivery-notes" },
-  { key: "expenses", label: "Expenses", subtitle: "", icon: "wallet-outline", color: "#F87171", capability: "core_ledger", route: "/expenses" },
-  { key: "stock", label: "Stock", subtitle: "", icon: "cube-outline", color: "#34D399", capability: "inventory", route: "/products" },
-  { key: "locations", label: "Locations", subtitle: "", icon: "storefront-outline", color: "#2DD4BF", capability: "multi_location", route: "/locations" },
-  { key: "assets", label: "Assets & Liabilities", subtitle: "", icon: "pie-chart-outline", color: "#818CF8", capability: "core_ledger", route: "/assets" },
-  { key: "daybook", label: "Day Book", subtitle: "", icon: "book-outline", color: "#EC4899", capability: "core_ledger", route: "/daybook" },
-  { key: "reports", label: "Reports", subtitle: "", icon: "bar-chart-outline", color: "#FBBF24", capability: "reporting", route: "/reports" },
-  { key: "monthly-report", label: "Monthly Report", subtitle: "", icon: "calendar-outline", color: "#F97316", capability: "reporting", route: "/monthly-summary" },
-  { key: "ask-ai", label: "Ask AI", subtitle: "", icon: "sparkles-outline", color: "#A7F3D0", capability: "ai_assistant", route: "/ask" },
-  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: "mic-outline", color: "#A7F3D0", capability: "voice_assistant", route: "/voice" },
+  { key: "purchases", label: "Purchases", subtitle: "", icon: Receipt, color: "#34D399", capability: "procurement", route: "/bills" },
+  { key: "sales", label: "Sales", subtitle: "", icon: TrendingUp, color: "#FBBF24", capability: "commerce", route: "/sales" },
+  { key: "receipts", label: "Receipts", subtitle: "", icon: ArrowDownLeft, color: "#60A5FA", capability: "customers", route: "/receipts" },
+  { key: "payments", label: "Payments", subtitle: "", icon: Banknote, color: "#F87171", capability: "procurement", route: "/payments" },
+  { key: "cashbook", label: "Cash Book", subtitle: "", icon: ArrowLeftRight, color: "#C084FC", capability: "cashbook", route: "/cashbook" },
+  { key: "invoices", label: "Invoices", subtitle: "", icon: FileText, color: "#38BDF8", capability: "invoicing", route: "/invoices" },
+  { key: "quotes", label: "Quotes", subtitle: "", icon: Tag, color: "#FBBF24", capability: "invoicing", route: "/quotes" },
+  { key: "delivery", label: "Delivery Notes", subtitle: "", icon: Cube, color: "#A7F3D0", capability: "shipping_returns", route: "/delivery-notes" },
+  { key: "expenses", label: "Expenses", subtitle: "", icon: Wallet, color: "#F87171", capability: "core_ledger", route: "/expenses" },
+  { key: "stock", label: "Stock", subtitle: "", icon: Package, color: "#34D399", capability: "inventory", route: "/products" },
+  { key: "locations", label: "Locations", subtitle: "", icon: Package, color: "#2DD4BF", capability: "multi_location", route: "/locations" },
+  { key: "assets", label: "Assets & Liabilities", subtitle: "", icon: PieChart, color: "#818CF8", capability: "core_ledger", route: "/assets" },
+  { key: "daybook", label: "Day Book", subtitle: "", icon: BookOpen, color: "#EC4899", capability: "core_ledger", route: "/daybook" },
+  { key: "reports", label: "Reports", subtitle: "", icon: BarChart2, color: "#FBBF24", capability: "reporting", route: "/reports" },
+  { key: "monthly-report", label: "Monthly Report", subtitle: "", icon: Calendar, color: "#F97316", capability: "reporting", route: "/monthly-summary" },
+  { key: "ask-ai", label: "Ask AI", subtitle: "", icon: Sparkles, color: "#A7F3D0", capability: "ai_assistant", route: "/ask", usesBrandIcon: true },
+  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: Mic, color: "#A7F3D0", capability: "voice_assistant", route: "/voice", usesBrandIcon: true, solidBrand: true },
 ];
 
 function workflowTilesFor(settings: any): WorkflowTile[] {
@@ -107,8 +123,24 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
+  const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
+  const [isEditingGrid, setIsEditingGrid] = useState(false);
+  const scrollRef = useAnimatedRef<any>();
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({ onScroll: (event) => { scrollY.value = event.contentOffset.y; } });
   const [quickStartDismissed, setQuickStartDismissed] = useState(false);
   const [locationId, setLocationId] = useState("");
+
+  useEffect(() => {
+    AsyncStorage.getItem("ledgr_tile_order").then((raw) => {
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setCustomTileOrder(parsed.map(String));
+      } catch { /* ignore malformed local layout state */ }
+    }).catch(() => {});
+  }, []);
+
   // Remember the (data version, dailyDate) at which the dashboard last loaded,
   // so a plain focus-return with nothing changed can skip the full re-read.
   const loadedRef = React.useRef<{ version: number; date: string } | null>(null);
@@ -245,6 +277,49 @@ export default function Dashboard() {
   const stockEnabled = isCapabilityEnabled(settings, "inventory");
   const salesRoute = isCapabilityEnabled(settings, "commerce") ? "/sales" : "/invoices";
   const workflowTiles = workflowTilesFor(settings);
+  const visibleTiles = useMemo<WorkspaceTileItem[]>(() => {
+    const filtered = workflowTiles.map((tile) => ({
+      key: tile.key,
+      label: tile.label,
+      icon: tile.icon,
+      route: tile.route,
+      iconColor: tile.color,
+      iconBackground: tile.key === "ai-assistant" ? `${theme.color.onBrandPrimary}24` : `${tile.color}24`,
+      usesBrandIcon: tile.usesBrandIcon,
+      solidBrand: tile.solidBrand,
+    }));
+    if (!customTileOrder.length) return filtered;
+    const map = new Map(filtered.map((tile) => [tile.key, tile]));
+    const ordered: WorkspaceTileItem[] = [];
+    for (const key of customTileOrder) {
+      const tile = map.get(key);
+      if (tile) { ordered.push(tile); map.delete(key); }
+    }
+    return [...ordered, ...Array.from(map.values())];
+  }, [customTileOrder, theme.color.onBrandPrimary, workflowTiles]);
+  const recordTileUsage = useCallback(async (key: string) => {
+    try {
+      const raw = (await AsyncStorage.getItem("ledgr_tile_usage")) || "{}";
+      const usage = JSON.parse(raw);
+      usage[key] = (usage[key] || 0) + 1;
+      usage[`${key}_last_used`] = Date.now();
+      await AsyncStorage.setItem("ledgr_tile_usage", JSON.stringify(usage));
+    } catch { /* local usage is optional */ }
+  }, []);
+  const handleTilePress = useCallback((tile: WorkspaceTileItem) => {
+    if (isEditingGrid) return;
+    void recordTileUsage(tile.key);
+    if (tile.key === "ai-assistant") requestVoiceAssistant();
+    else router.push(tile.route as any);
+  }, [isEditingGrid, recordTileUsage, router]);
+  const moveTile = useCallback((fromIndex: number, toIndex: number) => {
+    const currentKeys = visibleTiles.map((tile) => tile.key);
+    if (fromIndex < 0 || fromIndex >= currentKeys.length || toIndex < 0 || toIndex >= currentKeys.length || fromIndex === toIndex) return;
+    const [moved] = currentKeys.splice(fromIndex, 1);
+    currentKeys.splice(toIndex, 0, moved);
+    setCustomTileOrder(currentKeys);
+    AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(currentKeys)).catch(() => {});
+  }, [visibleTiles]);
   const hasLedgerActivity = Boolean(dash && [dash.totalSales, dash.totalPurchases, dash.supplierPayments, dash.drawings, dash.grossProfit].some((value) => Math.abs(Number(value || 0)) > 0.005));
   const quickStartRoute = isCapabilityEnabled(settings, "commerce") ? "/sale-form" : isCapabilityEnabled(settings, "invoicing") ? "/invoices" : "/expenses";
 
@@ -255,6 +330,9 @@ export default function Dashboard() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
         showsVerticalScrollIndicator={false}
+        ref={scrollRef}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         {loading && !dash ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
@@ -473,15 +551,27 @@ export default function Dashboard() {
               {stockEnabled ? <KpiTile label="Stock" value={fmt(dash?.inventoryValue)} icon={<Package width={14} height={14} color="#34D399" />} testID="kpi-inventory" onPress={() => router.push("/inventory-form")} /> : null}
             </View>
 
-            {workflowTiles.length > 0 ? <View testID="home-workflow-shortcuts">
-              <Text style={styles.quickWorkspaceTitle}>Quick Workspaces</Text>
-              <Text style={styles.quickWorkspaceHint}>Hold any tile to organize &amp; sort</Text>
-              <View style={styles.quickWorkspaceGrid}>
-                {workflowTiles.map((tile) => <Pressable key={tile.key} testID={`home-workflow-${tile.key}`} accessibilityRole="button" accessibilityLabel={tile.label} onPress={() => tile.key === "ai-assistant" ? requestVoiceAssistant() : router.push(tile.route as any)} style={({ pressed }) => [styles.quickWorkspaceTile, tile.key === "ai-assistant" && styles.quickWorkspaceTileFeatured, pressed && styles.quickWorkspaceTilePressed]}>
-                  <View style={[styles.quickWorkspaceIcon, { backgroundColor: tile.key === "ai-assistant" ? "rgba(255,255,255,0.24)" : "rgba(96, 96, 91, 0.52)" }]}><Ionicons name={tile.icon as any} size={22} color={tile.key === "ai-assistant" ? "#0b1110" : tile.color} /></View>
-                  <Text numberOfLines={2} style={[styles.quickWorkspaceLabel, tile.key === "ai-assistant" && styles.quickWorkspaceLabelFeatured]}>{tile.label}</Text>
-                </Pressable>)}
+            {visibleTiles.length > 0 ? <View testID="home-workflow-shortcuts">
+              <View style={styles.quickWorkspaceHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickWorkspaceTitle}>Quick Workspaces</Text>
+                  <Text style={styles.quickWorkspaceHint}>Hold any tile to organize &amp; sort</Text>
+                </View>
+                {isEditingGrid ? <Pressable accessibilityRole="button" accessibilityLabel="Finish organizing workspaces" onPress={() => setIsEditingGrid(false)} style={styles.workspaceDone}><Text style={styles.workspaceDoneText}>Done</Text></Pressable> : null}
               </View>
+              {isEditingGrid ? <Card style={styles.organizePanel} shadowEnabled={false}>
+                <Text style={styles.organizeTitle}>Tile organization</Text>
+                <Text style={styles.organizeHint}>Drag a tile to move it, then tap Done.</Text>
+              </Card> : null}
+              <ReorderableWorkspaceGrid
+                items={visibleTiles}
+                editing={isEditingGrid}
+                scrollRef={scrollRef}
+                scrollY={scrollY}
+                onEditingChange={setIsEditingGrid}
+                onOrderChange={moveTile}
+                onTilePress={handleTilePress}
+              />
             </View> : null}
 
             {salesEnabled ? <Card style={{ marginTop: theme.spacing.lg }}>
@@ -601,14 +691,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
   quickStartButton: { minWidth: 58, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14 },
   quickStartButtonText: { color: theme.color.onBrandPrimary, fontSize: 12, fontWeight: "800" },
   quickStartDismiss: { position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginTop: theme.spacing.lg, marginBottom: 4 },
-  quickWorkspaceHint: { color: theme.color.muted, fontSize: 13, marginBottom: theme.spacing.md },
-  quickWorkspaceGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  quickWorkspaceTile: { width: "48.5%", height: 115, borderRadius: 22, padding: 16, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, justifyContent: "space-between", ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.10)" } : { elevation: 3, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 } }) },
-  quickWorkspaceTileFeatured: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
-  quickWorkspaceTilePressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
-  quickWorkspaceIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
-  quickWorkspaceLabel: { color: theme.color.onSurface, fontSize: 14, fontWeight: "700", marginTop: 12 },
-  quickWorkspaceLabelFeatured: { color: theme.color.onBrandPrimary },
-  organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
+  quickWorkspaceHeader: { flexDirection: "row", alignItems: "center", marginTop: theme.spacing.lg, marginBottom: theme.spacing.md },
+  quickWorkspaceTitle: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", marginBottom: 4 },
+  quickWorkspaceHint: { color: theme.color.muted, fontSize: 13 },
+  workspaceDone: { backgroundColor: theme.color.brandPrimary, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16 },
+  workspaceDoneText: { color: theme.color.onBrandPrimary, fontSize: 12, fontWeight: "800" },
+  organizePanel: { marginBottom: theme.spacing.md, padding: theme.spacing.md, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
+  organizeTitle: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800", marginBottom: 3 },
+  organizeHint: { color: theme.color.muted, fontSize: 11 },
 }); }

@@ -30,7 +30,7 @@ describe('271344 UI/UX remediation contracts', () => {
   it('keeps Reports cards single-surface and location chips stable on narrow screens', () => {
     const reports = readApp('(tabs)/reports.tsx');
     expect(reports).toContain('shadowEnabled={false} surfaceColor={theme.color.surfaceSecondary}');
-    expect(reports).toContain('minWidth: 104');
+    expect(reports).toContain('minWidth: 118');
     expect(reports).toContain('flexShrink: 0');
     expect(reports).toContain('loadedQueryKey');
     expect(reports).toContain('if (loading || refreshing || !hasLoaded.current) return;');
