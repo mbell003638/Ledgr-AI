@@ -685,7 +685,8 @@ export default function AskBooks() {
         </ScrollView>
 
         <View style={[styles.inputBar, { paddingBottom: composerBottomPad }]}>
-          <View style={styles.inputWrapper}>
+          <View style={styles.composerRow}>
+            <View style={[styles.attachmentRow, voicePhase !== "idle" && styles.attachmentRowHidden]}>
             <Pressable
               style={styles.attachBtn}
               onPress={async () => {
@@ -733,13 +734,15 @@ export default function AskBooks() {
             >
               <Ionicons name="scan-outline" size={24} color={theme.color.muted} />
             </Pressable>
+            </View>
+            <View style={[styles.inputWrapper, voicePhase !== "idle" && styles.voiceInputWrapper]}>
             {Platform.OS === 'web' && (
               <style>{`
                 textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
                 textarea { -ms-overflow-style: none; scrollbar-width: none; }
               `}</style>
             )}
-            <TextInput
+            {(voicePhase === "idle" || input.trim().length > 0) && <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="Message Ledgr..."
@@ -751,7 +754,7 @@ export default function AskBooks() {
               returnKeyType="send"
               onSubmitEditing={() => send(input)}
               maxLength={4000}
-            />
+            />}
             {input.trim().length > 0 ? (
               <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
@@ -784,6 +787,7 @@ export default function AskBooks() {
                 <Ionicons name="mic" size={22} color={theme.color.onBrandPrimary} />
               </Pressable>
             )}
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -822,9 +826,13 @@ function makeStyles(theme: any) {
     proposalApply: { minWidth: 88, minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary },
     proposalApplyDestructive: { backgroundColor: theme.color.error },
     proposalApplyText: { color: "#fff", fontWeight: "700" },
-    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
-    attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
+    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
+    composerRow: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-end", gap: 6 },
+    attachmentRow: { flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0 },
+    attachmentRowHidden: { display: "none" },
+    attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 2 },
     inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: "transparent", paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
+    voiceInputWrapper: { alignItems: "center", paddingHorizontal: 6, paddingVertical: 5, minHeight: 72, maxHeight: 96 },
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, ...(Platform.OS === "web" ? { boxShadow: "none" } : { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 }) },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },

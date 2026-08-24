@@ -25,10 +25,19 @@ describe('271412 UI/UX remediation contracts', () => {
     expect(ask).toContain('Stop Ask AI voice input');
     expect(ask).toContain('Cancel Ask AI voice input');
     expect(ask).toContain('overflow: "visible"');
+    expect(ask).toContain('voicePhase === "idle" || input.trim().length > 0');
+    expect(ask).toContain('voiceInputWrapper');
     expect(orb).toContain('backgroundColor: accent');
     expect(orb).toContain('waveCompact');
     expect(orb).toContain('minWidth: 30');
     expect(orb).not.toContain('theme.color.info || accent');
+  });
+
+  it('provides browser-safe location CRUD while preserving the native SQLite path', () => {
+    const api = fs.readFileSync(path.join(root, 'src', 'api.ts'), 'utf8');
+    expect(api).toContain('const rows = await db.listLocations()');
+    expect(api).toContain('const r = await db.createLocation(input)');
+    expect(api).toContain('db.updateLocation(id, { active: false })');
   });
 
   it('uses the full available onboarding viewport for compact steps and natural scrolling for the ready step', () => {
