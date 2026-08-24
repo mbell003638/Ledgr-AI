@@ -86,7 +86,7 @@ function AnimatedHeroCard({ children, theme }: { children: React.ReactNode; them
       pressScale={0.972}
       restingBorderColor="transparent"
       hoverBorderColor={theme.color.brandPrimary}
-      style={{ borderRadius: theme.radius.lg, marginBottom: 16, shadowOffset: { width: 0, height: 10 } }}
+      style={{ borderRadius: theme.radius.lg, marginBottom: 16 }}
     >
       {children}
     </GlowPressable>
@@ -457,7 +457,7 @@ export default function Dashboard() {
               </GlowPressable>
             </Card>
 
-            {!hasLedgerActivity && !quickStartDismissed ? <Card testID="dashboard-quick-start" style={styles.quickStartCard}>
+            {!hasLedgerActivity && !quickStartDismissed ? <Card testID="dashboard-quick-start" shadowEnabled={false} style={styles.quickStartCard}>
               <View style={styles.quickStartIcon}><Ionicons name="rocket-outline" size={20} color={theme.color.brandPrimary} /></View>
               <View style={styles.quickStartCopy}><Text style={styles.quickStartTitle}>Start with your first entry</Text><Text style={styles.quickStartText}>Your dashboard will fill in as you record a sale, invoice, purchase, or expense.</Text></View>
               <Pressable accessibilityRole="button" accessibilityLabel="Create your first entry" onPress={() => router.push(quickStartRoute as any)} style={styles.quickStartButton}><Text style={styles.quickStartButtonText}>Start</Text></Pressable>
@@ -566,7 +566,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: theme.color.surfaceSecondary,
     marginVertical: theme.spacing.xs,
-    ...(Platform.OS === "web" ? { boxShadow: "0 2px 10px rgba(0,0,0,0.10)" } : { elevation: 3, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 } }),
+    ...(Platform.OS === "web" ? { boxShadow: "none" } : { elevation: 3, shadowColor: "#000000", shadowOpacity: 0.14, shadowRadius: 7, shadowOffset: { width: 0, height: 3 } }),
   },
   tileIcon: {
     width: 40, height: 40, borderRadius: 20,

@@ -105,6 +105,7 @@ export default function ReportsScreen() {
   const loadRequest = useRef(0);
   const sectionRequest = useRef(0);
   const loadedVersion = useRef(-1);
+  const loadedQueryKey = useRef("");
   const hasLoaded = useRef(false);
   const loadedSections = useRef(new Set<string>());
 
@@ -123,7 +124,7 @@ export default function ReportsScreen() {
     setRangePresetSel(p);
     if (p !== "Custom") {
       const r = rangePreset(p);
-      setLoading(true); setRangeNotice("");
+      setRefreshing(true); setRangeNotice("");
       setFrom(r.from); setTo(r.to);
       setCustomFrom(r.from); setCustomTo(r.to);
     } else {
@@ -135,25 +136,29 @@ export default function ReportsScreen() {
     const requestId = ++loadRequest.current;
     sectionRequest.current += 1;
     setSectionLoading(false);
-    setLoading(true);
+    const revalidating = hasLoaded.current;
+    if (!revalidating) setLoading(true);
     setLoadError("");
     try {
       const [s, config] = await Promise.all([api.getSettings(), api.getV2BookConfig().catch(() => null)]);
-      if (Platform.OS !== "web" && isCapabilityEnabled(s, "multi_location")) {
-        const rows = await api.listLocations().catch(() => []);
-        setShops((Array.isArray(rows) ? rows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
-      } else {
-        setShops([]);
-      }
+      const locationRowsPromise = Platform.OS !== "web" && isCapabilityEnabled(s, "multi_location")
+        ? api.listLocations().catch(() => [])
+        : Promise.resolve([]);
       const shopId = locationId || undefined;
+      const accountingStyle = config?.style || s.accountingStyle || "standard";
+      const isPartnership = accountingStyle === "retail_partnership";
       if (Platform.OS === "web") {
-        const [range, current, pd] = await Promise.all([
+        const [range, current, pd, webBs, webTb, webAssetDist, webCapital] = await Promise.all([
           localDb.pnlRange(from, to),
           localDb.dashboard(),
           localDb.listPeriods(),
+          localDb.balanceSheet(),
+          localDb.trialBalance(),
+          localDb.assetDistribution(),
+          isPartnership ? localDb.capitalStatement() : Promise.resolve(null),
         ]);
         if (requestId !== loadRequest.current) return;
-        setBizSettings({ ...s, accountingStyle: config?.style || s.accountingStyle || "standard" });
+        setBizSettings({ ...s, accountingStyle });
         setCurrSym(getCurrencySymbol(s.currency || "USD"));
         setBizName(s.businessName || "");
         setProvisionalNotice("");
@@ -186,23 +191,31 @@ export default function ReportsScreen() {
           drawings: range.drawings,
           netProfit: range.netProfit,
         });
-        setBs(await localDb.balanceSheet());
-        setTb(await localDb.trialBalance());
-        setAssetDist(await localDb.assetDistribution());
+        setBs(webBs);
+        setTb(webTb);
+        setAssetDist(webAssetDist);
         setPeriods(Array.isArray(pd) ? pd : []);
         loadedSections.current.clear();
+        if (webCapital) {
+          setCap(normalizeCapitalStatement(webCapital));
+          loadedSections.current.add(`${from}|${to}|Summary|${locationId}|${accountingStyle}`);
+        }
         loadedVersion.current = getDataVersion();
+        loadedQueryKey.current = `${from}|${to}|${locationId}`;
         hasLoaded.current = true;
         setRangeNotice(`Showing ${from} to ${to} · Browser local summary`);
         return;
       }
-      const [core, snapshotDash, pd] = await Promise.all([
+      const [core, snapshotDash, pd, nativeCapital, locationRows] = await Promise.all([
         v2Reports({ from, to, locationId: shopId }),
         api.dashboard(shopId),
         api.listPeriods(),
+        isPartnership ? api.capitalStatement() : Promise.resolve(null),
+        locationRowsPromise,
       ]);
       if (requestId !== loadRequest.current) return;
-      setBizSettings({ ...s, accountingStyle: config?.style || 'standard' });
+      setShops((Array.isArray(locationRows) ? locationRows : []).map((row: any) => ({ id: String(row.id), name: String(row.name) })));
+      setBizSettings({ ...s, accountingStyle });
       setCurrSym(getCurrencySymbol(s.currency || "USD"));
       setBizName(s.businessName || "");
       {
@@ -287,7 +300,12 @@ export default function ReportsScreen() {
       }
       setPeriods(Array.isArray(pd) ? pd : []);
       loadedSections.current.clear();
+      if (nativeCapital) {
+        setCap(normalizeCapitalStatement(nativeCapital));
+        loadedSections.current.add(`${from}|${to}|Summary|${locationId}|${accountingStyle}`);
+      }
       loadedVersion.current = getDataVersion();
+      loadedQueryKey.current = `${from}|${to}|${locationId}`;
       hasLoaded.current = true;
       setRangeNotice(`Showing ${from} to ${to}`);
     } catch (e: any) {
@@ -370,18 +388,18 @@ export default function ReportsScreen() {
   }, [bizSettings?.accountingStyle, from, locationId, to]);
 
   useFocusEffect(useCallback(() => {
-    if (hasLoaded.current && loadedVersion.current === getDataVersion()) return;
+    if (hasLoaded.current && loadedVersion.current === getDataVersion() && loadedQueryKey.current === `${from}|${to}|${locationId}`) return;
     load();
-  }, [load]));
+  }, [from, locationId, load, to]));
 
   useEffect(() => {
-    if (loading || !hasLoaded.current) return;
+    if (loading || refreshing || !hasLoaded.current) return;
     let active = true;
     void loadSection(seg).finally(() => {
       if (active) setDisplaySeg(seg);
     });
     return () => { active = false; };
-  }, [loadSection, loading, seg]);
+  }, [loadSection, loading, refreshing, seg]);
 
   // Custom fields are drafts. Reports change only when Apply succeeds, so
   // typing a partial date cannot silently issue a different report query.
@@ -391,7 +409,7 @@ export default function ReportsScreen() {
     const t = normalizeDateInput(customTo);
     if (!isValidDateString(t)) { showAlert("Invalid date", `Couldn't read "${customTo.trim()}" as a date. Please use YYYY-MM-DD.`); return; }
     if (f > t) { showAlert("Invalid range", "The From date must be on or before the To date."); return; }
-    setCustomFrom(f); setCustomTo(t); setLoading(true); setRangeNotice("Applying custom range…");
+    setCustomFrom(f); setCustomTo(t); setRefreshing(true); setRangeNotice("Applying custom range…");
     if (f === from && t === to) { load(); return; }
     setFrom(f); setTo(t);
   };
@@ -666,7 +684,7 @@ export default function ReportsScreen() {
           {sectionLoading ? <View accessibilityLiveRegion="polite" style={styles.inlineLoading}><ActivityIndicator color={theme.color.brandPrimary} /><Text style={styles.inlineLoadingText}>Refreshing report…</Text></View> : null}
           {displaySeg === "Summary" && dash && (
             <>
-              <Card testID="report-summary-live" style={{ backgroundColor: theme.color.brandPrimary + "15", borderColor: theme.color.brandPrimary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }}>
+              <Card testID="report-summary-live" shadowEnabled={false} surfaceColor={theme.color.surfaceSecondary} style={{ borderColor: theme.color.brandPrimary, borderWidth: 1 }}>
                 <Text style={[styles.rTitle, { color: theme.color.brandPrimary }]}>PROFIT (LIVE)</Text>
                 <RowKV label="Sales" value={fmt(dash.totalSales)} theme={theme} styles={styles} />
                 <RowKV label="Expenses" value={fmt(dash.totalPurchases)} theme={theme} styles={styles} />
@@ -705,7 +723,7 @@ export default function ReportsScreen() {
               </View>
 
               {bizSettings?.accountingStyle === 'retail_partnership' && (
-                <Card style={{ marginTop: theme.spacing.md, backgroundColor: theme.color.brandTertiary + "15", borderColor: theme.color.brandTertiary, borderWidth: 1, elevation: 0, shadowOpacity: 0 }} testID="report-summary-reconciliation">
+                <Card style={{ marginTop: theme.spacing.md, borderColor: theme.color.brandTertiary, borderWidth: 1 }} shadowEnabled={false} surfaceColor={theme.color.surfaceSecondary} testID="report-summary-reconciliation">
                   <Text style={[styles.rTitle, { color: theme.color.onSurface }]}>CAPITAL ACCOUNTS RECONCILIATION</Text>
                   <RowKV label="Closed-period Profit" value={fmt(closedPeriodSummary.totalProfit)} theme={theme} styles={styles} />
                   <RowKV label="Closed-period Capital Withdrawals" value={fmt(closedPeriodSummary.totalDrawings)} theme={theme} styles={styles} danger />
@@ -991,8 +1009,8 @@ export default function ReportsScreen() {
 function RowKV({ label, value, strong, big, danger, theme, styles }: { label: string; value: string; strong?: boolean; big?: boolean; danger?: boolean; theme: any; styles: any }) {
   return (
     <View style={styles.kv}>
-      <Text style={[styles.kvLabel, strong && { fontWeight: "700", color: theme.color.onSurface }]}>{label}</Text>
-      <Text style={[styles.kvValue, strong && { fontWeight: "700" }, big && { fontSize: 18 }, danger && { color: theme.color.error }]}>{value}</Text>
+      <Text numberOfLines={2} style={[styles.kvLabel, strong && { fontWeight: "700", color: theme.color.onSurface }]}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.kvValue, strong && { fontWeight: "700" }, big && { fontSize: 18 }, danger && { color: theme.color.error }]}>{value}</Text>
     </View>
   );
 }
@@ -1002,8 +1020,8 @@ function makeStyles(theme: any) { return StyleSheet.create({
   customReportBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginTop: theme.spacing.md },
   customReportBtnText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   locationScroll: { height: 52, flexGrow: 0, marginBottom: 2, overflow: "hidden" },
-  locationRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, gap: 8 },
-  locationChip: { minHeight: 40, maxHeight: 40, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
+  locationRow: { flexDirection: "row", alignItems: "center", paddingLeft: theme.spacing.lg, paddingRight: theme.spacing.xl, gap: 8 },
+  locationChip: { minWidth: 104, minHeight: 40, maxHeight: 40, flexShrink: 0, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
   locationChipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary },
   locationChipText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
   locationChipTextActive: { color: "#fff" },
@@ -1046,7 +1064,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   rTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.md },
   kv: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
   kvLabel: { fontSize: 14, color: theme.color.onSurfaceTertiary, flex: 1 },
-  kvValue: { fontSize: 14, color: theme.color.onSurface, fontWeight: "500" },
+  kvValue: { minWidth: 92, textAlign: "right", flexShrink: 0, fontSize: 14, color: theme.color.onSurface, fontWeight: "500" },
   divider: { height: 1, backgroundColor: theme.color.divider, marginVertical: theme.spacing.sm },
   groupHeader: { fontSize: 12, fontWeight: "700", color: theme.color.muted, marginTop: theme.spacing.md, marginBottom: theme.spacing.sm, textTransform: "uppercase", letterSpacing: 0.5 },
   empty: { color: theme.color.muted, textAlign: "center", padding: theme.spacing.md, fontSize: 13, fontStyle: "italic" },

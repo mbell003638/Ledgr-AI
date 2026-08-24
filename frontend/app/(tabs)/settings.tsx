@@ -28,10 +28,10 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
           justifyContent: "space-between",
           minHeight: 48,
           paddingVertical: 12,
-          paddingHorizontal: 10,
-          marginHorizontal: -10,
+          paddingHorizontal: 0,
+          marginHorizontal: 0,
           borderWidth: 0,
-          borderRadius: 14,
+          borderRadius: 0,
         }}
       >
         <View style={{ flex: 1, paddingRight: 16 }}>
@@ -40,7 +40,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </GlowPressable>
-      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
+      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, paddingHorizontal: 0, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
@@ -372,7 +372,7 @@ function makeStyles(theme: any) {
     scroll: { paddingHorizontal: 18, paddingBottom: 180 },
     settingsGroup: { marginTop: theme.spacing.lg, padding: 18, borderRadius: theme.radius.card },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
-    hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+    hint: { fontSize: 12, lineHeight: 18, color: theme.color.muted, marginTop: 4 },
     accountingSummaryRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary },
     openAdvancedAccounting: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
     openAdvancedAccountingText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "700" },
@@ -453,7 +453,7 @@ function makeStyles(theme: any) {
     entryInput: { flex: 1 },
     entryAmount: { width: 110 },
     memberCard: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, marginTop: theme.spacing.md },
-    subLabel: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+    subLabel: { fontSize: 11, lineHeight: 16, color: theme.color.muted, marginTop: 2 },
     lockToggle: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
       padding: theme.spacing.md, borderRadius: theme.radius.md,
