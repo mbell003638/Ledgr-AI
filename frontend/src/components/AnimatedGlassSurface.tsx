@@ -42,7 +42,7 @@ export function AnimatedGlassSurface(props: AnimatedGlassSurfaceProps) {
       <View
         {...rest}
         style={[
-          { position: "relative", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder },
+          { position: "relative", overflow: "hidden", backgroundColor: surfaceColor ?? theme.color.glassSurface, borderWidth: 1, borderColor: restingBorderColor ?? theme.color.glassBorder },
           style,
           staticElevation(theme, _shadowEnabled !== false),
         ]}
@@ -150,6 +150,7 @@ function AnimatedGlassSurfaceImpl({
         style={[
           {
             position: "relative",
+            overflow: "hidden",
             backgroundColor: surfaceColor ?? theme.color.glassSurface,
             borderWidth: 1,
             borderColor: restingBorderColor ?? theme.color.glassBorder,

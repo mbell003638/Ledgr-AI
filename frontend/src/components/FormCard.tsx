@@ -43,7 +43,7 @@ export function makeFormStyles(theme: any) {
       marginTop: 6,
       borderWidth: 1,
       borderColor: theme.color.border,
-      backgroundColor: theme.color.surface,
+      backgroundColor: "transparent",
       borderRadius: theme.radius.md,
       padding: theme.spacing.md,
       fontSize: 14,

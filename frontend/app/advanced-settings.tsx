@@ -461,7 +461,7 @@ export default function AdvancedSettingsScreen() {
                     {books.map((b) => {
                       const isActive = b.id === activeBook;
                       return (
-                        <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface }, isActive && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}>
+                        <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" }, isActive && { borderColor: theme.color.brandPrimary, backgroundColor: "transparent" }]}>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
                             <Ionicons name={isActive ? "business" : "business-outline"} size={20} color={isActive ? theme.color.brandPrimary : theme.color.muted} />
                             <Text style={[{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }, isActive && { color: theme.color.brandPrimary }]}>{b.name}</Text>
@@ -748,7 +748,7 @@ function makeStyles(theme: any) {
       marginTop: theme.spacing.md,
       borderWidth: 1,
       borderColor: theme.color.border,
-      backgroundColor: theme.color.surface,
+      backgroundColor: "transparent",
       borderRadius: theme.radius.md,
       padding: theme.spacing.md,
       fontSize: 14,
@@ -784,9 +784,9 @@ function makeStyles(theme: any) {
     modeBtn: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
       gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md,
-      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent",
     },
-    modeBtnActive: { backgroundColor: theme.color.brandPrimary + "1C", borderColor: theme.color.brandPrimary },
+    modeBtnActive: { backgroundColor: "transparent", borderColor: theme.color.brandPrimary },
     modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
     modeTextActive: { color: theme.color.brandPrimary },
     securityCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: theme.spacing.md, paddingVertical: 8 },
@@ -806,7 +806,7 @@ function makeStyles(theme: any) {
       padding: theme.spacing.md, borderRadius: theme.radius.md,
     },
     backupBtnPrimary: { backgroundColor: theme.color.brandPrimary },
-    backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
+    backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: "transparent" },
     backupBtnTextPrimary: { color: "#fff", fontWeight: "600", fontSize: 13 },
     backupBtnTextSecondary: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
     resetInitBtn: {
@@ -815,7 +815,7 @@ function makeStyles(theme: any) {
       borderWidth: 1, borderColor: theme.color.error, marginTop: theme.spacing.md,
     },
     resetInitText: { color: theme.color.error, fontWeight: "600", fontSize: 13 },
-    resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
     resetCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
     resetConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
     resetConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
@@ -835,10 +835,10 @@ function makeStyles(theme: any) {
     bookRow: {
       flexDirection: "row", alignItems: "center", gap: 8,
       padding: theme.spacing.md, borderRadius: theme.radius.md,
-      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent",
       marginTop: theme.spacing.sm,
     },
-    bookRowActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    bookRowActive: { borderColor: theme.color.brandPrimary, backgroundColor: "transparent" },
     bookName: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     removeBtn: {
       marginTop: theme.spacing.md,

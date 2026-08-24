@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal, KeyboardAvoidingView, Keyboard } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal, KeyboardAvoidingView, Keyboard, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -25,6 +25,7 @@ const PERSONA_ICON: Record<string, string> = {
 export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { height: viewportHeight } = useWindowDimensions();
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
   const [step, setStep] = useState(0);
@@ -191,10 +192,10 @@ export default function Onboarding() {
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
       <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 16}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
+      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg, minHeight: Math.max(320, viewportHeight - 150) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
 
         {step === 0 && (
-          <View>
+          <View style={styles.stepBody}>
             <Text style={styles.title}>What best describes your work?</Text>
             <Text style={styles.sub}>Choose one primary workspace. Ledgr will tailor the app, reports, accounts, and workflows around it.</Text>
             <Pressable
@@ -244,7 +245,7 @@ export default function Onboarding() {
         )}
 
         {step === 1 && (
-          <View>
+          <View style={styles.stepBody}>
             <Text style={styles.title}>What should we call your business?</Text>
             <Text style={styles.sub}>This name appears on invoices, reports, and shared documents.</Text>
             <TextInput value={bizName} onChangeText={setBizName} placeholder="e.g. Sharma Electronics" placeholderTextColor={theme.color.muted} style={styles.input} autoFocus accessibilityLabel="Business name" />
@@ -253,7 +254,7 @@ export default function Onboarding() {
         )}
 
         {step === 2 && (
-          <View>
+          <View style={styles.stepBody}>
             <Text style={styles.title}>Choose your working currency</Text>
             <Text style={styles.sub}>You can change this later in Business Settings. Existing entries are not silently converted.</Text>
             <View style={styles.currencyGrid}>
@@ -263,7 +264,7 @@ export default function Onboarding() {
         )}
 
         {step === 3 && (
-          <View>
+          <View style={styles.stepBodyTall}>
             <Text style={styles.title}>Your workspace is ready</Text>
             <Text style={styles.sub}>We will start with these capabilities. Nothing else will compete for attention until you enable it.</Text>
             <View style={styles.previewCard}>
@@ -308,6 +309,8 @@ function makeStyles(theme: any) {
     progressTrack: { height: 4, backgroundColor: theme.color.border, marginTop: theme.spacing.md },
     progressFill: { height: 4, backgroundColor: theme.color.brandPrimary, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
     content: { padding: theme.spacing.lg, paddingBottom: 30, flexGrow: 1, width: "100%", maxWidth: 1040, alignSelf: "center" },
+    stepBody: { width: "100%", flexGrow: 1, justifyContent: "center", paddingVertical: theme.spacing.md },
+    stepBodyTall: { width: "100%", flexGrow: 1, paddingVertical: theme.spacing.md },
     title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.xl },
     sub: { fontSize: 14, lineHeight: 20, color: theme.color.muted, marginTop: 8 },
     groupLabel: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginTop: theme.spacing.lg },

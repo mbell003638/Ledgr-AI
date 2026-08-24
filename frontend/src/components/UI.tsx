@@ -47,11 +47,11 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
   );
 }
 
-export function Card({ children, style, testID, shadowEnabled = true, surfaceColor, hoverSurfaceColor, restingBorderColor }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; testID?: string; shadowEnabled?: boolean; surfaceColor?: string; hoverSurfaceColor?: string; restingBorderColor?: string }) {
+export function Card({ children, style, testID, shadowEnabled = false, surfaceColor, hoverSurfaceColor, restingBorderColor }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; testID?: string; shadowEnabled?: boolean; surfaceColor?: string; hoverSurfaceColor?: string; restingBorderColor?: string }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   return (
-    <AnimatedGlassSurface style={[styles.card, style]} testID={testID} shadowEnabled={shadowEnabled} surfaceColor={surfaceColor} hoverSurfaceColor={hoverSurfaceColor} restingBorderColor={restingBorderColor}>
+    <AnimatedGlassSurface style={[styles.card, style]} testID={testID} shadowEnabled={shadowEnabled} surfaceColor={surfaceColor ?? theme.color.surfaceSecondary} hoverSurfaceColor={hoverSurfaceColor} restingBorderColor={restingBorderColor}>
       {children}
     </AnimatedGlassSurface>
   );
@@ -138,7 +138,8 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 18,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      ...(Platform.OS === "web" ? { boxShadow: "none", overflow: "hidden" } : {}),
+      overflow: "hidden",
+      ...(Platform.OS === "web" ? { boxShadow: "none" } : {}),
       marginVertical: 0,
     },
     kpi: {
@@ -148,7 +149,8 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       padding: 14,
       borderWidth: 1,
       borderColor: theme.color.glassBorder,
-      ...(Platform.OS === "web" ? { boxShadow: "none", overflow: "hidden" } : {}),
+      overflow: "hidden",
+      ...(Platform.OS === "web" ? { boxShadow: "none" } : {}),
     },
     kpiTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     kpiLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "700" },

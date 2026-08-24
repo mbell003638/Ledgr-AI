@@ -1,7 +1,7 @@
 export const lightColors = {
   surface: '#F6F7F5',
   onSurface: '#111513',
-  surfaceSecondary: '#FFFFFF',
+  surfaceSecondary: '#F1F5F2',
   glassSurface: 'rgba(255, 255, 255, 0.88)',
   glassSurfaceHover: 'rgba(255, 255, 255, 1)',
   glassBorder: '#E2E5DF',

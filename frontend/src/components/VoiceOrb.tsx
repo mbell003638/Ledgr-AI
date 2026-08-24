@@ -45,7 +45,7 @@ export function VoiceOrb({ phase, theme, compact = false }: Props) {
       </Animated.View>
       <Animated.View style={[styles.wave, compact && styles.waveCompact, waveStyle]}>
         {bars.map((height, index) => (
-          <View key={index} style={{ width: compact ? 2 : 3, height: compact ? Math.max(5, height * 0.55) : height, borderRadius: 4, backgroundColor: index % 6 === 2 ? theme.color.info || accent : accent }} />
+          <View key={index} style={{ width: compact ? 2 : 3, height: compact ? Math.max(5, height * 0.55) : height, borderRadius: 4, backgroundColor: accent, opacity: index % 2 === 0 ? 0.72 : 0.95 }} />
         ))}
       </Animated.View>
     </View>
@@ -55,8 +55,8 @@ export function VoiceOrb({ phase, theme, compact = false }: Props) {
 const styles = StyleSheet.create({
   root: { alignItems: "center", justifyContent: "center" },
   rootLarge: { minHeight: 156, minWidth: 300 },
-  rootCompact: { flexDirection: "row", gap: 6, width: 86, minHeight: 48, overflow: "visible" },
+  rootCompact: { flexDirection: "row", gap: 5, width: 82, minHeight: 42, overflow: "visible" },
   orb: { alignItems: "center", justifyContent: "center", zIndex: 2 },
   wave: { position: "absolute", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 2, width: "100%", paddingHorizontal: 2 },
-  waveCompact: { position: "relative", flex: 1, width: undefined, height: 36, paddingHorizontal: 0 },
+  waveCompact: { position: "relative", flex: 1, minWidth: 30, width: undefined, height: 32, paddingHorizontal: 0, overflow: "visible" },
 });

@@ -248,7 +248,7 @@ export default function SettingsScreen() {
                   <Text style={styles.label}>Currency</Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                     {CURRENCIES.map((c) => (
-                      <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={currency === c.code ? theme.color.brandPrimary : theme.color.border} key={c.code} onPress={() => setCurrency(c.code)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: currency === c.code ? theme.color.brandPrimary : theme.color.border, backgroundColor: currency === c.code ? theme.color.brandPrimary + "20" : theme.color.surfaceTertiary }}>
+                      <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={currency === c.code ? theme.color.brandPrimary : theme.color.border} key={c.code} onPress={() => setCurrency(c.code)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: currency === c.code ? theme.color.brandPrimary : theme.color.border, backgroundColor: currency === c.code ? theme.color.brandPrimary + "20" : "transparent" }}>
                         <Text style={{ color: currency === c.code ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "600", fontSize: 14 }}>{c.symbol} {c.code}</Text>
                       </GlowPressable>
                     ))}
@@ -283,7 +283,7 @@ export default function SettingsScreen() {
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "light", label: "Emerald Light", icon: "sunny-outline" }, { id: "dark", label: "Emerald Dark", icon: "moon-outline" }, { id: "navy_gold", label: "AMOLED Black & Gold", icon: "color-palette-outline" }, { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" }, { id: "system", label: "System", icon: "phone-portrait-outline" } ].map((m) => (
-                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={mode === m.id ? theme.color.brandPrimary : theme.color.border} key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={mode === m.id ? theme.color.brandPrimary : theme.color.border} key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
                       <Ionicons name={m.icon as any} size={16} color={mode === m.id ? theme.color.brandPrimary : theme.color.onSurface} />
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, mode === m.id && { color: theme.color.brandPrimary }]}>{m.label}</Text>
                     </GlowPressable>
@@ -293,7 +293,7 @@ export default function SettingsScreen() {
               <AccordionRow title="Invoice PDF Preset" subtitle={invoiceTheme === "navy_gold" ? "Black & Gold" : invoiceTheme === "amoled_blue" ? "Black & Blue" : invoiceTheme === "emerald" ? "Classic Emerald" : "Clean Minimal"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "navy_gold", label: "Black & Gold" }, { id: "amoled_blue", label: "Black & Blue" }, { id: "emerald", label: "Classic Emerald" }, { id: "minimal", label: "Clean Minimal" } ].map((t) => (
-                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={invoiceTheme === t.id ? theme.color.brandPrimary : theme.color.border} key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={invoiceTheme === t.id ? theme.color.brandPrimary : theme.color.border} key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>{t.label}</Text>
                     </GlowPressable>
                   ))}
@@ -374,13 +374,13 @@ function makeStyles(theme: any) {
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, lineHeight: 18, color: theme.color.muted, marginTop: 4 },
     accountingSummaryRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary },
-    openAdvancedAccounting: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    openAdvancedAccounting: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 0, borderRadius: 0, borderWidth: 0, borderTopWidth: 1, borderTopColor: theme.color.border },
     openAdvancedAccountingText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "700" },
     input: {
       marginTop: theme.spacing.md,
       borderWidth: 1,
       borderColor: theme.color.border,
-      backgroundColor: theme.color.surface,
+      backgroundColor: "transparent",
       borderRadius: theme.radius.md,
       padding: theme.spacing.md,
       fontSize: 14,
@@ -416,7 +416,7 @@ function makeStyles(theme: any) {
     modeBtn: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
       gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md,
-      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent",
     },
     modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
     modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
@@ -424,7 +424,7 @@ function makeStyles(theme: any) {
     currencyChip: {
       flexDirection: "row", alignItems: "center", justifyContent: "center",
       paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md,
-      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent",
       minWidth: 88,
     },
     currencyChipActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
@@ -436,7 +436,7 @@ function makeStyles(theme: any) {
       padding: theme.spacing.md, borderRadius: theme.radius.md,
     },
     backupBtnPrimary: { backgroundColor: theme.color.brandPrimary },
-    backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
+    backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: "transparent" },
     backupBtnTextPrimary: { color: "#fff", fontWeight: "600", fontSize: 13 },
     backupBtnTextSecondary: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
     resetInitBtn: {
@@ -445,7 +445,7 @@ function makeStyles(theme: any) {
       borderWidth: 1, borderColor: theme.color.error, marginTop: theme.spacing.md,
     },
     resetInitText: { color: theme.color.error, fontWeight: "600", fontSize: 13 },
-    resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: "transparent" },
     resetCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
     resetConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
     resetConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
