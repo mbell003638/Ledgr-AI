@@ -263,9 +263,9 @@ function ReorderableWorkspaceTile({
       : {
           ...commonStyle,
           shadowColor: theme.color.brandPrimary,
-          shadowOpacity: isBrand ? 0.16 : 0,
-          shadowRadius: isBrand ? 8 : 0,
-          elevation: 4,
+          shadowOpacity: focus > 0 ? (isBrand ? 0.16 : 0.08) : 0,
+          shadowRadius: focus > 0 ? (isBrand ? 8 : 5) : 0,
+          elevation: focus > 0 ? 2 : 0,
         };
   }, [isBrand, isWeb, reduceMotion, solidBrand, theme]);
 
@@ -486,6 +486,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     justifyContent: "space-between",
+    overflow: "hidden",
   },
   tileEditing: {
     borderWidth: 1.5,
