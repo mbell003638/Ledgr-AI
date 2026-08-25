@@ -272,6 +272,17 @@ describe('V2 UI contracts', () => {
     expect(advanced).toMatch(/<AccordionRow title="AI Data & History"[\s\S]*?isLast theme=/);
   });
 
+  it('keeps the Preferences divider between Invoice PDF Preset and Animations & haptics', () => {
+    const settings = readApp('(tabs)/settings.tsx');
+    expect(settings).toMatch(/<AccordionRow title="Invoice PDF Preset"[\s\S]*?theme=\{theme\} expandedKey=/);
+    expect(settings).toMatch(/<AccordionRow title="Animations & haptics"[\s\S]*?isLast theme=\{theme\}/);
+    const invoiceStart = settings.indexOf('title="Invoice PDF Preset"');
+    const animationStart = settings.indexOf('title="Animations & haptics"');
+    expect(invoiceStart).toBeGreaterThan(-1);
+    expect(animationStart).toBeGreaterThan(invoiceStart);
+    expect(settings.slice(invoiceStart, animationStart)).not.toContain('isLast');
+  });
+
   it('all location-aware financial forms preserve location context across edit and save', () => {
     const forms = ['sale-form.tsx', 'bill-form.tsx', 'invoices.tsx', 'payment-form.tsx', 'receipt-form.tsx', 'expenses.tsx'];
     for (const form of forms) {
