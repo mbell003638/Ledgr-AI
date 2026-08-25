@@ -895,9 +895,10 @@ describe('271498 recording remediation contracts', () => {
     expect(home).toContain('onOrderChange={moveTile}');
     expect(grid).toContain('const TilePressableComponent: any = isWeb ? Pressable : AnimatedPressable;');
     expect(grid).toContain('const isWeb = Platform.OS === "web";');
-    expect(grid).toContain('boxShadow');
-    expect(grid).toContain('shadowOpacity: isAndroid ? 0 : focus > 0 ? (isBrand ? 0.16 : 0.08) : 0');
-    expect(grid).toContain('elevation: isAndroid ? 0 : focus > 0 ? 2 : 0');
+    expect(grid).toContain('boxShadow: "none"');
+    expect(grid).toContain('shadowOpacity: 0');
+    expect(grid).toContain('shadowRadius: 0');
+    expect(grid).toContain('elevation: 0');
     expect(grid).toContain('overflow: "hidden"');
     expect(grid).toContain('theme.motion.longPress * 1.28');
     expect(grid).toContain('activateAfterLongPress(motionEnabled ? reorderLongPress : 999999)');
