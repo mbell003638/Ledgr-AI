@@ -43,9 +43,9 @@ describe('271412 UI/UX remediation contracts', () => {
   it('uses the full available onboarding viewport for compact steps and natural scrolling for the ready step', () => {
     const onboarding = readApp('onboarding.tsx');
     expect(onboarding).toContain('useWindowDimensions');
-    expect(onboarding).toContain('minHeight: Math.max(320, viewportHeight - 150)');
+    expect(onboarding).toContain('minHeight: Math.max(0, viewportHeight - 220)');
     expect(onboarding).toContain('style={styles.stepBody}');
     expect(onboarding).toContain('style={styles.stepBodyTall}');
-    expect(onboarding).toContain('stepBody: { width: "100%", flexGrow: 1, justifyContent: "center"');
+    expect(onboarding).toContain('stepBody: { width: "100%", flexGrow: 0, justifyContent: "flex-start"');
   });
 });

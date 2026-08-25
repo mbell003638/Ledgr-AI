@@ -1,5 +1,6 @@
 import { Platform, Share } from "react-native";
 import { File, Paths } from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 /**
@@ -55,6 +56,45 @@ export async function shareJsonFile(filename: string, data: any) {
   if (can) {
     await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: filename });
   }
+}
+
+/**
+ * Save a JSON backup without opening a share sheet.
+ * Web downloads to the browser's configured download folder. Android uses the
+ * system folder picker so the user chooses durable external storage. iOS saves
+ * inside Ledgr's app documents; the Share action can then export it elsewhere.
+ */
+export async function saveJsonFile(filename: string, data: any): Promise<{ uri: string; destination: "download" | "folder" | "app-documents" }> {
+  const json = JSON.stringify(data, null, 2);
+
+  if (Platform.OS === "web") {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    }, 100);
+    return { uri: filename, destination: "download" };
+  }
+
+  if (Platform.OS === "android") {
+    const access = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (!access.granted) throw new Error("Choose a folder to save the backup, or cancel and use Share instead.");
+    const uri = await FileSystem.StorageAccessFramework.createFileAsync(access.directoryUri, filename, "application/json");
+    await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+    return { uri, destination: "folder" };
+  }
+
+  const directory = FileSystem.documentDirectory;
+  if (!directory) throw new Error("This device did not provide a local documents folder. Use Share instead.");
+  const uri = `${directory}${filename}`;
+  await FileSystem.writeAsStringAsync(uri, json, { encoding: FileSystem.EncodingType.UTF8 });
+  return { uri, destination: "app-documents" };
 }
 
 /**

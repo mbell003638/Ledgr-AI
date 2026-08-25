@@ -833,6 +833,54 @@ describe('roadmap phases 7–8 sync UX contracts', () => {
 });
 
 
+describe('271498 recording remediation contracts', () => {
+  it('keeps onboarding content top-aligned and action spacing responsive', () => {
+    const onboarding = readApp('onboarding.tsx');
+    expect(onboarding).toContain('minHeight: Math.max(0, viewportHeight - 220)');
+    expect(onboarding).toContain('justifyContent: "flex-start"');
+    expect(onboarding).toContain('flexGrow: 0');
+    expect(onboarding).toContain('Open my workspace');
+  });
+
+  it('restores capability-aware Quick Workspace organization controls', () => {
+    const home = readApp('(tabs)/index.tsx');
+    const grid = readSource('src/components/ReorderableWorkspaceGrid.tsx');
+    expect(home).toContain('workflowTilesFor(settings)');
+    expect(home).toContain('sortTilesByPreset');
+    for (const preset of ['recent', 'frequent', 'alphabetical', 'default']) expect(home).toContain(`sortTilesByPreset("${preset}")`);
+    expect(home).toContain('Reset workspaces to default order');
+    expect(home).toContain('onOrderChange={moveTile}');
+    expect(grid).toContain('const TilePressableComponent: any = isWeb ? Pressable : AnimatedPressable;');
+    expect(grid).toContain('const isWeb = Platform.OS === "web";');
+    expect(grid).toContain('boxShadow');
+    expect(grid).toContain('theme.motion.longPress * 1.28');
+    expect(grid).toContain('activateAfterLongPress(motionEnabled ? reorderLongPress : 999999)');
+  });
+
+  it('keeps privacy in-app and exposes local save alongside sharing', () => {
+    const settings = readApp('(tabs)/settings.tsx');
+    const layout = readApp('_layout.tsx');
+    const privacy = readApp('privacy.tsx');
+    const backup = readApp('backup-recovery.tsx');
+    const advanced = readApp('advanced-settings.tsx');
+    const share = readSource('src/utils/share.ts');
+    expect(settings).toContain('router.push("/privacy"');
+    expect(settings).not.toContain('Linking.openURL');
+    expect(layout).toContain('name="privacy"');
+    expect(privacy).toContain('Local-first privacy');
+    expect(privacy).toContain('Ledgr Privacy Policy');
+    expect(backup).toContain('testID="backup-save-device-button"');
+    expect(backup).toContain('testID="backup-export-button"');
+    expect(advanced).toContain('testID="legacy-save-device-button"');
+    expect(advanced).toContain('doExport("save")');
+    expect(advanced).toContain('doExport("share")');
+    expect(backup).toContain("exportEncrypted('save')");
+    expect(backup).toContain("exportEncrypted('share')");
+    expect(share).toContain('export async function saveJsonFile');
+    expect(share).toContain('StorageAccessFramework.requestDirectoryPermissionsAsync');
+    expect(share).toContain('FileSystem.documentDirectory');
+  });
+});
 describe('roadmap phases 9–10 migration and release contracts', () => {
   it('exposes a guarded local-to-private migration flow and safe return path', () => {
     const migration = readApp('private-sync-migration.tsx');

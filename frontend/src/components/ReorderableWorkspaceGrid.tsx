@@ -191,6 +191,9 @@ function ReorderableWorkspaceTile({
   const theme = useTheme();
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
+  // Make rearrangement deliberate: increase only the long-press threshold so
+  // ordinary taps remain immediate and accidental edit-mode entry is reduced.
+  const reorderLongPress = Math.round(theme.motion.longPress * 1.28);
   const isBrand = tile.usesBrandIcon === true;
   const solidBrand = tile.solidBrand === true;
   const isWeb = Platform.OS === "web";
@@ -275,7 +278,7 @@ function ReorderableWorkspaceTile({
 
 
   const gesture = useMemo(() => Gesture.Pan()
-    .activateAfterLongPress(motionEnabled ? theme.motion.longPress : 999999)
+    .activateAfterLongPress(motionEnabled ? reorderLongPress : 999999)
     .onStart(() => {
       activeIndex.value = index;
       targetIndex.value = index;
@@ -344,7 +347,7 @@ function ReorderableWorkspaceTile({
       scrollRef,
       scrollY,
       targetIndex,
-      theme.motion.longPress,
+      reorderLongPress,
       theme.motion.spring,
       tileWidth,
       windowHeight,

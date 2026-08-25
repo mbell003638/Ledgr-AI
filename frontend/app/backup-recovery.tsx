@@ -11,7 +11,7 @@ import { HostingModeCard } from '@/src/components/HostingModeCard';
 import { decryptBackup, encryptBackup, isEncryptedBackup, type EncryptedBackupEnvelope } from '@/src/utils/backupEncryption';
 import { listBackupHistory, recordBackupHistory, estimateJsonSize, type BackupHistoryEntry } from '@/src/utils/backupHistory';
 import { checkLocalIntegrity, type LocalIntegrityResult } from '@/src/utils/localIntegrity';
-import { pickJsonFile, shareJsonFile } from '@/src/utils/share';
+import { pickJsonFile, saveJsonFile, shareJsonFile } from '@/src/utils/share';
 
 const formatBytes = (value: number) => value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / (1024 * 1024)).toFixed(1)} MB`;
 
@@ -43,7 +43,7 @@ export default function BackupRecoveryScreen() {
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [reminderDays, setReminderDays] = useState('7');
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState<'export' | 'pick' | 'restore' | 'integrity' | null>(null);
+  const [busy, setBusy] = useState<'export' | 'save' | 'pick' | 'restore' | 'integrity' | null>(null);
 
   const load = useCallback(async () => {
     const [items, settings] = await Promise.all([listBackupHistory(), api.getSettings()]);
@@ -66,9 +66,9 @@ export default function BackupRecoveryScreen() {
     finally { setBusy(null); }
   };
 
-  const exportEncrypted = async () => {
+  const exportEncrypted = async (destination: 'save' | 'share') => {
     if (passphrase.trim().length < 8) { setMessage('Use a backup passphrase with at least 8 characters.'); return; }
-    setBusy('export'); setMessage('');
+    setBusy(destination === 'save' ? 'save' : 'export'); setMessage('');
     try {
       const localCheck = integrity || await checkLocalIntegrity();
       if (!localCheck.ok) throw new Error(`Fix local integrity issues before exporting: ${localCheck.issues.join(' ')}`);
@@ -76,10 +76,12 @@ export default function BackupRecoveryScreen() {
       const encrypted = await encryptBackup(raw, passphrase);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `ledgr-encrypted-backup-${stamp}.ledgr.json`;
-      await shareJsonFile(fileName, encrypted);
-      await recordBackupHistory({ createdAt: encrypted.createdAt, sizeBytes: estimateJsonSize(encrypted), kind: 'encrypted_export', verified: true, fileName, note: 'Encrypted export integrity verified before sharing.' });
-      await api.recordBackupAuditEvent('backup.exported', { fileName, sizeBytes: estimateJsonSize(encrypted), cipher: encrypted.cipher, kdf: encrypted.kdf });
-      setPassphrase(''); setMessage('Encrypted backup is ready. Keep the file and passphrase separately.');
+      if (destination === 'save') await saveJsonFile(fileName, encrypted);
+      else await shareJsonFile(fileName, encrypted);
+      await recordBackupHistory({ createdAt: encrypted.createdAt, sizeBytes: estimateJsonSize(encrypted), kind: 'encrypted_export', verified: true, fileName, note: `Encrypted export integrity verified before ${destination === 'save' ? 'local save' : 'sharing'}.` });
+      await api.recordBackupAuditEvent('backup.exported', { fileName, sizeBytes: estimateJsonSize(encrypted), cipher: encrypted.cipher, kdf: encrypted.kdf, destination });
+      setPassphrase('');
+      setMessage(destination === 'save' ? 'Encrypted backup saved locally. Keep the file and passphrase separately.' : 'Encrypted backup is ready to share. Keep the file and passphrase separately.');
       await load();
     } catch (error: any) { setMessage(error?.message || 'Encrypted backup export failed.'); }
     finally { setBusy(null); }
@@ -142,7 +144,7 @@ export default function BackupRecoveryScreen() {
     <ScreenHeader testID="backup-recovery-header" title="Backup & Recovery" subtitle="Protect and verify your business books" leftAction={<Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back"><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
       <HostingModeCard compact />
-      <View style={styles.card}><Text style={styles.title}>Encrypted backup</Text><Text style={styles.hint}>Backups are portable recovery files. They are not live synchronization, and Ledgr never stores this passphrase in ordinary settings.</Text><Text style={styles.label}>Create an encryption passphrase</Text><TextInput testID="backup-export-passphrase" value={passphrase} onChangeText={setPassphrase} secureTextEntry placeholder="At least 8 characters" placeholderTextColor={theme.color.muted} style={styles.input} /><Pressable testID="backup-export-button" disabled={busy !== null} onPress={exportEncrypted} style={[styles.primary, busy !== null && styles.disabled]}><Text style={styles.primaryText}>{busy === 'export' ? 'Encrypting…' : 'Export encrypted backup'}</Text></Pressable></View>
+      <View style={styles.card}><Text style={styles.title}>Encrypted backup</Text><Text style={styles.hint}>Backups are portable recovery files. They are not live synchronization, and Ledgr never stores this passphrase in ordinary settings.</Text><Text style={styles.label}>Create an encryption passphrase</Text><TextInput testID="backup-export-passphrase" value={passphrase} onChangeText={setPassphrase} secureTextEntry placeholder="At least 8 characters" placeholderTextColor={theme.color.muted} style={styles.input} /><View style={styles.exportActions}><Pressable testID="backup-export-button" accessibilityRole="button" accessibilityLabel="Share encrypted backup" disabled={busy !== null} onPress={() => { void exportEncrypted('share'); }} style={[styles.primary, styles.exportAction, busy !== null && styles.disabled]}><Text style={styles.primaryText}>{busy === 'export' ? 'Preparing…' : 'Share backup'}</Text></Pressable><Pressable testID="backup-save-device-button" accessibilityRole="button" accessibilityLabel="Save encrypted backup to device" disabled={busy !== null} onPress={() => { void exportEncrypted('save'); }} style={[styles.secondary, styles.exportAction, busy !== null && styles.disabled]}><Text style={styles.secondaryText}>{busy === 'save' ? 'Saving…' : 'Save to device'}</Text></Pressable></View><Text style={styles.exportNote}>Save stores the encrypted file locally; Share opens the platform share sheet.</Text></View>
       <View style={styles.card}><Text style={styles.title}>Restore with a dry-run first</Text><Text style={styles.hint}>Choose an encrypted file, decrypt it locally, and validate its schema, book identity, V2 ledger, and integrity before anything is replaced.</Text><Pressable testID="backup-pick-button" disabled={busy !== null} onPress={chooseImport} style={styles.secondary}><Text style={styles.secondaryText}>{busy === 'pick' ? 'Opening files…' : 'Choose encrypted backup'}</Text></Pressable>{pendingEnvelope ? <><Text style={styles.selected}>{pendingFileName}</Text><TextInput testID="backup-import-passphrase" value={importPassphrase} onChangeText={setImportPassphrase} secureTextEntry placeholder="Backup passphrase" placeholderTextColor={theme.color.muted} style={styles.input} /><View style={styles.row}><Pressable testID="backup-dry-run-button" disabled={busy !== null} onPress={validateImport} style={styles.secondary}><Text style={styles.secondaryText}>{busy === 'restore' ? 'Validating…' : 'Run restore dry-run'}</Text></Pressable>{dryRun?.ok ? <Pressable testID="backup-restore-button" disabled={busy !== null} onPress={confirmRestore} style={styles.danger}><Text style={styles.dangerText}>Restore verified backup</Text></Pressable> : null}</View>{dryRun ? <View style={[styles.result, dryRun.ok ? styles.resultGood : styles.resultBad]}><Text style={styles.resultTitle}>{dryRun.ok ? 'Dry-run passed' : 'Dry-run blocked'}</Text><Text style={styles.hint}>{dryRun.summary}</Text>{dryRun.issues.map((issue) => <Text key={issue} style={styles.error}>• {issue}</Text>)}</View> : null}</> : null}</View>
       <View style={styles.card}><Text style={styles.title}>Local checks and reminders</Text><Text style={styles.hint}>Run a read-only integrity check before migration or recovery. Private sync requires a healthy local book and a recent verified encrypted backup.</Text><Pressable testID="backup-integrity-button" disabled={busy !== null} onPress={runIntegrity} style={styles.secondary}><Text style={styles.secondaryText}>{busy === 'integrity' ? 'Checking…' : 'Run local integrity check'}</Text></Pressable>{integrity ? <View style={[styles.result, integrity.ok ? styles.resultGood : styles.resultBad]}><Text style={styles.resultTitle}>{integrity.ok ? 'Local book healthy' : 'Review local integrity issues'}</Text><Text style={styles.hint}>{integrity.storage.toUpperCase()} · schema {integrity.schemaVersion ?? 'managed fallback'} · checked {new Date(integrity.checkedAt).toLocaleString()}</Text>{integrity.issues.map((issue) => <Text key={issue} style={styles.error}>• {issue}</Text>)}</View> : null}<View style={styles.reminderRow}><View style={{ flex: 1 }}><Text style={styles.label}>Backup reminder</Text><Text style={styles.hint}>Keep a recent encrypted recovery copy.</Text></View><Switch value={reminderEnabled} onValueChange={saveReminder} /></View><View style={styles.daysRow}><Text style={styles.hint}>Remind every</Text><TextInput value={reminderDays} onChangeText={setReminderDays} onBlur={() => saveReminder(reminderEnabled)} keyboardType="number-pad" style={styles.daysInput} /><Text style={styles.hint}>days</Text></View></View>
       <View style={styles.card}><Text style={styles.title}>Backup history</Text>{history.length ? history.map((item) => <View key={item.id} style={styles.historyRow}><Ionicons name={item.kind === 'restore' ? 'download-outline' : 'shield-checkmark-outline'} size={20} color={item.verified ? theme.color.success : theme.color.warning} /><View style={{ flex: 1 }}><Text style={styles.historyTitle}>{item.kind === 'restore' ? 'Restore event' : 'Encrypted export'} · {item.verified ? 'Verified' : 'Unverified'}</Text><Text style={styles.hint}>{new Date(item.createdAt).toLocaleString()} · {formatBytes(item.sizeBytes)}{item.fileName ? ` · ${item.fileName}` : ''}</Text></View></View>) : <Text style={styles.hint}>No encrypted backup events recorded for this business book yet.</Text>}</View>
@@ -170,6 +172,9 @@ const makeStyles = (theme: any) => StyleSheet.create({
   dangerText: { color: theme.color.error, fontWeight: '700' },
   disabled: { opacity: 0.5 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+  exportActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 6 },
+  exportAction: { flexGrow: 1, flexBasis: 180, marginTop: 0 },
+  exportNote: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 2 },
   selected: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: '700' },
   result: { padding: 12, borderRadius: theme.radius.md, borderWidth: 1, gap: 4 },
   resultGood: { backgroundColor: theme.color.successBg, borderColor: theme.color.success + '55' },

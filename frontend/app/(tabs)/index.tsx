@@ -320,6 +320,26 @@ export default function Dashboard() {
     setCustomTileOrder(currentKeys);
     AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(currentKeys)).catch(() => {});
   }, [visibleTiles]);
+  const sortTilesByPreset = useCallback(async (preset: "alphabetical" | "frequent" | "recent" | "default") => {
+    if (preset === "default") {
+      setCustomTileOrder([]);
+      await AsyncStorage.removeItem("ledgr_tile_order").catch(() => {});
+      return;
+    }
+    let usage: Record<string, number> = {};
+    try {
+      const raw = await AsyncStorage.getItem("ledgr_tile_usage");
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") usage = parsed;
+    } catch { /* usage is optional */ }
+    const sorted = [...workflowTiles];
+    if (preset === "alphabetical") sorted.sort((a, b) => a.label.localeCompare(b.label));
+    if (preset === "frequent") sorted.sort((a, b) => Number(usage[b.key] || 0) - Number(usage[a.key] || 0));
+    if (preset === "recent") sorted.sort((a, b) => Number(usage[`${b.key}_last_used`] || 0) - Number(usage[`${a.key}_last_used`] || 0));
+    const nextOrder = sorted.map((tile) => tile.key);
+    setCustomTileOrder(nextOrder);
+    await AsyncStorage.setItem("ledgr_tile_order", JSON.stringify(nextOrder)).catch(() => {});
+  }, [workflowTiles]);
   const hasLedgerActivity = Boolean(dash && [dash.totalSales, dash.totalPurchases, dash.supplierPayments, dash.drawings, dash.grossProfit].some((value) => Math.abs(Number(value || 0)) > 0.005));
   const quickStartRoute = isCapabilityEnabled(settings, "commerce") ? "/sale-form" : isCapabilityEnabled(settings, "invoicing") ? "/invoices" : "/expenses";
 
@@ -561,7 +581,13 @@ export default function Dashboard() {
               </View>
               {isEditingGrid ? <Card style={styles.organizePanel} shadowEnabled={false}>
                 <Text style={styles.organizeTitle}>Tile organization</Text>
-                <Text style={styles.organizeHint}>Drag a tile to move it, then tap Done.</Text>
+                <Text style={styles.organizeHint}>Drag a tile to move it, or choose a sort preset. Tap Done when finished.</Text>
+                <View style={styles.organizeActions}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Sort workspaces by recent use" onPress={() => { void sortTilesByPreset("recent"); }} style={styles.organizeAction}><Ionicons name="time-outline" size={14} color={theme.color.brandPrimary} /><Text style={styles.organizeActionText}>Recent</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Sort workspaces by frequent use" onPress={() => { void sortTilesByPreset("frequent"); }} style={styles.organizeAction}><Ionicons name="flame-outline" size={14} color={theme.color.brandPrimary} /><Text style={styles.organizeActionText}>Most used</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Sort workspaces alphabetically" onPress={() => { void sortTilesByPreset("alphabetical"); }} style={styles.organizeAction}><Ionicons name="text-outline" size={14} color={theme.color.brandPrimary} /><Text style={styles.organizeActionText}>A–Z</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Reset workspaces to default order" onPress={() => { void sortTilesByPreset("default"); }} style={[styles.organizeAction, styles.organizeActionReset]}><Ionicons name="refresh-outline" size={14} color={theme.color.muted} /><Text style={[styles.organizeActionText, styles.organizeActionResetText]}>Reset</Text></Pressable>
+                </View>
               </Card> : null}
               <ReorderableWorkspaceGrid
                 items={visibleTiles}
@@ -698,5 +724,10 @@ function makeStyles(theme: any) { return StyleSheet.create({
   workspaceDoneText: { color: theme.color.onBrandPrimary, fontSize: 12, fontWeight: "800" },
   organizePanel: { marginBottom: theme.spacing.md, padding: theme.spacing.md, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
   organizeTitle: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "800", marginBottom: 3 },
-  organizeHint: { color: theme.color.muted, fontSize: 11 },
+  organizeHint: { color: theme.color.muted, fontSize: 11, lineHeight: 16 },
+  organizeActions: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: theme.spacing.sm },
+  organizeAction: { flexDirection: "row", alignItems: "center", gap: 4, minHeight: 32, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: theme.color.brandPrimary + "66", backgroundColor: theme.color.surface },
+  organizeActionText: { color: theme.color.brandPrimary, fontSize: 11, fontWeight: "800" },
+  organizeActionReset: { borderColor: theme.color.border },
+  organizeActionResetText: { color: theme.color.muted },
 }); }

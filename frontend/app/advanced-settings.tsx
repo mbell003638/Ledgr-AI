@@ -13,7 +13,7 @@ import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { HostingModeCard } from "@/src/components/HostingModeCard";
 import { GlowPressable } from "@/src/components/GlowPressable";
-import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
+import { saveJsonFile, shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/utils/dateValidation";
@@ -274,15 +274,17 @@ export default function AdvancedSettingsScreen() {
     }
   };
 
-  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [busy, setBusy] = useState<"export" | "save" | "import" | null>(null);
 
-  const doExport = async () => {
-    setBusy("export"); setStatus(null);
+  const doExport = async (destination: "share" | "save") => {
+    setBusy(destination === "save" ? "save" : "export"); setStatus(null);
     try {
       const full: any = await api.exportBackup();
       const stamp = localTodayIso();
-      await shareJsonFile(`ledgr-backup-${stamp}.json`, full);
-      setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
+      const filename = `ledgr-backup-${stamp}.json`;
+      if (destination === "save") await saveJsonFile(filename, full);
+      else await shareJsonFile(filename, full);
+      setStatus({ ok: true, msg: destination === "save" ? "Backup saved locally." : "Backup ready to share." });
     } catch (e: any) {
       setStatus({ ok: false, msg: e.message || "Export failed" });
     } finally { setBusy(null); }
@@ -680,8 +682,11 @@ export default function AdvancedSettingsScreen() {
                   <Pressable testID="open-backup-recovery" onPress={() => router.push('/backup-recovery' as any)} style={[styles.bookRow, { marginTop: theme.spacing.md, marginBottom: theme.spacing.md }]}><Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={styles.bookName}>Open Backup & Recovery</Text><Text style={styles.subLabel}>Recommended for sensitive financial data</Text></View><Ionicons name="chevron-forward" size={18} color={theme.color.muted} /></Pressable>
                   <Text style={[styles.subLabel, { marginBottom: theme.spacing.sm }]}>Legacy JSON compatibility</Text>
                   <View style={styles.backupRow}>
-                    <Pressable onPress={doExport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
-                      {busy === "export" ? <ActivityIndicator color="#fff" /> : <><Ionicons name="share-outline" size={18} color="#fff" /><Text style={styles.backupBtnTextPrimary}>Export</Text></>}
+                    <Pressable accessibilityRole="button" accessibilityLabel="Share JSON backup" onPress={() => { void doExport("share"); }} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
+                      {busy === "export" ? <ActivityIndicator color="#fff" /> : <><Ionicons name="share-outline" size={18} color="#fff" /><Text style={styles.backupBtnTextPrimary}>Share</Text></>}
+                    </Pressable>
+                    <Pressable testID="legacy-save-device-button" accessibilityRole="button" accessibilityLabel="Save JSON backup to device" onPress={() => { void doExport("save"); }} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnSecondary, (pressed || busy === "save") && { opacity: 0.85 }]}>
+                      {busy === "save" ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="download-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.backupBtnTextSecondary}>Save</Text></>}
                     </Pressable>
                     <Pressable onPress={doImport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnSecondary, (pressed || busy === "import") && { opacity: 0.85 }]}>
                       {busy === "import" ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.backupBtnTextSecondary}>Import</Text></>}

@@ -192,7 +192,7 @@ export default function Onboarding() {
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
       <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 16}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg, minHeight: Math.max(320, viewportHeight - 150) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
+      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg, minHeight: Math.max(0, viewportHeight - 220) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
 
         {step === 0 && (
           <View style={styles.stepBody}>
@@ -308,10 +308,10 @@ function makeStyles(theme: any) {
     stepText: { color: theme.color.muted, fontSize: 12, fontWeight: "700" },
     progressTrack: { height: 4, backgroundColor: theme.color.border, marginTop: theme.spacing.md },
     progressFill: { height: 4, backgroundColor: theme.color.brandPrimary, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
-    content: { padding: theme.spacing.lg, paddingBottom: 30, flexGrow: 1, width: "100%", maxWidth: 1040, alignSelf: "center" },
-    stepBody: { width: "100%", flexGrow: 1, justifyContent: "center", paddingVertical: theme.spacing.md },
-    stepBodyTall: { width: "100%", flexGrow: 1, paddingVertical: theme.spacing.md },
-    title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.xl },
+    content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.sm, flexGrow: 1, width: "100%", maxWidth: 1040, alignSelf: "center" },
+    stepBody: { width: "100%", flexGrow: 0, justifyContent: "flex-start", paddingVertical: theme.spacing.sm },
+    stepBodyTall: { width: "100%", flexGrow: 0, paddingVertical: theme.spacing.sm },
+    title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.sm },
     sub: { fontSize: 14, lineHeight: 20, color: theme.color.muted, marginTop: 8 },
     groupLabel: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.8, marginTop: theme.spacing.lg },
     personaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.lg, justifyContent: "flex-start" },
@@ -391,7 +391,7 @@ function makeStyles(theme: any) {
     toggleOn: { backgroundColor: theme.color.brandPrimary },
     toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#fff" },
     toggleThumbOn: { alignSelf: "flex-end" },
-    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
+    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: theme.spacing.lg, paddingTop: 10, paddingBottom: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 13, paddingHorizontal: 8, minWidth: 76 },
     backText: { color: theme.color.onSurface, fontWeight: "700", fontSize: 14 },
     nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, alignItems: "center", maxWidth: 320, minHeight: 50 },
