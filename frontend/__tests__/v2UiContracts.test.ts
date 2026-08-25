@@ -81,7 +81,7 @@ describe('V2 UI contracts', () => {
     expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
   });
 
-  it('Settings shows accounting configuration read-only and delegates edits to Advanced Settings', () => {
+  it('Settings keeps accounting configuration exclusively in Advanced Settings', () => {
     const source = readApp('(tabs)/settings.tsx');
     const saveStart = source.indexOf('const save = async () =>');
     const saveEnd = source.indexOf('\n  const pickLogo', saveStart);
@@ -89,10 +89,12 @@ describe('V2 UI contracts', () => {
 
     expect(save).not.toContain('api.updateV2BookConfig');
     expect(save).toContain('api.updateSettings');
-    expect(source).toContain('testID="accounting-configuration-summary"');
-    expect(source).toContain('Accounting setup');
-    expect(source).toContain('read-only summary');
-    expect(source).toContain('Open Advanced Settings');
+    expect(source).not.toContain('testID="accounting-configuration-summary"');
+    expect(source).not.toContain('title="Accounting setup"');
+    expect(source).not.toContain('read-only summary');
+    expect(source).toContain('Customize Dashboard & Feature Tabs');
+    expect(source).toContain('style={styles.shortcutCard}');
+    expect(source.match(/style=\{styles\.shortcutCard\}/g)?.length).toBe(3);
     expect(source).not.toContain('Accounting Style</Text>');
     expect(source).not.toContain('Accounting Basis</Text>');
     expect(source).toContain('router.push("/advanced-settings")');
@@ -253,6 +255,23 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('onOrderChange={moveTile}');
   });
 
+  it('normalizes the Scan Receipt quick action and restores the AI group divider', () => {
+    const quick = readSource('src/components/QuickActionMenu.tsx');
+    const aiStart = quick.indexOf('styles.aiAction');
+    const aiBlock = quick.slice(aiStart - 420, aiStart + 700);
+    expect(aiBlock).toContain('topHighlight={false}');
+    expect(aiBlock).toContain('clipSafe');
+    expect(aiBlock).toContain('styles.aiAction');
+    expect(aiBlock).toContain('sparkles-outline');
+    expect(aiBlock).not.toContain('prominent');
+    expect(aiBlock).not.toContain('LinearGradient');
+    expect(aiBlock).not.toContain('textShadow');
+
+    const advanced = readApp('advanced-settings.tsx');
+    expect(advanced).toMatch(/<AccordionRow title="AI Provider" subtitle=\{selectedProviderTitle\} theme=/);
+    expect(advanced).toMatch(/<AccordionRow title="AI Data & History"[\s\S]*?isLast theme=/);
+  });
+
   it('all location-aware financial forms preserve location context across edit and save', () => {
     const forms = ['sale-form.tsx', 'bill-form.tsx', 'invoices.tsx', 'payment-form.tsx', 'receipt-form.tsx', 'expenses.tsx'];
     for (const form of forms) {
@@ -303,7 +322,9 @@ describe('V2 UI contracts', () => {
     expect(assets).toContain('useState<(typeof liabilityRecognition)[number]["id"]>("expense")');
     expect(assets).toContain('Due / accrued expense');
     expect(assets).toContain('Cash received (loan)');
-    expect(settings).toContain('borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border');
+    expect(settings).toContain('shortcutCard:');
+    expect(settings).toContain('style={styles.shortcutCard}');
+    expect(settings).toContain('prominent haptic onPress={() => router.push("/customize-features")}');
   });
   it('input forms keep their fields reachable above the mobile keyboard', () => {
     const investor = readApp('investor/[id].tsx');

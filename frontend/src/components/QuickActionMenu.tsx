@@ -210,8 +210,9 @@ export default function QuickActionMenu() {
           />
           <View style={styles.menuInner}>
             {isCapabilityEnabled(settings, "ai_assistant") && <GlowPressable
-              prominent
               haptic
+              topHighlight={false}
+              clipSafe
               accessibilityRole="button"
               accessibilityLabel="Scan receipt or ask AI"
               accessibilityHint="Opens Ask AI and document import tools"
@@ -219,16 +220,14 @@ export default function QuickActionMenu() {
               style={[
                 styles.aiAction,
                 {
-                  borderColor: theme.color.brandPrimary,
-                  backgroundColor: theme.color.brandPrimary + "18",
+                  borderColor: theme.color.brandPrimary + "66",
+                  backgroundColor: theme.color.brandPrimary + "12",
                 },
               ]}
             >
-              <LinearGradient
-                colors={[theme.color.brandPrimary + "33", theme.color.brandPrimary + "0D"]}
-                style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]}
-              />
-              <Text style={[styles.aiIcon, Platform.OS === "web" ? ({ textShadow: `0 0 10px ${theme.color.brandPrimary}80` } as any) : { textShadowColor: theme.color.brandPrimary + "80", textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 }]}>✨</Text>
+              <View style={[styles.aiIcon, { backgroundColor: theme.color.brandPrimary + "22" }]}>
+                <Ionicons name="sparkles-outline" size={20} color={theme.color.brandPrimary} />
+              </View>
               <Text style={[styles.aiText, { color: theme.color.brandPrimary }]}>Scan Receipt or Ask AI</Text>
             </GlowPressable>}
 
@@ -311,16 +310,20 @@ const styles = StyleSheet.create({
   },
   menuInner: { padding: 12 },
   aiAction: {
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
   aiIcon: {
-    fontSize: 22,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
   },
   aiText: { fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },

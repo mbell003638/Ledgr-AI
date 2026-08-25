@@ -63,8 +63,6 @@ export default function SettingsScreen() {
   const [bizProfile, setBizProfile] = useState({ businessName: "", businessAddress: "", businessPhone: "", businessEmail: "", taxRegNo: "", bankAccount: "", upiId: "", paymentDetails: "", invoiceTerms: "" });
   const [logo, setLogo] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [accountingBasis, setAccountingBasis] = useState<"cash" | "accrual">("accrual");
-  const [accountingStyle, setAccountingStyle] = useState<"retail_partnership" | "standard">("standard");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -76,14 +74,6 @@ export default function SettingsScreen() {
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
       setBaseUrl(cfg.baseUrl || "");
-      setAccountingBasis(s.accountingBasis === "accrual" ? "accrual" : "cash");
-      try {
-        const v2 = await api.getV2BookConfig();
-        if (v2) {
-          setAccountingStyle(v2.style === "retail_partnership" ? "retail_partnership" : "standard");
-          setAccountingBasis(v2.basis);
-        }
-      } catch { /* the V2 configuration remains unavailable until storage is ready */ }
       setLockEnabled(!!s.lockEnabled);
       setCurrency(s.currency || "USD");
       const rawLabel = s.taxLabel || "None";
@@ -270,16 +260,6 @@ export default function SettingsScreen() {
 
             <Card style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
-              <AccordionRow title="Accounting setup" subtitle={`${accountingStyle === "retail_partnership" ? "Equity Split" : "Standard Entity"} · ${accountingBasis === "accrual" ? "Accrual" : "Cash"}`} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View style={{ gap: 10 }} testID="accounting-configuration-summary">
-                  <Text style={styles.hint}>This is a read-only summary. Edit accounting style, basis, periods, and capital accounts in Advanced Settings.</Text>
-                  <GlowPressable topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={styles.openAdvancedAccounting}>
-                    <Text style={styles.openAdvancedAccountingText}>Open Advanced Settings</Text>
-                    <Ionicons name="chevron-forward" size={18} color={theme.color.brandPrimary} />
-                  </GlowPressable>
-                </View>
-              </AccordionRow>
-              
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "light", label: "Emerald Light", icon: "sunny-outline" }, { id: "dark", label: "Emerald Dark", icon: "moon-outline" }, { id: "navy_gold", label: "AMOLED Black & Gold", icon: "color-palette-outline" }, { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" }, { id: "system", label: "System", icon: "phone-portrait-outline" } ].map((m) => (
@@ -311,8 +291,8 @@ export default function SettingsScreen() {
 </Card>
 
 
-            <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/customize-features")} style={styles.shortcutCard}>
+              <View style={styles.shortcutRow}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
                   <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Turn accounting tabs ON or OFF to fit your business</Text>
@@ -321,10 +301,10 @@ export default function SettingsScreen() {
               </View>
             </GlowPressable>
 
-            <GlowPressable topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
+            <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/advanced-settings")} style={styles.shortcutCard}>
+              <View style={styles.shortcutRow}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
+                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Advanced Settings</Text>
                   <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>AI config, Workflows, Opening Balances, Backup...</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
@@ -338,11 +318,11 @@ export default function SettingsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open Ledgr privacy policy"
               onPress={() => router.push("/privacy" as any)}
-              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20 }}
+              style={styles.shortcutCard}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={styles.shortcutRow}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Privacy & Data</Text>
+                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Privacy & Data</Text>
                   <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Privacy policy, AI data use and deletion information</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
@@ -373,9 +353,15 @@ function makeStyles(theme: any) {
     settingsGroup: { marginTop: theme.spacing.lg, padding: 18, borderRadius: theme.radius.card },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, lineHeight: 18, color: theme.color.muted, marginTop: 4 },
-    accountingSummaryRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary },
-    openAdvancedAccounting: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 0, borderRadius: 0, borderWidth: 0, borderTopWidth: 1, borderTopColor: theme.color.border },
-    openAdvancedAccountingText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: "700" },
+    shortcutCard: {
+      marginTop: theme.spacing.lg,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.color.border,
+      backgroundColor: theme.color.surfaceSecondary,
+      padding: 18,
+    },
+    shortcutRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     input: {
       marginTop: theme.spacing.md,
       borderWidth: 1,

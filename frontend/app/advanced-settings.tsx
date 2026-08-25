@@ -577,7 +577,7 @@ export default function AdvancedSettingsScreen() {
             <Card style={styles.advancedGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
-              <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
                   {params.section === "ai-provider" && <View testID="ai-provider-recovery-hint" style={{ marginBottom: theme.spacing.md, padding: theme.spacing.sm, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary + "18", borderWidth: 1, borderColor: theme.color.brandPrimary + "66" }}><Text style={{ color: theme.color.onSurface, fontSize: 12, lineHeight: 17 }}>Voice input needs a saved key and a provider with speech-to-text. Update the fields below, then tap Test Connection and Save Settings.</Text></View>}
                   <View style={styles.modeRow}>

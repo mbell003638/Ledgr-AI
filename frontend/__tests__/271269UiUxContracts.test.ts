@@ -14,13 +14,18 @@ describe('271269 UI/UX remediation contracts', () => {
     expect(source).not.toMatch(/voicePhase === "setup" \? openVoiceSetup/);
   });
 
-  it('keeps Main Settings as one compact summary and the canonical Advanced Settings route', () => {
+  it('keeps accounting configuration out of Main Settings and canonical in Advanced Settings', () => {
     const source = readApp('(tabs)/settings.tsx');
-    expect(source).toContain('title="Accounting setup"');
-    expect(source).toContain('read-only summary');
-    expect(source).toContain('Open Advanced Settings');
+    const advanced = readApp('advanced-settings.tsx');
+    expect(source).not.toContain('title="Accounting setup"');
+    expect(source).not.toContain('read-only summary');
+    expect(source).not.toContain('accounting-configuration-summary');
     expect(source).not.toContain('Accounting Style</Text>');
     expect(source).not.toContain('Accounting Basis</Text>');
+    expect(source).toContain('router.push("/advanced-settings")');
+    expect(advanced).toContain('Accounting & Workflow');
+    expect(advanced).toContain('Accounting Basis');
+    expect(advanced).toContain('Accounting Style');
   });
 
   it('removes default row elevation and reserves settings space above the VoiceFab', () => {
