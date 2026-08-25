@@ -26,6 +26,9 @@ export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
+  const footerBottomPadding = Platform.OS === "android"
+    ? Math.min(Math.max(insets.bottom, 8), 16)
+    : Math.max(8, insets.bottom);
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
   const [step, setStep] = useState(0);
@@ -289,7 +292,7 @@ export default function Onboarding() {
         )}
         </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: Math.max(8, insets.bottom + 4) }]}>
+      <View style={[styles.footer, { paddingBottom: footerBottomPadding }]}>
         {step > 0 ? <Pressable onPress={() => setStep((value) => value - 1)} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /><Text style={styles.backText}>Back</Text></Pressable> : <View />}
         <Pressable onPress={() => { if (step === 0 && !persona) return; if (step < LAST_STEP) setStep((value) => value + 1); else finish(); }} disabled={saving || (step === 0 && !persona)} style={[styles.nextBtn, (saving || (step === 0 && !persona)) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Open my workspace"}</Text>}</Pressable>
       </View>
