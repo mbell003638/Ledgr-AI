@@ -197,6 +197,7 @@ function ReorderableWorkspaceTile({
   const isBrand = tile.usesBrandIcon === true;
   const solidBrand = tile.solidBrand === true;
   const isWeb = Platform.OS === "web";
+  const isAndroid = Platform.OS === "android";
   const TileIcon = tile.icon;
   const TilePressableComponent: any = isWeb ? Pressable : AnimatedPressable;
   const hover = useSharedValue(0);
@@ -262,12 +263,12 @@ function ReorderableWorkspaceTile({
         }
       : {
           ...commonStyle,
-          shadowColor: theme.color.brandPrimary,
-          shadowOpacity: focus > 0 ? (isBrand ? 0.16 : 0.08) : 0,
-          shadowRadius: focus > 0 ? (isBrand ? 8 : 5) : 0,
-          elevation: focus > 0 ? 2 : 0,
+          shadowColor: isAndroid ? "transparent" : theme.color.brandPrimary,
+          shadowOpacity: isAndroid ? 0 : focus > 0 ? (isBrand ? 0.16 : 0.08) : 0,
+          shadowRadius: isAndroid ? 0 : focus > 0 ? (isBrand ? 8 : 5) : 0,
+          elevation: isAndroid ? 0 : focus > 0 ? 2 : 0,
         };
-  }, [isBrand, isWeb, reduceMotion, solidBrand, theme]);
+  }, [isAndroid, isBrand, isWeb, reduceMotion, solidBrand, theme]);
 
   const iconMotionStyle = useAnimatedStyle(() => ({
     transform: reduceMotion ? [] : [
@@ -390,8 +391,8 @@ function ReorderableWorkspaceTile({
     };
     return isWeb
       ? { ...common, boxShadow: active ? `0 6px ${theme.effects.strongGlowRadius}px ${theme.color.brandPrimary}66` : "none" }
-      : { ...common, shadowColor: theme.color.brandPrimary, shadowOpacity: active ? 0.18 : 0, shadowRadius: active ? 8 : 0, elevation: active ? 6 : 0 };
-  }, [index, isWeb, reduceMotion, theme, tileWidth]);
+      : { ...common, shadowColor: isAndroid ? "transparent" : theme.color.brandPrimary, shadowOpacity: isAndroid ? 0 : active ? 0.18 : 0, shadowRadius: isAndroid ? 0 : active ? 8 : 0, elevation: isAndroid ? 0 : active ? 6 : 0 };
+  }, [index, isAndroid, isWeb, reduceMotion, theme, tileWidth]);
 
   return (
     <GestureDetector gesture={gesture}>

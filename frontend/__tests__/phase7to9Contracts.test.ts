@@ -42,8 +42,10 @@ describe('Phase 7–9 remediation contracts', () => {
     expect(sync).toContain("boxShadow: '0 2px 10px rgba(0,0,0,0.12)'");
     expect(sync).toContain("elevation: 6");
     expect(workspace).toContain('return isWeb');
+    expect(workspace).toContain('const isAndroid = Platform.OS === "android"');
     expect(workspace).toContain('boxShadow: active');
-    expect(workspace).toContain('shadowOpacity: active ? 0.18 : 0');
+    expect(workspace).toContain('shadowOpacity: isAndroid ? 0 : active ? 0.18 : 0');
+    expect(workspace).toContain('elevation: isAndroid ? 0 : active ? 6 : 0');
   });
 
   it('gives reports and empty Home states accessible, context-aware actions', () => {
