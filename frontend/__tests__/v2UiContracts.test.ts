@@ -857,10 +857,15 @@ describe('roadmap phases 7–8 sync UX contracts', () => {
 describe('271498 recording remediation contracts', () => {
   it('keeps onboarding content top-aligned and action spacing responsive', () => {
     const onboarding = readApp('onboarding.tsx');
-    expect(onboarding).toContain('minHeight: Math.max(0, viewportHeight - 220)');
+    expect(onboarding).toContain('useSafeAreaInsets');
+    expect(onboarding).toContain('<SafeAreaView style={styles.container} edges={["top"]}>');
+    expect(onboarding).toContain('style={styles.scrollView}');
+    expect(onboarding).toContain('paddingBottom: Math.max(8, insets.bottom + 4)');
+    expect(onboarding).toContain('scrollView: { flex: 1 }');
     expect(onboarding).toContain('justifyContent: "flex-start"');
     expect(onboarding).toContain('flexGrow: 0');
     expect(onboarding).toContain('Open my workspace');
+    expect(onboarding).not.toContain('minHeight: Math.max(0, viewportHeight - 220)');
   });
 
   it('restores capability-aware Quick Workspace organization controls', () => {

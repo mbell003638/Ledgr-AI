@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal, KeyboardAvoidingView, Keyboard, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, BackHandler, Platform, Modal, KeyboardAvoidingView, Keyboard } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -25,7 +25,7 @@ const PERSONA_ICON: Record<string, string> = {
 export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const { height: viewportHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
   const [step, setStep] = useState(0);
@@ -181,7 +181,7 @@ export default function Onboarding() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.topBar}>
         <View>
           <Text style={styles.brand}>LEDGR</Text>
@@ -192,7 +192,7 @@ export default function Onboarding() {
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
       <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 16}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg, minHeight: Math.max(0, viewportHeight - 220) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
 
         {step === 0 && (
           <View style={styles.stepBody}>
@@ -289,7 +289,7 @@ export default function Onboarding() {
         )}
         </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(8, insets.bottom + 4) }]}>
         {step > 0 ? <Pressable onPress={() => setStep((value) => value - 1)} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /><Text style={styles.backText}>Back</Text></Pressable> : <View />}
         <Pressable onPress={() => { if (step === 0 && !persona) return; if (step < LAST_STEP) setStep((value) => value + 1); else finish(); }} disabled={saving || (step === 0 && !persona)} style={[styles.nextBtn, (saving || (step === 0 && !persona)) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Open my workspace"}</Text>}</Pressable>
       </View>
@@ -308,7 +308,8 @@ function makeStyles(theme: any) {
     stepText: { color: theme.color.muted, fontSize: 12, fontWeight: "700" },
     progressTrack: { height: 4, backgroundColor: theme.color.border, marginTop: theme.spacing.md },
     progressFill: { height: 4, backgroundColor: theme.color.brandPrimary, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
-    content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.sm, flexGrow: 1, width: "100%", maxWidth: 1040, alignSelf: "center" },
+    scrollView: { flex: 1 },
+    content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md, flexGrow: 1, width: "100%", maxWidth: 1040, alignSelf: "center" },
     stepBody: { width: "100%", flexGrow: 0, justifyContent: "flex-start", paddingVertical: theme.spacing.sm },
     stepBodyTall: { width: "100%", flexGrow: 0, paddingVertical: theme.spacing.sm },
     title: { fontSize: 27, lineHeight: 33, fontWeight: "800", color: theme.color.onSurface, marginTop: theme.spacing.sm },
@@ -391,7 +392,7 @@ function makeStyles(theme: any) {
     toggleOn: { backgroundColor: theme.color.brandPrimary },
     toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#fff" },
     toggleThumbOn: { alignSelf: "flex-end" },
-    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: theme.spacing.lg, paddingTop: 10, paddingBottom: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
+    footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, paddingHorizontal: theme.spacing.lg, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 13, paddingHorizontal: 8, minWidth: 76 },
     backText: { color: theme.color.onSurface, fontWeight: "700", fontSize: 14 },
     nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, alignItems: "center", maxWidth: 320, minHeight: 50 },

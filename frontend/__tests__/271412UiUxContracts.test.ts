@@ -40,10 +40,16 @@ describe('271412 UI/UX remediation contracts', () => {
     expect(api).toContain('db.updateLocation(id, { active: false })');
   });
 
-  it('uses the full available onboarding viewport for compact steps and natural scrolling for the ready step', () => {
+  it('uses a full-height onboarding scroll region with a single safe-area-aware footer', () => {
     const onboarding = readApp('onboarding.tsx');
-    expect(onboarding).toContain('useWindowDimensions');
-    expect(onboarding).toContain('minHeight: Math.max(0, viewportHeight - 220)');
+    expect(onboarding).toContain('useSafeAreaInsets');
+    expect(onboarding).toContain('<SafeAreaView style={styles.container} edges={["top"]}>');
+    expect(onboarding).toContain('style={styles.scrollView}');
+    expect(onboarding).toContain('paddingBottom: Math.max(8, insets.bottom + 4)');
+    expect(onboarding).toContain('scrollView: { flex: 1 }');
+    expect(onboarding).toContain('flexShrink: 0');
+    expect(onboarding).not.toContain('useWindowDimensions');
+    expect(onboarding).not.toContain('minHeight: Math.max(0, viewportHeight - 220)');
     expect(onboarding).toContain('style={styles.stepBody}');
     expect(onboarding).toContain('style={styles.stepBodyTall}');
     expect(onboarding).toContain('stepBody: { width: "100%", flexGrow: 0, justifyContent: "flex-start"');
