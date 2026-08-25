@@ -37,6 +37,13 @@ describe('271344 UI/UX remediation contracts', () => {
     expect(reports).toContain('textAlign: "center"');
     expect(reports).toContain('textAlignVertical: "center"');
     expect(reports).toContain('includeFontPadding: false');
+    expect(reports).toContain('minHeight: 40, height: 40, alignItems: "center", justifyContent: "center"');
+    expect(reports).toContain('lineHeight: 18, textAlign: "center", textAlignVertical: "center", includeFontPadding: false');
+    expect(reports).toContain('visibleSegments.map((s)');
+    expect(reports).toContain('Summary');
+    expect(reports).toContain('P&L');
+    expect(reports).toContain('Balance');
+    expect(reports).toContain('Sales Reg');
     expect(reports).toContain('loadedQueryKey');
     expect(reports).toContain('if (loading || refreshing || !hasLoaded.current) return;');
     expect(reports).toContain('minWidth: 92');

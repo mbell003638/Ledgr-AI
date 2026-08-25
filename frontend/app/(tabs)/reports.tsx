@@ -1040,11 +1040,12 @@ function makeStyles(theme: any) { return StyleSheet.create({
     flexDirection: "row", alignItems: "center", paddingLeft: theme.spacing.md, paddingRight: 44, paddingVertical: 10, gap: 6,
   },
   seg: {
-    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 20,
+    minHeight: 40, height: 40, alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 10, borderRadius: 20,
     backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
   },
   segActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
-  segText: { color: theme.color.muted, fontWeight: "600", fontSize: 13 },
+  segText: { color: theme.color.muted, fontWeight: "600", fontSize: 13, lineHeight: 18, textAlign: "center", textAlignVertical: "center", includeFontPadding: false },
   segTextActive: { color: "#fff", fontWeight: "700" },
   dateScroll: { height: 52, flexGrow: 0, marginTop: 4, marginBottom: 8, overflow: "visible" },
   dateRow: {
