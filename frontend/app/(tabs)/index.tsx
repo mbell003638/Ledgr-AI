@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
+import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView, BackHandler } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -184,6 +184,15 @@ export default function Dashboard() {
     const task = InteractionManager.runAfterInteractions(() => { load(); });
     return () => task.cancel();
   }, [load, dailyDate]));
+
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS === "web" || !isEditingGrid) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setIsEditingGrid(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isEditingGrid]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 

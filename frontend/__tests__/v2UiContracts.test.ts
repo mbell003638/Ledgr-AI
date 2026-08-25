@@ -253,6 +253,10 @@ describe('V2 UI contracts', () => {
     expect(source).toContain('ReorderableWorkspaceGrid');
     expect(source).toContain('workflowTilesFor(settings)');
     expect(source).toContain('onOrderChange={moveTile}');
+    expect(source).toContain('BackHandler.addEventListener("hardwareBackPress"');
+    expect(source).toContain('if (Platform.OS === "web" || !isEditingGrid) return;');
+    expect(source).toContain('setIsEditingGrid(false);');
+    expect(source).toContain('return true;');
   });
 
   it('normalizes the Scan Receipt quick action and restores the AI group divider', () => {
