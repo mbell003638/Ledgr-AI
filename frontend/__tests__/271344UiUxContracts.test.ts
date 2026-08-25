@@ -32,6 +32,11 @@ describe('271344 UI/UX remediation contracts', () => {
     expect(reports).toContain('shadowEnabled={false} surfaceColor={theme.color.surfaceSecondary}');
     expect(reports).toContain('minWidth: 118');
     expect(reports).toContain('flexShrink: 0');
+    expect(reports).toContain('alignItems: "center"');
+    expect(reports).toContain('justifyContent: "center"');
+    expect(reports).toContain('textAlign: "center"');
+    expect(reports).toContain('textAlignVertical: "center"');
+    expect(reports).toContain('includeFontPadding: false');
     expect(reports).toContain('loadedQueryKey');
     expect(reports).toContain('if (loading || refreshing || !hasLoaded.current) return;');
     expect(reports).toContain('minWidth: 92');
