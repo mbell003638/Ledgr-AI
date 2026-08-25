@@ -660,7 +660,8 @@ describe('V2 UI contracts', () => {
     expect(ask).toContain('setVoicePhase("setup")');
     expect(ask).toContain('api.getAIConfig()');
     expect(ask).toContain('advanced-settings?section=ai-provider');
-    expect(ask).toContain('send() appends the transcript as the user bubble');
+    expect(ask).toContain('setInput(transcript)');
+    expect(ask).toContain('Send transcribed message');
     expect(ask).toContain('Nothing changes until you tap Apply.');
     const reports = readApp('(tabs)/reports.tsx');
     expect(reports).toContain('const [displaySeg, setDisplaySeg] = useState<Seg>("Summary")');

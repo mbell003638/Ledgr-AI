@@ -727,6 +727,11 @@ const ACTION_SPEC =
   "For 'received X from NAME', use a known customer receipt; otherwise ask whether it is a customer receipt, cash sale, or something else. " +
   "Dates are YYYY-MM-DD; default to the device-local date if omitted. Never invent amounts, parties, roles, entry IDs, or missing invoice lines.";
 
+export function isNeutralTranscript(question: string): boolean {
+  const normalized = question.trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return /^(?:test(?: test)*|testing(?: one two)?|hello(?: there)?|can you hear me)$/.test(normalized);
+}
+
 export function isExplicitBookMutationRequest(question: string): boolean {
   const q = question.toLowerCase();
   const changeVerb = /\b(add|record|create|enter|save|post|log|register|edit|update|change|correct|delete|remove|reverse|void|cancel)\b/.test(q);

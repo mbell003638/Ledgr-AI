@@ -16,6 +16,7 @@ import { localTodayIso } from "@/src/utils/dateValidation";
 import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
+import { isNeutralTranscript } from "@/src/db/ai";
 import { VoiceOrb } from "@/src/components/VoiceOrb";
 import { cancelVoiceRecorder, captureVoiceRecording, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 
@@ -347,8 +348,10 @@ export default function AskBooks() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [rememberHistory, setRememberHistory] = useState(false);
-  const voiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [voicePhase, setVoicePhase] = useState<"idle" | "recording" | "processing" | "setup" | "error">("idle");
+  // Voice commands need intelligible speech, not music quality; the smaller preset
+  // reduces base64 upload time before the provider starts transcription.
+  const voiceRecorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
+  const [voicePhase, setVoicePhase] = useState<"idle" | "recording" | "processing" | "review" | "setup" | "error">("idle");
   const [voiceError, setVoiceError] = useState("");
 
   const openVoiceSetup = () => {
@@ -358,6 +361,7 @@ export default function AskBooks() {
 
   const startAskVoice = async () => {
     setVoiceError("");
+    setInput("");
     try {
       const config = await api.getAIConfig();
       if (!config.apiKey.trim()) {
@@ -391,9 +395,10 @@ export default function AskBooks() {
       const result = await api.transcribe(captured.audioBase64, captured.mime);
       const transcript = String(result?.transcript || "").trim();
       if (!transcript) throw new Error("Nothing was heard. Try again.");
-      setVoicePhase("idle");
-      // send() appends the transcript as the user bubble and keeps the answer in this chat.
-      await send(transcript);
+      // Keep the transcript in the editable composer. The user can correct it,
+      // retry the recording, cancel it, or explicitly send it for an answer.
+      setInput(transcript);
+      setVoicePhase("review");
     } catch (e: any) {
       const message = e?.message || "Voice transcription failed. Try again.";
       setVoiceError(message);
@@ -405,6 +410,7 @@ export default function AskBooks() {
     void cancelVoiceRecorder(voiceRecorder);
     setVoicePhase("idle");
     setVoiceError("");
+    setInput("");
   };
 
   useEffect(() => () => { void cancelVoiceRecorder(voiceRecorder); }, [voiceRecorder]);
@@ -562,6 +568,18 @@ export default function AskBooks() {
   const send = async (text: string) => {
     const q = text.trim();
     if (!q || loading || applyingProposal) return;
+    if (isNeutralTranscript(q)) {
+      setInput("");
+      setVoicePhase("idle");
+      setVoiceError("");
+      commitMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", text: `I heard: ${q}` }]);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      return;
+    }
+    if (voicePhase === "review") {
+      setVoicePhase("idle");
+      setVoiceError("");
+    }
 
     if (pendingProposal && /^(yes\b|y$|i confirm\b|confirm\b|apply\b|proceed\b|ok(?:ay)?\b|please (?:apply|record|enter|save)\b)/i.test(q)) {
       setInput("");
@@ -686,9 +704,12 @@ export default function AskBooks() {
 
         <View style={[styles.inputBar, { paddingBottom: composerBottomPad }]}>
           <View style={styles.composerRow}>
-            <View style={[styles.attachmentRow, voicePhase !== "idle" && styles.attachmentRowHidden]}>
+            <View testID="ask-attachment-actions" style={[styles.attachmentRow, voicePhase !== "idle" && styles.attachmentRowHidden]}>
             <Pressable
-              style={styles.attachBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Use camera for receipt"
+              hitSlop={4}
+              style={({ pressed }) => [styles.attachBtn, pressed && styles.attachBtnPressed]}
               onPress={async () => {
                 try {
                   const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -708,7 +729,10 @@ export default function AskBooks() {
               <Ionicons name="camera-outline" size={24} color={theme.color.muted} />
             </Pressable>
             <Pressable
-              style={styles.attachBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Choose receipt image"
+              hitSlop={4}
+              style={({ pressed }) => [styles.attachBtn, pressed && styles.attachBtnPressed]}
               onPress={async () => {
                 try {
                   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -729,7 +753,10 @@ export default function AskBooks() {
             </Pressable>
             <Pressable
               testID="btn-scan-import"
-              style={styles.attachBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Scan receipt"
+              hitSlop={4}
+              style={({ pressed }) => [styles.attachBtn, pressed && styles.attachBtnPressed]}
               onPress={() => router.push("/scan-import" as Href)}
             >
               <Ionicons name="scan-outline" size={24} color={theme.color.muted} />
@@ -756,9 +783,21 @@ export default function AskBooks() {
               maxLength={4000}
             />}
             {input.trim().length > 0 ? (
-              <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
-                <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
-              </Pressable>
+              <View style={styles.composerActions}>
+                {voicePhase === "review" ? (
+                  <>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Retry Ask AI voice input" hitSlop={6} onPress={startAskVoice} disabled={loading || applyingProposal} style={styles.voiceReviewBtn}>
+                      <Ionicons name="refresh-outline" size={20} color={theme.color.brandPrimary} />
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Cancel Ask AI voice review" hitSlop={6} onPress={cancelAskVoice} disabled={loading || applyingProposal} style={styles.voiceReviewBtn}>
+                      <Ionicons name="close-outline" size={22} color={theme.color.muted} />
+                    </Pressable>
+                  </>
+                ) : null}
+                <Pressable accessibilityLabel={voicePhase === "review" ? "Send transcribed message" : "Send message"} hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
+                  <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
+                </Pressable>
+              </View>
             ) : voicePhase !== "idle" ? (
               <View testID="ask-voice-inline" style={styles.askVoiceInline}>
                 <View style={styles.askVoiceControls}>
@@ -826,13 +865,16 @@ function makeStyles(theme: any) {
     proposalApply: { minWidth: 88, minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary },
     proposalApplyDestructive: { backgroundColor: theme.color.error },
     proposalApplyText: { color: "#fff", fontWeight: "700" },
-    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
-    composerRow: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-end", gap: 6 },
-    attachmentRow: { flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0 },
+    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 8, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "center", borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+    composerRow: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 },
+    attachmentRow: { height: 48, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, paddingHorizontal: 4, borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface },
     attachmentRowHidden: { display: "none" },
-    attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 2 },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: "transparent", paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
+    attachBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", marginRight: 0 },
+    attachBtnPressed: { backgroundColor: theme.color.brandPrimary + "18" },
+    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
     voiceInputWrapper: { alignItems: "center", paddingHorizontal: 6, paddingVertical: 5, minHeight: 72, maxHeight: 96 },
+    composerActions: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 2, flexShrink: 0 },
+    voiceReviewBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
     input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
     micBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 2, ...(Platform.OS === "web" ? { boxShadow: "none" } : { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 5, elevation: 4 }) },
     sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },

@@ -1,4 +1,4 @@
-import { transcribe } from '../src/db/ai';
+import { isNeutralTranscript, transcribe } from '../src/db/ai';
 
 const response = (payload: unknown) => ({
   ok: true,
@@ -8,6 +8,12 @@ const response = (payload: unknown) => ({
 });
 
 describe('voice transcription provider routing', () => {
+  it('recognizes neutral microphone checks without treating them as accounting commands', () => {
+    expect(isNeutralTranscript('test test')).toBe(true);
+    expect(isNeutralTranscript('Test test.')).toBe(true);
+    expect(isNeutralTranscript('record a sale for 20 dollars')).toBe(false);
+    expect(isNeutralTranscript('what was my profit')).toBe(false);
+  });
   const previousFetch = global.fetch;
   afterEach(() => {
     global.fetch = previousFetch;
