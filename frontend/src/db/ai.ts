@@ -135,20 +135,23 @@ function resolveBaseUrl(cfg: AIConfig): string {
  * Core text/multimodal call. Returns raw text (possibly JSON string).
  * parts: array of { inlineData: { mimeType, data(base64) } } for images/audio.
  */
+type AICallOptions = { maxOutputTokens?: number };
+
 async function call(
   cfg: AIConfig,
   prompt: string,
   parts: { inlineData: { mimeType: string; data: string } }[] = [],
   jsonSchema?: any,
+  options?: AICallOptions,
 ): Promise<string> {
   requireKey(cfg);
   const api = resolveApi(cfg);
-  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema);
-  if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema);
+  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema, options);
+  if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema, options);
   if (!resolveBaseUrl(cfg)) {
     throw new Error('Set a Base URL for the OpenAI-compatible provider (for example https://openrouter.ai/api/v1).');
   }
-  return callOpenAI(cfg, prompt, parts, jsonSchema);
+  return callOpenAI(cfg, prompt, parts, jsonSchema, options);
 }
 
 const AI_REQUEST_TIMEOUT_MS = 60_000;
@@ -223,6 +226,7 @@ async function callGeminiModel(
   parts: any[],
   schema?: any,
   requestId = aiRequestId(),
+  options?: AICallOptions,
 ): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/models/${model}:generateContent`;
@@ -230,6 +234,7 @@ async function callGeminiModel(
     contents: [{ role: 'user', parts: [{ text: prompt }, ...parts] }],
     generationConfig: {
       temperature: 0,
+      ...(options?.maxOutputTokens ? { maxOutputTokens: options.maxOutputTokens } : {}),
       ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
     },
   };
@@ -253,23 +258,24 @@ async function callGemini(
   prompt: string,
   parts: any[],
   schema?: any,
+  options?: AICallOptions,
 ): Promise<string> {
   const requestId = aiRequestId();
   try {
-    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema, requestId);
+    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema, requestId, options);
   } catch (error: any) {
     // If a model-not-found surfaces for the (deprecated) DEFAULT model, retry once
     // with the current alias before letting the actionable error from (d) bubble up.
     const msg = error?.message || '';
     const looksLikeModelIssue = isModelNotFoundError(0, msg) || /update the model name/i.test(msg);
     if (looksLikeModelIssue && cfg.model === DEPRECATED_DEFAULT_GEMINI_MODEL) {
-      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema, requestId);
+      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema, requestId, options);
     }
     throw error;
   }
 }
 // ---------------- OpenAI-compatible (OpenAI, OpenRouter, custom) ----------------
-async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
+async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: any, options?: AICallOptions): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/chat/completions`;
   const content: any[] = [{ type: 'text', text: prompt }];
@@ -288,6 +294,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     temperature: 0,
     messages: [{ role: 'user', content }],
     ...(schema ? { response_format: { type: 'json_object' } } : {}),
+    ...(options?.maxOutputTokens ? { max_tokens: options.maxOutputTokens } : {}),
   };
   const headers: any = {
     'Content-Type': 'application/json',
@@ -330,7 +337,7 @@ async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: st
 }
 
 // ---------------- Anthropic ----------------
-async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
+async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema?: any, options?: AICallOptions): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/messages`;
   const content: any[] = [{ type: 'text', text: prompt + (schema ? '\n\nRespond with ONLY valid JSON, no prose.' : '') }];
@@ -344,7 +351,7 @@ async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema
   }
   const body: any = {
     model: cfg.model,
-    max_tokens: 8192,
+    max_tokens: options?.maxOutputTokens ?? 8192,
     temperature: 0,
     messages: [{ role: 'user', content }],
   };
@@ -813,7 +820,7 @@ export async function askBooks(cfg: AIConfig, question: string, dataContext: str
     `=== DATA SNAPSHOT ===\n${dataContext}\n=== END DATA ===\n\n` +
     `User: ${question}\n\n` +
     'Respond as JSON: { "answer": string, "action": null | { "type": string, "params": object, "confirm": string } }.';
-  const out = await call(cfg, prompt, [], ASK_SCHEMA);
+  const out = await call(cfg, prompt, [], ASK_SCHEMA, { maxOutputTokens: 700 });
   try {
     const parsed = parseJson(out);
     const proposed = parsed.action && parsed.action.type ? parsed.action : null;

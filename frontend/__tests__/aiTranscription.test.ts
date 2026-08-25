@@ -1,4 +1,4 @@
-import { isNeutralTranscript, transcribe } from '../src/db/ai';
+import { askBooks, isNeutralTranscript, transcribe } from '../src/db/ai';
 
 const response = (payload: unknown) => ({
   ok: true,
@@ -18,6 +18,18 @@ describe('voice transcription provider routing', () => {
   afterEach(() => {
     global.fetch = previousFetch;
     jest.restoreAllMocks();
+  });
+
+  it('bounds Ask AI chat output for faster structured responses', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue(response({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({ answer: 'Your books are ready.', action: null }) }] } }],
+    }));
+    global.fetch = fetchSpy as any;
+
+    await expect(askBooks({ provider: 'gemini', apiKey: 'test-key', model: 'gemini-3.6-flash' }, 'How do I open my reports?', '{}'))
+      .resolves.toEqual({ answer: 'Your books are ready.', action: null });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.generationConfig.maxOutputTokens).toBe(700);
   });
 
   it('uses Gemini inline audio and returns the transcript', async () => {

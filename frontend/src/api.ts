@@ -198,15 +198,31 @@ async function reconcileStatement(
 type AiDataMode = 'summary' | 'detailed';
 
 async function buildAiSnapshot(from: string, to: string, mode: AiDataMode = 'summary') {
-  const settings = await db.getSettings();
   const runner = activeSqlRunner();
   if (!runner) throw new Error('V2 accounting requires SQLite storage');
   const service = new V2AppService(runner);
-  const context = await service.activeContext();
+  const [settings, context] = await Promise.all([db.getSettings(), service.activeContext()]);
   if (!context) throw new Error('No active versioned V2 book with an open accounting period');
-  const [dashboard, reports, parties, salesAndInvoices, expenseSources, entrySources, inventoryCounts, members, quotes, deliveryNotes] = await Promise.all([
+
+  // Summary mode is the default and only needs the KPI/report totals. Avoid
+  // loading full parties, source rows, quotes, delivery notes, and inventory
+  // history for every ordinary question.
+  const [dashboard, reports] = await Promise.all([
     getV2Dashboard(runner, context.bookId),
     buildPersistentV2Reports(runner, { bookId: context.bookId, from, to }),
+  ]);
+  const detailed = mode === 'detailed';
+  if (!detailed) {
+    return {
+      source: 'v2', currency: settings.currency, businessName: settings.businessName,
+      snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
+      yearToDate: reports.profitAndLoss,
+      creditors: [], debtors: [], expensesByCategory: {}, openInvoices: [], parties: [], capitalAccounts: [],
+      recentEntries: [], snapshotLimit: 0, snapshotTruncated: false,
+    };
+  }
+
+  const [parties, salesAndInvoices, expenseSources, entrySources, inventoryCounts, members, quotes, deliveryNotes] = await Promise.all([
     service.listParties(),
     service.listSalesAndInvoices(),
     runner.all<any>("SELECT date,metadata FROM v2_sources WHERE book_id=? AND type='expense' AND date>=? AND date<=? ORDER BY date DESC", [context.bookId, from, to]),
@@ -240,19 +256,10 @@ async function buildAiSnapshot(from: string, to: string, mode: AiDataMode = 'sum
       : row.type === 'manual_cash_income' || row.type === 'manual_cash_expense' ? 'cash_entry'
       : row.type;
     return [{
-      id: row.id,
-      entity,
-      sourceType: row.type,
-      date: row.date,
-      reference: row.reference || '',
-      amount: Number(meta.total ?? meta.amount ?? meta.value ?? 0),
-      partyId: meta.partyId || '',
-      memberId: meta.memberId || '',
+      id: row.id, entity, sourceType: row.type, date: row.date, reference: row.reference || '',
+      amount: Number(meta.total ?? meta.amount ?? meta.value ?? 0), partyId: meta.partyId || '', memberId: meta.memberId || '',
       partyName: row.party_name || meta.clientName || meta.supplierName || meta.partnerName || meta.memberName || '',
-      category: meta.category || '',
-      paymentType: meta.paymentType || '',
-      method: meta.method || '',
-      notes: meta.notes || '',
+      category: meta.category || '', paymentType: meta.paymentType || '', method: meta.method || '', notes: meta.notes || '',
       lines: Array.isArray(meta.lines) ? meta.lines.slice(0, 20) : undefined,
     }];
   });
@@ -262,21 +269,18 @@ async function buildAiSnapshot(from: string, to: string, mode: AiDataMode = 'sum
     ...deliveryNotes.slice(0, 100).map((row: any) => ({ id: row.id, entity: 'delivery_note', sourceType: 'delivery_note', date: row.date, reference: row.noteNumber || '', partyName: row.clientName || '', status: row.status, notes: row.notes || '', items: Array.isArray(row.items) ? row.items.slice(0, 20) : [] })),
   );
   recentEntries.sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id)));
-  const detailed = mode === 'detailed';
-  const visibleEntries = detailed ? recentEntries.slice(0, 300) : [];
+  const visibleEntries = recentEntries.slice(0, 300);
   return {
     source: 'v2', currency: settings.currency, businessName: settings.businessName,
     snapshot: { cash: dashboard.cash, inventoryValue: dashboard.inventoryValue, netWorth: dashboard.netWorth, totalSales: dashboard.totalSales, totalPurchases: dashboard.totalPurchases, grossProfit: dashboard.grossProfit, netProfit: dashboard.netProfit },
     yearToDate: reports.profitAndLoss,
-    creditors: detailed ? parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })) : [],
-    debtors: detailed ? parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })) : [],
+    creditors: parties.filter((p: any) => p.roles.includes('supplier') && p.payable !== 0).sort((a: any, b: any) => b.payable - a.payable).slice(0, 20).map((p: any) => ({ name: p.name, owed: p.payable })),
+    debtors: parties.filter((p: any) => p.roles.includes('customer') && p.receivable !== 0).sort((a: any, b: any) => b.receivable - a.receivable).slice(0, 20).map((p: any) => ({ name: p.name, owes: p.receivable })),
     expensesByCategory,
-    openInvoices: detailed ? salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 50).map((item: any) => ({ id: item.id, number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })) : [],
-    parties: detailed ? parties.map((party: any) => ({ id: party.id, name: party.name, roles: party.roles, receivable: party.receivable, payable: party.payable })) : [],
-    capitalAccounts: detailed ? members.map((member: any) => ({ id: member.id, name: member.name })) : [],
-    recentEntries: visibleEntries,
-    snapshotLimit: detailed ? 300 : 0,
-    snapshotTruncated: detailed && recentEntries.length > visibleEntries.length,
+    openInvoices: salesAndInvoices.filter((item: any) => item.type === 'invoice' && item.status !== 'paid').slice(0, 50).map((item: any) => ({ id: item.id, number: item.reference || item.id, client: item.clientName, amount: item.openAmount ?? item.amount })),
+    parties: parties.map((party: any) => ({ id: party.id, name: party.name, roles: party.roles, receivable: party.receivable, payable: party.payable })),
+    capitalAccounts: members.map((member: any) => ({ id: member.id, name: member.name })),
+    recentEntries: visibleEntries, snapshotLimit: 300, snapshotTruncated: recentEntries.length > visibleEntries.length,
   };
 }
 

@@ -13,6 +13,7 @@ import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { localTodayIso } from "@/src/utils/dateValidation";
+import { getDataVersion } from "@/src/utils/dataVersion";
 import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
@@ -337,6 +338,7 @@ export default function AskBooks() {
   const scrollRef = useRef<ScrollView>(null);
   const [historyKey, setHistoryKey] = useState(() => askHistoryStorageKey(api.activeBookId()));
   const historyLoaded = useRef(false);
+  const aiContextCache = useRef<{ key: string; value: string } | null>(null);
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -514,11 +516,16 @@ export default function AskBooks() {
     );
   };
 
-  const buildContext = async (): Promise<string> => {
-    const today = new Date();
-    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso(), aiDataMode);
-    return JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
-  };
+  const buildContext = useCallback(async (): Promise<string> => {
+    const today = localTodayIso();
+    const key = `${api.activeBookId()}|${today}|${aiDataMode}|${getDataVersion()}`;
+    const cached = aiContextCache.current;
+    if (cached?.key === key) return cached.value;
+    const snapshot = await api.aiSnapshot(`${today.slice(0, 4)}-01-01`, today, aiDataMode);
+    const value = JSON.stringify({ ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") });
+    aiContextCache.current = { key, value };
+    return value;
+  }, [aiDataMode]);
   const applyPendingProposal = async () => {
     const proposal = pendingProposal;
     if (!proposal || applyingProposalRef.current) return;
