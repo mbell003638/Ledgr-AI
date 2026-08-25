@@ -26,9 +26,9 @@ export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const footerBottomPadding = Platform.OS === "android"
-    ? Math.min(Math.max(insets.bottom, 8), 16)
-    : Math.max(8, insets.bottom);
+  // Android is configured edge-to-edge; the system navigation area is transparent and
+  // the footer must not add a second visual gap beneath the primary action.
+  const footerBottomPadding = Platform.OS === "android" ? 0 : Math.max(8, insets.bottom);
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
   const [step, setStep] = useState(0);
@@ -292,9 +292,9 @@ export default function Onboarding() {
         )}
         </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: footerBottomPadding }]}>
-        {step > 0 ? <Pressable onPress={() => setStep((value) => value - 1)} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /><Text style={styles.backText}>Back</Text></Pressable> : <View />}
-        <Pressable onPress={() => { if (step === 0 && !persona) return; if (step < LAST_STEP) setStep((value) => value + 1); else finish(); }} disabled={saving || (step === 0 && !persona)} style={[styles.nextBtn, (saving || (step === 0 && !persona)) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Open my workspace"}</Text>}</Pressable>
+      <View style={[styles.footer, step === 0 && styles.footerSolo, { paddingBottom: footerBottomPadding }]}>
+        {step > 0 ? <Pressable onPress={() => setStep((value) => value - 1)} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /><Text style={styles.backText}>Back</Text></Pressable> : null}
+        <Pressable onPress={() => { if (step === 0 && !persona) return; if (step < LAST_STEP) setStep((value) => value + 1); else finish(); }} disabled={saving || (step === 0 && !persona)} style={[styles.nextBtn, step === 0 && styles.nextBtnSolo, (saving || (step === 0 && !persona)) && { opacity: 0.5 }]}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>{step < LAST_STEP ? "Continue" : "Open my workspace"}</Text>}</Pressable>
       </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -396,9 +396,11 @@ function makeStyles(theme: any) {
     toggleThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#fff" },
     toggleThumbOn: { alignSelf: "flex-end" },
     footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, paddingHorizontal: theme.spacing.lg, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surface },
+    footerSolo: { justifyContent: "center" },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingVertical: 13, paddingHorizontal: 8, minWidth: 76 },
     backText: { color: theme.color.onSurface, fontWeight: "700", fontSize: 14 },
-    nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, alignItems: "center", maxWidth: 320, minHeight: 50 },
+    nextBtn: { flex: 1, backgroundColor: theme.color.brandPrimary, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 15, alignItems: "center", maxWidth: 420, minHeight: 50 },
+    nextBtnSolo: { alignSelf: "stretch" },
     nextText: { color: "#fff", fontWeight: "800", fontSize: 15 },
   });
 }

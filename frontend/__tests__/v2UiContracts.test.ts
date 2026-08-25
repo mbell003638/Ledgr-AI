@@ -872,7 +872,7 @@ describe('271498 recording remediation contracts', () => {
     expect(onboarding).toContain('<SafeAreaView style={styles.container} edges={["top"]}>');
     expect(onboarding).toContain('style={styles.scrollView}');
     expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android"');
-    expect(onboarding).toContain('Math.min(Math.max(insets.bottom, 8), 16)');
+    expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android" ? 0 : Math.max(8, insets.bottom);');
     expect(onboarding).toContain('paddingBottom: footerBottomPadding');
     expect(onboarding).toContain('scrollView: { flex: 1 }');
     expect(onboarding).toContain('justifyContent: "flex-start"');

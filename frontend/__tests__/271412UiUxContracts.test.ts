@@ -46,8 +46,13 @@ describe('271412 UI/UX remediation contracts', () => {
     expect(onboarding).toContain('<SafeAreaView style={styles.container} edges={["top"]}>');
     expect(onboarding).toContain('style={styles.scrollView}');
     expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android"');
-    expect(onboarding).toContain('Math.min(Math.max(insets.bottom, 8), 16)');
+    expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android" ? 0 : Math.max(8, insets.bottom);');
     expect(onboarding).toContain('paddingBottom: footerBottomPadding');
+    expect(onboarding).toContain('step === 0 && styles.footerSolo');
+    expect(onboarding).toContain('step === 0 && styles.nextBtnSolo');
+    expect(onboarding).toContain('{step > 0 ? <Pressable');
+    expect(onboarding).toContain('footerSolo: { justifyContent: "center" }');
+    expect(onboarding).toContain('nextBtnSolo: { alignSelf: "stretch" }');
     expect(onboarding).toContain('scrollView: { flex: 1 }');
     expect(onboarding).toContain('flexShrink: 0');
     expect(onboarding).not.toContain('useWindowDimensions');
