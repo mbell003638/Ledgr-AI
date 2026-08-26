@@ -3,6 +3,8 @@ name: Build Ledgr AI Android
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -66,8 +68,8 @@ jobs:
       - name: Setup Java JDK 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "17"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -198,19 +200,39 @@ jobs:
           find frontend/android -name "*.apk" -type f
           find frontend/android -name "*.aab" -type f
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v6
-        with:
-          name: Ledgr-AI-APK${{ steps.check.outputs.artifact_suffix }}
-          path: frontend/android/app/build/outputs/apk/release/*.apk
-          # Keep installable test outputs available for one week without exhausting
-          # the repository Actions-artifact quota during repeated manual builds.
-          retention-days: 7
-
-      - name: Upload AAB
-        if: steps.check.outputs.has_keystore == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: Ledgr-AI-AAB${{ steps.check.outputs.artifact_suffix }}
-          path: frontend/android/app/build/outputs/bundle/release/*.aab
-          retention-days: 7
+      # Actions artifact storage is quota-limited. Publish the latest CI output to
+      # one private, prerelease tag instead, replacing the previous APK/AAB assets.
+      # Test-signed outputs are named explicitly and must never be submitted to Play.
+      - name: Publish latest Android CI outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ledgr-android-ci
+          apk="$(find frontend/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          if [ -z "$apk" ]; then
+            echo "No release APK was produced" >&2
+            exit 1
+          fi
+          if [ "${{ steps.check.outputs.has_keystore }}" = "true" ]; then
+            cp "$apk" /tmp/ledgr-android-ci/Ledgr-AI-APK.apk
+            aab="$(find frontend/android/app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
+            if [ -z "$aab" ]; then
+              echo "No release AAB was produced despite persistent signing being configured" >&2
+              exit 1
+            fi
+            cp "$aab" /tmp/ledgr-android-ci/Ledgr-AI-AAB.aab
+            title="Android CI build $GITHUB_RUN_NUMBER (Play-Store-signable path)"
+            notes="Latest Android CI output from commit $GITHUB_SHA. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
+          else
+            cp "$apk" /tmp/ledgr-android-ci/Ledgr-AI-APK-testsigned.apk
+            title="Android CI build $GITHUB_RUN_NUMBER (TEST-SIGNED)"
+            notes="Latest Android CI output from commit $GITHUB_SHA. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
+          fi
+          if gh release view android-ci --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release edit android-ci --repo "$REPOSITORY" --title "$title" --notes "$notes"
+          else
+            gh release create android-ci --repo "$REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "$title" --notes "$notes"
+          fi
+          gh release upload android-ci --repo "$REPOSITORY" /tmp/ledgr-android-ci/* --clobber
