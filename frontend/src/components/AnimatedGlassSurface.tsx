@@ -24,6 +24,7 @@ type AnimatedGlassSurfaceProps = Omit<ViewProps, "style"> & {
   surfaceColor?: string;
   hoverSurfaceColor?: string;
   restingBorderColor?: string;
+  hoverBorderColor?: string;
   prominent?: boolean;
 };
 
@@ -62,6 +63,7 @@ function AnimatedGlassSurfaceImpl({
   surfaceColor,
   hoverSurfaceColor,
   restingBorderColor,
+  hoverBorderColor,
   ...viewProps
 }: AnimatedGlassSurfaceProps) {
   const theme = useTheme();
@@ -96,7 +98,7 @@ function AnimatedGlassSurfaceImpl({
     borderColor: interpolateColor(
       surfaceProgress.value,
       [0, 1],
-      [restingBorderColor ?? theme.color.glassBorder, theme.color.brandPrimary],
+      [restingBorderColor ?? theme.color.glassBorder, hoverBorderColor ?? theme.color.brandPrimary],
     ),
     transform: [
       { scale: reduceMotion ? 1 : 1 - interpolate(transformProgress.value, [0, 1], [0, 0.012]) },
@@ -113,7 +115,7 @@ function AnimatedGlassSurfaceImpl({
       [4, prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius],
     ) : 0,
     elevation: shadowEnabled ? interpolate(surfaceProgress.value, [0, 1], [2, prominent ? 12 : 8]) : 0,
-  }), [hoverSurfaceColor, prominent, reduceMotion, restingBorderColor, shadowEnabled, surfaceColor, theme]);
+  }), [hoverBorderColor, hoverSurfaceColor, prominent, reduceMotion, restingBorderColor, shadowEnabled, surfaceColor, theme]);
 
   const topEdge = topHighlight && Platform.OS === "web" ? (
     <LinearGradient
@@ -177,6 +179,7 @@ function AnimatedGlassSurfaceImpl({
           borderWidth: 1,
           borderColor: restingBorderColor ?? theme.color.glassBorder,
           shadowOffset: { width: 0, height: 0 },
+          ...(shadowEnabled ? {} : { boxShadow: "none" }),
         },
         style,
         animatedStyle,
@@ -187,3 +190,4 @@ function AnimatedGlassSurfaceImpl({
     </AnimatedView>
   );
 }
+
