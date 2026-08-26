@@ -364,35 +364,36 @@ export default function AdvancedSettingsScreen() {
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
-              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
-              <View testID="hosting-mode-summary" style={{ borderWidth: 1, borderColor: hostingState.tone === 'critical' ? theme.color.error : hostingState.tone === 'attention' ? theme.color.warning : theme.color.border, borderRadius: theme.radius.md, padding: 12, marginBottom: theme.spacing.md, backgroundColor: theme.color.surface }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={19} color={theme.color.brandPrimary} />
-                  <Text style={styles.bookName}>{hostingState.label}</Text>
+              <AccordionRow title="System & Workflows" subtitle="Book health, sync and import previews" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View testID="hosting-mode-summary" style={{ borderWidth: 1, borderColor: hostingState.tone === 'critical' ? theme.color.error : hostingState.tone === 'attention' ? theme.color.warning : theme.color.border, borderRadius: theme.radius.md, padding: 12, marginBottom: theme.spacing.md, backgroundColor: theme.color.surface }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={19} color={theme.color.brandPrimary} />
+                    <Text style={styles.bookName}>{hostingState.label}</Text>
+                  </View>
+                  <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
+                  <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
                 </View>
-                <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
-                <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
-              </View>
-              <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
-                <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
-                <View style={{ flex: 1 }}><Text style={styles.bookName}>Book Health</Text><Text style={styles.subLabel}>Read-only ledger, backup and recovery checks</Text></View>
-                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
-              </Pressable>
-              <Pressable testID="open-experimental-modules" onPress={() => router.push('/experimental-modules' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
-                <Ionicons name="flask-outline" size={20} color={theme.color.brandPrimary} />
-                <View style={{ flex: 1 }}><Text style={styles.bookName}>Experimental Modules</Text><Text style={styles.subLabel}>Preview safe pilots and review production gates</Text></View>
-                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
-              </Pressable>
-              <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
-                <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
-                <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
-                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
-              </Pressable>
-              <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
-                <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
-                <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
-                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
-              </Pressable>
+                <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                  <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Book Health</Text><Text style={styles.subLabel}>Read-only ledger, backup and recovery checks</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable testID="open-bank-import-preview" onPress={() => router.push('/bank-import-preview' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                  <Ionicons name="document-text-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Bank Statement Preview</Text><Text style={styles.subLabel}>Read-only CSV preview; does not post entries</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                  <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                  <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+              </AccordionRow>
               
               <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>

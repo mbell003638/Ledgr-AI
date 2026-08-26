@@ -9,9 +9,9 @@ const health = fs.readFileSync(path.join(root, 'src', 'utils', 'bookHealth.ts'),
 const expenses = fs.readFileSync(path.join(root, 'app', 'expenses.tsx'), 'utf8');
 
 describe('phase 0-3 workspace UI contracts', () => {
-  it('exposes quick start, Book Health and all workflows without another tab', () => {
-    expect(home).toContain('workspace-quick-start');
-    expect(home).toContain("router.push('/workflows' as any)");
+  it('avoids a duplicate workspace card and keeps system tools in a collapsed group', () => {
+    expect(home).not.toContain('workspace-quick-start');
+    expect(advanced).toContain('title="System & Workflows"');
     expect(advanced).toContain('hosting-mode-summary');
     expect(advanced).toContain("router.push('/book-health' as any)");
     expect(workflows).toContain('Only enabled workflows appear here');

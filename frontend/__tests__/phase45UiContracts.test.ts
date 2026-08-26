@@ -17,6 +17,8 @@ describe('phase 4-5 UI safety contracts', () => {
   });
 
   it('keeps bank import preview disconnected from accounting APIs', () => {
+    expect(advanced).toContain("router.push('/bank-import-preview' as any)");
+    expect(advanced).not.toContain('open-experimental-modules');
     expect(bankPreview).toContain('no ledger posting');
     expect(bankPreview).not.toContain('api.');
     expect(bankPreview).not.toContain('createTransaction');
