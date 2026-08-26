@@ -17,10 +17,11 @@ import { deviceHasLock } from "@/src/utils/lock";
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
-    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
+    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: "transparent" }}>
       <GlowPressable
         shadowEnabled={false}
         topHighlight={false}
+        animateBorder={false}
         haptic
         onPress={() => setExpandedKey(isExpanded ? null : title)}
         style={{
@@ -33,6 +34,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
           marginHorizontal: -10,
           borderWidth: 0,
           borderRadius: 14,
+          ...(Platform.OS === "web" ? ({ outlineStyle: "none", outlineWidth: 0 } as any) : {}),
         }}
       >
         <View style={{ flex: 1, paddingRight: 16 }}>
