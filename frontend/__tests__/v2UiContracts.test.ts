@@ -967,6 +967,12 @@ describe('beginner-first private sync UI contracts', () => {
     expect(settings).toContain('Simple setup');
     expect(settings).toContain('Choose a path');
     expect(settings).toContain('I already have a server — show sign-in fields');
+    expect(settings).toContain('Download Self-host Package');
+    expect(settings).toContain('testID="download-self-host-package"');
+    expect(settings).toContain('SELF_HOST_DISTRIBUTION.bundleUrl');
+    expect(settings).toContain('testID="open-self-host-setup-guide"');
+    expect(settings).toContain('testID="sign-in-and-join-sync"');
+    expect(settings).toContain('authorizeAndRedeemSyncEnrollmentCode');
     expect(guide).toContain('Ledgr helps you choose the right setup.');
     expect(guide).toContain('Go to Private sync');
   });
@@ -990,6 +996,8 @@ describe('QR private sync onboarding contracts', () => {
     expect(scanner).toContain('Paste an invitation');
     expect(settings).toContain('testID="scan-sync-invitation"');
     expect(settings).toContain('decodeLedgrSyncQrInvite');
+    expect(settings).toContain('Owner setup invitation');
+    expect(settings).toContain('You will become the owner of this Business Account.');
     expect(qr).toContain("LEDGR_SYNC_QR_KIND = 'ledgr.sync.enrollment'");
     expect(qr).toContain('This Ledgr invitation has expired');
     expect(qrCode).toContain('QRCode.toString');
@@ -1012,6 +1020,7 @@ describe('QR private sync onboarding contracts', () => {
     expect(distribution).toContain('releases/latest/download/ledgr-selfhost-bundle.tar.gz');
     expect(distribution).toContain('releases/latest/download/ledgr-selfhost-install.sh');
     expect(distribution).toContain('releases/latest/download/ledgr-selfhost-install.ps1');
-    expect(distribution).toContain('ghcr.io/mbell003638/ledgr-sync:latest');
+    expect(distribution).toContain('ghcr.io/mbell003638/ledgr-self-host-sync:latest');
+    expect(distribution).toContain('mbell003638/Ledgr-Self-Host');
   });
 });

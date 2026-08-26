@@ -833,6 +833,20 @@ export const api = {
     bumpDataVersion();
     return profile;
   },
+  authorizeAndRedeemSyncEnrollmentCode: async (input: { serverUrl: string; userId: string; code: string; displayName?: string; platform?: string; actorId?: string; oidcIssuer: string; oidcClientId: string; oidcScopes?: string }) => {
+    const prerequisites = await api.getPrivateSyncPrerequisites();
+    if (!prerequisites.integrity.ok) throw new Error(`Complete the local integrity check first: ${prerequisites.integrity.issues.join(' ')}`);
+    if (!prerequisites.hasRecentEncryptedBackup) throw new Error('Create and verify an encrypted backup within the last 30 days before joining private sync.');
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const bookId = beActiveBookId();
+    const profile = await configureSync(runner, { serverUrl: input.serverUrl, userId: input.userId, actorId: input.actorId, oidcIssuer: input.oidcIssuer, oidcClientId: input.oidcClientId, oidcScopes: input.oidcScopes, bookId, enabled: false });
+    await runSyncOidcAuthorization(profile);
+    const enrolled = await redeemSyncEnrollmentCode(runner, bookId, input.code, input.displayName, input.platform);
+    await setRequestedHostingMode('private_sync');
+    bumpDataVersion();
+    return enrolled;
+  },
   disableSync: async () => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
