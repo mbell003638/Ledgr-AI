@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -10,10 +10,10 @@ import { api, getAIConfig, setAIConfig } from "@/src/api";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
-import { shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
-import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/utils/dateValidation";
+import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
+import { deriveHostingMode } from "@/src/utils/hostingMode";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -87,6 +87,7 @@ export default function AdvancedSettingsScreen() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [hostingState, setHostingState] = useState(() => deriveHostingMode({ enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 }));
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -122,8 +123,8 @@ export default function AdvancedSettingsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const s = await api.getSettings();
-      const cfg = await getAIConfig();
+      const [s, cfg, syncStatus] = await Promise.all([api.getSettings(), getAIConfig(), api.getSyncStatus()]);
+      setHostingState(deriveHostingMode(syncStatus));
       setProvider(cfg.provider);
       setKey(cfg.apiKey || "");
       setModelName(cfg.model || "");
@@ -238,48 +239,6 @@ export default function AdvancedSettingsScreen() {
     }
   };
 
-  const [busy, setBusy] = useState<"export" | "import" | null>(null);
-
-  const doExport = async () => {
-    setBusy("export"); setStatus(null);
-    try {
-      const full: any = await api.exportBackup();
-      const stamp = localTodayIso();
-      await shareJsonFile(`ledgr-backup-${stamp}.json`, full);
-      setStatus({ ok: true, msg: "Backup ready — share via WhatsApp or save." });
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Export failed" });
-    } finally { setBusy(null); }
-  };
-
-  const doImport = async () => {
-    setBusy("import"); setStatus(null);
-    try {
-      const picked = await pickJsonFile();
-      if (!picked.ok) {
-        // Cancel is a silent no-op; an unreadable/corrupted file is surfaced. [M1]
-        if (picked.reason === "invalid") {
-          setStatus({ ok: false, msg: "Backup file is unreadable or corrupted." });
-        }
-        setBusy(null); return;
-      }
-      const data = picked.data;
-      if (!data || !data._meta || data._meta.app !== "ledgr") {
-        setStatus({ ok: false, msg: "Not a Ledgr backup file." });
-        setBusy(null); return;
-      }
-      const result: any = await api.importBackup({ ...data, mode: "replace" });
-      // Surface any restore warnings (e.g. a pre-V2 backup rebuilding the ledger). [C1]
-      const warn: string[] = Array.isArray(result?.warnings) ? result.warnings : [];
-      if (warn.length) {
-        Alert.alert("Restore complete — please review", warn.join("\n\n"));
-      }
-      setStatus({ ok: true, msg: "Data restored! Restart or pull-to-refresh." });
-    } catch (e: any) {
-      setStatus({ ok: false, msg: e.message || "Import failed" });
-    } finally { setBusy(null); }
-  };
-
   const doReset = async () => {
     const ok = await requireAuth("Confirm to reset all accounting data");
     if (!ok) {
@@ -338,7 +297,7 @@ export default function AdvancedSettingsScreen() {
     if (!newBookName.trim()) return;
     setAddingBook(true);
     try {
-      const meta = await api.createBook(newBookName.trim());
+      const meta = await api.createBook(newBookName.trim(), newBookPersona);
       setNewBookName("");
       const bks = await api.listBooks();
       setBooks(bks);
@@ -346,7 +305,7 @@ export default function AdvancedSettingsScreen() {
       await api.setActiveBook(meta.id);
       setActiveBookState(meta.id);
       setMode(defaultNewTheme as any);
-      await api.updateSettings({ themeMode: defaultNewTheme, businessName: meta.name });
+      await api.updateSettings({ themeMode: defaultNewTheme, businessName: meta.name, businessType: newBookPersona });
       
       try {
         const v2 = await api.getV2BookConfig();
@@ -406,6 +365,24 @@ export default function AdvancedSettingsScreen() {
             
             <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
+              <View testID="hosting-mode-summary" style={{ borderWidth: 1, borderColor: hostingState.tone === 'critical' ? theme.color.error : hostingState.tone === 'attention' ? theme.color.warning : theme.color.border, borderRadius: theme.radius.md, padding: 12, marginBottom: theme.spacing.md, backgroundColor: theme.color.surface }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={19} color={theme.color.brandPrimary} />
+                  <Text style={styles.bookName}>{hostingState.label}</Text>
+                </View>
+                <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
+                <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
+              </View>
+              <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
+                <View style={{ flex: 1 }}><Text style={styles.bookName}>Book Health</Text><Text style={styles.subLabel}>Read-only ledger, backup and recovery checks</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+              </Pressable>
+              <Pressable testID="open-experimental-modules" onPress={() => router.push('/experimental-modules' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Ionicons name="flask-outline" size={20} color={theme.color.brandPrimary} />
+                <View style={{ flex: 1 }}><Text style={styles.bookName}>Experimental Modules</Text><Text style={styles.subLabel}>Preview safe pilots and review production gates</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+              </Pressable>
               <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
                 <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
                 <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
@@ -609,16 +586,14 @@ export default function AdvancedSettingsScreen() {
                   </Pressable>
                 </View>
               </AccordionRow>
-              <AccordionRow title="Backup & Restore" subtitle="Export data to JSON" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+              <AccordionRow title="Backup & Restore" subtitle="Encrypted export and verified restore" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
-                  <View style={styles.backupRow}>
-                    <Pressable onPress={doExport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnPrimary, (pressed || busy === "export") && { opacity: 0.85 }]}>
-                      {busy === "export" ? <ActivityIndicator color="#fff" /> : <><Ionicons name="share-outline" size={18} color="#fff" /><Text style={styles.backupBtnTextPrimary}>Export</Text></>}
-                    </Pressable>
-                    <Pressable onPress={doImport} disabled={busy !== null} style={({ pressed }) => [styles.backupBtn, styles.backupBtnSecondary, (pressed || busy === "import") && { opacity: 0.85 }]}>
-                      {busy === "import" ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="cloud-upload-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.backupBtnTextSecondary}>Import</Text></>}
-                    </Pressable>
-                  </View>
+                  <Text style={styles.hint}>Create passphrase-encrypted recovery files, validate imports without changing data, and restore through the existing atomic multi-book engine.</Text>
+                  <Pressable testID="open-backup-recovery" onPress={() => router.push('/backup-recovery' as any)} style={[styles.bookRow, { marginTop: theme.spacing.sm }]}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
+                    <View style={{ flex: 1 }}><Text style={styles.bookName}>Open Backup & Recovery</Text><Text style={styles.subLabel}>Encrypted export and verified restore</Text></View>
+                    <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                  </Pressable>
                 </View>
               </AccordionRow>
               <AccordionRow title="Danger Zone"
@@ -784,4 +759,3 @@ function makeStyles(theme: any) {
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   });
 }
-

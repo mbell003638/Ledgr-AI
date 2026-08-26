@@ -112,6 +112,7 @@ export async function getSettings(): Promise<Record<string, any>> {
     invoiceTerms: s.invoiceTerms ?? '',
     themeMode: s.themeMode ?? 'system',
     enabledFeatures: Array.isArray(s.enabledFeatures) ? s.enabledFeatures : null,
+    lastBackupAt: typeof s.lastBackupAt === 'string' ? s.lastBackupAt : '',
     managerCommissionPct: Number(s.managerCommissionPct || 0),
   };
 }
@@ -1337,6 +1338,59 @@ export type ImportBackupResult = {
   warnings: string[];
 };
 
+export type BackupPreflightResult = {
+  ok: true;
+  formatVersion: number;
+  v2SchemaVersion: number;
+  businessAccountCount: number;
+  secondaryBookIds: string[];
+};
+
+/** Validate restore structure without writing settings, documents, books, or V2 rows. */
+export function validateBackupForImport(data: any): BackupPreflightResult {
+  const meta = data && typeof data === 'object' ? data._meta : undefined;
+  if (!meta || meta.app !== 'ledgr') throw new Error('This file is not a Ledgr backup.');
+  const version = Number(meta.version);
+  if (version !== BACKUP_VERSION && version !== LEGACY_BACKUP_VERSION) {
+    throw new Error(
+      `Unsupported Ledgr backup format v${Number.isFinite(version) ? version : 'unknown'}. `
+      + `Only formats v${LEGACY_BACKUP_VERSION} and v${BACKUP_VERSION} can be restored.`,
+    );
+  }
+  if (!hasV2Payload(data?.v2)) throw new Error('This backup does not contain the current V2 accounting ledger.');
+  const v2SchemaVersion = Number(data.v2.schemaVersion);
+  if ((version === LEGACY_BACKUP_VERSION && v2SchemaVersion !== 1)
+    || (version === BACKUP_VERSION && v2SchemaVersion !== V2_BACKUP_VERSION)) {
+    throw new Error(`Ledgr backup format v${version} has an incompatible V2 schema version.`);
+  }
+  if (!Array.isArray(data.books)) throw new Error('Backup is missing its Business Accounts index.');
+  const backupBookData: Record<string, any> = (data.bookData && typeof data.bookData === 'object' && !Array.isArray(data.bookData)) ? data.bookData : {};
+  const secondaryBookIds: string[] = [];
+  const seenBookIds = new Set<string>();
+  for (const book of data.books) {
+    const id = typeof book?.id === 'string' ? book.id.trim() : '';
+    if (!id) throw new Error('Backup contains a Business Account without an ID.');
+    if (seenBookIds.has(id)) throw new Error(`Backup contains duplicate Business Account ID: ${id}`);
+    seenBookIds.add(id);
+    if (id === 'default') continue;
+    secondaryBookIds.push(id);
+    const payload = backupBookData[id];
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error(`Backup is missing data for Business Account: ${book.name || id}`);
+    if (!payload.collections || typeof payload.collections !== 'object' || Array.isArray(payload.collections)) throw new Error(`Backup has invalid collections for Business Account: ${book.name || id}`);
+    const missingCollections = SQL_COLLECTIONS.filter((collection) => !Array.isArray(payload.collections[collection]));
+    if (missingCollections.length) throw new Error(`Backup is incomplete for Business Account ${book.name || id}: missing ${missingCollections.join(', ')}`);
+    if (!payload.settings || typeof payload.settings !== 'object' || Array.isArray(payload.settings)) throw new Error(`Backup has invalid settings for Business Account: ${book.name || id}`);
+    if (typeof payload.logo !== 'string') throw new Error(`Backup has invalid logo data for Business Account: ${book.name || id}`);
+  }
+  return {
+    ok: true,
+    formatVersion: version,
+    v2SchemaVersion,
+    businessAccountCount: Math.max(1, data.books.length + (seenBookIds.has('default') ? 0 : 1)),
+    secondaryBookIds,
+  };
+}
+
 export async function exportBackup() {
   const colls = await Promise.all(BACKUP_COLLECTIONS.map((c) => readColl(c)));
   const data: Record<string, any> = {};
@@ -1393,21 +1447,7 @@ export async function exportBackup() {
  * Current backups and the explicitly migrated previous format are accepted.
  */
 export async function importBackup(data: any): Promise<ImportBackupResult> {
-  const meta = data && typeof data === 'object' ? data._meta : undefined;
-  if (!meta || meta.app !== 'ledgr') throw new Error('This file is not a Ledgr backup.');
-  const version = Number(meta.version);
-  if (version !== BACKUP_VERSION && version !== LEGACY_BACKUP_VERSION) {
-    throw new Error(
-      `Unsupported Ledgr backup format v${Number.isFinite(version) ? version : 'unknown'}. `
-      + `Only formats v${LEGACY_BACKUP_VERSION} and v${BACKUP_VERSION} can be restored.`,
-    );
-  }
-  if (!hasV2Payload(data?.v2)) throw new Error('This backup does not contain the current V2 accounting ledger.');
-  const v2SchemaVersion = Number(data.v2.schemaVersion);
-  if ((version === LEGACY_BACKUP_VERSION && v2SchemaVersion !== 1)
-    || (version === BACKUP_VERSION && v2SchemaVersion !== V2_BACKUP_VERSION)) {
-    throw new Error(`Ledgr backup format v${version} has an incompatible V2 schema version.`);
-  }
+  validateBackupForImport(data);
 
   const runner = backendActiveSqlRunner();
   const sqliteMode = backendStorageMode() === 'sqlite' && !!runner && activeBookIsDefault();
@@ -1418,36 +1458,9 @@ export async function importBackup(data: any): Promise<ImportBackupResult> {
   // replaces any current data. Formats 10 and 11 export every secondary collection,
   // its settings object, and its logo string; accepting an absent payload here
   // would make writeSecondaryBookPayload clear that entire indexed book.
-  if (!Array.isArray(data.books)) throw new Error('Backup is missing its Business Accounts index.');
   const backupBooks: any[] = data.books;
   const backupBookData: Record<string, any> = (data.bookData && typeof data.bookData === 'object' && !Array.isArray(data.bookData)) ? data.bookData : {};
-  const secondaryIds: string[] = [];
-  const seenBookIds = new Set<string>();
-  for (const book of backupBooks) {
-    const id = typeof book?.id === 'string' ? book.id.trim() : '';
-    if (!id) throw new Error('Backup contains a Business Account without an ID.');
-    if (seenBookIds.has(id)) throw new Error(`Backup contains duplicate Business Account ID: ${id}`);
-    seenBookIds.add(id);
-    if (id === 'default') continue;
-    secondaryIds.push(id);
-    const payload = backupBookData[id];
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new Error(`Backup is missing data for Business Account: ${book.name || id}`);
-    }
-    if (!payload.collections || typeof payload.collections !== 'object' || Array.isArray(payload.collections)) {
-      throw new Error(`Backup has invalid collections for Business Account: ${book.name || id}`);
-    }
-    const missingCollections = SQL_COLLECTIONS.filter((collection) => !Array.isArray(payload.collections[collection]));
-    if (missingCollections.length) {
-      throw new Error(`Backup is incomplete for Business Account ${book.name || id}: missing ${missingCollections.join(', ')}`);
-    }
-    if (!payload.settings || typeof payload.settings !== 'object' || Array.isArray(payload.settings)) {
-      throw new Error(`Backup has invalid settings for Business Account: ${book.name || id}`);
-    }
-    if (typeof payload.logo !== 'string') {
-      throw new Error(`Backup has invalid logo data for Business Account: ${book.name || id}`);
-    }
-  }
+  const secondaryIds = backupBooks.map((book) => String(book.id || '').trim()).filter((id) => id && id !== 'default');
 
   // What the restore writes into a collection: the backup's array, or [] when
   // that collection is absent (so it is CLEARED, never left stale). [H1]

@@ -464,4 +464,3 @@ function makeStyles(theme: any) {
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   });
 }
-

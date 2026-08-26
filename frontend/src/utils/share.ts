@@ -69,6 +69,35 @@ export type PickJsonResult =
   | { ok: true; data: any }
   | { ok: false; reason: "cancelled" | "invalid" };
 
+export type PickTextResult =
+  | { ok: true; text: string; name: string }
+  | { ok: false; reason: "cancelled" | "invalid" };
+
+/** Pick a CSV/text file without interpreting or posting any accounting data. */
+export async function pickTextFile(): Promise<PickTextResult> {
+  if (Platform.OS === "web") {
+    return new Promise<PickTextResult>((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".csv,text/csv,text/plain";
+      input.onchange = async (event: any) => {
+        const selected = event.target.files?.[0];
+        if (!selected) return resolve({ ok: false, reason: "cancelled" });
+        try { resolve({ ok: true, text: await selected.text(), name: selected.name || "statement.csv" }); }
+        catch { resolve({ ok: false, reason: "invalid" }); }
+      };
+      input.click();
+    });
+  }
+  const DocumentPicker = await import("expo-document-picker");
+  const result = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/plain", "application/vnd.ms-excel"], copyToCacheDirectory: true });
+  if (result.canceled || !result.assets?.[0]) return { ok: false, reason: "cancelled" };
+  try {
+    const asset = result.assets[0];
+    return { ok: true, text: new File(asset.uri).textSync(), name: asset.name || "statement.csv" };
+  } catch { return { ok: false, reason: "invalid" }; }
+}
+
 /**
  * Pick a JSON file from the device and return its parsed contents.
  * On web: uses <input type="file">.

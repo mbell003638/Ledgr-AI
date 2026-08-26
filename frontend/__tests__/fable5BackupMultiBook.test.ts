@@ -84,6 +84,7 @@ describe('Finding D — backup round-trip preserves both books', () => {
 
     const backup: any = await api.exportBackup();
     expect(backup._meta.version).toBe(11);
+    expect(api.validateBackupForImport(backup)).toMatchObject({ ok: true, formatVersion: 11, v2SchemaVersion: 2, businessAccountCount: 2 });
     // Books index captured, and Book2's secondary payload present.
     expect(backup.books.map((b: any) => b.name)).toEqual(expect.arrayContaining(['Book2']));
     expect(backup.bookData[book2.id]).toBeTruthy();

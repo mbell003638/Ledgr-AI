@@ -14,6 +14,7 @@ import { printTransaction, shareTransaction } from "@/src/utils/transactionActio
 import { confirmAction } from "@/src/utils/alerts";
 import { ActionSheetModal } from "@/src/components/ActionSheetModal";
 import { LocationPicker } from "@/src/components/LocationPicker";
+import { expenseCategorySuggestions, type ExpenseCategorySuggestion } from "@/src/accountingV2/expenseCategories";
 
 type Expense = { id: string; date: string; category: string; amount: number; notes?: string };
 
@@ -36,11 +37,13 @@ export default function Expenses() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [locationId, setLocationId] = useState("");
+  const [categorySuggestions, setCategorySuggestions] = useState<ExpenseCategorySuggestion[]>([]);
 
   const load = async () => {
     const [list, settings] = await Promise.all([api.listExpenses(), api.getSettings()]);
     setExpenses([...list].sort((a: Expense, b: Expense) => b.date.localeCompare(a.date)));
     setCurrencySymbol(getCurrencySymbol(settings.currency));
+    setCategorySuggestions(expenseCategorySuggestions(settings));
   };
 
   useEffect(() => { load(); }, []);
@@ -159,6 +162,13 @@ export default function Expenses() {
               <TextInput value={date} onChangeText={setDate} placeholder="2024-01-01" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Category</Text>
               <TextInput value={category} onChangeText={setCategory} placeholder="Rent / Electricity / Transport / Other" placeholderTextColor={theme.color.muted} style={styles.input} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow} keyboardShouldPersistTaps="handled">
+                {categorySuggestions.map((suggestion) => (
+                  <Pressable key={suggestion.label} accessibilityRole="button" accessibilityHint={suggestion.description} onPress={() => setCategory(suggestion.label)} style={[styles.suggestionChip, category === suggestion.label && styles.suggestionChipActive]}>
+                    <Text style={[styles.suggestionText, category === suggestion.label && styles.suggestionTextActive]}>{suggestion.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
               <Text style={[styles.label, { marginTop: 12 }]}>Amount</Text>
               <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.color.muted} style={styles.input} />
               <Text style={[styles.label, { marginTop: 12 }]}>Notes</Text>
@@ -215,6 +225,11 @@ function makeStyles(theme: any) { return StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
   label: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
   input: { marginTop: 6, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 14, color: theme.color.onSurface },
+  suggestionRow: { gap: 7, paddingTop: 9, paddingBottom: 2 },
+  suggestionChip: { borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
+  suggestionChipActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "16" },
+  suggestionText: { color: theme.color.muted, fontSize: 11, fontWeight: "600" },
+  suggestionTextActive: { color: theme.color.brandPrimary },
   error: { color: theme.color.error, textAlign: "center", marginTop: 12, fontSize: 13 },
   saveBtn: { backgroundColor: theme.color.brandPrimary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: "center", marginTop: theme.spacing.lg },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },

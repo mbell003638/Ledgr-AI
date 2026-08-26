@@ -154,4 +154,3 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     emptyHint: { fontSize: 13, color: theme.color.muted, textAlign: "center" },
   });
 }
-

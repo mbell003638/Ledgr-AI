@@ -297,4 +297,3 @@ function makeStyles(theme: any) {
     toggleWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   });
 }
-

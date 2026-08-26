@@ -12,6 +12,7 @@ import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountin
 import { ensureV2BookPrefs, writeV2BookPrefs } from '@/src/accountingV2/optionalModules';
 import { assertFeatureDisableAllowed, getV2FeatureDisableBlockers, type FeatureDisableBlockers } from '@/src/accountingV2/featureDisableGuards';
 import { getEnabledFeatures, type FeatureKey } from '@/src/utils/featureFlags';
+import { readBookHealth, unavailableBookHealth } from '@/src/utils/bookHealth';
 import type { PersonaId } from '@/src/accountingV2/config';
 import { getV2Dashboard } from '@/src/accountingV2/v2Dashboard';
 import { partnershipDisplayFromReports } from './accountingV2/reports';
@@ -816,6 +817,16 @@ export const api = {
     if (!runner) return { enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 };
     return getSyncStatus(runner, beActiveBookId());
   },
+  getBookHealth: async () => {
+    const bookId = beActiveBookId();
+    const runner = activeSqlRunner();
+    if (!runner) return unavailableBookHealth(bookId);
+    const [settings, syncStatus] = await Promise.all([
+      db.getSettings(),
+      getSyncStatus(runner, bookId),
+    ]);
+    return readBookHealth(runner, bookId, settings, syncStatus);
+  },
   syncNow: async () => {
     const runner = activeSqlRunner();
     if (!runner) throw new Error('Sync requires SQLite storage');
@@ -1297,6 +1308,7 @@ export const api = {
     data.geminiModel = await getGeminiModel();
     return data;
   },
+  validateBackupForImport: (payload: any) => db.validateBackupForImport(payload),
   importBackup: async (payload: any) => {
     const runner = activeSqlRunner();
     if (runner) await markSyncRecoveryRequired(runner, beActiveBookId(), 'Manual backup restore requires sync re-enrollment and reconciliation');

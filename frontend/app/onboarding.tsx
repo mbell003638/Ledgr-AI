@@ -8,6 +8,7 @@ import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api } from "@/src/api";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { deviceHasLock } from "@/src/utils/lock";
+import { getWorkspaceProfile } from "@/src/utils/workspaceCapabilities";
 
 type BizType = "shop" | "service" | "salon" | "handyman" | "vendor" | "it_consultant" | "freelancer";
 
@@ -37,6 +38,7 @@ export default function Onboarding() {
   const [lockEnabled, setLockEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const LAST_STEP = 3;
+  const workspacePreview = useMemo(() => getWorkspaceProfile({ selectedPersonas, activePersona: selectedPersonas[0], businessType: bizType }), [bizType, selectedPersonas]);
 
   useFocusEffect(
     useCallback(() => {
@@ -154,6 +156,12 @@ export default function Onboarding() {
               Use your phone’s fingerprint, face or PIN to lock sensitive actions like deleting or
               resetting data. There’s no separate password to remember — it uses your device lock.
             </Text>
+            <View style={styles.previewCard}>
+              <Text style={styles.previewTitle}>{workspacePreview.title}</Text>
+              <Text style={styles.previewText}>{workspacePreview.summary}</Text>
+              <Text style={styles.previewModules}>{workspacePreview.featured.slice(0, 4).map((module) => module.label).join(' • ')}</Text>
+              <Text style={styles.previewNote}>You can customize these workflows later. Turning one off only hides its entry point; it does not delete saved data.</Text>
+            </View>
             <View style={{ marginTop: theme.spacing.xl, gap: 10 }}>
               <Pressable
                 onPress={() => setLockEnabled(true)}
@@ -217,6 +225,11 @@ function makeStyles(theme: any) {
     cardSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10" },
     cardLabel: { fontSize: 15, fontWeight: "700", color: theme.color.onSurface },
     cardDesc: { fontSize: 12, color: theme.color.muted, marginTop: 2 },
+    previewCard: { marginTop: theme.spacing.lg, borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary },
+    previewTitle: { color: theme.color.brandPrimary, fontSize: 15, fontWeight: "700" },
+    previewText: { color: theme.color.onSurface, fontSize: 12, lineHeight: 17, marginTop: 4 },
+    previewModules: { color: theme.color.onSurface, fontSize: 11, fontWeight: "600", lineHeight: 16, marginTop: 8 },
+    previewNote: { color: theme.color.muted, fontSize: 10, lineHeight: 15, marginTop: 7 },
     input: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 16, color: theme.color.onSurface, backgroundColor: theme.color.surfaceSecondary },
     currBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.md, borderWidth: 1.5, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
     currBtnSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "10" },

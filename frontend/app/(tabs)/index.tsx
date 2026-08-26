@@ -20,6 +20,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { ReorderableWorkspaceGrid, type WorkspaceTileItem } from "@/src/components/ReorderableWorkspaceGrid";
 import { GlowPressable } from "@/src/components/GlowPressable";
+import { getWorkspaceProfile } from "@/src/utils/workspaceCapabilities";
+import { calculateGrossMargin } from "@/src/utils/businessMetrics";
+import type { BookHealth } from "@/src/utils/bookHealth";
 import ArrowDownLeft from "lucide-react-native/icons/arrow-down-left";
 import ArrowLeftRight from "lucide-react-native/icons/arrow-left-right";
 import Banknote from "lucide-react-native/icons/banknote";
@@ -116,6 +119,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const [bookHealth, setBookHealth] = useState<BookHealth | null>(null);
   const [customTileOrder, setCustomTileOrder] = useState<string[]>([]);
   const [isEditingGrid, setIsEditingGrid] = useState(false);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
@@ -165,12 +169,14 @@ export default function Dashboard() {
         shopId = "";
         if (locationId) setLocationId('');
       }
-      const [d, day] = await Promise.all([
+      const [d, day, health] = await Promise.all([
         api.dashboard(shopId || undefined),
         api.dailySummary(dailyDate, shopId || undefined),
+        api.getBookHealth().catch(() => null),
       ]);
       setDash(d);
       setDaily(day);
+      setBookHealth(health);
       loadedRef.current = { version: getDataVersion(), date: dailyDate, locationId: shopId };
     } catch (e) {
       console.warn("dash", e);
@@ -352,6 +358,8 @@ export default function Dashboard() {
   const displayNetProfit = rangeData ? rangeData.netProfit : (dash?.netProfit ?? 0);
   const displayDrawings = rangeData ? rangeData.drawings : (dash?.drawings ?? 0);
   const selectedShop = shops.find((shop) => shop.id === locationId);
+  const workspace = getWorkspaceProfile(settings);
+  const grossMargin = calculateGrossMargin(displaySales, displayPurchases);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -445,6 +453,33 @@ export default function Dashboard() {
               )}
             </View>
 
+            <Card shadowEnabled={false} testID="workspace-quick-start" style={styles.workspaceCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.workspaceTitle}>{workspace.title}</Text>
+                  <Text style={styles.workspaceSummary}>{workspace.summary}</Text>
+                </View>
+                {bookHealth ? (
+                  <Pressable accessibilityRole="button" onPress={() => router.push('/book-health' as any)} style={[styles.healthBadge, { borderColor: bookHealth.tone === 'critical' ? theme.color.error : bookHealth.tone === 'attention' ? theme.color.warning : theme.color.success }]}>
+                    <Ionicons name={bookHealth.tone === 'healthy' ? 'shield-checkmark' : 'alert-circle'} size={15} color={bookHealth.tone === 'critical' ? theme.color.error : bookHealth.tone === 'attention' ? theme.color.warning : theme.color.success} />
+                    <Text style={styles.healthBadgeText}>{bookHealth.label}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <View style={styles.workspaceActions}>
+                {workspace.featured.slice(0, 2).map((module) => (
+                  <Pressable key={module.key} onPress={() => router.push(module.route as any)} style={styles.workspaceAction}>
+                    <Ionicons name={module.icon as any} size={16} color={theme.color.brandPrimary} />
+                    <Text numberOfLines={1} style={styles.workspaceActionText}>{module.label}</Text>
+                  </Pressable>
+                ))}
+                <Pressable onPress={() => router.push('/workflows' as any)} style={styles.workspaceAction}>
+                  <Ionicons name="grid-outline" size={16} color={theme.color.brandPrimary} />
+                  <Text numberOfLines={1} style={styles.workspaceActionText}>All Workflows</Text>
+                </Pressable>
+              </View>
+            </Card>
+
             {/* Net worth hero */}
             <AnimatedHeroCard theme={theme}>
               <LinearGradient
@@ -489,6 +524,10 @@ export default function Dashboard() {
                 <View style={[styles.pfRow, styles.pfStrong]}>
                   <Text style={[styles.pfLabel, { fontWeight: "700" }]}>Gross Profit</Text>
                   <Text numberOfLines={1} style={[styles.pfVal, { fontWeight: "700" }]}>{fmt(displayGross)}</Text>
+                </View>
+                <View style={styles.pfRow}>
+                  <Text style={styles.pfLabel}>Gross Margin</Text>
+                  <Text numberOfLines={1} style={styles.pfVal}>{grossMargin.state === 'ready' ? `${grossMargin.value}%` : 'Not enough data'}</Text>
                 </View>
                 {displayCommission > 0 ? (
                   <View style={styles.pfRow}>
@@ -748,6 +787,14 @@ function makeStyles(theme: any) { return StyleSheet.create({
   },
   tileLabel: { fontSize: 14, fontWeight: "600", marginTop: 12 },
   emptyText: { color: theme.color.muted, fontSize: 13, textAlign: "center", paddingVertical: theme.spacing.lg },
+  workspaceCard: { marginBottom: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary },
+  workspaceTitle: { color: theme.color.brandPrimary, fontSize: 16, fontWeight: "700" },
+  workspaceSummary: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  healthBadge: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 16, paddingHorizontal: 8, paddingVertical: 5 },
+  healthBadgeText: { color: theme.color.onSurface, fontSize: 10, fontWeight: "700" },
+  workspaceActions: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: theme.spacing.md },
+  workspaceAction: { flexDirection: "row", alignItems: "center", gap: 5, minWidth: "30%", flexGrow: 1, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, paddingHorizontal: 9, paddingVertical: 8 },
+  workspaceActionText: { flexShrink: 1, color: theme.color.onSurface, fontSize: 11, fontWeight: "600" },
   dailyCard: { marginBottom: theme.spacing.lg, padding: theme.spacing.lg },
   dailyHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   dailyLabel: { fontSize: 12, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
@@ -768,4 +815,3 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
   organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
 }); }
-

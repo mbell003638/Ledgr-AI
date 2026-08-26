@@ -228,4 +228,3 @@ function AnimatedGlowPressable({
     </AnimatedPressable>
   );
 }
-
