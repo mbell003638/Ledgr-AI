@@ -18,12 +18,12 @@ import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/util
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
   return (
-    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
+    <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: "transparent" }}>
       <GlowPressable
         shadowEnabled={false}
         topHighlight={false}
         haptic
-        animateBorder
+        animateBorder={false}
         restingBorderColor="transparent"
         hoverBorderColor={theme.color.brandPrimary}
         pressScale={0.97}
@@ -38,8 +38,9 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
           paddingVertical: 12,
           paddingHorizontal: 10,
           marginHorizontal: -10,
-          borderWidth: 1,
+          borderWidth: 0,
           borderRadius: 14,
+          ...(Platform.OS === "web" ? ({ outlineStyle: "none", outlineWidth: 0 } as any) : {}),
         }}
       >
         <View style={{ flex: 1, paddingRight: 16 }}>
