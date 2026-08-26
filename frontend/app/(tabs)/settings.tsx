@@ -183,7 +183,7 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <Card shadowEnabled={false} surfaceColor="transparent" restingBorderColor="transparent" style={styles.settingsGroup}>
+            <Card shadowEnabled={false} style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Business Profile</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Manage your basic company info and defaults.</Text>
               <AccordionRow title="Company Info & Logo" subtitle="Name, Contact, Tax Reg No" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
               </AccordionRow>
             </Card>
 
-            <Card shadowEnabled={false} surfaceColor="transparent" restingBorderColor="transparent" style={styles.settingsGroup}>
+            <Card shadowEnabled={false} style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
@@ -291,7 +291,7 @@ export default function SettingsScreen() {
               </AccordionRow>
 </Card>
 
-            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", backgroundColor: "transparent", padding: 16 }}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
@@ -301,7 +301,7 @@ export default function SettingsScreen() {
               </View>
             </GlowPressable>
 
-            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", backgroundColor: "transparent", padding: 20, paddingBottom: 0 }}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
@@ -318,7 +318,7 @@ export default function SettingsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open Ledgr privacy policy"
               onPress={() => router.push("/privacy-data" as any)}
-              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", backgroundColor: "transparent", padding: 20 }}
+              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20 }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
