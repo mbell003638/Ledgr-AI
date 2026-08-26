@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
@@ -105,12 +105,16 @@ export function ReorderableWorkspaceGrid({
     }, motionEnabled ? settleMs : 0);
   };
 
-  const cancelDrag = () => {
+  const cancelDrag = useCallback(() => {
     activeIndex.value = -1;
     targetIndex.value = -1;
     dragX.value = 0;
     dragY.value = 0;
-  };
+  }, [activeIndex, dragX, dragY, targetIndex]);
+
+  useEffect(() => {
+    if (!editing) cancelDrag();
+  }, [cancelDrag, editing]);
 
   return (
     <View
@@ -510,3 +514,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
