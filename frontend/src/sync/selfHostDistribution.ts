@@ -4,6 +4,8 @@ export const SELF_HOST_DISTRIBUTION = {
   bundleUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/ledgr-selfhost-bundle.tar.gz',
   linuxInstallerUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/ledgr-selfhost-install.sh',
   windowsInstallerUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/ledgr-selfhost-install.ps1',
+  windowsLauncherUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/ledgr-selfhost-install.bat',
+  macosLauncherUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/ledgr-selfhost-install.command',
   composeUrl: 'https://github.com/mbell003638/Ledgr-Self-Host/releases/latest/download/docker-compose.yml',
   image: 'ghcr.io/mbell003638/ledgr-self-host-sync:latest',
   releaseAssetNames: {

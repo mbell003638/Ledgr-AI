@@ -18,6 +18,8 @@ type HostOption = {
   downloadUrl: string;
   alternateDownloadLabel?: string;
   alternateDownloadUrl?: string;
+  extraDownloadLabel?: string;
+  extraDownloadUrl?: string;
 };
 
 const hosts: Record<HostChoice, HostOption> = {
@@ -26,19 +28,21 @@ const hosts: Record<HostChoice, HostOption> = {
     icon: 'desktop-outline',
     intro: 'Best for one office, one shop, or a small team using the same network.',
     note: 'Keep the computer powered on whenever another device needs to sync.',
-    setup: 'Install Docker Desktop, download the guided package, and follow the setup screen. You do not need to open a terminal first.',
-    downloadLabel: 'Download for Windows',
-    downloadUrl: SELF_HOST_DISTRIBUTION.windowsInstallerUrl,
-    alternateDownloadLabel: 'Download for macOS/Linux',
-    alternateDownloadUrl: SELF_HOST_DISTRIBUTION.linuxInstallerUrl,
+    setup: 'Download the one-click launcher for your computer. Open it, approve Docker Desktop if asked, answer the short setup questions, and Ledgr will start the server for you.',
+    downloadLabel: 'Download Windows one-click installer',
+    downloadUrl: SELF_HOST_DISTRIBUTION.windowsLauncherUrl,
+    alternateDownloadLabel: 'Download macOS one-click launcher',
+    alternateDownloadUrl: SELF_HOST_DISTRIBUTION.macosLauncherUrl,
+    extraDownloadLabel: 'Download Linux installer',
+    extraDownloadUrl: SELF_HOST_DISTRIBUTION.linuxInstallerUrl,
   },
   vps: {
     label: 'VPS',
     icon: 'globe-outline',
     intro: 'Best when owners, team members, or shops work from different places.',
     note: 'Use a domain name, HTTPS, firewall rules, updates, and automated backups.',
-    setup: 'Use the Linux installer on your VPS. It checks Docker, creates the protected deployment folders, starts the services, and prints the health address.',
-    downloadLabel: 'Download Linux installer',
+    setup: 'Download the Linux installer, open it on the VPS, and follow the prompts. It checks Docker, creates protected deployment folders, starts the services, and prints the health address.',
+    downloadLabel: 'Download Linux one-click installer',
     downloadUrl: SELF_HOST_DISTRIBUTION.linuxInstallerUrl,
   },
   nas: {
@@ -104,7 +108,9 @@ export default function PrivateSyncGuideScreen() {
           <Text style={styles.hint}>{selected.setup}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel={selected.downloadLabel} testID={`download-self-host-${host}`} onPress={() => void openExternal(selected.downloadUrl)} style={styles.primary}><Ionicons name="download-outline" size={20} color={theme.color.onBrandPrimary} /><Text style={styles.primaryText}>{selected.downloadLabel}</Text></Pressable>
           {selected.alternateDownloadUrl ? <Pressable accessibilityRole="button" accessibilityLabel={selected.alternateDownloadLabel} onPress={() => void openExternal(selected.alternateDownloadUrl as string)} style={styles.secondary}><Ionicons name="download-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.secondaryText}>{selected.alternateDownloadLabel}</Text></Pressable> : null}
+          {selected.extraDownloadUrl ? <Pressable accessibilityRole="button" accessibilityLabel={selected.extraDownloadLabel} onPress={() => void openExternal(selected.extraDownloadUrl as string)} style={styles.secondary}><Ionicons name="download-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.secondaryText}>{selected.extraDownloadLabel}</Text></Pressable> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Open all self-host downloads" onPress={() => void openExternal(SELF_HOST_DISTRIBUTION.releaseUrl)} style={styles.secondary}><Ionicons name="list-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.secondaryText}>See all versions and downloads</Text></Pressable>
+          <Text style={styles.hint}>The launcher is the easiest path, but it cannot silently install Docker or open firewall ports. Your computer may ask for permission, and you still need a real HTTPS domain plus OIDC settings for secure phone sign-in.</Text>
           <Text style={styles.hint}>The package is distributed through versioned GitHub Releases. Your computer, VPS, or NAS runs the service; GitHub does not run your business server.</Text>
           <Text style={styles.code}>Container image: {SELF_HOST_DISTRIBUTION.image}</Text>
         </View>
@@ -121,8 +127,9 @@ export default function PrivateSyncGuideScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Connect the first device</Text>
-          <Text style={styles.hint}>Keep the device Local-only while you make and verify an encrypted backup. Then open Private sync, choose Set up my own server, enter the server address, and review the first snapshot before publishing it.</Text>
+          <Text style={styles.sectionTitle}>After the installer finishes</Text>
+          <Text style={styles.hint}>On the server computer, open the printed HTTPS address followed by <Text style={styles.inlineCode}>/setup</Text>. Enter the setup token created by the installer and press Generate first-owner QR. Keep this page private.</Text>
+          <Text style={styles.hint}>On the first phone, open Private sync, choose Join an existing business, press Scan QR invitation, scan the QR shown on the computer, and press Sign in and become owner. The phone must have a verified encrypted backup before joining.</Text>
           <Text style={styles.hint}>Ledgr sends checked accounting operations. It never copies a raw SQLite file over the server database.</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Go to Private sync setup" onPress={() => router.back()} style={styles.primary}><Text style={styles.primaryText}>Go to Private sync</Text></Pressable>
         </View>
@@ -156,6 +163,7 @@ const makeStyles = (theme: any) => StyleSheet.create({
   hostLabel: { color: theme.color.onSurface, fontSize: 11, fontWeight: '800', textAlign: 'center' },
   hostIntro: { color: theme.color.onSurface, fontWeight: '800', fontSize: 14 },
   hint: { color: theme.color.muted, fontSize: 13, lineHeight: 19 },
+  inlineCode: { color: theme.color.onSurface, fontWeight: '800' },
   choiceTitle: { color: theme.color.onSurface, fontWeight: '800', fontSize: 16 },
   code: { color: theme.color.muted, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, padding: 10, fontSize: 12, lineHeight: 17 },
   step: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderTopColor: theme.color.border, borderTopWidth: 1, paddingTop: 11 },
