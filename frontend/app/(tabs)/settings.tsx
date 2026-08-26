@@ -183,7 +183,7 @@ export default function SettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <Card shadowEnabled={false} style={styles.settingsGroup}>
+            <Card shadowEnabled={false} hoverBorderColor={theme.color.glassBorder} style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Business Profile</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Manage your basic company info and defaults.</Text>
               <AccordionRow title="Company Info & Logo" subtitle="Name, Contact, Tax Reg No" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
               </AccordionRow>
             </Card>
 
-            <Card shadowEnabled={false} style={styles.settingsGroup}>
+            <Card shadowEnabled={false} hoverBorderColor={theme.color.glassBorder} style={styles.settingsGroup}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Preferences</Text>
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
