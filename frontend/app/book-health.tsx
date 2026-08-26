@@ -52,10 +52,6 @@ export default function BookHealthScreen() {
               </View>
             ))}
           </Card>
-          <View style={styles.actions}>
-            <Pressable onPress={() => router.push('/backup-recovery' as any)} style={styles.action}><Ionicons name="archive-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.actionText}>Backup & Recovery</Text></Pressable>
-            <Pressable onPress={() => router.push('/sync-settings' as any)} style={styles.action}><Ionicons name="cloud-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.actionText}>Private Sync</Text></Pressable>
-          </View>
           <Text style={styles.note}>Book Health never changes transactions. It reports issues for the active Business Account so you can review them safely.</Text>
         </ScrollView>
       )}
@@ -74,9 +70,6 @@ function makeStyles(theme: any) {
     checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.color.border },
     checkTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: '700' },
     checkDetail: { color: theme.color.muted, fontSize: 12, lineHeight: 17, marginTop: 3 },
-    actions: { flexDirection: 'row', gap: 10, marginTop: theme.spacing.lg },
-    action: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
-    actionText: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: '700' },
     note: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: theme.spacing.lg },
   });
 }
