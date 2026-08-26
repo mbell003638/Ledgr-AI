@@ -403,7 +403,7 @@ export default function AdvancedSettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <View style={{ backgroundColor: "transparent", borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
               <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
                 <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
@@ -534,7 +534,7 @@ export default function AdvancedSettingsScreen() {
               </AccordionRow>
             </View>
 
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <View style={{ backgroundColor: "transparent", borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
               <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
@@ -596,7 +596,7 @@ export default function AdvancedSettingsScreen() {
               </AccordionRow>
             </View>
 
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <View style={{ backgroundColor: "transparent", borderRadius: theme.radius.md, borderWidth: 0, borderColor: "transparent", marginTop: theme.spacing.lg, padding: 20 }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Security & Data</Text>
               <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Protect your sensitive actions and backups.</Text>
               <AccordionRow title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
