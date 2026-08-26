@@ -35,10 +35,12 @@ describe('phase 4-5 UI safety contracts', () => {
     expect(experiments).toContain("key: 'fixed_assets'");
   });
 
-  it('supports configuration-only QR setup without placing credentials in the code', () => {
+  it('supports one-time QR invitations without placing credentials in the code', () => {
     expect(syncSettings).toContain('scan-sync-setup');
     expect(syncSettings).toContain('parseSyncSetupQr');
-    expect(syncSettings).toContain('show-sync-setup-qr');
+    expect(syncSettings).toContain('create-sync-invitation-qr');
+    expect(syncSettings).toContain('createSyncEnrollmentCode');
+    expect(syncSettings).toContain('redeemSyncEnrollmentCode');
     expect(syncSettings).toContain('createSyncSetupQr');
     expect(syncSettings).toContain('react-native-qrcode-svg');
   });

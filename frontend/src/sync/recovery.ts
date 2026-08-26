@@ -11,6 +11,7 @@ let savepointSequence = 0;
 
 export type SyncEpochState = { bookId: string; bookEpoch: string; epochNumber: number; epochStartSequence: number; currentSequence: number };
 export type SyncDevice = { deviceId: string; subject?: string; enrolledAt?: string; expiresAt?: string; lastSeenAt?: string; revokedAt?: string | null; current?: boolean };
+export type SyncEnrollmentCode = { codeId: string; bookId: string; code: string; role: 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor'; locationIds: string[]; expiresAt: string };
 export type ProjectionVerification = { bookId: string; bookEpoch: string; throughSequence: number; serverEventHash: string; eventHashMatches: boolean; projectionHashMatches?: boolean; verifiedAt: string };
 export type SnapshotInstaller = (db: SqlRunner, payload: unknown, snapshot: SyncSnapshot) => Promise<void>;
 export type SnapshotReplayer = (db: SqlRunner, operation: SyncOperation) => Promise<void>;
@@ -59,6 +60,37 @@ export async function enrollSyncDevice(db: SqlRunner, bookId: string): Promise<S
   await writeSyncBookState(db, changed || !current
     ? { bookId, bookEpoch: result.bookEpoch, serverCursor: Math.max(0, result.epochStartSequence - 1), ...(bootstrapRequired ? { snapshotHash: hashPayload([]) } : {}), epochNumber: result.epochNumber, epochStartSequence: result.epochStartSequence, updatedAt: timestamp }
     : { ...current, epochNumber: result.epochNumber, epochStartSequence: result.epochStartSequence, updatedAt: timestamp });
+  return result;
+}
+
+/** Create a short-lived server invitation for another phone without exposing credentials. */
+export async function createSyncEnrollmentCode(
+  db: SqlRunner,
+  bookId: string,
+  role: SyncEnrollmentCode['role'] = 'viewer',
+  locationIds: string[] = [],
+  ttlMinutes = 15,
+): Promise<SyncEnrollmentCode> {
+  const profile = await getSyncProfile(db, bookId);
+  if (!profile?.bookEpoch) throw new Error('Enroll this phone before creating an invitation');
+  if (!['admin', 'accountant', 'editor', 'viewer', 'auditor'].includes(role)) throw new Error('Invitation role is invalid');
+  const response = await request(profile, '/v1/sync/enrollment-codes', { method: 'POST', body: JSON.stringify({ bookId, deviceId: profile.deviceId, role, locationIds, ttlMinutes }) });
+  const invitation = response?.enrollment;
+  if (!invitation || invitation.bookId !== bookId || typeof invitation.code !== 'string' || typeof invitation.expiresAt !== 'string') throw new Error('Sync server returned an invalid invitation');
+  return { codeId: String(invitation.codeId || ''), bookId, code: invitation.code, role: invitation.role, locationIds: Array.isArray(invitation.locationIds) ? invitation.locationIds.map(String) : [], expiresAt: invitation.expiresAt };
+}
+
+/** Redeem a one-time invitation and install only the server-issued epoch identity locally. */
+export async function redeemSyncEnrollmentCode(db: SqlRunner, bookId: string, code: string, displayName?: string, platform?: string): Promise<SyncEpochState> {
+  const profile = await getSyncProfile(db, bookId);
+  if (!profile) throw new Error('Scan an invitation or configure the sync server before joining');
+  const response = await request(profile, '/v1/sync/enroll-code/redeem', { method: 'POST', body: JSON.stringify({ code, deviceId: profile.deviceId, ...(displayName ? { displayName } : {}), ...(platform ? { platform } : {}) }) });
+  const result = epoch(response?.enrollment, bookId);
+  const timestamp = now();
+  const canonicalDataExists = result.currentSequence >= result.epochStartSequence;
+  const recoveryReason = canonicalDataExists ? 'Install the validated server snapshot before sync resumes' : null;
+  await db.run('UPDATE sync_profiles SET book_epoch=?,enabled=?,recovery_required=?,recovery_reason=?,updated_at=? WHERE id=?', [result.bookEpoch, canonicalDataExists ? 0 : 1, canonicalDataExists ? 1 : 0, recoveryReason, timestamp, bookId]);
+  await writeSyncBookState(db, { bookId, bookEpoch: result.bookEpoch, serverCursor: Math.max(0, result.epochStartSequence - 1), epochNumber: result.epochNumber, epochStartSequence: result.epochStartSequence, updatedAt: timestamp, ...(canonicalDataExists ? {} : { snapshotHash: hashPayload([]) }) });
   return result;
 }
 

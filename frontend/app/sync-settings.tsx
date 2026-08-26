@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -9,18 +9,19 @@ import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import { activeBookId, activeSqlRunner } from '@/src/db/backend';
-import { advanceSyncEpoch, enrollSyncDevice, listSyncDevices, revokeSyncDevice, type SyncDevice } from '@/src/sync/recovery';
+import { advanceSyncEpoch, createSyncEnrollmentCode, enrollSyncDevice, listSyncDevices, redeemSyncEnrollmentCode, revokeSyncDevice, type SyncDevice, type SyncEnrollmentCode } from '@/src/sync/recovery';
 import { createSyncSetupQr, parseSyncSetupQr } from '@/src/sync/setupQr';
 
 const SELF_HOST_RELEASES_URL = 'https://github.com/mbell003638/Ledgr-SelfHost/releases/latest';
+const INVITE_ROLES: SyncEnrollmentCode['role'][] = ['viewer', 'accountant', 'editor', 'admin'];
 
 export default function SyncSettingsScreen() {
   const theme = useTheme(); const styles = useMemo(() => makeStyles(theme), [theme]);
   const [serverUrl, setServerUrl] = useState(''); const [userId, setUserId] = useState(''); const [token, setToken] = useState('');
   const [oidcIssuer, setOidcIssuer] = useState(''); const [oidcClientId, setOidcClientId] = useState(''); const [oidcScopes, setOidcScopes] = useState('openid profile offline_access');
-  const [status, setStatus] = useState<any>(null); const [devices, setDevices] = useState<SyncDevice[]>([]);
+  const [status, setStatus] = useState<any>(null); const [devices, setDevices] = useState<SyncDevice[]>([]); const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
-  const [scanning, setScanning] = useState(false); const [scanLocked, setScanLocked] = useState(false); const [showSetupQr, setShowSetupQr] = useState(false);
+  const [scanning, setScanning] = useState(false); const [scanLocked, setScanLocked] = useState(false); const [inviteRole, setInviteRole] = useState<SyncEnrollmentCode['role']>('viewer'); const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]); const [inviteQrValue, setInviteQrValue] = useState<string | null>(null); const [pendingEnrollmentCode, setPendingEnrollmentCode] = useState<string | null>(null); const [pendingEnrollmentBookId, setPendingEnrollmentBookId] = useState<string | null>(null);
   const [, requestCameraPermission] = useCameraPermissions();
   const load = useCallback(async () => {
     try {
@@ -30,20 +31,42 @@ export default function SyncSettingsScreen() {
       if (next.oidcIssuer) setOidcIssuer((current) => current || next.oidcIssuer || '');
       if (next.oidcClientId) setOidcClientId((current) => current || next.oidcClientId || '');
       if (next.oidcScopes) setOidcScopes((current) => current || next.oidcScopes || '');
-      const db = activeSqlRunner(); setDevices(db && next.configured ? await listSyncDevices(db, activeBookId()).catch(() => []) : []);
+      const db = activeSqlRunner();
+      setDevices(db && next.configured ? await listSyncDevices(db, activeBookId()).catch(() => []) : []);
+      const localLocations = db && next.configured ? await api.listLocations().catch(() => []) : [];
+      setLocations(localLocations.map((location: any) => ({ id: String(location.id), name: String(location.name) })));
+      setSelectedLocationIds((current) => current.filter((id) => localLocations.some((location: any) => String(location.id) === id)));
     } catch (error: any) { setMessage(error?.message || 'Sync is unavailable until SQLite is ready.'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const setupQrValue = useMemo(() => {
-    if (!serverUrl.trim() || !oidcIssuer.trim() || !oidcClientId.trim()) return null;
-    try { return createSyncSetupQr({ serverUrl, oidcIssuer, oidcClientId, oidcScopes }); } catch { return null; }
-  }, [serverUrl, oidcIssuer, oidcClientId, oidcScopes]);
+  const completeEnrollment = async (db: ReturnType<typeof activeSqlRunner>) => {
+    if (!db) throw new Error('Sync requires SQLite storage');
+    const bookId = activeBookId();
+    if (pendingEnrollmentBookId && pendingEnrollmentBookId !== bookId) throw new Error('This invitation belongs to a different Business Account. Open the matching Business Account before enrolling.');
+    if (pendingEnrollmentCode) {
+      const enrolled = await redeemSyncEnrollmentCode(db, bookId, pendingEnrollmentCode, undefined, Platform.OS);
+      setPendingEnrollmentCode(null); setPendingEnrollmentBookId(null);
+      return enrolled;
+    }
+    return enrollSyncDevice(db, bookId);
+  };
+  const createInvitationQr = async () => {
+    setBusy(true); setMessage('');
+    try {
+      if (!status?.configured || !status.bookEpoch) throw new Error('Enroll this phone before creating an invitation');
+      const db = activeSqlRunner(); if (!db) throw new Error('Sync requires SQLite storage');
+      const invitation = await createSyncEnrollmentCode(db, activeBookId(), inviteRole, selectedLocationIds, 15);
+      const value = createSyncSetupQr({ serverUrl, oidcIssuer, oidcClientId, oidcScopes, bookId: invitation.bookId, enrollmentCode: invitation.code, enrollmentRole: invitation.role, locationIds: invitation.locationIds, expiresAt: invitation.expiresAt });
+      setInviteQrValue(value);
+      setMessage(`Invitation created for ${invitation.role}. It expires at ${new Date(invitation.expiresAt).toLocaleTimeString()}.`);
+    } catch (error: any) { setMessage(error?.message || 'Could not create an invitation QR code.'); } finally { setBusy(false); }
+  };
   const enroll = async () => {
     setBusy(true); setMessage('');
     try {
       await api.configureSync({ serverUrl, userId, accessToken: token, enabled: false, oidcIssuer, oidcClientId, oidcScopes });
       const db = activeSqlRunner(); if (!db) throw new Error('Sync requires SQLite storage');
-      const enrolled = await enrollSyncDevice(db, activeBookId()); setToken('');
+      const enrolled = await completeEnrollment(db); setToken('');
       const next = await api.getSyncStatus(); setStatus(next);
       setMessage(next.bootstrapRequired ? 'Device enrolled against an empty server epoch. Review the destination, then explicitly choose Publish snapshot to make this local Business Account canonical before sync can start.' : next.recoveryRequired ? `Device enrolled in epoch ${enrolled.epochNumber}. Export a backup, then install the validated server snapshot.` : 'Device enrolled. Local writes remain available offline.');
       await load();
@@ -54,7 +77,7 @@ export default function SyncSettingsScreen() {
     try {
       await api.authorizeSyncOidc({ serverUrl, userId, oidcIssuer, oidcClientId, oidcScopes });
       const db = activeSqlRunner(); if (!db) throw new Error('Sync requires SQLite storage');
-      const enrolled = await enrollSyncDevice(db, activeBookId());
+      const enrolled = await completeEnrollment(db);
       const next = await api.getSyncStatus(); setStatus(next);
       setMessage(next.bootstrapRequired ? 'OIDC sign-in succeeded. This server epoch is empty; explicitly publish the initial snapshot after reviewing the destination.' : next.recoveryRequired ? `OIDC sign-in succeeded for epoch ${enrolled.epochNumber}. Export a backup, then install the validated server snapshot.` : 'OIDC sign-in and device enrollment completed. Local writes remain available offline.');
       await load();
@@ -88,18 +111,15 @@ export default function SyncSettingsScreen() {
       await Linking.openURL(SELF_HOST_RELEASES_URL);
     } catch (error: any) { setMessage(error?.message || 'Could not open the self-host package download.'); }
   };
-  const openSetupQr = () => {
-    if (!setupQrValue) { setMessage('Enter a valid server URL, OIDC issuer, and OIDC client ID first.'); return; }
-    setMessage(''); setShowSetupQr(true);
-  };
   const onSetupQr = (result: BarcodeScanningResult) => {
     if (scanLocked) return;
     setScanLocked(true);
     try {
       const setup = parseSyncSetupQr(result.data);
-      setServerUrl(setup.serverUrl); setOidcIssuer(setup.oidcIssuer); setOidcClientId(setup.oidcClientId);
-      if (setup.oidcScopes) setOidcScopes(setup.oidcScopes);
-      setScanning(false); setMessage('Setup details imported. Review them, then sign in with OIDC and enroll.');
+       setServerUrl(setup.serverUrl); setOidcIssuer(setup.oidcIssuer); setOidcClientId(setup.oidcClientId);
+       if (setup.oidcScopes) setOidcScopes(setup.oidcScopes);
+       setPendingEnrollmentCode(setup.enrollmentCode || null); setPendingEnrollmentBookId(setup.bookId || null);
+       setScanning(false); setMessage(setup.enrollmentCode ? `Invitation imported for ${setup.enrollmentRole || 'member'}. Review the connection details, then sign in with OIDC to join.` : 'Setup details imported. Review them, then sign in with OIDC and enroll.');
     } catch (error: any) {
       setScanLocked(false); setMessage(error?.message || 'That QR code is not a valid Ledgr setup code.');
     }
@@ -109,9 +129,16 @@ export default function SyncSettingsScreen() {
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
       <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text><Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>
         <Pressable testID="download-self-host-package" onPress={openSelfHostPackage} style={styles.packageButton}><Ionicons name="download-outline" size={20} color={theme.color.brandPrimary} /><View style={styles.packageCopy}><Text style={styles.packageTitle}>Download Self-host Package</Text><Text style={styles.packageHint}>Windows, macOS, Linux, and Docker bundle</Text></View><Ionicons name="open-outline" size={18} color={theme.color.muted} /></Pressable>
-        <Pressable testID="show-sync-setup-qr" onPress={openSetupQr} style={[styles.qrButton, !setupQrValue && styles.disabled]}><Ionicons name="qr-code-outline" size={20} color={theme.color.brandPrimary} /><View style={styles.packageCopy}><Text style={styles.packageTitle}>Show setup QR for another phone</Text><Text style={styles.packageHint}>Share connection settings without sharing credentials</Text></View><Ionicons name="chevron-forward" size={18} color={theme.color.muted} /></Pressable>
-        {showSetupQr && setupQrValue ? <View style={styles.qrPreview}><Text style={styles.qrTitle}>Scan this code on the joining phone</Text><Text style={styles.qrHint}>The other phone will still sign in with its own OIDC account. This code contains no access token or password.</Text><View style={styles.qrSurface}><QRCode value={setupQrValue} size={220} backgroundColor="#ffffff" color="#000000" /></View><Pressable onPress={() => setShowSetupQr(false)} style={styles.closeQr}><Text style={styles.closeScannerText}>Close QR</Text></Pressable></View> : null}
-        <Pressable testID="scan-sync-setup" onPress={openSetupScanner} style={styles.scanButton}><Ionicons name="qr-code-outline" size={20} color={theme.color.brandPrimary} /><Text style={styles.scanButtonText}>Scan setup QR</Text></Pressable>
+        {status?.configured ? <View style={styles.invitePanel}>
+          <Text style={styles.packageTitle}>Create invitation QR for another phone</Text>
+          <Text style={styles.packageHint}>Choose access, then show a one-time QR. The recipient signs in with their own account.</Text>
+          <Text style={styles.inviteLabel}>Access level</Text>
+          <View style={styles.chipRow}>{INVITE_ROLES.map((role) => <Pressable key={role} onPress={() => setInviteRole(role)} style={[styles.chip, inviteRole === role && styles.chipSelected]}><Text style={[styles.chipText, inviteRole === role && styles.chipTextSelected]}>{role}</Text></Pressable>)}</View>
+          {locations.length ? <><Text style={styles.inviteLabel}>Locations (optional)</Text><View style={styles.chipRow}>{locations.map((location) => { const selected = selectedLocationIds.includes(location.id); return <Pressable key={location.id} onPress={() => setSelectedLocationIds((current) => selected ? current.filter((id) => id !== location.id) : [...current, location.id])} style={[styles.chip, selected && styles.chipSelected]}><Text style={[styles.chipText, selected && styles.chipTextSelected]}>{location.name}</Text></Pressable>; })}</View><Text style={styles.packageHint}>{selectedLocationIds.length ? 'Only selected locations will be available.' : 'No locations selected: all locations will be available.'}</Text></> : null}
+          <Pressable testID="create-sync-invitation-qr" disabled={busy} onPress={createInvitationQr} style={[styles.qrButton, busy && styles.disabled]}><Ionicons name="qr-code-outline" size={20} color={theme.color.brandPrimary} /><View style={styles.packageCopy}><Text style={styles.packageTitle}>{busy ? 'Creating invitation…' : 'Create invitation QR'}</Text><Text style={styles.packageHint}>Expires in 15 minutes and can be used once</Text></View><Ionicons name="chevron-forward" size={18} color={theme.color.muted} /></Pressable>
+        </View> : null}
+        {inviteQrValue ? <View style={styles.qrPreview}><Text style={styles.qrTitle}>Scan this invitation on the joining phone</Text><Text style={styles.qrHint}>This QR contains connection details and a one-time invitation code only. It does not contain an access token or password.</Text><View style={styles.qrSurface}><QRCode value={inviteQrValue} size={220} backgroundColor="#ffffff" color="#000000" /></View><Pressable onPress={() => setInviteQrValue(null)} style={styles.closeQr}><Text style={styles.closeScannerText}>Close QR</Text></Pressable></View> : null}
+        <Pressable testID="scan-sync-setup" onPress={openSetupScanner} style={styles.scanButton}><Ionicons name="qr-code-outline" size={20} color={theme.color.brandPrimary} /><Text style={styles.scanButtonText}>{pendingEnrollmentCode ? 'Invitation scanned — review and enroll' : 'Scan setup QR'}</Text></Pressable>
         {scanning ? <View style={styles.scanner}><CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={scanLocked ? undefined : onSetupQr} /><View style={styles.scannerOverlay}><Text style={styles.scannerText}>Align the Ledgr setup QR code inside the frame</Text><Pressable onPress={() => setScanning(false)} style={styles.closeScanner}><Text style={styles.closeScannerText}>Close scanner</Text></Pressable></View></View> : null}
         <Text style={styles.label}>Server URL</Text><TextInput value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" keyboardType="url" placeholder="https://sync.example.com" placeholderTextColor={theme.color.muted} style={styles.input} />
         <Text style={styles.label}>Account or user ID</Text><TextInput value={userId} onChangeText={setUserId} autoCapitalize="none" placeholder="you@example.com" placeholderTextColor={theme.color.muted} style={styles.input} />
@@ -130,4 +157,4 @@ export default function SyncSettingsScreen() {
   </SafeAreaView>;
 }
 
-const makeStyles = (theme: any) => StyleSheet.create({ container: { flex: 1, backgroundColor: theme.color.surface }, header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: theme.spacing.lg, paddingTop: 16 }, scroll: { padding: theme.spacing.lg, paddingBottom: 40, gap: 14 }, card: { backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.lg, padding: 18, gap: 8 }, title: { color: theme.color.onSurface, fontSize: 18, fontWeight: '700' }, hint: { color: theme.color.muted, fontSize: 13, lineHeight: 19 }, mono: { color: theme.color.muted, fontSize: 11 }, label: { color: theme.color.onSurface, fontSize: 13, fontWeight: '600', marginTop: 12 }, input: { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 11 }, primary: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingVertical: 13, alignItems: 'center', marginTop: 16 }, primaryText: { color: theme.color.onBrandPrimary, fontWeight: '700' }, disabled: { opacity: 0.45 }, packageButton: { flexDirection: 'row', alignItems: 'center', gap: 10, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, padding: 12, marginTop: 8 }, packageCopy: { flex: 1, gap: 2 }, packageTitle: { color: theme.color.onSurface, fontWeight: '700' }, packageHint: { color: theme.color.muted, fontSize: 12 }, qrButton: { flexDirection: 'row', alignItems: 'center', gap: 10, borderColor: theme.color.brandPrimary, borderWidth: 1, borderRadius: theme.radius.md, padding: 12, marginTop: 8 }, qrPreview: { alignItems: 'center', gap: 8, borderTopColor: theme.color.border, borderTopWidth: 1, marginTop: 8, paddingTop: 16 }, qrTitle: { color: theme.color.onSurface, fontWeight: '700', textAlign: 'center' }, qrHint: { color: theme.color.muted, fontSize: 12, lineHeight: 18, textAlign: 'center' }, qrSurface: { padding: 14, backgroundColor: '#fff', borderRadius: theme.radius.md, marginVertical: 6 }, closeQr: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingHorizontal: 16, paddingVertical: 10 }, scanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderColor: theme.color.brandPrimary, borderWidth: 1, borderRadius: theme.radius.md, paddingVertical: 12, marginTop: 10 }, scanButtonText: { color: theme.color.brandPrimary, fontWeight: '700' }, scanner: { height: 300, overflow: 'hidden', borderRadius: theme.radius.md, backgroundColor: '#000', marginTop: 8 }, camera: { flex: 1 }, scannerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', alignItems: 'center', padding: 16, backgroundColor: 'transparent' }, scannerText: { color: '#fff', textAlign: 'center', fontWeight: '700', textShadowColor: '#000', textShadowRadius: 4 }, closeScanner: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingHorizontal: 16, paddingVertical: 10, marginTop: 10 }, closeScannerText: { color: theme.color.onBrandPrimary, fontWeight: '700' }, status: { borderTopColor: theme.color.border, borderTopWidth: 1, marginTop: 18, paddingTop: 14, gap: 6 }, statusTitle: { color: theme.color.brandPrimary, fontWeight: '700' }, row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 }, secondary: { borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, paddingHorizontal: 14, paddingVertical: 10 }, secondaryText: { color: theme.color.onSurface, fontWeight: '600' }, error: { color: theme.color.danger || '#c53b3b', fontSize: 12 }, message: { color: theme.color.muted, fontSize: 13, marginTop: 8 }, device: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: theme.color.border, paddingTop: 12, marginTop: 8 }, deviceTitle: { color: theme.color.onSurface, fontWeight: '600' }, revoke: { padding: 10 }, revokeText: { color: theme.color.danger || '#c53b3b', fontWeight: '700' } });
+const makeStyles = (theme: any) => StyleSheet.create({ container: { flex: 1, backgroundColor: theme.color.surface }, header: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: theme.spacing.lg, paddingTop: 16 }, scroll: { padding: theme.spacing.lg, paddingBottom: 40, gap: 14 }, card: { backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.lg, padding: 18, gap: 8 }, title: { color: theme.color.onSurface, fontSize: 18, fontWeight: '700' }, hint: { color: theme.color.muted, fontSize: 13, lineHeight: 19 }, mono: { color: theme.color.muted, fontSize: 11 }, label: { color: theme.color.onSurface, fontSize: 13, fontWeight: '600', marginTop: 12 }, input: { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 11 }, primary: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingVertical: 13, alignItems: 'center', marginTop: 16 }, primaryText: { color: theme.color.onBrandPrimary, fontWeight: '700' }, disabled: { opacity: 0.45 }, packageButton: { flexDirection: 'row', alignItems: 'center', gap: 10, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, padding: 12, marginTop: 8 }, packageCopy: { flex: 1, gap: 2 }, packageTitle: { color: theme.color.onSurface, fontWeight: '700' }, packageHint: { color: theme.color.muted, fontSize: 12 }, invitePanel: { borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, padding: 12, marginTop: 8, gap: 6 }, inviteLabel: { color: theme.color.onSurface, fontWeight: '700', marginTop: 8 }, chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, chip: { borderColor: theme.color.border, borderWidth: 1, borderRadius: 18, paddingHorizontal: 11, paddingVertical: 8 }, chipSelected: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surface }, chipText: { color: theme.color.muted, fontSize: 12, fontWeight: '600' }, chipTextSelected: { color: theme.color.brandPrimary }, qrButton: { flexDirection: 'row', alignItems: 'center', gap: 10, borderColor: theme.color.brandPrimary, borderWidth: 1, borderRadius: theme.radius.md, padding: 12, marginTop: 8 }, qrPreview: { alignItems: 'center', gap: 8, borderTopColor: theme.color.border, borderTopWidth: 1, marginTop: 8, paddingTop: 16 }, qrTitle: { color: theme.color.onSurface, fontWeight: '700', textAlign: 'center' }, qrHint: { color: theme.color.muted, fontSize: 12, lineHeight: 18, textAlign: 'center' }, qrSurface: { padding: 14, backgroundColor: '#fff', borderRadius: theme.radius.md, marginVertical: 6 }, closeQr: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingHorizontal: 16, paddingVertical: 10 }, scanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderColor: theme.color.brandPrimary, borderWidth: 1, borderRadius: theme.radius.md, paddingVertical: 12, marginTop: 10 }, scanButtonText: { color: theme.color.brandPrimary, fontWeight: '700' }, scanner: { height: 300, overflow: 'hidden', borderRadius: theme.radius.md, backgroundColor: '#000', marginTop: 8 }, camera: { flex: 1 }, scannerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', alignItems: 'center', padding: 16, backgroundColor: 'transparent' }, scannerText: { color: '#fff', textAlign: 'center', fontWeight: '700', textShadowColor: '#000', textShadowRadius: 4 }, closeScanner: { backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.md, paddingHorizontal: 16, paddingVertical: 10, marginTop: 10 }, closeScannerText: { color: theme.color.onBrandPrimary, fontWeight: '700' }, status: { borderTopColor: theme.color.border, borderTopWidth: 1, marginTop: 18, paddingTop: 14, gap: 6 }, statusTitle: { color: theme.color.brandPrimary, fontWeight: '700' }, row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 }, secondary: { borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, paddingHorizontal: 14, paddingVertical: 10 }, secondaryText: { color: theme.color.onSurface, fontWeight: '600' }, error: { color: theme.color.danger || '#c53b3b', fontSize: 12 }, message: { color: theme.color.muted, fontSize: 13, marginTop: 8 }, device: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: theme.color.border, paddingTop: 12, marginTop: 8 }, deviceTitle: { color: theme.color.onSurface, fontWeight: '600' }, revoke: { padding: 10 }, revokeText: { color: theme.color.danger || '#c53b3b', fontWeight: '700' } });

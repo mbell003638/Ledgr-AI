@@ -6,6 +6,11 @@ export type SyncSetupQrPayload = {
   oidcIssuer: string;
   oidcClientId: string;
   oidcScopes?: string;
+  bookId?: string;
+  enrollmentCode?: string;
+  enrollmentRole?: 'admin' | 'accountant' | 'editor' | 'viewer' | 'auditor';
+  locationIds?: string[];
+  expiresAt?: string;
 };
 
 function isPrivateHost(hostname: string): boolean {
@@ -33,12 +38,50 @@ function validateText(value: unknown, label: string, maxLength: number): string 
   return value.trim();
 }
 
+function validateEnrollmentCode(value: unknown): string {
+  const code = validateText(value, 'Enrollment code', 100);
+  if (!/^LGR-[A-Za-z0-9_-]{20,80}$/u.test(code)) throw new Error('Enrollment code is invalid');
+  return code;
+}
+
+function validateRole(value: unknown): SyncSetupQrPayload['enrollmentRole'] {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (!['admin', 'accountant', 'editor', 'viewer', 'auditor'].includes(String(value))) throw new Error('Enrollment role is invalid');
+  return value as SyncSetupQrPayload['enrollmentRole'];
+}
+
+function validateLocations(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.length > 500 || value.some((item) => typeof item !== 'string' || item.trim().length > 120)) throw new Error('Enrollment locations are invalid');
+  return [...new Set(value.map((item) => item.trim()).filter(Boolean))];
+}
+
 function fromFields(fields: Record<string, unknown>): SyncSetupQrPayload {
   const serverUrl = validateUrl(fields.serverUrl ?? fields.server_url, 'Server URL', true);
   const oidcIssuer = validateUrl(fields.oidcIssuer ?? fields.oidc_issuer, 'OIDC issuer', true);
   const oidcClientId = validateText(fields.oidcClientId ?? fields.oidc_client_id, 'OIDC client ID', 256);
   const oidcScopes = fields.oidcScopes ?? fields.oidc_scopes;
-  return { serverUrl, oidcIssuer, oidcClientId, ...(oidcScopes ? { oidcScopes: validateText(oidcScopes, 'OIDC scopes', 512) } : {}) };
+  const bookId = fields.bookId ?? fields.book_id;
+  const enrollmentCode = fields.enrollmentCode ?? fields.enrollment_code;
+  const enrollmentRole = fields.enrollmentRole ?? fields.enrollment_role;
+  const rawLocationIds = fields.locationIds ?? fields.location_ids;
+  let locationIds: unknown = rawLocationIds;
+  if (typeof rawLocationIds === 'string') {
+    try { locationIds = JSON.parse(rawLocationIds); } catch { throw new Error('Enrollment locations are invalid'); }
+  }
+  const expiresAt = fields.expiresAt ?? fields.expires_at;
+  if (enrollmentRole !== undefined && enrollmentCode === undefined) throw new Error('Enrollment role requires an enrollment code');
+  if (locationIds !== undefined && enrollmentCode === undefined) throw new Error('Enrollment locations require an enrollment code');
+  if (expiresAt !== undefined && (typeof expiresAt !== 'string' || !Number.isFinite(Date.parse(expiresAt)))) throw new Error('Enrollment expiry is invalid');
+  return {
+    serverUrl, oidcIssuer, oidcClientId,
+    ...(oidcScopes ? { oidcScopes: validateText(oidcScopes, 'OIDC scopes', 512) } : {}),
+    ...(bookId !== undefined ? { bookId: validateText(bookId, 'Business Account ID', 256) } : {}),
+    ...(enrollmentCode !== undefined ? { enrollmentCode: validateEnrollmentCode(enrollmentCode) } : {}),
+    ...(enrollmentRole !== undefined ? { enrollmentRole: validateRole(enrollmentRole) } : {}),
+    ...(locationIds !== undefined ? { locationIds: validateLocations(locationIds) } : {}),
+    ...(expiresAt !== undefined ? { expiresAt: String(expiresAt) } : {}),
+  };
 }
 
 function queryFields(query: string): Record<string, unknown> {
@@ -80,6 +123,11 @@ export function createSyncSetupQr(payload: SyncSetupQrPayload): string {
     ['oidc_issuer', normalized.oidcIssuer],
     ['oidc_client_id', normalized.oidcClientId],
     ...(normalized.oidcScopes ? [['oidc_scopes', normalized.oidcScopes]] : []),
+    ...(normalized.bookId ? [['book_id', normalized.bookId]] : []),
+    ...(normalized.enrollmentCode ? [['enrollment_code', normalized.enrollmentCode]] : []),
+    ...(normalized.enrollmentRole ? [['enrollment_role', normalized.enrollmentRole]] : []),
+    ...(normalized.locationIds?.length ? [['location_ids', JSON.stringify(normalized.locationIds)]] : []),
+    ...(normalized.expiresAt ? [['expires_at', normalized.expiresAt]] : []),
   ].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
   return `ledgr://sync-setup?${query}`;
 }
