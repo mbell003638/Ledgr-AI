@@ -967,7 +967,7 @@ describe('beginner-first private sync UI contracts', () => {
     expect(settings).toContain('Simple setup');
     expect(settings).toContain('Choose a path');
     expect(settings).toContain('I already have a server — show sign-in fields');
-    expect(guide).toContain('Your business can keep the server.');
+    expect(guide).toContain('Ledgr helps you choose the right setup.');
     expect(guide).toContain('Go to Private sync');
   });
 });
@@ -998,5 +998,20 @@ describe('QR private sync onboarding contracts', () => {
     expect(guide).toContain('VPS');
     expect(guide).toContain('NAS');
     expect(guide).toContain('Docker Compose v2');
+  });
+
+  it('links each beginner host choice to a versioned public self-host release', () => {
+    const guide = readApp('private-sync-guide.tsx');
+    const distribution = readSource('src/sync/selfHostDistribution.ts');
+    expect(guide).toContain('download-self-host-${host}');
+    expect(guide).toContain('Download for Windows');
+    expect(guide).toContain('Download for macOS/Linux');
+    expect(guide).toContain('Download Linux installer');
+    expect(guide).toContain('Download NAS/Docker bundle');
+    expect(guide).toContain('Open QR invitation scanner');
+    expect(distribution).toContain('releases/latest/download/ledgr-selfhost-bundle.tar.gz');
+    expect(distribution).toContain('releases/latest/download/ledgr-selfhost-install.sh');
+    expect(distribution).toContain('releases/latest/download/ledgr-selfhost-install.ps1');
+    expect(distribution).toContain('ghcr.io/mbell003638/ledgr-sync:latest');
   });
 });
