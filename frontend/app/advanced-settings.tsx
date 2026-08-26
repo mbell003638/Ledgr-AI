@@ -20,6 +20,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   return (
     <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
       <GlowPressable
+        shadowEnabled={false}
         topHighlight={false}
         haptic
         animateBorder
@@ -782,3 +783,4 @@ function makeStyles(theme: any) {
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   });
 }
+
