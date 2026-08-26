@@ -35,6 +35,7 @@ type GlowPressableProps = {
   accessibilityLabel?: string;
   accessibilityState?: any;
   prominent?: boolean;
+  shadowEnabled?: boolean;
   haptic?: boolean;
   topHighlight?: boolean;
   restingBorderColor?: string;
@@ -91,6 +92,7 @@ function AnimatedGlowPressable({
   accessibilityLabel,
   accessibilityState,
   prominent = false,
+  shadowEnabled = true,
   animateBorder = true,
   pressScale = 0.982,
   clipSafe = true,
@@ -159,19 +161,19 @@ function AnimatedGlowPressable({
         : restingBorderColor ?? theme.color.glassBorder,
       transform: [{ translateY }, { scale }],
       shadowColor: glowColor ?? theme.color.brandPrimary,
-      shadowOpacity: isWeb ? interpolate(
+      shadowOpacity: shadowEnabled && isWeb ? interpolate(
         focus,
         [0, 1],
         [0, prominent ? 0.48 : theme.effects.glowOpacity],
       ) : 0,
-      shadowRadius: isWeb ? interpolate(
+      shadowRadius: shadowEnabled && isWeb ? interpolate(
         focus,
         [0, 1],
         [0, glowRadius ?? (prominent ? theme.effects.strongGlowRadius : theme.effects.glowRadius)],
       ) : 0,
-      elevation: isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : 0,
+      elevation: shadowEnabled && isWeb ? interpolate(focus, [0, 1], [0, prominent ? 12 : 8]) : 0,
     };
-  }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, theme]);
+  }, [animateBorder, bounce, clipSafe, glowColor, glowRadius, hoverBorderColor, hoverLift, hoverScale, isWeb, pressScale, prominent, reduceMotion, restingBorderColor, shadowEnabled, theme]);
 
   return (
     <AnimatedPressable
@@ -226,3 +228,4 @@ function AnimatedGlowPressable({
     </AnimatedPressable>
   );
 }
+
