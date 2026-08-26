@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
+import { BackHandler, Platform, View, Text, StyleSheet, Pressable, RefreshControl, ActivityIndicator, TextInput , InteractionManager, ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -120,6 +120,15 @@ export default function Dashboard() {
   const [isEditingGrid, setIsEditingGrid] = useState(false);
   const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
   const [locationId, setLocationId] = useState("");
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || !isEditingGrid) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setIsEditingGrid(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isEditingGrid]);
 
   useEffect(() => {
     (async () => {
@@ -759,3 +768,4 @@ function makeStyles(theme: any) { return StyleSheet.create({
   pfVal: { color: theme.color.onSurface, fontSize: 14, fontWeight: "500" },
   organizePanel: { marginBottom: 8, padding: 10, backgroundColor: theme.color.glassSurface, borderWidth: 1, borderColor: theme.color.brandPrimary },
 }); }
+
