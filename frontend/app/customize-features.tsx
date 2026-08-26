@@ -157,7 +157,7 @@ export default function CustomizeFeaturesScreen() {
         {categories.map((cat) => (
           <View key={cat.id} style={{ marginBottom: 20 }}>
             <Text style={styles.categoryTitle}>{cat.title}</Text>
-            <Card style={{ padding: 0, overflow: "hidden" }}>
+            <Card shadowEnabled={false} style={{ padding: 0, overflow: "hidden" }}>
               {cat.items.map((item, idx) => {
                 const isEnabled = activeFeatures.has(item.key);
                 const blocker = disableBlockers[item.key];
@@ -297,3 +297,4 @@ function makeStyles(theme: any) {
     toggleWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   });
 }
+
