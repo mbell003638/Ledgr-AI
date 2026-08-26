@@ -300,6 +300,8 @@ describe('V2 UI contracts', () => {
     const picker = readSource('src/components/LocationPicker.tsx');
     expect(picker).toContain('locations.length === 1');
     expect(picker).toContain('Choose a location before saving this entry.');
+    expect(picker).toContain('locations.some((location) => location.id === requested)');
+    expect(picker).toContain('minHeight: 44');
   });
 
   it('dashboard daily-summary card and KPI tiles share the hero GlowPressable press treatment', () => {
@@ -974,6 +976,8 @@ describe('beginner-first private sync UI contracts', () => {
     expect(settings).toContain('testID="open-private-sync-guide"');
     expect(settings).toContain('Collapse sync workflows');
     expect(settings).toContain('Collapse sync system settings');
+    expect(settings).toContain('KeyboardAvoidingView');
+    expect(settings).toContain('scrollRef.current?.scrollToEnd');
     expect(settings).toContain('testID="sign-in-and-join-sync"');
     expect(settings).toContain('authorizeAndRedeemSyncEnrollmentCode');
     expect(guide).toContain('Ledgr helps you choose the right setup.');

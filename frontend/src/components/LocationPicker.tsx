@@ -15,7 +15,8 @@ export async function loadLocationsIfEnabled(): Promise<{ enabled: boolean; loca
     id: String(row.id || ""),
     name: String(row.name || ""),
   })).filter((row: ShopLocation) => row.id);
-  const activeId = String((settings as any)?.activeLocationId || (locations.length === 1 ? locations[0]?.id : "") || "");
+  const requested = String((settings as any)?.activeLocationId || '');
+  const activeId = locations.some((location) => location.id === requested) ? requested : String((locations.length === 1 ? locations[0]?.id : '') || '');
   return { enabled, locations, activeId };
 }
 
@@ -96,5 +97,5 @@ export function LocationPicker({
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  chip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
 });
