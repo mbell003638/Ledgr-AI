@@ -38,5 +38,8 @@ describe('phase 4-5 UI safety contracts', () => {
   it('supports configuration-only QR setup without placing credentials in the code', () => {
     expect(syncSettings).toContain('scan-sync-setup');
     expect(syncSettings).toContain('parseSyncSetupQr');
+    expect(syncSettings).toContain('show-sync-setup-qr');
+    expect(syncSettings).toContain('createSyncSetupQr');
+    expect(syncSettings).toContain('react-native-qrcode-svg');
   });
 });
