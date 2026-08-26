@@ -45,11 +45,11 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
   );
 }
 
-export function Card({ children, style, testID, shadowEnabled = true, surfaceColor, hoverSurfaceColor, restingBorderColor }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; testID?: string; shadowEnabled?: boolean; surfaceColor?: string; hoverSurfaceColor?: string; restingBorderColor?: string }) {
+export function Card({ children, style, testID, shadowEnabled = true, surfaceColor, hoverSurfaceColor, restingBorderColor, hoverBorderColor }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; testID?: string; shadowEnabled?: boolean; surfaceColor?: string; hoverSurfaceColor?: string; restingBorderColor?: string; hoverBorderColor?: string }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   return (
-    <AnimatedGlassSurface style={[styles.card, style]} testID={testID} shadowEnabled={shadowEnabled} surfaceColor={surfaceColor} hoverSurfaceColor={hoverSurfaceColor} restingBorderColor={restingBorderColor}>
+    <AnimatedGlassSurface style={[styles.card, style]} testID={testID} shadowEnabled={shadowEnabled} surfaceColor={surfaceColor} hoverSurfaceColor={hoverSurfaceColor} restingBorderColor={restingBorderColor} hoverBorderColor={hoverBorderColor}>
       {children}
     </AnimatedGlassSurface>
   );
@@ -154,3 +154,4 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     emptyHint: { fontSize: 13, color: theme.color.muted, textAlign: "center" },
   });
 }
+
