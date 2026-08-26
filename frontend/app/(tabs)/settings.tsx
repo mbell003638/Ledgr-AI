@@ -19,6 +19,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   return (
     <View style={{ borderBottomWidth: isLast && !isExpanded ? 0 : 1, borderBottomColor: theme.color.border, backgroundColor: isExpanded ? theme.color.brandPrimary + "0D" : "transparent" }}>
       <GlowPressable
+        shadowEnabled={false}
         topHighlight={false}
         haptic
         onPress={() => setExpandedKey(isExpanded ? null : title)}
@@ -238,7 +239,7 @@ export default function SettingsScreen() {
                   <Text style={styles.label}>Currency</Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                     {CURRENCIES.map((c) => (
-                      <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={currency === c.code ? theme.color.brandPrimary : theme.color.border} key={c.code} onPress={() => setCurrency(c.code)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: currency === c.code ? theme.color.brandPrimary : theme.color.border, backgroundColor: currency === c.code ? theme.color.brandPrimary + "20" : theme.color.surfaceTertiary }}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} haptic hoverLift={-2} restingBorderColor={currency === c.code ? theme.color.brandPrimary : theme.color.border} key={c.code} onPress={() => setCurrency(c.code)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md, borderWidth: 1, borderColor: currency === c.code ? theme.color.brandPrimary : theme.color.border, backgroundColor: currency === c.code ? theme.color.brandPrimary + "20" : theme.color.surfaceTertiary }}>
                         <Text style={{ color: currency === c.code ? theme.color.brandPrimary : theme.color.onSurface, fontWeight: "600", fontSize: 14 }}>{c.symbol} {c.code}</Text>
                       </GlowPressable>
                     ))}
@@ -263,7 +264,7 @@ export default function SettingsScreen() {
               <AccordionRow title="App Theme" subtitle={mode === "amoled_blue" ? "AMOLED Blue" : mode === "navy_gold" ? "AMOLED Black & Gold" : mode === "dark" ? "Emerald Dark" : mode === "light" ? "Emerald Light" : "System Default"} theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "light", label: "Emerald Light", icon: "sunny-outline" }, { id: "dark", label: "Emerald Dark", icon: "moon-outline" }, { id: "navy_gold", label: "AMOLED Black & Gold", icon: "color-palette-outline" }, { id: "amoled_blue", label: "AMOLED Blue", icon: "flash-outline" }, { id: "system", label: "System", icon: "phone-portrait-outline" } ].map((m) => (
-                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={mode === m.id ? theme.color.brandPrimary : theme.color.border} key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                    <GlowPressable shadowEnabled={false} topHighlight={false} haptic hoverLift={-2} restingBorderColor={mode === m.id ? theme.color.brandPrimary : theme.color.border} key={m.id} onPress={async () => { setMode(m.id as any); await api.updateSettings({ themeMode: m.id }); }} style={[{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, mode === m.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
                       <Ionicons name={m.icon as any} size={16} color={mode === m.id ? theme.color.brandPrimary : theme.color.onSurface} />
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, mode === m.id && { color: theme.color.brandPrimary }]}>{m.label}</Text>
                     </GlowPressable>
@@ -273,7 +274,7 @@ export default function SettingsScreen() {
               <AccordionRow title="Invoice PDF Preset" subtitle={invoiceTheme === "navy_gold" ? "Black & Gold" : invoiceTheme === "amoled_blue" ? "Black & Blue" : invoiceTheme === "emerald" ? "Classic Emerald" : "Clean Minimal"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {[ { id: "navy_gold", label: "Black & Gold" }, { id: "amoled_blue", label: "Black & Blue" }, { id: "emerald", label: "Classic Emerald" }, { id: "minimal", label: "Clean Minimal" } ].map((t) => (
-                    <GlowPressable topHighlight={false} haptic hoverLift={-2} restingBorderColor={invoiceTheme === t.id ? theme.color.brandPrimary : theme.color.border} key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                    <GlowPressable shadowEnabled={false} topHighlight={false} haptic hoverLift={-2} restingBorderColor={invoiceTheme === t.id ? theme.color.brandPrimary : theme.color.border} key={t.id} onPress={async () => { setInvoiceTheme(t.id); await api.updateSettings({ invoiceTheme: t.id }); }} style={[{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary }, invoiceTheme === t.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
                       <Text style={[{ fontSize: 13, fontWeight: "600", color: theme.color.onSurface }, invoiceTheme === t.id && { color: theme.color.brandPrimary }]}>{t.label}</Text>
                     </GlowPressable>
                   ))}
@@ -290,7 +291,7 @@ export default function SettingsScreen() {
               </AccordionRow>
 </Card>
 
-            <GlowPressable topHighlight={false} haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/customize-features")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: animationsEnabled ? theme.color.brandPrimary : theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
@@ -300,7 +301,7 @@ export default function SettingsScreen() {
               </View>
             </GlowPressable>
 
-            <GlowPressable topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} haptic onPress={() => router.push("/advanced-settings")} style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
                 <View style={{ flex: 1, paddingRight: 16 }}>
                   <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
@@ -311,6 +312,7 @@ export default function SettingsScreen() {
             </GlowPressable>
 
             <GlowPressable
+              shadowEnabled={false}
               topHighlight={false}
               haptic
               accessibilityRole="button"
@@ -333,7 +335,7 @@ export default function SettingsScreen() {
               </View>
             )}
 
-            <GlowPressable topHighlight={false} prominent haptic testID="btn-save-settings" onPress={save} disabled={saving} style={[styles.primaryBtn, saving && { opacity: 0.85 }]}>
+            <GlowPressable shadowEnabled={false} topHighlight={false} prominent haptic testID="btn-save-settings" onPress={save} disabled={saving} style={[styles.primaryBtn, saving && { opacity: 0.85 }]}>
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Save Settings</Text>}
             </GlowPressable>
             <View style={{ height: 120 }} />
