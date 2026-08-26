@@ -44,6 +44,23 @@ describe('V2 UI contracts', () => {
     expect(executeIndex).toBeGreaterThan(confirmHandlerIndex);
   });
 
+  it('voice entry points match the production-safe Ask AI voice workflow', () => {
+    const source = readApp('voice.tsx');
+    expect(source).toContain('await api.getAIConfig()');
+    expect(source).toContain('does not provide speech-to-text');
+    expect(source).toContain('Editable voice transcript');
+    expect(source).toContain('testID="btn-rebuild-voice-draft"');
+    expect(source).toContain('voice-open-provider-settings');
+    expect(source).toContain('KeyboardAvoidingView');
+    expect(source).toContain('keyboardShouldPersistTaps="handled"');
+
+    const fab = readSource('src/components/VoiceFab.tsx');
+    expect(fab).toContain('await api.getAIConfig()');
+    expect(fab).toContain('Editable homepage voice transcript');
+    expect(fab).toContain('testID="voice-fab-rebuild-draft"');
+    expect(fab).toContain('voice-fab-open-provider-settings');
+  });
+
   it('removes Staff and employee-report terminology and routes from production sources', () => {
     const productionFiles = [
       ...sourceFilesUnder(path.join(root, 'app')),
@@ -93,8 +110,9 @@ describe('V2 UI contracts', () => {
     expect(source).not.toContain('title="Accounting setup"');
     expect(source).not.toContain('read-only summary');
     expect(source).toContain('Customize Dashboard & Feature Tabs');
-    expect(source).toContain('style={styles.shortcutCard}');
-    expect(source.match(/style=\{styles\.shortcutCard\}/g)?.length).toBe(3);
+    expect(source).toContain('const SettingsNavRow');
+    expect(source).toContain('icon="options-outline"');
+    expect(source).not.toContain('style={styles.shortcutCard}');
     expect(source).not.toContain('Accounting Style</Text>');
     expect(source).not.toContain('Accounting Basis</Text>');
     expect(source).toContain('router.push("/advanced-settings")');
@@ -339,9 +357,9 @@ describe('V2 UI contracts', () => {
     expect(assets).toContain('useState<(typeof liabilityRecognition)[number]["id"]>("expense")');
     expect(assets).toContain('Due / accrued expense');
     expect(assets).toContain('Cash received (loan)');
-    expect(settings).toContain('shortcutCard:');
-    expect(settings).toContain('style={styles.shortcutCard}');
-    expect(settings).toContain('prominent haptic onPress={() => router.push("/customize-features")}');
+    expect(settings).toContain('const SettingsNavRow');
+    expect(settings).toContain('minHeight: 56');
+    expect(settings).toContain('onPress={() => router.push("/customize-features")}');
   });
   it('input forms keep their fields reachable above the mobile keyboard', () => {
     const investor = readApp('investor/[id].tsx');

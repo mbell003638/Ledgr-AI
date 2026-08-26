@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView, Keyboard, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -34,9 +34,37 @@ export default function VoiceModal() {
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
 
+  const buildVoiceDraft = async (txt: string) => {
+    const parsedCommand = await api.parseCommand(txt);
+    const [suppliers, customers, capitalAccounts] = await Promise.all([
+      api.listSuppliers(),
+      api.listDebtors(),
+      api.listInvestors(),
+    ]);
+    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) throw new Error(resolution.question);
+    const p: any = resolution.command;
+    const proposalByIntent: Record<string, any> = {
+      bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+      sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+      expense: { type: 'add_expense', params: { amount: p.amount, date: p.date, category: p.category || 'General', notes: p.notes || p.summary } },
+      receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
+      supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+      drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+      inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
+    };
+    const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
+    if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);
+    return { parsed: p, validation };
+  };
+
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
+      const config = await api.getAIConfig();
+      if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
+      if (config.provider === "anthropic") throw new Error("Anthropic can answer text, but it does not provide speech-to-text. Choose Gemini or an OpenAI-compatible provider.");
+      if (config.provider === "openai" && !config.baseUrl?.trim()) throw new Error("Add the OpenAI-compatible Base URL in Advanced Settings before using voice input.");
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
@@ -50,32 +78,27 @@ export default function VoiceModal() {
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
-
-      const parsedCommand = await api.parseCommand(txt);
-      const [suppliers, customers, capitalAccounts] = await Promise.all([
-        api.listSuppliers(),
-        api.listDebtors(),
-        api.listInvestors(),
-      ]);
-      const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-      if (!resolution.ok) throw new Error(resolution.question);
-      const p: any = resolution.command;
-
-      const proposalByIntent: Record<string, any> = {
-        bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        expense: { type: 'add_expense', params: { amount: p.amount, date: p.date, category: p.category || 'General', notes: p.notes || p.summary } },
-        receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
-        supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
-      };
-      const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
-      if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);      setParsed(p);
-      setValidatedAction(validation);
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
+      setPhase("error");
+    }
+  };
+
+  const rebuildDraft = async () => {
+    const txt = transcript.trim();
+    if (!txt) { setError("Enter or dictate a transaction before rebuilding the draft."); return; }
+    setError(""); setPhase("processing");
+    try {
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
+      setPhase("confirm");
+    } catch (e: any) {
+      setError(e.message || "Could not rebuild the draft from that transcript.");
       setPhase("error");
     }
   };
@@ -171,7 +194,8 @@ export default function VoiceModal() {
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Card>
           <Text style={styles.title}>Say a transaction</Text>
           <Text style={styles.hint}>
@@ -201,8 +225,9 @@ export default function VoiceModal() {
 
           {transcript ? (
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptLabel}>Transcript</Text>
-              <Text style={styles.transcript} testID="voice-transcript">{transcript}</Text>
+              <Text style={styles.transcriptLabel}>Transcript — edit before saving</Text>
+              <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={styles.transcriptInput} placeholderTextColor={theme.color.muted} />
+              {phase === "confirm" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={styles.rebuildBtn}><Text style={styles.rebuildText}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
 
@@ -242,12 +267,16 @@ export default function VoiceModal() {
           {error ? (
             <View style={styles.errorBox}>
               <Ionicons name="alert-circle" size={18} color={theme.color.error} />
-              <Text style={styles.errorText} testID="voice-error">{error}</Text>
+              <View style={{ flex: 1, gap: 7 }}>
+                <Text style={styles.errorText} testID="voice-error">{error}</Text>
+                {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={styles.setupLink}>Open AI provider settings</Text></Pressable> : null}
+              </View>
             </View>
           ) : null}
         </Card>
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -263,6 +292,7 @@ function DKV({ k, v, theme }: { k: string; v: string; theme: any }) {
 
 function makeStyles(theme: any) { return StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.color.surface },
+  keyboard: { flex: 1 },
   headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
   headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
   scroll: { padding: theme.spacing.lg },
@@ -275,6 +305,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   transcriptBox: { marginTop: 8, padding: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md },
   transcriptLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
   transcript: { fontSize: 14, color: theme.color.onSurface, marginTop: 4, fontStyle: "italic" },
+  transcriptInput: { minHeight: 74, color: theme.color.onSurface, fontSize: 14, lineHeight: 20, marginTop: 6, padding: 10, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, textAlignVertical: "top" },
+  rebuildBtn: { alignSelf: "flex-start", marginTop: 9, paddingVertical: 8, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary },
+  rebuildText: { color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 },
   draft: { marginTop: theme.spacing.md, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.color.brandTertiary },
   draftLabel: { fontSize: 11, color: theme.color.brandPrimary, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   draftSummary: { fontSize: 15, color: theme.color.onSurface, fontWeight: "600", marginTop: 6 },
@@ -283,6 +316,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   actionText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   errorText: { color: theme.color.error, fontSize: 13, flex: 1 },
+  setupLink: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "800" },
   destructiveWarn: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.color.error },
   destructiveWarnText: { color: theme.color.error, fontSize: 13, flex: 1, fontWeight: "600" },
 }); }

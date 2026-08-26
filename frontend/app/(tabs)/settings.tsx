@@ -45,6 +45,26 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   );
 };
 
+const SettingsNavRow = ({ title, subtitle, icon, onPress, isLast, theme }: any) => (
+  <View style={{ borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border }}>
+    <GlowPressable
+      topHighlight={false}
+      haptic
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingVertical: 12, paddingHorizontal: 0, borderWidth: 0, borderRadius: 0 }}
+    >
+      <Ionicons name={icon} size={20} color={theme.color.brandPrimary} style={{ marginRight: 12 }} />
+      <View style={{ flex: 1, paddingRight: 16 }}>
+        <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.onSurface }}>{title}</Text>
+        <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
+    </GlowPressable>
+  </View>
+);
+
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -291,43 +311,11 @@ export default function SettingsScreen() {
 </Card>
 
 
-            <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/customize-features")} style={styles.shortcutCard}>
-              <View style={styles.shortcutRow}>
-                <View style={{ flex: 1, paddingRight: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
-                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Turn accounting tabs ON or OFF to fit your business</Text>
-                </View>
-                <Ionicons name="options-outline" size={22} color={theme.color.brandPrimary} />
-              </View>
-            </GlowPressable>
-
-            <GlowPressable topHighlight={false} prominent haptic onPress={() => router.push("/advanced-settings")} style={styles.shortcutCard}>
-              <View style={styles.shortcutRow}>
-                <View style={{ flex: 1, paddingRight: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Advanced Settings</Text>
-                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>AI config, Workflows, Opening Balances, Backup...</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
-              </View>
-            </GlowPressable>
-
-
-            <GlowPressable
-              topHighlight={false}
-              haptic
-              accessibilityRole="button"
-              accessibilityLabel="Open Ledgr privacy policy"
-              onPress={() => router.push("/privacy" as any)}
-              style={styles.shortcutCard}
-            >
-              <View style={styles.shortcutRow}>
-                <View style={{ flex: 1, paddingRight: 16 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Privacy & Data</Text>
-                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Privacy policy, AI data use and deletion information</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
-              </View>
-            </GlowPressable>
+            <Card style={styles.settingsGroup}>
+              <SettingsNavRow title="Customize Dashboard & Feature Tabs" subtitle="Turn accounting tabs ON or OFF to fit your business" icon="options-outline" theme={theme} onPress={() => router.push("/customize-features")} />
+              <SettingsNavRow title="Advanced Settings" subtitle="AI config, Workflows, Opening Balances, Backup..." icon="settings-outline" theme={theme} onPress={() => router.push("/advanced-settings")} />
+              <SettingsNavRow title="Privacy & Data" subtitle="Privacy policy, AI data use and deletion information" icon="shield-checkmark-outline" theme={theme} onPress={() => router.push("/privacy" as any)} isLast />
+            </Card>
             {status && (
               <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
                 <Ionicons name={status.ok ? "checkmark-circle" : "alert-circle"} size={18} color={status.ok ? theme.color.success : theme.color.error} />

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -37,9 +38,37 @@ export default function VoiceFab() {
 
   const stopExistingRecorder = () => cancelVoiceRecorder(recorder);
 
+  const buildVoiceDraft = async (txt: string) => {
+    const parsedCommand = await api.parseCommand(txt);
+    const [suppliers, customers, capitalAccounts] = await Promise.all([
+      api.listSuppliers(),
+      api.listDebtors(),
+      api.listInvestors(),
+    ]);
+    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) throw new Error(resolution.question);
+    const p: any = resolution.command;
+    const proposalByIntent: Record<string, any> = {
+      expense: { type: 'add_expense', params: { category: p.category || 'General', amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+      bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+      sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
+      receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
+      supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+      drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
+      inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
+    };
+    const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
+    if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);
+    return { parsed: p, validation };
+  };
+
   const start = useCallback(async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
+      const config = await api.getAIConfig();
+      if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
+      if (config.provider === "anthropic") throw new Error("Anthropic can answer text, but it does not provide speech-to-text. Choose Gemini or an OpenAI-compatible provider.");
+      if (config.provider === "openai" && !config.baseUrl?.trim()) throw new Error("Add the OpenAI-compatible Base URL in Advanced Settings before using voice input.");
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
@@ -58,31 +87,27 @@ export default function VoiceFab() {
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
-      
-      const parsedCommand = await api.parseCommand(txt);
-      const [suppliers, customers, capitalAccounts] = await Promise.all([
-        api.listSuppliers(),
-        api.listDebtors(),
-        api.listInvestors(),
-      ]);
-      const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-      if (!resolution.ok) throw new Error(resolution.question);
-      const p: any = resolution.command;
-      const proposalByIntent: Record<string, any> = {
-        expense: { type: 'add_expense', params: { category: p.category || 'General', amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
-        supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
-      };
-      const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
-      if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);      setParsed(p);
-      setValidatedAction(validation);
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
+      setPhase("error");
+    }
+  };
+
+  const rebuildDraft = async () => {
+    const txt = transcript.trim();
+    if (!txt) { setError("Enter or dictate a transaction before rebuilding the draft."); return; }
+    setError(""); setPhase("processing");
+    try {
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
+      setPhase("confirm");
+    } catch (e: any) {
+      setError(e?.message || "Could not rebuild the draft from that transcript.");
       setPhase("error");
     }
   };
@@ -215,7 +240,8 @@ export default function VoiceFab() {
             </View>
           ) : phase === "confirm" && parsed ? (
             <View style={styles.reviewDock}>
-              {transcript ? <Text numberOfLines={2} style={[styles.transcriptLine, { color: theme.color.muted }]}>“{transcript}”</Text> : null}
+              {transcript ? <TextInput accessibilityLabel="Editable homepage voice transcript" testID="voice-fab-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
+              {transcript ? <Pressable testID="voice-fab-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
               <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Review {parsed.intent?.replace("_", " ")}</Text>
               <Text numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
               <View style={styles.btnRow}>
@@ -226,7 +252,10 @@ export default function VoiceFab() {
           ) : (
             <View style={styles.errorDock}>
               <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
-              <Text numberOfLines={2} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+              <View style={styles.errorCopy}>
+                <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+                {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
+              </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>
             </View>
           )}
@@ -275,6 +304,9 @@ const styles = StyleSheet.create({
   stopButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: "center", justifyContent: "center", marginLeft: 8 },
   reviewDock: { paddingTop: 4 },
   transcriptLine: { fontSize: 11, fontStyle: "italic", marginBottom: 6 },
+  transcriptInput: { minHeight: 52, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, lineHeight: 17, textAlignVertical: "top" },
+  rebuildButton: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderRadius: 10, marginBottom: 7 },
+  rebuildText: { fontSize: 11, fontWeight: "700" },
   statusLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
   draftLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 },
   draftSummary: { fontSize: 13, fontWeight: "600", marginTop: 4, marginBottom: 8 },
@@ -282,7 +314,9 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, minHeight: 36, paddingHorizontal: 12, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   actionText: { fontWeight: "700", fontSize: 12 },
   errorDock: { flexDirection: "row", alignItems: "center", minHeight: 42, gap: 8 },
-  errorText: { flex: 1, fontSize: 11, fontWeight: "600" },
+  errorCopy: { flex: 1, minWidth: 0, gap: 4 },
+  errorText: { fontSize: 11, fontWeight: "600" },
+  setupLink: { fontSize: 11, fontWeight: "800" },
   retryButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderRadius: 10 },
   retryText: { fontSize: 11, fontWeight: "700" },
 });
