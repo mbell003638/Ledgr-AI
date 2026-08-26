@@ -81,20 +81,23 @@ describe('V2 UI contracts', () => {
     expect(v2Block).not.toContain('grossProfit: report.profitAndLoss.netProfit');
   });
 
-  it('Settings saves authoritative V2 book, persona, and member configuration', () => {
+  it('Advanced Settings owns authoritative V2 book, persona, and member configuration', () => {
     const source = readApp('(tabs)/settings.tsx');
+    const advanced = readApp('advanced-settings.tsx');
     const saveStart = source.indexOf('const save = async () =>');
     const saveEnd = source.indexOf('\n  const pickLogo', saveStart);
     const save = source.slice(saveStart, saveEnd);
 
-    expect(save).toContain('api.updateV2BookConfig');
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?selectedPersonas/);
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?activePersona/);
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?retailPartnership/);
-    expect(save).toContain('openingContribution');
-    expect(save).toContain('profitSharePct');
-    expect(source).toContain('Accounting Style');
-    expect(save).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
+    expect(save).not.toContain('api.updateV2BookConfig');
+    expect(source).not.toContain('Accounting Style');
+    expect(advanced).toContain('api.updateV2BookConfig');
+    expect(advanced).toMatch(/api\.updateV2BookConfig\([\s\S]*?selectedPersonas/);
+    expect(advanced).toMatch(/api\.updateV2BookConfig\([\s\S]*?activePersona/);
+    expect(advanced).toMatch(/api\.updateV2BookConfig\([\s\S]*?retailPartnership/);
+    expect(advanced).toContain('openingContribution');
+    expect(advanced).toContain('profitSharePct');
+    expect(advanced).toContain('Accounting & Workflow');
+    expect(advanced).toMatch(/api\.updateV2BookConfig\([\s\S]*?style:\s*accountingStyle/);
   });
 
   it('keeps preferences free of accounting state and uses V2 as the single source', () => {

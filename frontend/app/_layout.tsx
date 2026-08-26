@@ -133,6 +133,7 @@ function ThemedStack() {
         <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
         <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />
         <Stack.Screen name="sync-conflict-correction" options={{ presentation: "card" }} />
+        <Stack.Screen name="privacy-data" options={{ presentation: "card" }} />
         <Stack.Screen name="payroll" options={{ presentation: "card" }} />
         <Stack.Screen name="products" options={{ presentation: "card" }} />
         <Stack.Screen name="locations" options={{ presentation: "card" }} />
