@@ -157,7 +157,7 @@ export default function CustomizeFeaturesScreen() {
         {categories.map((cat) => (
           <View key={cat.id} style={{ marginBottom: 20 }}>
             <Text style={styles.categoryTitle}>{cat.title}</Text>
-            <Card shadowEnabled={false} style={{ padding: 0, overflow: "hidden" }}>
+            <Card shadowEnabled={false} surfaceColor="transparent" restingBorderColor="transparent" style={{ padding: 0, overflow: "hidden" }}>
               {cat.items.map((item, idx) => {
                 const isEnabled = activeFeatures.has(item.key);
                 const blocker = disableBlockers[item.key];
