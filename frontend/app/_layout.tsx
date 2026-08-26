@@ -136,6 +136,7 @@ function ThemedStack() {
         <Stack.Screen name="experimental-modules" options={{ presentation: "card" }} />
         <Stack.Screen name="bank-import-preview" options={{ presentation: "card" }} />
         <Stack.Screen name="sync-settings" options={{ presentation: "card" }} />
+        <Stack.Screen name="self-host-guide" options={{ presentation: "card" }} />
         <Stack.Screen name="sync-conflicts" options={{ presentation: "card" }} />
         <Stack.Screen name="sync-conflict-correction" options={{ presentation: "card" }} />
         <Stack.Screen name="privacy-data" options={{ presentation: "card" }} />

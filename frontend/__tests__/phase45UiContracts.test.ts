@@ -8,6 +8,7 @@ const experiments = fs.readFileSync(path.join(root, 'src', 'utils', 'experimenta
 const advanced = fs.readFileSync(path.join(root, 'app', 'advanced-settings.tsx'), 'utf8');
 const bookHealth = fs.readFileSync(path.join(root, 'app', 'book-health.tsx'), 'utf8');
 const syncSettings = fs.readFileSync(path.join(root, 'app', 'sync-settings.tsx'), 'utf8');
+const selfHostGuide = fs.readFileSync(path.join(root, 'app', 'self-host-guide.tsx'), 'utf8');
 
 describe('phase 4-5 UI safety contracts', () => {
   it('routes new backups through encryption, preflight, authentication and the existing importer', () => {
@@ -43,5 +44,14 @@ describe('phase 4-5 UI safety contracts', () => {
     expect(syncSettings).toContain('redeemSyncEnrollmentCode');
     expect(syncSettings).toContain('createSyncSetupQr');
     expect(syncSettings).toContain('react-native-qrcode-svg');
+  });
+
+  it('provides an in-app self-host setup guide with platform downloads and pairing handoff', () => {
+    expect(syncSettings).toContain("router.push('/self-host-guide' as any)");
+    expect(selfHostGuide).toContain('ledgr-selfhost-install.ps1');
+    expect(selfHostGuide).toContain('ledgr-selfhost-install.sh');
+    expect(selfHostGuide).toContain('ledgr-selfhost-bundle.tar.gz');
+    expect(selfHostGuide).toContain('open-sync-settings-from-guide');
+    expect(selfHostGuide).toContain('administrator permission');
   });
 });

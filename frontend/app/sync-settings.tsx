@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -12,7 +12,6 @@ import { activeBookId, activeSqlRunner } from '@/src/db/backend';
 import { advanceSyncEpoch, createSyncEnrollmentCode, enrollSyncDevice, listSyncDevices, redeemSyncEnrollmentCode, revokeSyncDevice, type SyncDevice, type SyncEnrollmentCode } from '@/src/sync/recovery';
 import { createSyncSetupQr, parseSyncSetupQr } from '@/src/sync/setupQr';
 
-const SELF_HOST_RELEASES_URL = 'https://github.com/mbell003638/Ledgr-SelfHost/releases/latest';
 const INVITE_ROLES: SyncEnrollmentCode['role'][] = ['viewer', 'accountant', 'editor', 'admin'];
 
 export default function SyncSettingsScreen() {
@@ -105,11 +104,7 @@ export default function SyncSettingsScreen() {
     setMessage(''); setScanLocked(false); setScanning(true);
   };
   const openSelfHostPackage = async () => {
-    try {
-      const supported = await Linking.canOpenURL(SELF_HOST_RELEASES_URL);
-      if (!supported) throw new Error('The release page is unavailable on this device.');
-      await Linking.openURL(SELF_HOST_RELEASES_URL);
-    } catch (error: any) { setMessage(error?.message || 'Could not open the self-host package download.'); }
+    router.push('/self-host-guide' as any);
   };
   const onSetupQr = (result: BarcodeScanningResult) => {
     if (scanLocked) return;
