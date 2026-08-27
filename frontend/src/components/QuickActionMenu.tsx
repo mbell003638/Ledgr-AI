@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
@@ -89,6 +90,13 @@ export default function QuickActionMenu() {
   const accountsEnabled = isCapabilityEnabled(settings, "customers") || isCapabilityEnabled(settings, "procurement") || isCapabilityEnabled(settings, "invoicing");
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const tabBarBottomInset = Math.max(insets.bottom, 16);
+  const fabBottom = tabBarBottomInset + 26;
+  const menuBottom = tabBarBottomInset + 82;
+  const menuWidth = Math.max(0, Math.min(windowWidth - 24, 410));
+  const menuMaxHeight = Math.max(260, windowHeight - menuBottom - 24);
   const isWeb = Platform.OS === "web";
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
@@ -155,7 +163,8 @@ export default function QuickActionMenu() {
 
   return (
     <>
-      <View style={styles.fabContainer}>
+      <View style={[styles.fabContainer, { bottom: fabBottom }]}>
+
         <FabPressableComponent
           testID="quick-action-fab"
           onHoverIn={() => { fabHover.value = reduceMotion ? 1 : withTiming(1, { duration: theme.motion.standard }); }}
@@ -163,6 +172,10 @@ export default function QuickActionMenu() {
           onPressIn={() => { fabPressed.value = reduceMotion ? 1 : withSpring(1, theme.motion.spring); }}
           onPressOut={() => { fabPressed.value = reduceMotion ? 0 : withSpring(0, theme.motion.spring); }}
           onPress={toggleMenu}
+          accessibilityRole="button"
+          accessibilityLabel="Open Quick Actions"
+          accessibilityHint="Create or record a business transaction"
+          accessibilityState={{ expanded: isOpen }}
           style={[
             styles.fab,
             fabStyle,
@@ -195,6 +208,9 @@ export default function QuickActionMenu() {
             {
               backgroundColor: theme.color.surfaceSecondary,
               borderColor: theme.color.brandPrimary,
+              width: menuWidth,
+              maxHeight: menuMaxHeight,
+              bottom: menuBottom,
               ...(isWeb
                 ? { boxShadow: `0 -4px 24px ${theme.color.brandPrimary}33` }
                 : { shadowColor: theme.color.brandPrimary, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.32, shadowRadius: 24, elevation: 18 }),
@@ -208,7 +224,7 @@ export default function QuickActionMenu() {
             end={{ x: 1, y: 0 }}
             style={styles.menuHighlight}
           />
-          <View style={styles.menuInner}>
+          <ScrollView style={{ maxHeight: menuMaxHeight }} contentContainerStyle={styles.menuInner} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {isCapabilityEnabled(settings, "ai_assistant") && <GlowPressable
               haptic
               topHighlight={false}
@@ -272,7 +288,7 @@ export default function QuickActionMenu() {
                 setTimeout(() => setOpeningModalVisible(true), theme.motion.fast);
               }}
             />}
-          </View>
+          </ScrollView>
         </Animated.View>
       </Modal>
 
@@ -348,7 +364,6 @@ const styles = StyleSheet.create({
   fabContainer: {
     position: "absolute",
     alignSelf: "center",
-    bottom: 42,
     justifyContent: "center",
     alignItems: "center",
     zIndex: 110,
