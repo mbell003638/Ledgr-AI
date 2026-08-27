@@ -236,3 +236,16 @@ jobs:
             gh release create android-ci --repo "$REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "$title" --notes "$notes"
           fi
           gh release upload android-ci --repo "$REPOSITORY" /tmp/ledgr-android-ci/* --clobber
+          apk_asset="$(find /tmp/ledgr-android-ci -maxdepth 1 -type f -name '*.apk' -printf '%f\\n' | head -n 1)"
+          apk_url="https://github.com/${REPOSITORY}/releases/download/android-ci/${apk_asset}"
+          {
+            echo "## Android build download"
+            echo ""
+            echo "[Download the APK](${apk_url})"
+            echo ""
+            echo "Release page: https://github.com/${REPOSITORY}/releases/tag/android-ci"
+            if [ "${{ steps.check.outputs.has_keystore }}" != "true" ]; then
+              echo ""
+              echo "> This is a TEST-SIGNED APK. It is for device testing only and must not be submitted to Google Play."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
