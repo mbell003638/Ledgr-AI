@@ -8,8 +8,10 @@ import { AnimatedGlassSurface } from "@/src/components/AnimatedGlassSurface";
 
 import { api } from "@/src/api";
 
-export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction, style, titleStyle, subtitleStyle }: { title: string; subtitle?: string; testID?: string; leftAction?: React.ReactNode; rightAction?: React.ReactNode; style?: StyleProp<ViewStyle>; titleStyle?: StyleProp<TextStyle>; subtitleStyle?: StyleProp<TextStyle> }) {
+export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction, compact = false, style, titleStyle, subtitleStyle }: { title: string; subtitle?: string; testID?: string; leftAction?: React.ReactNode; rightAction?: React.ReactNode; compact?: boolean; style?: StyleProp<ViewStyle>; titleStyle?: StyleProp<TextStyle>; subtitleStyle?: StyleProp<TextStyle> }) {
   const theme = useTheme();
+  const compactHeader = compact;
+
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [bizName, setBizName] = React.useState<string | null>(null);
   
@@ -26,16 +28,16 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
   return (
     <View style={[styles.header, style]} testID={testID}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-start' }}>
-          {leftAction ? <View style={{ marginRight: 10, paddingTop: 2 }}>{leftAction}</View> : null}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, titleStyle]}>{title}</Text>
+        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start' }}>
+          {leftAction ? <View style={{ marginRight: compactHeader ? 6 : 10, paddingTop: 2 }}>{leftAction}</View> : null}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={compactHeader ? 1 : undefined} ellipsizeMode={compactHeader ? "tail" : undefined} style={[styles.title, compactHeader && styles.titleCompact, titleStyle]}>{title}</Text>
             {subtitle ? <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
           </View>
         </View>
-        <View style={{ alignItems: "flex-end", gap: 8, maxWidth: "45%" }}>
+        <View style={{ alignItems: "flex-end", gap: compactHeader ? 6 : 8, maxWidth: compactHeader ? "38%" : "45%" }}>
           {bizName ? (
-            <View style={{ flexShrink: 0, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ flexShrink: 1, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: compactHeader ? 9 : 14, paddingVertical: compactHeader ? 6 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: compactHeader ? 4 : 6 }}>
               <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
               <Text numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1, fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
             </View>
@@ -131,6 +133,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       backgroundColor: theme.color.surface,
     },
     title: { fontSize: 26, fontWeight: "800", color: theme.color.onSurface, letterSpacing: -0.5 },
+    titleCompact: { fontSize: 22, lineHeight: 27, letterSpacing: -0.35 },
     subtitle: { fontSize: 13, color: theme.color.muted, marginTop: 2 },
     card: {
       backgroundColor: theme.color.glassSurface,

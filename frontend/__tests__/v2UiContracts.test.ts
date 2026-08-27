@@ -372,6 +372,23 @@ describe('V2 UI contracts', () => {
     expect(settings).toContain('hoverBorderColor={theme.color.brandPrimary}');
     expect(settings).toContain('onPress={() => router.push("/customize-features")}');
   });
+  it('keeps responsive layout additive and phone-first across device classes', () => {
+    const responsive = readSource('src/hooks/useResponsiveDevice.ts');
+    const workspace = readSource('src/components/ReorderableWorkspaceGrid.tsx');
+    const reports = readApp('(tabs)/reports.tsx');
+    const sync = readApp('sync-settings.tsx');
+    expect(responsive).toContain('const compactPhone = shortestSide < 360');
+    expect(responsive).toContain('const tablet = shortestSide >= 600');
+    expect(responsive).toContain('const wide = width >= 900');
+    expect(responsive).toContain('dualPane: false');
+    expect(responsive).toContain('hingeRect: null');
+    expect(workspace).toContain('const PHONE_COLUMNS = 2');
+    expect(workspace).toContain('const columns = gridWidth >= 900 ? WIDE_COLUMNS : gridWidth >= 600 ? TABLET_COLUMNS : PHONE_COLUMNS');
+    expect(workspace).toContain('columns={columns}');
+    expect(reports).toContain('compactPhone && styles.summaryColumnsCompact');
+    expect(reports).toContain('summaryColumnCompact');
+    expect(sync).toContain('<ScreenHeader compact={compactPhone}');
+  });
   it('input forms keep their fields reachable above the mobile keyboard', () => {
     const investor = readApp('investor/[id].tsx');
     const openingBalances = readSource('src/components/OpeningBalancesModal.tsx');

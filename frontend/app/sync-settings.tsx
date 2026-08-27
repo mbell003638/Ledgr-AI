@@ -8,6 +8,7 @@ import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
 import { HostingModeCard } from '@/src/components/HostingModeCard';
 import { useTheme } from '@/src/context/ThemeContext';
+import { useResponsiveDevice } from '@/src/hooks/useResponsiveDevice';
 import { activeBookId, activeSqlRunner } from '@/src/db/backend';
 import { advanceSyncEpoch, enrollSyncDevice, listSyncDevices, revokeSyncDevice, type SyncDevice } from '@/src/sync/recovery';
 
@@ -15,6 +16,7 @@ type ConnectionPath = 'join' | 'admin';
 
 export default function SyncSettingsScreen() {
   const theme = useTheme(); const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { compactPhone } = useResponsiveDevice();
   const params = useLocalSearchParams<{ invite?: string }>();
   const [serverUrl, setServerUrl] = useState(''); const [userId, setUserId] = useState(''); const [token, setToken] = useState('');
   const [oidcIssuer, setOidcIssuer] = useState(''); const [oidcClientId, setOidcClientId] = useState(''); const [oidcScopes, setOidcScopes] = useState('openid profile offline_access');
@@ -86,7 +88,7 @@ export default function SyncSettingsScreen() {
   const revoke = (device: SyncDevice) => Alert.alert('Revoke device?', device.current ? 'This device will stop syncing and must be explicitly re-enrolled.' : `Device ${device.deviceId.slice(0, 12)}… will no longer access this Business Account.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Revoke', style: 'destructive', onPress: async () => { const db = activeSqlRunner(); if (!db) return; setBusy(true); try { await revokeSyncDevice(db, activeBookId(), device.deviceId); setMessage('Device revoked.'); await load(); } catch (error: any) { setMessage(error?.message || 'Could not revoke device.'); } finally { setBusy(false); } } }]);
   const inputStyle = styles.input;
   return <SafeAreaView style={styles.container} edges={['top']}>
-    <ScreenHeader title="Self-hosted Sync" subtitle="Optional. Your data stays local first." leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
+    <ScreenHeader compact={compactPhone} title="Self-hosted Sync" subtitle="Optional. Your data stays local first." leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}>
     <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
       <HostingModeCard compact />

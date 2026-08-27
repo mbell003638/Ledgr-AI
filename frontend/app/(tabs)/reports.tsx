@@ -22,6 +22,7 @@ import { buildStatementDocument } from "@/src/utils/statementDocument";
 import { isValidDateString, localTodayIso, normalizeDateInput } from "@/src/utils/dateValidation";
 import { getDataVersion } from "@/src/utils/dataVersion";
 import { isCapabilityEnabled, reportSegmentsFor, selectedWorkspaceMetrics, type ReportSegmentKey } from "@/src/utils/capabilities";
+import { useResponsiveDevice } from "@/src/hooks/useResponsiveDevice";
 import { metricsFromDashboard } from "@/src/utils/metrics";
 import * as localDb from "@/src/db/local";
 
@@ -59,6 +60,7 @@ const RANGE_PRESETS = ["This Month", "Last Month", "This Quarter", "This Year", 
 export default function ReportsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const { compactPhone } = useResponsiveDevice();
   const router = useRouter();
   const [seg, setSeg] = useState<Seg>("Summary");
   const [displaySeg, setDisplaySeg] = useState<Seg>("Summary");
@@ -705,8 +707,8 @@ export default function ReportsScreen() {
                 </ScrollView>
               </Card>}
 
-              <View style={{ flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md }}>
-                <View style={{ flex: 1 }}>
+              <View style={[styles.summaryColumns, compactPhone && styles.summaryColumnsCompact]}>
+                <View style={[styles.summaryColumn, compactPhone && styles.summaryColumnCompact]}>
                   <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>ASSETS</Text>
                   <RowKV label="Cash" value={fmt(dash.cash)} theme={theme} styles={styles} />
                   <RowKV label="Inventory" value={fmt(dash.inventoryValue)} theme={theme} styles={styles} />
@@ -715,7 +717,7 @@ export default function ReportsScreen() {
                   <RowKV label="Other assets" value={fmt((dash.supplierAdvances || 0) + (dash.otherAssets || 0))} theme={theme} styles={styles} />
                   <RowKV label="Total Assets" value={fmt(dash.assets)} strong theme={theme} styles={styles} />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={[styles.summaryColumn, compactPhone && styles.summaryColumnCompact]}>
                   <Text style={[styles.rTitle, { fontSize: 11, marginBottom: 8 }]}>LIABILITIES</Text>
                   <RowKV label="Supplier Payables" value={fmt(dash.accountsPayable || 0)} theme={theme} styles={styles} />
                   <RowKV label="Other liabilities" value={fmt((dash.customerAdvances || 0) + (dash.commissionPayable || 0) + (dash.otherLiabilities || 0))} theme={theme} styles={styles} />
@@ -1068,7 +1070,11 @@ function makeStyles(theme: any) { return StyleSheet.create({
   shareBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: theme.radius.md },
   shareBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   scroll: { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingTop: theme.spacing.sm },
-  rTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.md },
+   rTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface, marginBottom: theme.spacing.md },
+   summaryColumns: { flexDirection: "row", gap: theme.spacing.md, marginTop: theme.spacing.md },
+   summaryColumnsCompact: { flexDirection: "column" },
+   summaryColumn: { flex: 1, minWidth: 0 },
+   summaryColumnCompact: { width: "100%" },
   kv: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
   kvLabel: { fontSize: 14, color: theme.color.onSurfaceTertiary, flex: 1 },
   kvValue: { minWidth: 92, textAlign: "right", flexShrink: 0, fontSize: 14, color: theme.color.onSurface, fontWeight: "500" },
