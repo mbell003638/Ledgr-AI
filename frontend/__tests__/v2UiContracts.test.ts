@@ -1084,4 +1084,19 @@ describe('QR private sync onboarding contracts', () => {
     expect(distribution).toContain('ghcr.io/mbell003638/ledgr-self-host-sync:latest');
     expect(distribution).toContain('mbell003638/Ledgr-Self-Host');
   });
+
+  it('keeps compact-phone onboarding controls reachable and Home workflow labels wrapped', () => {
+    const onboarding = readApp('onboarding.tsx');
+    const home = readApp('(tabs)/index.tsx');
+    const workspace = readSource('src/components/ReorderableWorkspaceGrid.tsx');
+    expect(onboarding).toContain('minHeight: 44');
+    expect(onboarding).toContain('accessibilityLabel={`Currency ${value}`}');
+    expect(onboarding).toContain('toggleHitArea: { minWidth: 50, minHeight: 44');
+    expect(onboarding).toContain('Operate multiple stores or POS points');
+    expect(home).toContain('home-workflow-shortcuts');
+    expect(workspace).toContain('accessibilityRole="button"');
+    expect(workspace).toContain('numberOfLines={2}');
+    expect(workspace).toContain('ellipsizeMode="tail"');
+    expect(workspace).toContain('flexShrink: 1');
+  });
 });

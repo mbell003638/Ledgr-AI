@@ -463,7 +463,7 @@ function ReorderableWorkspaceTile({
               color={solidBrand ? theme.color.onBrandPrimary : isBrand ? theme.color.brandPrimary : tile.iconColor}
             />
           </Animated.View>
-          <Text style={[styles.tileLabel, { color: solidBrand ? theme.color.onBrandPrimary : theme.color.onSurface }, editing && styles.tileLabelEditing]}>
+          <Text numberOfLines={2} ellipsizeMode="tail" style={[styles.tileLabel, { color: solidBrand ? theme.color.onBrandPrimary : theme.color.onSurface }, editing && styles.tileLabelEditing]}>
             {tile.label}
           </Text>
           {editing ? (
@@ -513,7 +513,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tileLabel: {
+    flexShrink: 1,
     fontSize: 14,
+    lineHeight: 18,
     fontWeight: "700",
     marginTop: 12,
   },
