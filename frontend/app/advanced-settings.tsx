@@ -11,7 +11,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askHistoryStorageKey } from "@/src/utils/askHistory";
 import { PROVIDERS, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader, Card } from "@/src/components/UI";
-import { HostingModeCard } from "@/src/components/HostingModeCard";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { saveJsonFile, shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
@@ -54,6 +53,38 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
     </View>
   );
 };
+
+const AdvancedNavRow = ({ title, subtitle, icon, onPress, isLast = false, theme }: any) => (
+  <View style={{ borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border, paddingBottom: isLast ? 0 : 10, marginBottom: isLast ? 0 : 10 }}>
+    <GlowPressable
+      topHighlight={false}
+      haptic
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      restingBorderColor="transparent"
+      hoverBorderColor={theme.color.brandPrimary}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        minHeight: 56,
+        paddingVertical: 10,
+        paddingHorizontal: 8,
+        borderWidth: 1,
+        borderColor: "transparent",
+        borderRadius: theme.radius.md,
+        backgroundColor: "transparent",
+      }}
+    >
+      <Ionicons name={icon} size={24} color={theme.color.brandPrimary} style={{ marginRight: 14 }} />
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <Text style={{ fontSize: 15, fontWeight: "700", color: theme.color.onSurface }}>{title}</Text>
+        <Text style={{ fontSize: 12, lineHeight: 17, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={22} color={theme.color.muted} />
+    </GlowPressable>
+  </View>
+);
 
 export default function AdvancedSettingsScreen() {
   const theme = useTheme();
@@ -445,16 +476,17 @@ export default function AdvancedSettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <Card style={styles.advancedGroup}>
-              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>System & Workflows</Text>
-              <HostingModeCard />
-              <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
-                <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
-                <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
-                <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
-              </Pressable>
-              
+                        <Card style={styles.advancedGroup}>
+              <AccordionRow title="System & Workflows" subtitle="Book health and private sync workflows" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <AdvancedNavRow title="Book Health" subtitle="Read-only ledger, backup and recovery checks" icon="shield-checkmark-outline" theme={theme} onPress={() => router.push('/backup-recovery' as any)} />
+                  <AdvancedNavRow title="Self-hosted Sync" subtitle="Optional offline-first sync across your devices" icon="cloud-upload-outline" theme={theme} onPress={() => router.push('/sync-settings' as any)} />
+                  <AdvancedNavRow title="Sync Conflict Inbox" subtitle="Review retained concurrent edits" icon="warning-outline" theme={theme} onPress={() => router.push('/sync-conflicts' as any)} isLast />
+                </View>
+              </AccordionRow>
+
               <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+
                 <View>
                   <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginTop: theme.spacing.sm, padding: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.success + "55", backgroundColor: theme.color.successBg }}><Ionicons name="shield-checkmark-outline" size={17} color={theme.color.success} /><Text style={{ flex: 1, color: theme.color.success, fontSize: 11, fontWeight: "700" }}>Ledger storage: {activeBook ? "Ready — SQLite V2 authoritative" : "Migration required"}</Text></View>

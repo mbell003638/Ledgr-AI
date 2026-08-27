@@ -45,26 +45,6 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
   );
 };
 
-const SettingsNavRow = ({ title, subtitle, icon, onPress, isLast, theme }: any) => (
-  <View style={{ borderBottomWidth: isLast ? 0 : 1, borderBottomColor: theme.color.border }}>
-    <GlowPressable
-      topHighlight={false}
-      haptic
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      onPress={onPress}
-      style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingVertical: 12, paddingHorizontal: 0, borderWidth: 0, borderRadius: 0 }}
-    >
-      <Ionicons name={icon} size={20} color={theme.color.brandPrimary} style={{ marginRight: 12 }} />
-      <View style={{ flex: 1, paddingRight: 16 }}>
-        <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.onSurface }}>{title}</Text>
-        <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>{subtitle}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={theme.color.muted} />
-    </GlowPressable>
-  </View>
-);
-
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -311,11 +291,56 @@ export default function SettingsScreen() {
 </Card>
 
 
-            <Card style={styles.settingsGroup}>
-              <SettingsNavRow title="Customize Dashboard & Feature Tabs" subtitle="Turn accounting tabs ON or OFF to fit your business" icon="options-outline" theme={theme} onPress={() => router.push("/customize-features")} />
-              <SettingsNavRow title="Advanced Settings" subtitle="AI config, Workflows, Opening Balances, Backup..." icon="settings-outline" theme={theme} onPress={() => router.push("/advanced-settings")} />
-              <SettingsNavRow title="Privacy & Data" subtitle="Privacy policy, AI data use and deletion information" icon="shield-checkmark-outline" theme={theme} onPress={() => router.push("/privacy" as any)} isLast />
-            </Card>
+            <GlowPressable
+              topHighlight={false}
+              haptic
+              accessibilityRole="button"
+              accessibilityLabel="Customize Dashboard & Feature Tabs"
+              onPress={() => router.push("/customize-features")}
+              restingBorderColor={theme.color.border}
+              hoverBorderColor={theme.color.brandPrimary}
+              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 16 }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "600", color: theme.color.brandPrimary }}>Customize Dashboard & Feature Tabs</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Turn accounting tabs ON or OFF to fit your business</Text>
+                </View>
+                <Ionicons name="options-outline" size={22} color={theme.color.brandPrimary} />
+              </View>
+            </GlowPressable>
+            <GlowPressable
+              topHighlight={false}
+              haptic
+              accessibilityRole="button"
+              accessibilityLabel="Advanced Settings"
+              onPress={() => router.push("/advanced-settings")}
+              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20, paddingBottom: 0 }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 20 }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Advanced Settings</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>AI config, Workflows, Opening Balances, Backup...</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.color.brandPrimary} />
+              </View>
+            </GlowPressable>
+            <GlowPressable
+              topHighlight={false}
+              haptic
+              accessibilityRole="button"
+              accessibilityLabel="Privacy & Data"
+              onPress={() => router.push("/privacy" as any)}
+              style={{ marginTop: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, padding: 20 }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 16 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "500", color: theme.color.brandPrimary }}>Privacy & Data</Text>
+                  <Text style={{ fontSize: 12, color: theme.color.muted, marginTop: 4 }}>Privacy policy, AI data use and deletion information</Text>
+                </View>
+                <Ionicons name="open-outline" size={20} color={theme.color.brandPrimary} />
+              </View>
+            </GlowPressable>
             {status && (
               <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
                 <Ionicons name={status.ok ? "checkmark-circle" : "alert-circle"} size={18} color={status.ok ? theme.color.success : theme.color.error} />
@@ -341,15 +366,6 @@ function makeStyles(theme: any) {
     settingsGroup: { marginTop: theme.spacing.lg, padding: 18, borderRadius: theme.radius.card },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, lineHeight: 18, color: theme.color.muted, marginTop: 4 },
-    shortcutCard: {
-      marginTop: theme.spacing.lg,
-      borderRadius: theme.radius.md,
-      borderWidth: 1,
-      borderColor: theme.color.border,
-      backgroundColor: theme.color.surfaceSecondary,
-      padding: 18,
-    },
-    shortcutRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     input: {
       marginTop: theme.spacing.md,
       borderWidth: 1,

@@ -110,9 +110,11 @@ describe('V2 UI contracts', () => {
     expect(source).not.toContain('title="Accounting setup"');
     expect(source).not.toContain('read-only summary');
     expect(source).toContain('Customize Dashboard & Feature Tabs');
-    expect(source).toContain('const SettingsNavRow');
-    expect(source).toContain('icon="options-outline"');
-    expect(source).not.toContain('style={styles.shortcutCard}');
+    expect(source).not.toContain('const SettingsNavRow');
+    expect(source).toContain('backgroundColor: theme.color.surfaceSecondary');
+    expect(source).toContain('name="options-outline"');
+    expect(source).toContain('padding: 16');
+    expect(source).toContain('accessibilityLabel="Customize Dashboard & Feature Tabs"');
     expect(source).not.toContain('Accounting Style</Text>');
     expect(source).not.toContain('Accounting Basis</Text>');
     expect(source).toContain('router.push("/advanced-settings")');
@@ -124,6 +126,14 @@ describe('V2 UI contracts', () => {
     expect(advanced).toContain('Accounting Style');
     expect(advanced).toContain('api.updateV2BookConfig');
     expect(advanced).toContain('styles.advancedGroup');
+    expect(advanced).toContain('const AdvancedNavRow');
+    expect(advanced).toContain('backgroundColor: "transparent"');
+    expect(advanced).toContain('restingBorderColor="transparent"');
+    expect(advanced).not.toContain('Bank Statement Preview');
+    expect(advanced).not.toContain('scan-import');
+    expect(advanced).toContain('Book Health');
+    expect(advanced).toContain('Self-hosted Sync');
+    expect(advanced).not.toContain('HostingModeCard');
     expect(advanced).toContain('ON · Fingerprint / PIN');
     expect(advanced).toContain('backgroundColor: "transparent"');
     expect(advanced).toContain('lineHeight: 18');
@@ -357,8 +367,9 @@ describe('V2 UI contracts', () => {
     expect(assets).toContain('useState<(typeof liabilityRecognition)[number]["id"]>("expense")');
     expect(assets).toContain('Due / accrued expense');
     expect(assets).toContain('Cash received (loan)');
-    expect(settings).toContain('const SettingsNavRow');
-    expect(settings).toContain('minHeight: 56');
+    expect(settings).not.toContain('const SettingsNavRow');
+    expect(settings).toContain('restingBorderColor={theme.color.border}');
+    expect(settings).toContain('hoverBorderColor={theme.color.brandPrimary}');
     expect(settings).toContain('onPress={() => router.push("/customize-features")}');
   });
   it('input forms keep their fields reachable above the mobile keyboard', () => {
@@ -720,7 +731,7 @@ describe('V2 UI contracts', () => {
     expect(syncService).toContain('SecureStore');
     expect(apiFacade).toContain('configureSync');
     expect(apiFacade).toContain('resolveSyncConflict');
-    expect(advanced).toContain('HostingModeCard');
+    expect(advanced).not.toContain('HostingModeCard');
     expect(hostingCard).toContain('testID="open-private-sync"');
     expect(hostingCard).toContain('testID="open-backup-recovery"');
   });
@@ -785,7 +796,7 @@ describe('hosting mode and Backup & Recovery UI contracts', () => {
     const hosting = readSource('src/utils/hostingMode.ts');
     expect(settings).not.toContain('<HostingModeCard />');
     expect(settings).not.toContain('Self-hosted Sync');
-    expect(advanced).toContain('<HostingModeCard />');
+    expect(advanced).not.toContain('<HostingModeCard />');
     expect(card).toContain('testID="hosting-mode-card"');
     expect(card).toContain('testID="open-backup-recovery"');
     expect(card).toContain('testID="open-private-sync"');
