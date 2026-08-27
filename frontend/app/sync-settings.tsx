@@ -124,7 +124,7 @@ export default function SyncSettingsScreen() {
     }
   };
   return <SafeAreaView style={styles.container} edges={['top']}>
-    <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><ScreenHeader title="Self-hosted Sync" subtitle="Optional offline-first collaboration" titleStyle={styles.headerTitle} /></View>
+    <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><ScreenHeader embedded title="Self-hosted Sync" subtitle="Optional offline-first collaboration" titleStyle={styles.headerTitle} /></View>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text><Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>

@@ -38,7 +38,7 @@ export default function WorkflowsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>
-        <View style={{ flex: 1 }}><ScreenHeader title="All Workflows" subtitle={profile.title} /></View>
+        <View style={{ flex: 1 }}><ScreenHeader embedded title="All Workflows" subtitle={profile.title} /></View>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Card shadowEnabled={false} style={styles.introCard}>

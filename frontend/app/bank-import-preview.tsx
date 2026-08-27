@@ -30,7 +30,7 @@ export default function BankImportPreviewScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><View style={{ flex: 1 }}><ScreenHeader title="Bank Statement Preview" subtitle="Experimental · no ledger posting" /></View></View>
+      <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><View style={{ flex: 1 }}><ScreenHeader embedded title="Bank Statement Preview" subtitle="Experimental · no ledger posting" /></View></View>
       <ScrollView contentContainerStyle={styles.content}>
         <Card shadowEnabled={false} style={styles.warning}><Ionicons name="eye-outline" size={23} color={theme.color.warning} /><View style={{ flex: 1 }}><Text style={styles.warningTitle}>Review-only safety boundary</Text><Text style={styles.hint}>This screen cannot create, match or reconcile transactions. The preview stays in memory and is discarded when you leave.</Text></View></Card>
         <Card shadowEnabled={false} style={styles.card}>

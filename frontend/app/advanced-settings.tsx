@@ -346,6 +346,12 @@ export default function AdvancedSettingsScreen() {
     : provider === "anthropic"
       ? "Anthropic Compatible"
       : "OpenAI Compatible";
+  const hostingToneColor = hostingState.tone === "critical"
+    ? theme.color.error
+    : hostingState.tone === "attention"
+      ? theme.color.warning
+      : theme.color.brandPrimary;
+  const hostingBadgeLabel = hostingState.mode === "private_sync" ? "Connected" : "On device";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -354,7 +360,7 @@ export default function AdvancedSettingsScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <ScreenHeader title="Advanced" subtitle="System & Workflows" />
+          <ScreenHeader embedded title="Advanced" subtitle="System & Workflows" />
         </View>
       </View>
       {loading ? (
@@ -363,36 +369,46 @@ export default function AdvancedSettingsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             
-            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+            <View style={styles.workflowSection}>
               <AccordionRow title="System & Workflows" subtitle="Book health, sync and import previews" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
-                <View testID="hosting-mode-summary" style={{ borderWidth: 1, borderColor: hostingState.tone === 'critical' ? theme.color.error : hostingState.tone === 'attention' ? theme.color.warning : theme.color.border, borderRadius: theme.radius.md, padding: 12, marginBottom: theme.spacing.md, backgroundColor: theme.color.surface }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={19} color={theme.color.brandPrimary} />
-                    <Text style={styles.bookName}>{hostingState.label}</Text>
+                <View style={styles.workflowContent}>
+                <View testID="hosting-mode-summary" style={styles.workflowStatus}>
+                  <View style={[styles.workflowStatusIcon, { backgroundColor: hostingToneColor + "18" }]}>
+                    <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={20} color={hostingToneColor} />
                   </View>
-                  <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
-                  <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
+                  <View style={styles.workflowStatusCopy}>
+                    <View style={styles.workflowStatusTitleRow}>
+                      <Text style={styles.bookName}>{hostingState.label}</Text>
+                      <View style={[styles.workflowStatusBadge, { borderColor: hostingToneColor + "55", backgroundColor: hostingToneColor + "10" }]}>
+                        <View style={[styles.workflowStatusDot, { backgroundColor: hostingToneColor }]} />
+                        <Text numberOfLines={1} style={[styles.workflowStatusBadgeText, { color: hostingToneColor }]}>{hostingBadgeLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
+                    <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
+                  </View>
                 </View>
-                <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={styles.workflowRow}>
                   <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
                   <View style={{ flex: 1 }}><Text style={styles.bookName}>Book Health</Text><Text style={styles.subLabel}>Read-only ledger, backup and recovery checks</Text></View>
                   <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
                 </Pressable>
-                <Pressable testID="open-bank-import-preview" onPress={() => router.push('/bank-import-preview' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Pressable testID="open-bank-import-preview" onPress={() => router.push('/bank-import-preview' as any)} style={styles.workflowRow}>
                   <Ionicons name="document-text-outline" size={20} color={theme.color.brandPrimary} />
                   <View style={{ flex: 1 }}><Text style={styles.bookName}>Bank Statement Preview</Text><Text style={styles.subLabel}>Read-only CSV preview; does not post entries</Text></View>
                   <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
                 </Pressable>
-                <Pressable onPress={() => router.push('/sync-settings' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Pressable onPress={() => router.push('/sync-settings' as any)} style={styles.workflowRow}>
                   <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
                   <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
                   <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
                 </Pressable>
-                <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.bookRow, { marginBottom: theme.spacing.md }]}>
+                <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.workflowRow, styles.workflowRowLast]}>
                   <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
                   <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
                   <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
                 </Pressable>
+                </View>
               </AccordionRow>
               
               <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
@@ -649,6 +665,42 @@ function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
     scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 60 },
+    workflowSection: {
+      backgroundColor: theme.color.surfaceSecondary,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.color.border,
+      marginTop: theme.spacing.lg,
+      padding: 20,
+    },
+    workflowContent: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.color.border,
+      paddingTop: theme.spacing.xs,
+    },
+    workflowStatus: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: theme.spacing.md,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.color.border,
+    },
+    workflowStatusIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+    workflowStatusCopy: { flex: 1, minWidth: 0 },
+    workflowStatusTitleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+    workflowStatusBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+    workflowStatusDot: { width: 6, height: 6, borderRadius: 3 },
+    workflowStatusBadgeText: { fontSize: 10, fontWeight: "700" },
+    workflowRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.color.border,
+    },
+    workflowRowLast: { borderBottomWidth: 0 },
     label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
     hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
     input: {

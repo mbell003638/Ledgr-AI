@@ -17,6 +17,14 @@ describe('phase 0-3 workspace UI contracts', () => {
     expect(workflows).toContain('Only enabled workflows appear here');
   });
 
+  it('keeps the expanded system tools as one flat, grouped surface', () => {
+    expect(advanced).toContain('style={styles.workflowSection}');
+    expect(advanced).toContain('style={styles.workflowContent}');
+    expect(advanced).toContain('style={styles.workflowRow}');
+    expect(advanced).toContain('styles.workflowRowLast');
+    expect(advanced).toContain('borderTopWidth: StyleSheet.hairlineWidth');
+  });
+
   it('keeps Book Health read-only and scopes journal checks through entries', () => {
     expect(health).toContain('WHERE j.book_id=?');
     expect(health).not.toContain('INSERT INTO');

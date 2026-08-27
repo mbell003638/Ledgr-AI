@@ -25,7 +25,7 @@ export default function PrivacyDataScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <ScreenHeader title="Privacy & Data" subtitle="How Ledgr handles your information" />
+          <ScreenHeader embedded title="Privacy & Data" subtitle="How Ledgr handles your information" />
         </View>
       </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

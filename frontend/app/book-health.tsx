@@ -30,7 +30,7 @@ export default function BookHealthScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>
-        <View style={{ flex: 1 }}><ScreenHeader title="Book Health" subtitle="Read-only accounting and recovery checks" /></View>
+        <View style={{ flex: 1 }}><ScreenHeader embedded title="Book Health" subtitle="Read-only accounting and recovery checks" /></View>
       </View>
       {!health ? <ActivityIndicator style={{ marginTop: 48 }} color={theme.color.brandPrimary} /> : (
         <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}>

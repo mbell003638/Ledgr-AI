@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -19,6 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { api } from "@/src/api";
+import { quickActionMenuMaxHeight } from "@/src/utils/responsiveLayout";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -82,6 +84,9 @@ export default function QuickActionMenu() {
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const menuMaxHeight = quickActionMenuMaxHeight(screenHeight, insets.top);
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
   const progress = useSharedValue(0);
@@ -177,12 +182,14 @@ export default function QuickActionMenu() {
         </Animated.View>
 
         <Animated.View
+          testID="quick-action-menu"
           style={[
             styles.menuContainer,
             {
               backgroundColor: theme.color.surfaceSecondary,
               borderColor: theme.color.brandPrimary,
               shadowColor: theme.color.brandPrimary,
+              maxHeight: menuMaxHeight,
             },
             menuStyle,
           ]}
@@ -194,7 +201,14 @@ export default function QuickActionMenu() {
             end={{ x: 1, y: 0 }}
             style={styles.menuHighlight}
           />
-          <View style={styles.menuInner}>
+          <ScrollView
+            testID="quick-action-scroll"
+            style={styles.menuScroller}
+            contentContainerStyle={styles.menuInner}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            nestedScrollEnabled
+          >
             <GlowPressable
               prominent
               haptic
@@ -256,7 +270,7 @@ export default function QuickActionMenu() {
                 setTimeout(() => setOpeningModalVisible(true), theme.motion.fast);
               }}
             />
-          </View>
+          </ScrollView>
         </Animated.View>
       </Modal>
 
@@ -294,6 +308,7 @@ const styles = StyleSheet.create({
     height: 2,
     opacity: 0.8,
   },
+  menuScroller: { flexShrink: 1, width: "100%" },
   menuInner: { padding: 12 },
   aiAction: {
     borderRadius: 20,
@@ -310,7 +325,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
-  aiText: { fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },
+  aiText: { flexShrink: 1, fontSize: 16, fontWeight: "800", letterSpacing: 0.2, textAlign: "center" },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -326,7 +341,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  actionDetails: { flex: 1 },
+  actionDetails: { flex: 1, minWidth: 0 },
   actionTitle: { fontSize: 15, fontWeight: "700", marginBottom: 2 },
   actionSubtitle: { fontSize: 12 },
   fabContainer: {

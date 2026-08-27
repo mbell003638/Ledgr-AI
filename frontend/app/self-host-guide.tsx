@@ -41,7 +41,7 @@ export default function SelfHostGuideScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>
-        <View style={{ flex: 1 }}><ScreenHeader title="Set up self-hosted sync" subtitle="Guided setup for your own computer" /></View>
+        <View style={{ flex: 1 }}><ScreenHeader embedded title="Set up self-hosted sync" subtitle="Guided setup for your own computer" /></View>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.hero}>

@@ -13,7 +13,7 @@ export default function ExperimentalModulesScreen() {
   const router = useRouter();
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><View style={{ flex: 1 }}><ScreenHeader title="Experimental Modules" subtitle="Safety-gated previews" /></View></View>
+      <View style={styles.header}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><View style={{ flex: 1 }}><ScreenHeader embedded title="Experimental Modules" subtitle="Safety-gated previews" /></View></View>
       <ScrollView contentContainerStyle={styles.content}>
         <Card shadowEnabled={false} style={styles.notice}><Ionicons name="flask-outline" size={24} color={theme.color.warning} /><View style={{ flex: 1 }}><Text style={styles.noticeTitle}>No experimental module can silently post</Text><Text style={styles.hint}>Preview-only tools are isolated from accounting commands. Blocked modules have no route or enable switch.</Text></View></Card>
         {EXPERIMENTAL_MODULES.map((module) => (

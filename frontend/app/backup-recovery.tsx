@@ -116,7 +116,7 @@ export default function BackupRecoveryScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>
-        <View style={{ flex: 1 }}><ScreenHeader title="Backup & Recovery" subtitle="Encrypted, local and portable" /></View>
+        <View style={{ flex: 1 }}><ScreenHeader embedded title="Backup & Recovery" subtitle="Encrypted, local and portable" /></View>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {health ? <Card shadowEnabled={false} style={[styles.health, { borderColor: healthColor }]}><Ionicons name={health.tone === 'healthy' ? 'shield-checkmark' : 'alert-circle'} size={22} color={healthColor} /><View style={{ flex: 1 }}><Text style={styles.cardTitle}>Book Health: {health.label}</Text><Text style={styles.hint}>Health is checked before export. A recovery copy is still allowed when attention is needed.</Text></View></Card> : null}
