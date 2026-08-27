@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Platform, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FoldPosture, HingeRect, useFoldPosture } from "@/src/hooks/foldPosture";
 
 export type ResponsiveLayoutMode = "compactPhone" | "phone" | "tablet" | "wide";
-export type FoldPosture = "unknown" | "flat" | "halfOpened" | "tabletop" | "book";
+export type { FoldPosture };
 
 export type ResponsiveDeviceMetrics = {
   width: number;
@@ -20,9 +21,9 @@ export type ResponsiveDeviceMetrics = {
   safeLeft: number;
   safeRight: number;
   foldPosture: FoldPosture;
-  hasHinge: false;
-  dualPane: false;
-  hingeRect: null;
+  hasHinge: boolean;
+  dualPane: boolean;
+  hingeRect: HingeRect | null;
 };
 
 /**
@@ -34,6 +35,7 @@ export type ResponsiveDeviceMetrics = {
 export function useResponsiveDevice(): ResponsiveDeviceMetrics {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const fold = useFoldPosture();
   return useMemo(() => {
     const shortestSide = Math.min(width, height);
     const landscape = width > height;
@@ -63,12 +65,12 @@ export function useResponsiveDevice(): ResponsiveDeviceMetrics {
       safeBottom: insets.bottom,
       safeLeft: insets.left,
       safeRight: insets.right,
-      foldPosture: "unknown",
-      hasHinge: false,
-      dualPane: false,
-      hingeRect: null,
+      foldPosture: fold.posture,
+      hasHinge: fold.hasHinge,
+      dualPane: fold.dualPane,
+      hingeRect: fold.hingeRect,
     };
-  }, [height, insets.bottom, insets.left, insets.right, insets.top, width]);
+  }, [fold.dualPane, fold.hasHinge, fold.hingeRect, fold.posture, height, insets.bottom, insets.left, insets.right, insets.top, width]);
 }
 
 export function responsivePlatformLabel(): "web" | "ios" | "android" | "native" {

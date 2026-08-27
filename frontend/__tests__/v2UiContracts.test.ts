@@ -380,8 +380,13 @@ describe('V2 UI contracts', () => {
     expect(responsive).toContain('const compactPhone = shortestSide < 360');
     expect(responsive).toContain('const tablet = shortestSide >= 600');
     expect(responsive).toContain('const wide = width >= 900');
-    expect(responsive).toContain('dualPane: false');
-    expect(responsive).toContain('hingeRect: null');
+    expect(responsive).toContain('const fold = useFoldPosture()');
+    expect(responsive).toContain('dualPane: fold.dualPane');
+    expect(responsive).toContain('hingeRect: fold.hingeRect');
+    const foldPosture = readSource('src/hooks/foldPosture.ts');
+    expect(foldPosture).toContain('UNKNOWN_FOLD_POSTURE');
+    expect(foldPosture).toContain('configureFoldPostureAdapter');
+    expect(foldPosture).toContain('dualPane: false');
     expect(workspace).toContain('const PHONE_COLUMNS = 2');
     expect(workspace).toContain('const columns = gridWidth >= 900 ? WIDE_COLUMNS : gridWidth >= 600 ? TABLET_COLUMNS : PHONE_COLUMNS');
     expect(workspace).toContain('onLayout={(event) => {');
@@ -1098,5 +1103,23 @@ describe('QR private sync onboarding contracts', () => {
     expect(workspace).toContain('numberOfLines={2}');
     expect(workspace).toContain('ellipsizeMode="tail"');
     expect(workspace).toContain('flexShrink: 1');
+  });
+  it('keeps compact bottom-tab labels inside the navigation shell', () => {
+    const tabs = readApp('(tabs)/_layout.tsx');
+    expect(tabs).toContain('useResponsiveDevice');
+    expect(tabs).toContain('minWidth: compact ? 0 : 60');
+    expect(tabs).toContain('width: compact ? "100%" : undefined');
+    expect(tabs).toContain('adjustsFontSizeToFit');
+    expect(tabs).toContain('minimumFontScale={0.76}');
+    expect(tabs).toContain('tabBarItemStyle: { flex: 1, minWidth: 0');
+  });
+  it('keeps two-pane presentation opt-in and single-pane without native posture data', () => {
+    const twoPane = readSource('src/components/ResponsiveTwoPane.tsx');
+    expect(twoPane).toContain('snapshot.dualPane && snapshot.hasHinge');
+    expect(twoPane).toContain('snapshot.posture === "flat" || snapshot.posture === "book"');
+    expect(twoPane).toContain('if (!isSafeTwoPanePosture(snapshot)) return <>{primary}</>');
+    for (const excluded of ['sync', 'voice', 'invoice', 'modal']) {
+      expect(twoPane).not.toContain(`/${excluded}`);
+    }
   });
 });
