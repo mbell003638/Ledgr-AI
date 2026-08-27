@@ -384,6 +384,7 @@ describe('V2 UI contracts', () => {
     expect(responsive).toContain('hingeRect: null');
     expect(workspace).toContain('const PHONE_COLUMNS = 2');
     expect(workspace).toContain('const columns = gridWidth >= 900 ? WIDE_COLUMNS : gridWidth >= 600 ? TABLET_COLUMNS : PHONE_COLUMNS');
+    expect(workspace).toContain('onLayout={(event) => {');
     expect(workspace).toContain('columns={columns}');
     expect(reports).toContain('compactPhone && styles.summaryColumnsCompact');
     expect(reports).toContain('summaryColumnCompact');
@@ -493,6 +494,9 @@ describe('V2 UI contracts', () => {
     expect(context).toContain('const hapticsEnabled = motionEnabled');
     expect(glow).toContain('if (!motionEnabled)');
     expect(quick).toContain('if (hapticsEnabled && Platform.OS !== "web")');
+    expect(quick).toContain('Math.min(620, windowHeight - menuBottom - 16)');
+    expect(quick).toContain('actionDetails: { flex: 1, minWidth: 0 }');
+    expect(quick).toContain('accessibilityLabel="Open Quick Actions"');
     expect(tabs).toContain('if (hapticsEnabled && Platform.OS !== "web")');
     const workspace = readSource('src/components/ReorderableWorkspaceGrid.tsx');
     const glass = readSource('src/components/AnimatedGlassSurface.tsx');

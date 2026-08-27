@@ -96,7 +96,7 @@ export default function QuickActionMenu() {
   const fabBottom = tabBarBottomInset + 26;
   const menuBottom = tabBarBottomInset + 82;
   const menuWidth = Math.max(0, Math.min(windowWidth - 24, 410));
-  const menuMaxHeight = Math.max(260, windowHeight - menuBottom - 24);
+  const menuMaxHeight = Math.max(0, Math.min(620, windowHeight - menuBottom - 16));
   const isWeb = Platform.OS === "web";
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
@@ -302,7 +302,6 @@ const styles = StyleSheet.create({
   overlayPressable: { flex: 1 },
   menuContainer: {
     position: "absolute",
-    bottom: 98,
     alignSelf: "center",
     width: "94%",
     maxWidth: 410,
@@ -358,7 +357,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  actionDetails: { flex: 1 },
+  actionDetails: { flex: 1, minWidth: 0 },
   actionTitle: { fontSize: 15, fontWeight: "700", marginBottom: 2 },
   actionSubtitle: { fontSize: 12 },
   fabContainer: {
