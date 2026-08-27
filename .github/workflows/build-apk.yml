@@ -2,6 +2,12 @@ name: Build Ledgr AI Android
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Optional Git ref to build instead of the workflow branch (read-only source checkout)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -21,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -57,6 +65,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -207,9 +217,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.source_ref != '' && 'android-ci-codex-sol' || 'android-ci' }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/ledgr-android-ci
+          source_sha="$(git rev-parse HEAD)"
           apk="$(find frontend/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           if [ -z "$apk" ]; then
             echo "No release APK was produced" >&2
@@ -224,26 +236,26 @@ jobs:
             fi
             cp "$aab" /tmp/ledgr-android-ci/Ledgr-AI-AAB.aab
             title="Android CI build $GITHUB_RUN_NUMBER (Play-Store-signable path)"
-            notes="Latest Android CI output from commit $GITHUB_SHA. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
+            notes="Latest Android CI output from source commit $source_sha. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
           else
             cp "$apk" /tmp/ledgr-android-ci/Ledgr-AI-APK-testsigned.apk
             title="Android CI build $GITHUB_RUN_NUMBER (TEST-SIGNED)"
-            notes="Latest Android CI output from commit $GITHUB_SHA. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
+            notes="Latest Android CI output from source commit $source_sha. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
           fi
-          if gh release view android-ci --repo "$REPOSITORY" >/dev/null 2>&1; then
-            gh release edit android-ci --repo "$REPOSITORY" --title "$title" --notes "$notes"
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --title "$title" --notes "$notes"
           else
-            gh release create android-ci --repo "$REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "$title" --notes "$notes"
+            gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --target "$source_sha" --prerelease --title "$title" --notes "$notes"
           fi
-          gh release upload android-ci --repo "$REPOSITORY" /tmp/ledgr-android-ci/* --clobber
+          gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" /tmp/ledgr-android-ci/* --clobber
           apk_asset="$(find /tmp/ledgr-android-ci -maxdepth 1 -type f -name '*.apk' -printf '%f\\n' | head -n 1)"
-          apk_url="https://github.com/${REPOSITORY}/releases/download/android-ci/${apk_asset}"
+          apk_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${apk_asset}"
           {
             echo "## Android build download"
             echo ""
             echo "[Download the APK](${apk_url})"
             echo ""
-            echo "Release page: https://github.com/${REPOSITORY}/releases/tag/android-ci"
+            echo "Release page: https://github.com/${REPOSITORY}/releases/tag/${RELEASE_TAG}"
             if [ "${{ steps.check.outputs.has_keystore }}" != "true" ]; then
               echo ""
               echo "> This is a TEST-SIGNED APK. It is for device testing only and must not be submitted to Google Play."
