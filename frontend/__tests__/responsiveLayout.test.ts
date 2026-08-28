@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, '..');
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 const ui = read('src/components/UI.tsx');
 const syncSettings = read('app/sync-settings.tsx');
+const syncConflicts = read('app/sync-conflicts.tsx');
+const backupRecovery = read('app/backup-recovery.tsx');
 const quickActions = read('src/components/QuickActionMenu.tsx');
 const advancedSettings = read('app/advanced-settings.tsx');
 
@@ -27,7 +29,12 @@ describe('responsive layout safeguards', () => {
     expect(ui).toContain('numberOfLines={resolvedCompact ? 2 : undefined}');
     expect(ui).toContain('styles.embeddedCompactRow');
     expect(ui).toContain('styles.embeddedCompactActions');
+    expect(ui).toContain('embeddedCompactRow: { flexDirection: "row"');
+    expect(ui).toContain('embeddedCompactActions: { alignSelf: "flex-start"');
+    expect(ui).not.toContain('embeddedCompactRow: { flexDirection: "column"');
     expect(syncSettings).toContain('<ScreenHeader embedded');
+    expect(syncConflicts).toContain('title="Conflict Inbox"');
+    expect(backupRecovery).toContain('title="Backup & Recovery"');
     expect(advancedSettings).toContain('<ScreenHeader embedded title="Advanced"');
   });
 
