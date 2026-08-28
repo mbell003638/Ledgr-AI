@@ -1090,6 +1090,16 @@ describe('QR private sync onboarding contracts', () => {
     expect(distribution).toContain('mbell003638/Ledgr-Self-Host');
   });
 
+  it('uses one organized Advanced Settings header above the System & Workflows section', () => {
+    const advanced = readApp('advanced-settings.tsx');
+    expect(advanced).toContain('testID="advanced-settings-header"');
+    expect(advanced).toContain('title="Advanced Settings"');
+    expect(advanced).toContain('subtitle="Workspace configuration and workflows"');
+    expect(advanced).toContain('accessibilityLabel="Back to Settings"');
+    expect(advanced).toContain('title="System & Workflows"');
+    expect(advanced).not.toContain('<ScreenHeader title="Advanced" subtitle="System & Workflows" />');
+    expect(advanced).not.toContain('paddingHorizontal: theme.spacing.lg, paddingTop: 16');
+  });
   it('keeps compact-phone onboarding controls reachable and Home workflow labels wrapped', () => {
     const onboarding = readApp('onboarding.tsx');
     const home = readApp('(tabs)/index.tsx');

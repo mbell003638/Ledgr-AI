@@ -462,14 +462,22 @@ export default function AdvancedSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 16 }}>
-        <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
-          <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <ScreenHeader title="Advanced" subtitle="System & Workflows" />
-        </View>
-      </View>
+      <ScreenHeader
+        testID="advanced-settings-header"
+        title="Advanced Settings"
+        subtitle="Workspace configuration and workflows"
+        leftAction={(
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to Settings"
+            hitSlop={8}
+            onPress={() => router.back()}
+            style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
+          </Pressable>
+        )}
+      />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
       ) : (
