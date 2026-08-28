@@ -499,7 +499,7 @@ describe('V2 UI contracts', () => {
     expect(context).toContain('const hapticsEnabled = motionEnabled');
     expect(glow).toContain('if (!motionEnabled)');
     expect(quick).toContain('if (hapticsEnabled && Platform.OS !== "web")');
-    expect(quick).toContain('Math.min(620, windowHeight - menuBottom - 16)');
+    expect(quick).toContain('quickActionMenuMaxHeight(windowHeight, insets.top, insets.bottom)');
     expect(quick).toContain('actionDetails: { flex: 1, minWidth: 0 }');
     expect(quick).toContain('accessibilityLabel="Open Quick Actions"');
     expect(tabs).toContain('if (hapticsEnabled && Platform.OS !== "web")');

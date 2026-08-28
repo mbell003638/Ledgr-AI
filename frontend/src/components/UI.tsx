@@ -29,17 +29,17 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
 
   return (
     <View style={[styles.header, style]} testID={testID}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: compactHeader ? 8 : 10 }}>
-        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start' }}>
+      <View style={[{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: compactHeader ? 8 : 10 }, compactHeader && styles.compactRow]}>
+        <View style={[{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start' }, compactHeader && styles.compactTitleArea]}>
           {leftAction ? <View style={{ marginRight: compactHeader ? 6 : 10, paddingTop: 2 }}>{leftAction}</View> : null}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={compactHeader ? 1 : undefined} adjustsFontSizeToFit={compactHeader} minimumFontScale={compactHeader ? 0.78 : undefined} ellipsizeMode={compactHeader ? "tail" : undefined} style={[styles.title, compactHeader && styles.titleCompact, titleStyle]}>{title}</Text>
-            {subtitle ? <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
+            <Text numberOfLines={compactHeader ? 2 : undefined} adjustsFontSizeToFit={compactHeader} minimumFontScale={compactHeader ? 0.78 : undefined} ellipsizeMode={compactHeader ? "tail" : undefined} style={[styles.title, titleStyle, compactHeader && styles.titleCompact]}>{title}</Text>
+            {subtitle ? <Text numberOfLines={compactHeader ? 2 : undefined} ellipsizeMode="tail" style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
           </View>
         </View>
-        <View style={{ alignItems: "flex-end", gap: compactHeader ? 6 : 8, maxWidth: compactHeader ? 82 : "45%" }}>
+        <View style={[{ alignItems: "flex-end", gap: compactHeader ? 6 : 8, maxWidth: compactHeader ? 82 : "45%" }, compactHeader && styles.compactActions]}>
           {bizName ? (
-              <View accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: compactHeader ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: compactHeader ? 9 : 14, paddingVertical: compactHeader ? 6 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: compactHeader ? 4 : 6 }}>
+              <View accessible accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: compactHeader ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: compactHeader ? 9 : 14, paddingVertical: compactHeader ? 6 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: compactHeader ? 4 : 6 }}>
               <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
               <Text numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1, maxWidth: compactHeader ? 48 : undefined, fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
             </View>
@@ -136,6 +136,9 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     },
     title: { fontSize: 26, fontWeight: "800", color: theme.color.onSurface, letterSpacing: -0.5 },
     titleCompact: { fontSize: 22, lineHeight: 27, letterSpacing: -0.35 },
+    compactRow: { flexDirection: "column", alignItems: "stretch", gap: 4 },
+    compactTitleArea: { width: "100%", flex: 0 },
+    compactActions: { alignSelf: "flex-end", maxWidth: "100%" },
     subtitle: { fontSize: 13, color: theme.color.muted, marginTop: 2 },
     card: {
       backgroundColor: theme.color.glassSurface,

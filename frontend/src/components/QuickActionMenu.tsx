@@ -21,6 +21,7 @@ import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { api } from "@/src/api";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
+import { quickActionFabBottom, quickActionMenuBottom, quickActionMenuMaxHeight, quickActionMenuWidth } from "@/src/utils/responsiveLayout";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -92,11 +93,10 @@ export default function QuickActionMenu() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const tabBarBottomInset = Math.max(insets.bottom, 16);
-  const fabBottom = tabBarBottomInset + 26;
-  const menuBottom = tabBarBottomInset + 82;
-  const menuWidth = Math.max(0, Math.min(windowWidth - 24, 410));
-  const menuMaxHeight = Math.max(0, Math.min(620, windowHeight - menuBottom - 16));
+  const fabBottom = quickActionFabBottom(insets.bottom);
+  const menuBottom = quickActionMenuBottom(insets.bottom);
+  const menuWidth = quickActionMenuWidth(windowWidth, insets.left, insets.right);
+  const menuMaxHeight = quickActionMenuMaxHeight(windowHeight, insets.top, insets.bottom);
   const isWeb = Platform.OS === "web";
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
