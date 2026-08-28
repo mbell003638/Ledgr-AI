@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { OpeningBalancesModal } from "@/src/components/OpeningBalancesModal";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { api } from "@/src/api";
-import { quickActionMenuMaxHeight } from "@/src/utils/responsiveLayout";
+import { quickActionFabBottom, quickActionMenuBottom, quickActionMenuMaxHeight, quickActionMenuWidth } from "@/src/utils/responsiveLayout";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -56,6 +56,9 @@ function QuickActionRow({ icon, iconBackground, title, subtitle, onPress }: Quic
 
   return (
     <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={subtitle}
       onHoverIn={() => setHover(1)}
       onHoverOut={() => setHover(0)}
       onPressIn={() => {
@@ -84,9 +87,12 @@ export default function QuickActionMenu() {
   const [isPartnerMode, setIsPartnerMode] = useState(false);
   const router = useRouter();
   const theme = useTheme();
-  const { height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const menuMaxHeight = quickActionMenuMaxHeight(screenHeight, insets.top);
+  const fabBottom = quickActionFabBottom(insets.bottom);
+  const menuBottom = quickActionMenuBottom(insets.bottom);
+  const menuWidth = quickActionMenuWidth(screenWidth, insets.left, insets.right);
+  const menuMaxHeight = quickActionMenuMaxHeight(screenHeight, insets.top, insets.bottom);
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const reduceMotion = useReducedMotion() || !motionEnabled;
   const progress = useSharedValue(0);
@@ -150,9 +156,13 @@ export default function QuickActionMenu() {
 
   return (
     <>
-      <View style={styles.fabContainer}>
+      <View style={[styles.fabContainer, { bottom: fabBottom }]}>
         <AnimatedPressable
           testID="quick-action-fab"
+          accessibilityRole="button"
+          accessibilityLabel="Open Quick Actions"
+          accessibilityHint="Create or record a business transaction"
+          accessibilityState={{ expanded: isOpen }}
           onHoverIn={() => { fabHover.value = reduceMotion ? 1 : withTiming(1, { duration: theme.motion.standard }); }}
           onHoverOut={() => { fabHover.value = reduceMotion ? 0 : withTiming(0, { duration: theme.motion.standard }); }}
           onPressIn={() => { fabPressed.value = reduceMotion ? 1 : withSpring(1, theme.motion.spring); }}
@@ -183,12 +193,15 @@ export default function QuickActionMenu() {
 
         <Animated.View
           testID="quick-action-menu"
+          accessibilityViewIsModal
           style={[
             styles.menuContainer,
             {
               backgroundColor: theme.color.surfaceSecondary,
               borderColor: theme.color.brandPrimary,
               shadowColor: theme.color.brandPrimary,
+              width: menuWidth,
+              bottom: menuBottom,
               maxHeight: menuMaxHeight,
             },
             menuStyle,
@@ -284,7 +297,6 @@ const styles = StyleSheet.create({
   overlayPressable: { flex: 1 },
   menuContainer: {
     position: "absolute",
-    bottom: 98,
     alignSelf: "center",
     width: "94%",
     maxWidth: 410,
@@ -347,7 +359,6 @@ const styles = StyleSheet.create({
   fabContainer: {
     position: "absolute",
     alignSelf: "center",
-    bottom: 42,
     justifyContent: "center",
     alignItems: "center",
     zIndex: 110,

@@ -31,12 +31,12 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
       <View style={[{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: resolvedCompact ? 8 : 10 }, embedded && resolvedCompact && styles.embeddedCompactRow]}>
         {leftAction ? <View style={{ paddingTop: 2 }}>{leftAction}</View> : null}
         <View style={[{ flex: 1, minWidth: 0, overflow: resolvedCompact ? "hidden" : "visible" }, embedded && resolvedCompact && styles.embeddedCompactTitle]}>
-          <Text numberOfLines={resolvedCompact ? 1 : undefined} adjustsFontSizeToFit={resolvedCompact} minimumFontScale={resolvedCompact ? 0.78 : undefined} ellipsizeMode="tail" style={[styles.title, titleStyle, resolvedCompact && styles.titleCompact]}>{title}</Text>
-          {subtitle ? <Text numberOfLines={resolvedCompact ? 1 : undefined} ellipsizeMode="tail" style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
+          <Text numberOfLines={resolvedCompact ? 2 : undefined} adjustsFontSizeToFit={resolvedCompact} minimumFontScale={resolvedCompact ? 0.78 : undefined} ellipsizeMode="tail" style={[styles.title, titleStyle, resolvedCompact && styles.titleCompact]}>{title}</Text>
+          {subtitle ? <Text numberOfLines={resolvedCompact ? 2 : undefined} ellipsizeMode="tail" style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
         </View>
         <View style={[{ alignItems: "flex-end", gap: 8, maxWidth: resolvedCompact ? 82 : "45%" }, embedded && resolvedCompact && styles.embeddedCompactActions]}>
           {bizName ? (
-            <View accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: resolvedCompact ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: resolvedCompact ? 8 : 14, paddingVertical: resolvedCompact ? 7 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: resolvedCompact ? 4 : 6 }}>
+            <View accessible accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: resolvedCompact ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: resolvedCompact ? 8 : 14, paddingVertical: resolvedCompact ? 7 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: resolvedCompact ? 4 : 6 }}>
               <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
               <Text numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1, maxWidth: resolvedCompact ? 48 : undefined, fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
             </View>
