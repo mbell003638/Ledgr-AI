@@ -6,6 +6,7 @@ import { router } from "expo-router";
 
 import { ScreenHeader } from "@/src/components/UI";
 import { useTheme } from "@/src/context/ThemeContext";
+import { SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from "@/src/utils/settingsScreenLayout";
 
 const sections = [
   ["Data handled by the app", "Depending on the features you use, Ledgr may process business and financial records, customer and supplier contact details, invoice data, receipt or document images, voice recordings, and app preferences."],
@@ -45,9 +46,9 @@ export default function PrivacyDataScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingTop: 16 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
   back: { marginRight: 12, padding: 4 },
-  content: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 60 },
+  content: { paddingHorizontal: 24, paddingTop: SETTINGS_SCREEN_CONTENT_TOP, paddingBottom: 60 },
   effective: { fontSize: 12, marginBottom: 14 },
   intro: { fontSize: 15, lineHeight: 23, marginBottom: 8 },
   section: { paddingVertical: 18, borderBottomWidth: 1 },
@@ -55,3 +56,4 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, lineHeight: 22 },
   footer: { fontSize: 12, lineHeight: 18, marginTop: 20 },
 });
+

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP } from '@/src/utils/settingsScreenLayout';
 import { useTheme } from '@/src/context/ThemeContext';
 import type { SyncCorrectionAccount } from '@/src/sync/conflicts';
 import { isValidDateString, normalizeDateInput } from '@/src/utils/dateValidation';
@@ -58,7 +59,7 @@ export default function SyncConflictCorrectionScreen() {
     } catch (error: any) { Alert.alert('Correction failed', error?.message || 'The conflict remains open.'); } finally { setBusy(false); }
   };
   return <SafeAreaView style={styles.container} edges={['top']}><ScreenHeader title="Audited Correction" subtitle="Post a new balanced entry" leftAction={<Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"><View style={styles.card}><Text style={styles.warning}>This creates a new posting. It never overwrites or deletes historical accounting records.</Text>
+    <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP }]} keyboardShouldPersistTaps="handled"><View style={styles.card}><Text style={styles.warning}>This creates a new posting. It never overwrites or deletes historical accounting records.</Text>
       <Field label="Audit reason" value={reason} onChangeText={setReason} placeholder="Why is this correction required?" styles={styles} theme={theme} />
       <Field label="Posting date" value={date} onChangeText={setDate} onBlur={() => { if (date.trim()) setDate(normalizeDateInput(date)); }} placeholder="YYYY-MM-DD" styles={styles} theme={theme} />
       {accountsLoading ? <View style={styles.loading}><ActivityIndicator color={theme.color.brandPrimary} /><Text style={styles.warning}>Loading chart of accounts…</Text></View> : null}
@@ -134,3 +135,4 @@ const makeStyles = (theme: any) => StyleSheet.create({
   accountOptionTitle: { color: theme.color.onSurface, fontWeight: '700' },
   accountOptionType: { color: theme.color.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' },
 });
+

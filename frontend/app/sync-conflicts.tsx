@@ -7,6 +7,7 @@ import { api } from '@/src/api';
 import { Card, ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import type { ConflictResolutionType, SyncConflict } from '@/src/sync/conflicts';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP } from '@/src/utils/settingsScreenLayout';
 
 export default function SyncConflictsScreen() {
   const theme = useTheme(); const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -21,7 +22,7 @@ export default function SyncConflictsScreen() {
     Alert.alert(label, detail, [{ text: 'Cancel', style: 'cancel' }, { text: label, onPress: async () => { setBusy(item.conflictId); try { await api.resolveSyncConflict(item.conflictId, type); await load(true); } catch (error: any) { Alert.alert('Resolution failed', error?.message || 'The conflict remains open.'); } finally { setBusy(null); } } }]);
   };
   return <SafeAreaView style={styles.container} edges={['top']}><ScreenHeader title="Conflict Inbox" subtitle={`${items.length} open item${items.length === 1 ? '' : 's'}`} leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
-    {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /> : <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={theme.color.brandPrimary} />}>
+    {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} /> : <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={theme.color.brandPrimary} />}>
       {items.length === 0 ? <Card style={styles.card}><Ionicons name="checkmark-circle-outline" size={34} color={theme.color.success} /><Text style={styles.emptyTitle}>No open conflicts</Text><Text style={styles.body}>Conflicting intent remains in the audit trail and is never silently overwritten.</Text></Card> : items.map((item) => <Card key={item.conflictId} style={styles.card}>
         <View style={styles.row}><Ionicons name="warning-outline" size={22} color={theme.color.warning || theme.color.brandPrimary} /><View style={{ flex: 1 }}><Text style={styles.title}>{item.reason}</Text><Text style={styles.meta}>{item.commandType || 'operation'} · {item.opId.slice(0, 12)}… · {new Date(item.createdAt).toLocaleString()}</Text></View></View>
         <Text style={styles.body}>Local and canonical intent are retained. Choose an explicit audited outcome.</Text>
@@ -35,3 +36,4 @@ export default function SyncConflictsScreen() {
   </SafeAreaView>;
 }
 function makeStyles(theme: any) { return StyleSheet.create({ container: { flex: 1, backgroundColor: theme.color.surface }, scroll: { padding: 18, paddingBottom: 60, gap: 14 }, card: { padding: 18 }, row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, title: { color: theme.color.onSurface, fontSize: 15, fontWeight: '700' }, meta: { color: theme.color.muted, fontSize: 11, marginTop: 5 }, evidence: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: 8, fontFamily: 'monospace' }, body: { color: theme.color.muted, fontSize: 13, lineHeight: 19, marginTop: 12 }, emptyTitle: { color: theme.color.onSurface, fontSize: 17, fontWeight: '700', marginTop: 12 }, actions: { marginTop: 16, gap: 8 }, action: { borderWidth: 1, borderColor: theme.color.brandPrimary, borderRadius: theme.radius.md, padding: 11, alignItems: 'center' }, actionText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: '700' } }); }
+

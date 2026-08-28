@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 type Target = 'windows' | 'mac-linux' | 'docker';
 
@@ -98,8 +99,8 @@ export default function SelfHostGuideScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12 },
-    content: { padding: theme.spacing.lg, paddingBottom: 40, gap: theme.spacing.lg },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
+    content: { padding: theme.spacing.lg, paddingBottom: 40, gap: SETTINGS_SCREEN_CARD_GAP },
     hero: { backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.brandPrimary, borderWidth: 1, borderRadius: theme.radius.lg, padding: 18, gap: 8 },
     heroIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surface },
     title: { color: theme.color.onSurface, fontSize: 21, fontWeight: '800' },
@@ -125,3 +126,4 @@ function makeStyles(theme: any) {
     releaseText: { color: theme.color.brandPrimary, fontWeight: '700', fontSize: 12 },
   });
 }
+

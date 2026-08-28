@@ -7,6 +7,7 @@ import { Card, ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import { pickTextFile } from '@/src/utils/share';
 import { parseBankCsvPreview, type BankPreviewResult } from '@/src/utils/bankImportPreview';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 export default function BankImportPreviewScreen() {
   const theme = useTheme();
@@ -66,8 +67,8 @@ export default function BankImportPreviewScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12 },
-    content: { padding: theme.spacing.lg, gap: 13 },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
+    content: { padding: theme.spacing.lg, gap: SETTINGS_SCREEN_CARD_GAP },
     warning: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderColor: theme.color.warning },
     warningTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: '700' },
     card: { gap: 8 },
@@ -90,3 +91,4 @@ function makeStyles(theme: any) {
     clearText: { color: theme.color.muted, fontWeight: '700' },
   });
 }
+

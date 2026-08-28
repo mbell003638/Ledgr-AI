@@ -27,7 +27,7 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
   );
 
   return (
-    <View style={[styles.header, embedded && resolvedCompact && styles.embeddedCompact, style]} testID={testID}>
+    <View style={[styles.header, embedded && styles.embedded, style]} testID={testID}>
       <View style={[{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: resolvedCompact ? 8 : 10 }, embedded && resolvedCompact && styles.embeddedCompactRow]}>
         {leftAction ? <View style={{ paddingTop: 2 }}>{leftAction}</View> : null}
         <View style={[{ flex: 1, minWidth: 0, overflow: resolvedCompact ? "hidden" : "visible" }, embedded && resolvedCompact && styles.embeddedCompactTitle]}>
@@ -128,7 +128,7 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       paddingBottom: 10,
       backgroundColor: theme.color.surface,
     },
-    embeddedCompact: { flex: 1, minWidth: 0, paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
+    embedded: { flex: 1, minWidth: 0, paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, backgroundColor: "transparent" },
     embeddedCompactRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
     embeddedCompactTitle: { flex: 1, minWidth: 0 },
     embeddedCompactActions: { alignSelf: "flex-start", flexShrink: 0, maxWidth: 82 },
@@ -162,3 +162,4 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     emptyHint: { fontSize: 13, color: theme.color.muted, textAlign: "center" },
   });
 }
+

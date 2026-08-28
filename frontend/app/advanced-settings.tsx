@@ -14,6 +14,7 @@ import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { isValidDateString, normalizeDateInput } from "@/src/utils/dateValidation";
 import { deriveHostingMode } from "@/src/utils/hostingMode";
+import { SETTINGS_SCREEN_HEADER_BOTTOM } from "@/src/utils/settingsScreenLayout";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -355,7 +356,7 @@ export default function AdvancedSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 16 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM }}>
         <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
           <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
         </Pressable>
@@ -812,3 +813,4 @@ function makeStyles(theme: any) {
     addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
   });
 }
+

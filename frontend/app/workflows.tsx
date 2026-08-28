@@ -7,6 +7,7 @@ import { api } from '@/src/api';
 import { Card, ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import { CAPABILITIES, getWorkspaceProfile, type OperationalModule } from '@/src/utils/workspaceCapabilities';
+import { SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 export default function WorkflowsScreen() {
   const theme = useTheme();
@@ -70,7 +71,7 @@ export default function WorkflowsScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12 },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
     content: { padding: theme.spacing.lg },
     introCard: { marginBottom: theme.spacing.lg },
     introTitle: { color: theme.color.brandPrimary, fontSize: 17, fontWeight: '700' },
@@ -87,3 +88,4 @@ function makeStyles(theme: any) {
     customizeText: { color: theme.color.onBrandPrimary, fontSize: 14, fontWeight: '700' },
   });
 }
+
