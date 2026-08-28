@@ -6,6 +6,9 @@ import { isCompactHeaderWidth, quickActionFabBottom, quickActionMenuBottom, quic
 const root = path.resolve(__dirname, '..');
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 const ui = read('src/components/UI.tsx');
+const tabs = read('app/(tabs)/_layout.tsx');
+const settings = read('app/(tabs)/settings.tsx');
+const advancedSettings = read('app/advanced-settings.tsx');
 const syncSettings = read('app/sync-settings.tsx');
 const syncConflicts = read('app/sync-conflicts.tsx');
 const backupRecovery = read('app/backup-recovery.tsx');
@@ -29,6 +32,11 @@ describe('Manus responsive layout safeguards', () => {
     expect(syncSettings).toContain('title="Self-hosted Sync"');
     expect(syncConflicts).toContain('title="Conflict Inbox"');
     expect(backupRecovery).toContain('title="Backup & Recovery"');
+    expect(tabs).toContain('fontSize: compact ? 11 : 11');
+    expect(tabs).toContain('lineHeight: compact ? 14 : 14');
+    expect(settings).toContain('settingsGroup: { marginTop: theme.spacing.lg');
+    expect(advancedSettings).toContain('advancedHeader: { paddingTop: 20, paddingBottom: 10 }');
+    expect(advancedSettings).toContain('advancedGroup: { marginTop: theme.spacing.lg');
   });
 
   it('keeps Quick Actions safe on short screens', () => {
