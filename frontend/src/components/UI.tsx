@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform } from "react-native";
+import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -7,10 +7,12 @@ import { GlowPressable } from "@/src/components/GlowPressable";
 import { AnimatedGlassSurface } from "@/src/components/AnimatedGlassSurface";
 
 import { api } from "@/src/api";
+import { isCompactHeaderWidth } from "@/src/utils/responsiveLayout";
 
 export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction, compact = false, style, titleStyle, subtitleStyle }: { title: string; subtitle?: string; testID?: string; leftAction?: React.ReactNode; rightAction?: React.ReactNode; compact?: boolean; style?: StyleProp<ViewStyle>; titleStyle?: StyleProp<TextStyle>; subtitleStyle?: StyleProp<TextStyle> }) {
   const theme = useTheme();
-  const compactHeader = compact;
+  const { width } = useWindowDimensions();
+  const compactHeader = compact || (isCompactHeaderWidth(width) && (Boolean(leftAction) || title.length > 18));
 
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [bizName, setBizName] = React.useState<string | null>(null);
@@ -27,19 +29,19 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
 
   return (
     <View style={[styles.header, style]} testID={testID}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: compactHeader ? 8 : 10 }}>
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start' }}>
           {leftAction ? <View style={{ marginRight: compactHeader ? 6 : 10, paddingTop: 2 }}>{leftAction}</View> : null}
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={compactHeader ? 1 : undefined} ellipsizeMode={compactHeader ? "tail" : undefined} style={[styles.title, compactHeader && styles.titleCompact, titleStyle]}>{title}</Text>
+            <Text numberOfLines={compactHeader ? 1 : undefined} adjustsFontSizeToFit={compactHeader} minimumFontScale={compactHeader ? 0.78 : undefined} ellipsizeMode={compactHeader ? "tail" : undefined} style={[styles.title, compactHeader && styles.titleCompact, titleStyle]}>{title}</Text>
             {subtitle ? <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
           </View>
         </View>
-        <View style={{ alignItems: "flex-end", gap: compactHeader ? 6 : 8, maxWidth: compactHeader ? "38%" : "45%" }}>
+        <View style={{ alignItems: "flex-end", gap: compactHeader ? 6 : 8, maxWidth: compactHeader ? 82 : "45%" }}>
           {bizName ? (
-              <View style={{ flexShrink: 1, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: compactHeader ? 9 : 14, paddingVertical: compactHeader ? 6 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: compactHeader ? 4 : 6 }}>
+              <View accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: compactHeader ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: compactHeader ? 9 : 14, paddingVertical: compactHeader ? 6 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: compactHeader ? 4 : 6 }}>
               <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
-              <Text numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1, fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1, maxWidth: compactHeader ? 48 : undefined, fontSize: 13, fontWeight: "800", color: theme.color.brandPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>{bizName}</Text>
             </View>
           ) : null}
           {rightAction}
