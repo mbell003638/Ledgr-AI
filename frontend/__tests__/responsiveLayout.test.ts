@@ -23,6 +23,8 @@ describe('responsive layout safeguards', () => {
     expect(ui).toContain('compact = false, embedded = false');
     expect(ui).toContain('const resolvedCompact = compact || (isCompactHeaderWidth(width)');
     expect(ui).toContain('numberOfLines={resolvedCompact ? 1 : undefined}');
+    expect(ui).toContain('styles.embeddedCompactRow');
+    expect(ui).toContain('styles.embeddedCompactActions');
     expect(syncSettings).toContain('<ScreenHeader embedded');
     expect(advancedSettings).toContain('<ScreenHeader embedded title="Advanced"');
   });

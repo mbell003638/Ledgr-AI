@@ -28,13 +28,13 @@ export function ScreenHeader({ title, subtitle, testID, leftAction, rightAction,
 
   return (
     <View style={[styles.header, embedded && resolvedCompact && styles.embeddedCompact, style]} testID={testID}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: resolvedCompact ? 8 : 10 }}>
+      <View style={[{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: resolvedCompact ? 8 : 10 }, embedded && resolvedCompact && styles.embeddedCompactRow]}>
         {leftAction ? <View style={{ paddingTop: 2 }}>{leftAction}</View> : null}
-        <View style={{ flex: 1, minWidth: 0, overflow: resolvedCompact ? "hidden" : "visible" }}>
+        <View style={[{ flex: 1, minWidth: 0, overflow: resolvedCompact ? "hidden" : "visible" }, embedded && resolvedCompact && styles.embeddedCompactTitle]}>
           <Text numberOfLines={resolvedCompact ? 1 : undefined} adjustsFontSizeToFit={resolvedCompact} minimumFontScale={resolvedCompact ? 0.78 : undefined} ellipsizeMode="tail" style={[styles.title, titleStyle, resolvedCompact && styles.titleCompact]}>{title}</Text>
           {subtitle ? <Text numberOfLines={resolvedCompact ? 1 : undefined} ellipsizeMode="tail" style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text> : null}
         </View>
-        <View style={{ alignItems: "flex-end", gap: 8, maxWidth: resolvedCompact ? 82 : "45%" }}>
+        <View style={[{ alignItems: "flex-end", gap: 8, maxWidth: resolvedCompact ? 82 : "45%" }, embedded && resolvedCompact && styles.embeddedCompactActions]}>
           {bizName ? (
             <View accessibilityLabel={`Business Account ${bizName}`} style={{ flexShrink: 0, maxWidth: resolvedCompact ? 82 : undefined, backgroundColor: theme.color.brandPrimary + "15", paddingHorizontal: resolvedCompact ? 8 : 14, paddingVertical: resolvedCompact ? 7 : 8, borderRadius: 20, borderWidth: 1, borderColor: theme.color.brandPrimary + "40", flexDirection: "row", alignItems: "center", gap: resolvedCompact ? 4 : 6 }}>
               <Ionicons name="business" size={14} color={theme.color.brandPrimary} />
@@ -129,6 +129,9 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
       backgroundColor: theme.color.surface,
     },
     embeddedCompact: { flex: 1, minWidth: 0, paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
+    embeddedCompactRow: { flexDirection: "column", alignItems: "stretch", gap: 4 },
+    embeddedCompactTitle: { width: "100%", flex: 0 },
+    embeddedCompactActions: { alignSelf: "flex-end", maxWidth: "100%" },
     title: { fontSize: 26, fontWeight: "800", color: theme.color.onSurface, letterSpacing: -0.5 },
     titleCompact: { flexShrink: 1, fontSize: 20, lineHeight: 25 },
     subtitle: { fontSize: 13, color: theme.color.muted, marginTop: 2 },
