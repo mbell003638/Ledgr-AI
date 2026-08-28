@@ -1099,8 +1099,8 @@ describe('QR private sync onboarding contracts', () => {
     expect(advanced).toContain('title="System & Workflows"');
     expect(advanced).not.toContain('<ScreenHeader title="Advanced" subtitle="System & Workflows" />');
     expect(advanced).not.toContain('paddingHorizontal: theme.spacing.lg, paddingTop: 16');
-    expect(advanced).toContain('advancedHeader: { paddingTop: 10, paddingBottom: 6 }');
-    expect(advanced).toContain('advancedGroup: { marginTop: theme.spacing.sm, padding: 20 }');
+    expect(advanced).toContain('advancedHeader: { paddingTop: 20, paddingBottom: 10 }');
+    expect(advanced).toContain('advancedGroup: { marginTop: theme.spacing.lg, padding: 20 }');
   });
   it('keeps compact-phone onboarding controls reachable and Home workflow labels wrapped', () => {
     const onboarding = readApp('onboarding.tsx');
