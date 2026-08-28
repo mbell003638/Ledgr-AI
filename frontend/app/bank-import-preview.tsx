@@ -91,4 +91,3 @@ function makeStyles(theme: any) {
     clearText: { color: theme.color.muted, fontWeight: '700' },
   });
 }
-

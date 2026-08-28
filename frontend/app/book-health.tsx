@@ -74,4 +74,3 @@ function makeStyles(theme: any) {
     note: { color: theme.color.muted, fontSize: 11, lineHeight: 16, marginTop: theme.spacing.lg },
   });
 }
-

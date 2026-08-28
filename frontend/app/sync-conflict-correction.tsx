@@ -135,4 +135,3 @@ const makeStyles = (theme: any) => StyleSheet.create({
   accountOptionTitle: { color: theme.color.onSurface, fontWeight: '700' },
   accountOptionType: { color: theme.color.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' },
 });
-

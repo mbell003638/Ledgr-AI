@@ -126,4 +126,3 @@ function makeStyles(theme: any) {
     releaseText: { color: theme.color.brandPrimary, fontWeight: '700', fontSize: 12 },
   });
 }
-

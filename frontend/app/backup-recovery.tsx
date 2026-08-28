@@ -167,4 +167,3 @@ function makeStyles(theme: any) {
     message: { color: theme.color.onSurface, fontSize: 12, lineHeight: 18, padding: 12, borderRadius: theme.radius.md, backgroundColor: theme.color.surfaceSecondary },
   });
 }
-

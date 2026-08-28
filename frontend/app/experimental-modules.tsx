@@ -55,4 +55,3 @@ function makeStyles(theme: any) {
     openText: { color: theme.color.brandPrimary, fontSize: 13, fontWeight: '700' },
   });
 }
-

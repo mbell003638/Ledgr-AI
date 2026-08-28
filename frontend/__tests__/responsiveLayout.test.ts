@@ -101,4 +101,3 @@ describe('responsive layout safeguards', () => {
     expect(advancedSettings).not.toContain('borderLeftWidth: 3');
   });
 });
-

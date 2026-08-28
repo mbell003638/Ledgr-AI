@@ -56,4 +56,3 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, lineHeight: 22 },
   footer: { fontSize: 12, lineHeight: 18, marginTop: 20 },
 });
-

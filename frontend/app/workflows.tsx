@@ -88,4 +88,3 @@ function makeStyles(theme: any) {
     customizeText: { color: theme.color.onBrandPrimary, fontSize: 14, fontWeight: '700' },
   });
 }
-
