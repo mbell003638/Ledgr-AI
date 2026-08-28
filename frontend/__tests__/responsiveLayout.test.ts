@@ -6,6 +6,9 @@ import { isCompactHeaderWidth, quickActionFabBottom, quickActionMenuBottom, quic
 const root = path.resolve(__dirname, '..');
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 const ui = read('src/components/UI.tsx');
+const syncSettings = read('app/sync-settings.tsx');
+const syncConflicts = read('app/sync-conflicts.tsx');
+const backupRecovery = read('app/backup-recovery.tsx');
 const quickActions = read('src/components/QuickActionMenu.tsx');
 
 describe('Manus responsive layout safeguards', () => {
@@ -20,6 +23,12 @@ describe('Manus responsive layout safeguards', () => {
     expect(ui).toContain('styles.compactRow');
     expect(ui).toContain('styles.compactTitleArea');
     expect(ui).toContain('styles.compactActions');
+    expect(ui).toContain('compactRow: { flexDirection: "row"');
+    expect(ui).toContain('compactActions: { alignSelf: "flex-start"');
+    expect(ui).not.toContain('compactRow: { flexDirection: "column"');
+    expect(syncSettings).toContain('title="Self-hosted Sync"');
+    expect(syncConflicts).toContain('title="Conflict Inbox"');
+    expect(backupRecovery).toContain('title="Backup & Recovery"');
   });
 
   it('keeps Quick Actions safe on short screens', () => {

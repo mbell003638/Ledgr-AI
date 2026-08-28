@@ -136,9 +136,9 @@ function makeStyles(theme: ReturnType<typeof useTheme>) {
     },
     title: { fontSize: 26, fontWeight: "800", color: theme.color.onSurface, letterSpacing: -0.5 },
     titleCompact: { fontSize: 22, lineHeight: 27, letterSpacing: -0.35 },
-    compactRow: { flexDirection: "column", alignItems: "stretch", gap: 4 },
-    compactTitleArea: { width: "100%", flex: 0 },
-    compactActions: { alignSelf: "flex-end", maxWidth: "100%" },
+    compactRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+    compactTitleArea: { flex: 1, minWidth: 0 },
+    compactActions: { alignSelf: "flex-start", flexShrink: 0, maxWidth: 82 },
     subtitle: { fontSize: 13, color: theme.color.muted, marginTop: 2 },
     card: {
       backgroundColor: theme.color.glassSurface,
