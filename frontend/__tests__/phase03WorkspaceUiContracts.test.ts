@@ -18,6 +18,15 @@ describe('phase 0-3 workspace UI contracts', () => {
   });
 
   it('keeps the expanded system tools as one flat, grouped surface', () => {
+    expect(advanced).toContain('paddingTop: 24, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM + 6');
+    expect(advanced).toContain('minHeight: 60');
+    expect(advanced).toContain('paddingVertical: 16');
+    expect(advanced).toContain('paddingTop: theme.spacing.sm');
+    expect(advanced).toContain('paddingVertical: 18');
+    expect(advanced).toContain('Book Health');
+    expect(advanced).toContain('Bank Statement Preview');
+    expect(advanced).toContain('Self-hosted Sync');
+    expect(advanced).toContain('Sync Conflict Inbox');
     expect(advanced).toContain('style={styles.workflowSection}');
     expect(advanced).toContain('style={styles.workflowContent}');
     expect(advanced).toContain('style={styles.workflowRow}');

@@ -35,8 +35,8 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          minHeight: 48,
-          paddingVertical: 12,
+          minHeight: 60,
+          paddingVertical: 16,
           paddingHorizontal: 10,
           marginHorizontal: -10,
           borderWidth: 0,
@@ -50,7 +50,7 @@ const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, ch
         </View>
         <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={20} color={theme.color.muted} />
       </GlowPressable>
-      {isExpanded && <View style={{ paddingVertical: 16, paddingTop: 4, backgroundColor: "transparent" }}>{children}</View>}
+      {isExpanded && <View style={{ paddingBottom: 8, paddingTop: 12, backgroundColor: "transparent" }}>{children}</View>}
     </View>
   );
 };
@@ -356,7 +356,7 @@ export default function AdvancedSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM }}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 24, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM + 6 }}>
         <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
           <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
         </Pressable>
@@ -677,7 +677,8 @@ function makeStyles(theme: any) {
     workflowContent: {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: theme.color.border,
-      paddingTop: theme.spacing.xs,
+      paddingTop: theme.spacing.sm,
+      paddingBottom: theme.spacing.xs,
     },
     workflowStatus: {
       flexDirection: "row",
@@ -697,7 +698,7 @@ function makeStyles(theme: any) {
       flexDirection: "row",
       alignItems: "center",
       gap: theme.spacing.md,
-      paddingVertical: 14,
+      paddingVertical: 18,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: theme.color.border,
     },
