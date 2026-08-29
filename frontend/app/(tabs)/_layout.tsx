@@ -40,8 +40,8 @@ function PrototypeTabLabel({ color, focused, children, compact }: { color: strin
         numberOfLines={1}
         ellipsizeMode="tail"
         adjustsFontSizeToFit
-        minimumFontScale={0.76}
-        style={{ color, maxWidth: "100%", flexShrink: 1, fontSize: compact ? 11 : 11, lineHeight: compact ? 14 : 14, fontWeight: "700", letterSpacing: compact ? 0.05 : 0.1, includeFontPadding: false, textAlign: "center", overflow: "hidden" }}
+        minimumFontScale={compact ? 0.9 : 0.9}
+        style={{ color, maxWidth: "100%", flexShrink: 1, fontSize: compact ? 11.5 : 11, lineHeight: compact ? 15 : 14, fontWeight: "700", letterSpacing: compact ? 0 : 0.1, includeFontPadding: false, textAlign: "center", overflow: "hidden" }}
       >
         {children}
       </Text>

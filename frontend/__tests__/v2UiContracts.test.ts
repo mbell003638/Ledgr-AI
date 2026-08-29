@@ -1122,7 +1122,8 @@ describe('QR private sync onboarding contracts', () => {
     expect(tabs).toContain('minWidth: compact ? 0 : 60');
     expect(tabs).toContain('width: compact ? "100%" : undefined');
     expect(tabs).toContain('adjustsFontSizeToFit');
-    expect(tabs).toContain('minimumFontScale={0.76}');
+    expect(tabs).toContain('minimumFontScale={compact ? 0.9 : 0.9}');
+    expect(tabs).toContain('fontSize: compact ? 11.5 : 11');
     expect(tabs).toContain('tabBarItemStyle: { flex: 1, minWidth: 0');
   });
   it('keeps two-pane presentation opt-in and single-pane without native posture data', () => {
