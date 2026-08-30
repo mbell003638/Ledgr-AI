@@ -12,7 +12,6 @@ import QuickActionMenu from "@/src/components/QuickActionMenu";
 import VoiceFab from "@/src/components/VoiceFab";
 import { api } from "@/src/api";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
-import { useResponsiveDevice } from "@/src/hooks/useResponsiveDevice";
 
 const TAB_ICON_SIZE = 22;
 
@@ -31,17 +30,14 @@ function PrototypeTabIcon({ color, focused, Icon }: { color: string; focused: bo
   );
 }
 
-function PrototypeTabLabel({ color, focused, children, compact }: { color: string; focused: boolean; children: string; compact: boolean }) {
+function PrototypeTabLabel({ color, focused, children }: { color: string; focused: boolean; children: string }) {
   return (
-    <View style={{ minWidth: compact ? 0 : 60, width: compact ? "100%" : undefined, flexShrink: 1, paddingHorizontal: compact ? 1 : 0, alignItems: "center", justifyContent: "center" }}>
+    <View style={{ minWidth: 60, alignItems: "center", justifyContent: "center" }}>
       <Text
         allowFontScaling
         maxFontSizeMultiplier={1.25}
         numberOfLines={1}
-        ellipsizeMode="tail"
-        adjustsFontSizeToFit
-        minimumFontScale={compact ? 0.9 : 0.9}
-        style={{ color, maxWidth: "100%", flexShrink: 1, fontSize: compact ? 11.5 : 11, lineHeight: compact ? 15 : 14, fontWeight: "700", letterSpacing: compact ? 0 : 0.1, includeFontPadding: false, textAlign: "center", overflow: "hidden" }}
+        style={{ color, fontSize: 11, lineHeight: 14, fontWeight: "700", letterSpacing: 0.1, includeFontPadding: false, textAlign: "center" }}
       >
         {children}
       </Text>
@@ -127,7 +123,6 @@ export default function TabsLayout() {
   const theme = useTheme();
   const { motionEnabled, hapticsEnabled } = useAnimations();
   const insets = useSafeAreaInsets();
-  const { compactPhone } = useResponsiveDevice();
   // The prototype is 80px tall. A 64px content area plus the real bottom
   // inset keeps that proportion while clearing gesture and three-button bars.
   const tabBarBottomInset = Math.max(insets.bottom, 16);
@@ -170,9 +165,9 @@ export default function TabsLayout() {
               : { elevation: 8, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 12 }),
           },
           tabBarLabelPosition: "below-icon",
-          tabBarLabel: (props) => <PrototypeTabLabel {...props} compact={compactPhone} />,
+          tabBarLabel: (props) => <PrototypeTabLabel {...props} />,
           tabBarIconStyle: { marginTop: 0 },
-          tabBarItemStyle: { flex: 1, minWidth: 0, borderRadius: 18, marginHorizontal: 2 },
+          tabBarItemStyle: { borderRadius: 18, marginHorizontal: 2 },
           sceneStyle: { backgroundColor: theme.color.surface },
         }}
       >

@@ -32,8 +32,8 @@ describe('Manus responsive layout safeguards', () => {
     expect(syncSettings).toContain('title="Self-hosted Sync"');
     expect(syncConflicts).toContain('title="Conflict Inbox"');
     expect(backupRecovery).toContain('title="Backup & Recovery"');
-    expect(tabs).toContain('fontSize: compact ? 11.5 : 11');
-    expect(tabs).toContain('lineHeight: compact ? 15 : 14');
+    expect(tabs).toContain('fontSize: 11');
+    expect(tabs).toContain('lineHeight: 14');
     expect(settings).toContain('settingsGroup: { marginTop: theme.spacing.lg');
     expect(advancedSettings).toContain('advancedHeader: { paddingTop: 20, paddingBottom: 10 }');
     expect(advancedSettings).toContain('advancedGroup: { marginTop: theme.spacing.lg');

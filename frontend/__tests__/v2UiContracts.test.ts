@@ -1118,13 +1118,10 @@ describe('QR private sync onboarding contracts', () => {
   });
   it('keeps compact bottom-tab labels inside the navigation shell', () => {
     const tabs = readApp('(tabs)/_layout.tsx');
-    expect(tabs).toContain('useResponsiveDevice');
-    expect(tabs).toContain('minWidth: compact ? 0 : 60');
-    expect(tabs).toContain('width: compact ? "100%" : undefined');
-    expect(tabs).toContain('adjustsFontSizeToFit');
-    expect(tabs).toContain('minimumFontScale={compact ? 0.9 : 0.9}');
-    expect(tabs).toContain('fontSize: compact ? 11.5 : 11');
-    expect(tabs).toContain('tabBarItemStyle: { flex: 1, minWidth: 0');
+    expect(tabs).toContain('minWidth: 60');
+    expect(tabs).toContain('fontSize: 11');
+    expect(tabs).toContain('lineHeight: 14');
+    expect(tabs).toContain('tabBarItemStyle: { borderRadius: 18');
   });
   it('keeps two-pane presentation opt-in and single-pane without native posture data', () => {
     const twoPane = readSource('src/components/ResponsiveTwoPane.tsx');
