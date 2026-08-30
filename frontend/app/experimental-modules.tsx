@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { Card, ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import { EXPERIMENTAL_MODULES } from '@/src/utils/experimentalModules';
-import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 export default function ExperimentalModulesScreen() {
   const theme = useTheme();
@@ -37,8 +37,8 @@ export default function ExperimentalModulesScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
-    content: { padding: theme.spacing.lg, gap: SETTINGS_SCREEN_CARD_GAP },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
+    content: { padding: theme.spacing.lg, paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP },
     notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderColor: theme.color.warning },
     noticeTitle: { color: theme.color.onSurface, fontSize: 14, fontWeight: '700' },
     card: { gap: 6 },

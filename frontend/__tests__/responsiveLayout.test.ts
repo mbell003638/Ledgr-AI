@@ -64,8 +64,8 @@ describe('responsive layout safeguards', () => {
   });
 
   it('uses the main Settings spacing rhythm across every settings subpage', () => {
-    expect(SETTINGS_SCREEN_HEADER_BOTTOM).toBe(10);
-    expect(SETTINGS_SCREEN_CONTENT_TOP).toBe(16);
+    expect(SETTINGS_SCREEN_HEADER_BOTTOM).toBe(16);
+    expect(SETTINGS_SCREEN_CONTENT_TOP).toBe(20);
     expect(SETTINGS_SCREEN_CARD_GAP).toBe(16);
     expect(settings).toContain('settingsGroup: { marginTop: theme.spacing.lg');
     expect(advancedSettings).toContain('marginTop: theme.spacing.lg');

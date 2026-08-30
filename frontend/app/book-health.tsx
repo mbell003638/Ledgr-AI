@@ -7,7 +7,7 @@ import { api } from '@/src/api';
 import { Card, ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
 import type { BookHealth, BookHealthTone } from '@/src/utils/bookHealth';
-import { SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
+import { SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 const iconFor = (tone: BookHealthTone) => tone === 'healthy' ? 'checkmark-circle' : tone === 'attention' ? 'alert-circle' : 'close-circle';
 
@@ -63,8 +63,8 @@ export default function BookHealthScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
-    content: { padding: theme.spacing.lg },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
+    content: { padding: theme.spacing.lg, paddingTop: SETTINGS_SCREEN_CONTENT_TOP },
     summary: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: theme.spacing.lg, borderWidth: 1 },
     summaryTitle: { fontSize: 18, fontWeight: '700' },
     summaryText: { color: theme.color.muted, fontSize: 11, marginTop: 3 },

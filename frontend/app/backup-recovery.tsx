@@ -10,7 +10,7 @@ import { decryptBackup, encryptBackup, isEncryptedBackup, type EncryptedBackupEn
 import { pickJsonFile, shareJsonFile } from '@/src/utils/share';
 import { requireAuth } from '@/src/utils/lock';
 import type { BookHealth } from '@/src/utils/bookHealth';
-import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 type PendingBackup = { kind: 'encrypted'; envelope: EncryptedBackupEnvelope } | { kind: 'legacy'; payload: any };
 type Preflight = { ok: true; formatVersion: number; v2SchemaVersion: number; businessAccountCount: number; secondaryBookIds: string[] };
@@ -148,8 +148,8 @@ export default function BackupRecoveryScreen() {
 function makeStyles(theme: any) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.color.surface },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 12, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
-    content: { padding: theme.spacing.lg, gap: SETTINGS_SCREEN_CARD_GAP },
+    header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: theme.spacing.lg, paddingTop: 16, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM },
+    content: { padding: theme.spacing.lg, paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP },
     card: { gap: 10 },
     health: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1 },
     cardTitle: { color: theme.color.onSurface, fontSize: 17, fontWeight: '700' },

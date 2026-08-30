@@ -11,7 +11,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { activeBookId, activeSqlRunner } from '@/src/db/backend';
 import { advanceSyncEpoch, createSyncEnrollmentCode, enrollSyncDevice, listSyncDevices, redeemSyncEnrollmentCode, revokeSyncDevice, type SyncDevice, type SyncEnrollmentCode } from '@/src/sync/recovery';
 import { createSyncSetupQr, parseSyncSetupQr } from '@/src/sync/setupQr';
-import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
+import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 const INVITE_ROLES: SyncEnrollmentCode['role'][] = ['viewer', 'accountant', 'editor', 'admin'];
 
@@ -127,7 +127,7 @@ export default function SyncSettingsScreen() {
   return <SafeAreaView style={styles.container} edges={['top']}>
     <View style={[styles.header, { paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM }]}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><ScreenHeader embedded title="Self-hosted Sync" subtitle="Optional offline-first collaboration" titleStyle={styles.headerTitle} /></View>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { gap: SETTINGS_SCREEN_CARD_GAP }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+    <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text><Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>
         <Pressable testID="download-self-host-package" onPress={openSelfHostPackage} style={styles.packageButton}><Ionicons name="download-outline" size={20} color={theme.color.brandPrimary} /><View style={styles.packageCopy}><Text style={styles.packageTitle}>Download Self-host Package</Text><Text style={styles.packageHint}>Windows, macOS, Linux, and Docker bundle</Text></View><Ionicons name="open-outline" size={18} color={theme.color.muted} /></Pressable>
         {status?.configured ? <View style={styles.invitePanel}>
