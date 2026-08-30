@@ -44,9 +44,7 @@ describe('271412 UI/UX remediation contracts', () => {
     const onboarding = readApp('onboarding.tsx');
     expect(onboarding).toContain('useSafeAreaInsets');
     expect(onboarding).toContain('<SafeAreaView style={styles.container} edges={["top"]}>');
-    expect(onboarding).toContain('style={styles.scrollView}');
-    expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android"');
-    expect(onboarding).toContain('const footerBottomPadding = Platform.OS === "android" ? 0 : Math.max(8, insets.bottom);');
+    expect(onboarding).toContain('const footerBottomPadding = Math.max(12, insets.bottom);');
     expect(onboarding).toContain('paddingBottom: footerBottomPadding');
     expect(onboarding).toContain('step === 0 && styles.footerSolo');
     expect(onboarding).toContain('step === 0 && styles.nextBtnSolo');

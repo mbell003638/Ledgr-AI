@@ -26,9 +26,7 @@ export default function Onboarding() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  // Android is configured edge-to-edge; the system navigation area is transparent and
-  // the footer must not add a second visual gap beneath the primary action.
-  const footerBottomPadding = Platform.OS === "android" ? 0 : Math.max(8, insets.bottom);
+  const footerBottomPadding = Math.max(12, insets.bottom);
   const router = useRouter();
   const { markOnboarded } = useOnboardingGate();
   const [step, setStep] = useState(0);
@@ -194,7 +192,7 @@ export default function Onboarding() {
       </View>
       <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${((step + 1) / (LAST_STEP + 1)) * 100}%` }]} /></View>
 
-      <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 16}>
+      <KeyboardAvoidingView testID="onboarding-keyboard-safe" style={styles.keyboardSafe} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}>
       <ScrollView style={styles.scrollView} contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
 
         {step === 0 && (
