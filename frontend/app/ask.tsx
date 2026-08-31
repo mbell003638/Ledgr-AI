@@ -17,11 +17,15 @@ import { getDataVersion } from "@/src/utils/dataVersion";
 import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
-import { isNeutralTranscript } from "@/src/db/ai";
+import { isExplicitBookMutationRequest, isNeutralTranscript } from "@/src/db/ai";
 import { VoiceOrb } from "@/src/components/VoiceOrb";
 import { cancelVoiceRecorder, captureVoiceRecording, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 
 type Msg = { role: "user" | "assistant"; text: string };
+type PendingClarification =
+  | { kind: "party"; originalRequest: string; question: string; command: VoiceCommand }
+  | { kind: "provider"; originalRequest: string; question: string };
 
 // Source tag prefixed onto notes/memo of records this screen creates (fix M-5).
 const AI_TAG = "[AI]";
@@ -54,6 +58,22 @@ function buildReceiptPrompt(ocr: any): string {
     `<ocr_data>Scanned receipt from ${supplierName}: ${amount ? `$${amount}` : "amount unknown"} on ${date}.</ocr_data>\n` +
     "Please record this expense."
   );
+}
+
+function paymentActionFromCommand(command: VoiceCommand): { type: string; params: Record<string, unknown> } | null {
+  const common = {
+    amount: command.amount,
+    ...(command.date ? { date: command.date } : {}),
+    ...(command.method ? { method: command.method } : {}),
+    ...(command.notes || command.summary ? { notes: command.notes || command.summary } : {}),
+  };
+  if (command.intent === "drawing" && command.partnerName) {
+    return { type: "create_drawing", params: { ...common, partnerName: command.partnerName } };
+  }
+  if (command.intent === "supplier_payment" && command.supplierName) {
+    return { type: "create_supplier_payment", params: { ...common, supplierName: command.supplierName } };
+  }
+  return null;
 }
 
 type ValidatedProposal = Extract<AssistantProposalValidationResult, { ok: true }>;
@@ -346,6 +366,7 @@ export default function AskBooks() {
   const [applyingProposal, setApplyingProposal] = useState(false);
   const applyingProposalRef = useRef(false);
   const [pendingProposal, setPendingProposal] = useState<ValidatedProposal | null>(null);
+  const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
@@ -422,6 +443,8 @@ export default function AskBooks() {
     if (nextKey !== historyKey) {
       historyLoaded.current = false;
       setMessages([]);
+      setPendingClarification(null);
+      setPendingProposal(null);
       setHistoryKey(nextKey);
     }
     return undefined;
@@ -505,6 +528,7 @@ export default function AskBooks() {
         try {
           await AsyncStorage.removeItem(historyKey);
           setMessages([]);
+          setPendingClarification(null);
           setPendingProposal(null);
           setInput("");
           Keyboard.dismiss();
@@ -601,32 +625,90 @@ export default function AskBooks() {
     }
 
     const priorProposal = pendingProposal;
+    const clarification = pendingClarification;
+    const originalRequest = clarification?.originalRequest || q;
+    const skipLocalPartyResolution = clarification?.kind === "party" && /\b(?:expense|refund|another|other|none|no)\b/i.test(q);
+    const localPaymentCommand = priorProposal || skipLocalPartyResolution
+      ? null
+      : clarification?.kind === "party"
+        ? clarification.command
+        : parseSimpleOutgoingPayment(q);
     const questionForAi = priorProposal
       ? `The user is revising this pending Ledgr transaction entry. Existing action JSON: ${JSON.stringify(priorProposal.action)}. User follow-up: ${q}. Return the full revised action, or ask one counter-question.`
-      : q;
+      : clarification
+        ? `Continue this one pending Ledgr transaction request without losing its details.\nOriginal user request: ${clarification.originalRequest}\nAssistant counter-question: ${clarification.question}\nUser answer: ${q}\nUse the original amount, date, and party together with the user's answer. Return the complete action, or ask exactly one remaining counter-question.`
+        : q;
     if (priorProposal) setPendingProposal(null);
-    const currentHistory = messages.slice(-8);
+    if (clarification) setPendingClarification(null);
     setInput("");
     commitMessages((m) => [...m, { role: "user", text: q }]);
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
+      if (localPaymentCommand) {
+        const [suppliers, customers, capitalAccounts] = await Promise.all([
+          api.listSuppliers(),
+          api.listDebtors(),
+          api.listInvestors(),
+        ]);
+        const resolution = resolveVoicePartyCommand(
+          localPaymentCommand,
+          clarification?.kind === "party" ? `${clarification.originalRequest}\nUser clarification: ${q}` : q,
+          { suppliers, customers, capitalAccounts },
+        );
+        if (!resolution.ok) {
+          setPendingClarification({
+            kind: "party",
+            originalRequest,
+            question: resolution.question,
+            command: localPaymentCommand,
+          });
+          commitMessages((m) => [...m, { role: "assistant", text: resolution.question }]);
+          return;
+        }
+        const rawAction = paymentActionFromCommand(resolution.command);
+        if (rawAction) {
+          const proposal = validateAssistantProposal(rawAction, "ai");
+          if (!proposal.ok) {
+            const question = `I need one more detail before I can prepare that change: ${proposal.errors[0]}.`;
+            setPendingClarification({ kind: "provider", originalRequest, question });
+            commitMessages((m) => [...m, { role: "assistant", text: question }]);
+          } else {
+            setPendingProposal(proposal);
+            setPendingClarification(null);
+            const partyName = String(resolution.command.partnerName || resolution.command.supplierName || "").trim();
+            const actionLabel = resolution.command.intent === "drawing" ? "capital withdrawal" : "supplier payment";
+            commitMessages((m) => [...m, { role: "assistant", text: `I matched "${partyName}" to the exact Ledgr account and prepared the ${actionLabel} for your review.` }]);
+          }
+          return;
+        }
+      }
+
       const context = await buildContext();
-      const res: any = await api.askBooks(questionForAi, context, currentHistory);
+      const res: any = await api.askBooks(questionForAi, context);
       const answer = typeof res === "string" ? res : res?.answer || "";
       const action = typeof res === "string" ? null : res?.action || null;
       if (action && action.type) {
         const proposal = validateAssistantProposal(action, "ai");
         if (!proposal.ok) {
-          commitMessages((m) => [...m, { role: "assistant", text: `I need one more detail before I can prepare that change: ${proposal.errors[0]}.` }]);
+          const question = `I need one more detail before I can prepare that change: ${proposal.errors[0]}.`;
+          setPendingClarification({ kind: "provider", originalRequest, question });
+          commitMessages((m) => [...m, { role: "assistant", text: question }]);
         } else {
           setPendingProposal(proposal);
+          setPendingClarification(null);
           if (answer) commitMessages((m) => [...m, { role: "assistant", text: answer }]);
         }
       } else if (answer) {
+        if (isExplicitBookMutationRequest(originalRequest) && /\?\s*$/.test(answer.trim())) {
+          setPendingClarification({ kind: "provider", originalRequest, question: answer.trim() });
+        } else {
+          setPendingClarification(null);
+        }
         commitMessages((m) => [...m, { role: "assistant", text: answer }]);
       }
     } catch (e: any) {
+      if (clarification) setPendingClarification(clarification);
       commitMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);
     } finally {
       setLoading(false);
@@ -725,9 +807,13 @@ export default function AskBooks() {
                   const perm = await ImagePicker.requestCameraPermissionsAsync();
                   if (!perm.granted) return;
                   const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-                  if (res.canceled || !res.assets[0].base64) return;
+                  if (res.canceled) return;
+                  const asset = res.assets[0];
+                  if (!asset?.base64) throw new Error("The camera did not return readable image data. Try taking the photo again.");
                   setLoading(true);
-                  const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
+                  // Expo ImagePicker documents base64 output as JPEG data. Use
+                  // the matching MIME type even when the source asset was HEIC.
+                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
                   const prompt = buildReceiptPrompt(ocr);
                   send(prompt);
                 } catch (e: any) {
@@ -747,10 +833,17 @@ export default function AskBooks() {
                 try {
                   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
                   if (!perm.granted) return;
-                  const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-                  if (res.canceled || !res.assets[0].base64) return;
+                  const res = await ImagePicker.launchImageLibraryAsync({
+                    base64: true,
+                    quality: 0.5,
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+                  });
+                  if (res.canceled) return;
+                  const asset = res.assets[0];
+                  if (!asset?.base64) throw new Error("The selected file did not contain readable image data. Try a JPEG or PNG image.");
                   setLoading(true);
-                  const ocr = await api.ocrReceipt(res.assets[0].base64, res.assets[0].mimeType || "image/jpeg");
+                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
                   const prompt = buildReceiptPrompt(ocr);
                   send(prompt);
                 } catch (e: any) {

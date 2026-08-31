@@ -81,22 +81,19 @@ describe('Ask AI assistant routing', () => {
     });
   });
 
-  it('supports multi-turn conversation history for follow-up clarifications', async () => {
-    const history = [
-      { role: 'user' as const, text: 'Paid 100 to amit today' },
-      { role: 'assistant' as const, text: 'Is Amit a supplier you owe, or was this a business expense?' },
-    ];
+  it('supports a targeted clarification continuation without attaching stored chat history', async () => {
     const fetchSpy = jest.fn().mockResolvedValue(geminiResponse({
       answer: 'Prepared partner drawing of $100 for Amit.',
       action: { type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' },
     }));
     global.fetch = fetchSpy as any;
 
-    const result = await askBooks(geminiConfig, 'Amit a withdrawal from capital', '{"capitalAccounts":[{"id":"c1","name":"Amit"}]}', history);
+    const continuedQuestion = 'Continue this pending request. Original user request: Paid 100 to Amit today. Assistant counter-question: Is Amit a supplier or Capital Account? User answer: Capital Account.';
+    const result = await askBooks(geminiConfig, continuedQuestion, '{"capitalAccounts":[{"id":"c1","name":"Amit"}]}');
     expect(result.action).toEqual({ type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.contents[0].parts[0].text).toContain('=== RECENT CONVERSATION HISTORY ===');
-    expect(body.contents[0].parts[0].text).toContain('Paid 100 to amit today');
+    expect(body.contents[0].parts[0].text).not.toContain('=== RECENT CONVERSATION HISTORY ===');
+    expect(body.contents[0].parts[0].text).toContain('Paid 100 to Amit today');
   });
 
   it('tests connection with small token budget and fast completion', async () => {

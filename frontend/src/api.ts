@@ -997,7 +997,7 @@ export const api = {
     });
     bumpDataVersion();
   },
-  testKey: async () => ai.testKey(await getAIConfig()),
+  testKey: async (config?: AIConfig) => ai.testKey(config || await getAIConfig()),
   getAIConfig: async () => getAIConfig(),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
@@ -1756,7 +1756,7 @@ export const api = {
   analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string }) => ai.analyzeDocumentAI(await getAIConfig(), input),
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
-  askBooks: async (question: string, dataContext: string, history?: ai.AskHistoryMessage[]) => ai.askBooks(await getAIConfig(), question, dataContext, history),
+  askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
 
   // Expenses
   listExpenses: async () => isWebRuntime

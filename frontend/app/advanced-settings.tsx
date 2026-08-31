@@ -289,14 +289,14 @@ export default function AdvancedSettingsScreen() {
         setTestResult({ ok: false, msg: 'Confirm that you trust this custom AI host first.' });
         return;
       }
-      await setAIConfig({
+      const draftConfig = {
         provider,
         apiKey: key.trim(),
         model: modelName.trim() || meta.defaultModel,
         transcriptionModel: transcriptionModelName.trim() || "whisper-1",
         baseUrl: baseUrl.trim() || undefined,
-      });
-      await api.testKey();
+      };
+      await api.testKey(draftConfig);
       setTestResult({ ok: true, msg: `✓ Connected` });
     } catch (e: any) {
       setTestResult({ ok: false, msg: `✗ ${e.message || "Failed"}` });
