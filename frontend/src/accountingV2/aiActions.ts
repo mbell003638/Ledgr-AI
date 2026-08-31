@@ -169,8 +169,13 @@ const ASSISTANT_UPDATE_FIELDS: Record<AssistantEntryEntity, readonly string[]> =
   cash_entry: ['amount', 'date', 'type', 'category', 'notes'],
 };
 const assistantAmount = (value: unknown) => {
-  const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[^0-9.-]/g, '')) : NaN;
-  return Number.isFinite(amount) ? amount : NaN;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+  return NaN;
 };
 
 /** Validates the exact AI-proposed app action before the confirmation dialog is shown. */

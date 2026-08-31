@@ -457,23 +457,26 @@ export default function AskBooks() {
       ? `The user is revising this pending Ledgr transaction entry. Existing action JSON: ${JSON.stringify(priorProposal.action)}. User follow-up: ${q}. Return the full revised action, or ask one counter-question.`
       : q;
     if (priorProposal) setPendingProposal(null);
+    const currentHistory = messages.slice(-8);
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       const context = await buildContext(q);
-      const res: any = await api.askBooks(questionForAi, context);
+      const res: any = await api.askBooks(questionForAi, context, currentHistory);
       const answer = typeof res === "string" ? res : res?.answer || "";
       const action = typeof res === "string" ? null : res?.action || null;
-      if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
       if (action && action.type) {
         const proposal = validateAssistantProposal(action, "ai");
         if (!proposal.ok) {
           setMessages((m) => [...m, { role: "assistant", text: `I need one more detail before I can prepare that change: ${proposal.errors[0]}.` }]);
         } else {
           setPendingProposal(proposal);
+          if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
         }
+      } else if (answer) {
+        setMessages((m) => [...m, { role: "assistant", text: answer }]);
       }
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);

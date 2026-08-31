@@ -68,10 +68,42 @@ describe('Ask AI assistant routing', () => {
     });
   });
 
-  it('recognizes explicit natural-language writes and external topics', () => {
+  it('allows create_drawing action for partner payout or capital withdrawal', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue(geminiResponse({
+      answer: 'Prepared withdrawal of $100 for Amit.',
+      action: { type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' },
+    }));
+    global.fetch = fetchSpy as any;
+
+    await expect(askBooks(geminiConfig, 'Paid 100 to amit as a capital withdrawal', '{"capitalAccounts":[{"id":"c1","name":"Amit"}]}')).resolves.toEqual({
+      answer: 'Prepared withdrawal of $100 for Amit.',
+      action: { type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' },
+    });
+  });
+
+  it('supports multi-turn conversation history for follow-up clarifications', async () => {
+    const history = [
+      { role: 'user' as const, text: 'Paid 100 to amit today' },
+      { role: 'assistant' as const, text: 'Is Amit a supplier you owe, or was this a business expense?' },
+    ];
+    const fetchSpy = jest.fn().mockResolvedValue(geminiResponse({
+      answer: 'Prepared partner drawing of $100 for Amit.',
+      action: { type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' },
+    }));
+    global.fetch = fetchSpy as any;
+
+    const result = await askBooks(geminiConfig, 'Amit a withdrawal from capital', '{"capitalAccounts":[{"id":"c1","name":"Amit"}]}', history);
+    expect(result.action).toEqual({ type: 'create_drawing', params: { partnerName: 'Amit', amount: 100 }, confirm: 'Withdraw $100 for Amit' });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.contents[0].parts[0].text).toContain('=== RECENT CONVERSATION HISTORY ===');
+    expect(body.contents[0].parts[0].text).toContain('Paid 100 to amit today');
+  });
+
+  it('recognizes explicit natural-language writes, multi-turn follow-ups, and external topics', () => {
     expect(isExplicitBookMutationRequest('Record a 500 expense for fuel')).toBe(true);
     expect(isExplicitBookMutationRequest('Paid $100 to Amit')).toBe(true);
     expect(isExplicitBookMutationRequest('What was my profit this month?')).toBe(false);
+    expect(isExplicitBookMutationRequest('Amit a withdrawal from capital', [{ role: 'user', text: 'Paid 100 to amit' }])).toBe(true);
     expect(isClearlyExternalQuestion('What is Gift Nifty current price?')).toBe(true);
     expect(isClearlyExternalQuestion('What is my inventory value?')).toBe(false);
   });
