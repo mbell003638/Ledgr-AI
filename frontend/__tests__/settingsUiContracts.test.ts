@@ -6,6 +6,12 @@ const mainSettings = fs.readFileSync(path.join(appRoot, '(tabs)', 'settings.tsx'
 const advancedSettings = fs.readFileSync(path.join(appRoot, 'advanced-settings.tsx'), 'utf8');
 
 describe('settings UI contracts', () => {
+  it('requires explicit trust for custom chat, OCR, and voice hosts', () => {
+    expect(advancedSettings).toContain('hasCustomVoiceHost');
+    expect(advancedSettings).toContain('aiCustomHostConfirmed: customHostConfirmed');
+    expect(advancedSettings).toContain('I trust these custom chat, OCR, and voice hosts');
+  });
+
   it('keeps Accounting & Workflow only in Advanced Settings', () => {
     expect(mainSettings).not.toContain('Accounting Style');
     expect(mainSettings).not.toContain('updateV2BookConfig');
