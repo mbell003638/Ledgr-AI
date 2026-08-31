@@ -300,4 +300,572 @@ export default function AdvancedSettingsScreen() {
       requireOnboarding();
       // factoryReset wipes the persisted theme/animation prefs, but the live
       // ThemeContext only hydrates on mount â€” reset it in memory too so the app
-      // returns to its pristine system-d÷]½¶‰žËkºwµçt4(€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°…ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´õôø4(€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõíÑ•ÍÑ-•åô‘¥Í…‰±•õíÑ•ÍÑ¥¹œñð€…­•åôÍÑå±”õì¡ìÁÉ•ÍÍ•ô¤€ôømÍÑå±•Ì¹Í•½¹‘…Éå	Ñ¸°ì…±¥¹M•±˜è€™±•àµÍÑ…ÉÐœ°Á…‘‘¥¹!½É¥é½¹Ñ…°è€ÄØô°€¡ÁÉ•ÍÍ•ñðÑ•ÍÑ¥¹œ¤€˜˜ì½Á…¥Ñäè€À¸ÜõuôùíÑ•ÍÑ¥¹œ€ü€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½È½±½ÈõíÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø€è€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹Í•½¹‘…ÉåQ•áÑôùQ•ÍÐ¡…Ð½¹¹•Ñ¥½¸ð½Q•áÐùôð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€íÑ•ÍÑI•ÍÕ±Ð€˜˜€ñQ•áÐÍÑå±”õíì™½¹ÑM¥é”è€ÄÌ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ•ÍÑI•ÍÕ±Ð¹½¬€üÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä€èÑ¡•µ”¹½±½È¹•ÉÉ½È°™±•áM¡É¥¹¬è€ÄõôùíÑ•ÍÑI•ÍÕ±Ð¹µÍôð½Q•áÐùô4(€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€ð½½É‘¥½¹I½Üø4(€€€€€€€€€€€€ð½Y¥•Üø4(4(€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°Á…‘‘¥¹œè€ÈÀõôø(€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíì™½¹ÑM¥é”è€ÄØ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°µ…É¥¹	½ÑÑ½´è€àõôùM•ÕÉ¥Ñä€˜…Ñ„ð½Q•áÐø4(€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíì™½¹ÑM¥é”è€ÄÌ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°µ…É¥¹	½ÑÑ½´è€ÄØ°±¥¹•!•¥¡Ðè€ÄàõôùAÉ½Ñ•Ðå½ÕÈÍ•¹Í¥Ñ¥Ù”…Ñ¥½¹Ì…¹‰…­ÕÁÌ¸ð½Q•áÐø4(€€€€€€€€€€€€€€ñ½É‘¥½¹I½ÜÑ¥Ñ±”ô‰ÁÀ1½¬ˆÍÕ‰Ñ¥Ñ±”ô‰¥¹•ÉÁÉ¥¹Ð€¼A%8ˆÑ¡•µ”õíÑ¡•µ•ô•áÁ…¹‘•‘-•äõí•áÁ…¹‘•‘-•åôÍ•ÑáÁ…¹‘•‘-•äõíÍ•ÑáÁ…¹‘•‘-•åôø4(€€€€€€€€€€€€€€€€ñY¥•Üø4(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹¡¥¹ÑôùUÍ”å½ÕÈÁ¡½¹—ŠeÌ™¥¹•ÉÁÉ¥¹Ð€¼™…”€¼A%8Ñ¼ÁÉ½Ñ•ÐÍ•¹Í¥Ñ¥Ù”…Ñ¥½¹Ì¸ð½Q•áÐø4(€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ1½­¹…‰±• ¡Ø¤€ôø€…Ø¥ôÍÑå±”õímÍÑå±•Ì¹±½­Q½±”°±½­¹…‰±•€˜˜ÍÑå±•Ì¹±½­Q½±•=¹uôø4(€€€€€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”õí±½­¹…‰±•€ü€‰±½¬µ±½Í•ˆ€è€‰±½¬µ½Á•¸µ½ÕÑ±¥¹”‰ôÍ¥é”õìÄáô½±½Èõí±½­¹…‰±•€üÑ¡•µ”¹½±½È¹½¹	É…¹‘AÉ¥µ…Éä€èÑ¡•µ”¹½±½È¹½¹MÕÉ™…•ô€¼ø4(€€€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õímÍÑå±•Ì¹±½­Q½±•Q•áÐ°±½­¹…‰±•€˜˜ì½±½ÈèÑ¡•µ”¹½±½È¹½¹	É…¹‘AÉ¥µ…Éäõuôùí±½­¹…‰±•€ü€‰ÁÀ1½¬=8ˆ€è€‰ÁÀ1½¬=‰ôð½Q•áÐø4(€€€€€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€ð½½É‘¥½¹I½Üø4(€€€€€€€€€€€€€€ñ½É‘¥½¹I½ÜÑ¥Ñ±”ô‰	…­ÕÀ€˜I•ÍÑ½É”ˆÍÕ‰Ñ¥Ñ±”ô‰¹ÉåÁÑ••áÁ½ÉÐ…¹Ù•É¥™¥•É•ÍÑ½É”ˆÑ¡•µ”õíÑ¡•µ•ô•áÁ…¹‘•‘-•äõí•áÁ…¹‘•‘-•åôÍ•ÑáÁ…¹‘•‘-•äõíÍ•ÑáÁ…¹‘•‘-•åôø(€€€€€€€€€€€€€€€€ñY¥•Üø(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹¡¥¹ÑôùÉ•…Ñ”Á…ÍÍÁ¡É…Í”µ•¹ÉåÁÑ•É•½Ù•Éä™¥±•Ì°Ù…±¥‘…Ñ”¥µÁ½ÉÑÌÝ¥Ñ¡½ÕÐ¡…¹¥¹œ‘…Ñ„°…¹É•ÍÑ½É”Ñ¡É½Õ Ñ¡”•á¥ÍÑ¥¹œ…Ñ½µ¥ŒµÕ±Ñ¤µ‰½½¬•¹¥¹”¸ð½Q•áÐø(€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”Ñ•ÍÑ%ô‰½Á•¸µ‰…­ÕÀµÉ•½Ù•Éäˆ½¹AÉ•ÍÌõì ¤€ôøÉ½ÕÑ•È¹ÁÕÍ  œ½‰…­ÕÀµÉ•½Ù•Éäœ…Ì…¹ä¥ôÍÑå±”õímÍÑå±•Ì¹‰½½­I½Ü°ìµ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´õuôø(€€€€€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰Í¡¥•±µ¡•­µ…É¬µ½ÕÑ±¥¹”ˆÍ¥é”õìÈÁô½±½ÈõíÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø(€€€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì™±•àè€ÄõôøñQ•áÐÍÑå±”õíÍÑå±•Ì¹‰½½­9…µ•ôù=Á•¸	…­ÕÀ€˜I•½Ù•Éäð½Q•áÐøñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÍÕ‰1…‰•±ôù¹ÉåÁÑ••áÁ½ÉÐ…¹Ù•É¥™¥•É•ÍÑ½É”ð½Q•áÐøð½Y¥•Üø(€€€€€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰¡•ÙÉ½¸µ™½ÉÝ…ÉˆÍ¥é”õìÄáô½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô€¼ø(€€€€€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø(€€€€€€€€€€€€€€€€ð½Y¥•Üø(€€€€€€€€€€€€€€ð½½É‘¥½¹I½Üø4(€€€€€€€€€€€€€€ñ½É‘¥½¹I½ÜÑ¥Ñ±”ô‰…¹•Èi½¹”ˆ4(€€€€€€€€€€€€€€€ÍÕ‰Ñ¥Ñ±”ô‰±•…È…½Õ¹Ñ¥¹œ‘…Ñ„½ÈÉ•Í•ÐÑ¡¥Ì‘•Ù¥”ˆ¥Í1…ÍÐÑ¡•µ”õíÑ¡•µ•ô•áÁ…¹‘•‘-•äõí•áÁ…¹‘•‘-•åôÍ•ÑáÁ…¹‘•‘-•äõíÍ•ÑáÁ…¹‘•‘-•åôø4(€€€€€€€€€€€€€€€€ñY¥•Üø4(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹¡¥¹Ñôù±•…È…½Õ¹Ñ¥¹œ‘…Ñ„É•µ½Ù•Ì‰½½­Ì°ÑÉ…¹Í…Ñ¥½¹Ì°‰ÕÍ¥¹•ÍÌ…½Õ¹ÑÌ°¥¹Ù•¹Ñ½Éä…¹Á•É¥½‘ÌÝ¡¥±”ÁÉ•Í•ÉÙ¥¹œÁÉ•™•É•¹•Ì…¹$½¹™¥ÕÉ…Ñ¥½¸¸…Ñ½ÉäÉ•Í•Ð…±Í¼É•µ½Ù•Ì‰ÕÍ¥¹•ÍÌÍ•ÑÑ¥¹Ì…¹$É•‘•¹Ñ¥…±Ì¸ð½Q•áÐø4(€€€€€€€€€€€€€€€€€ì…½¹™¥ÉµI•Í•Ð€ü€ 4(€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ½¹™¥ÉµI•Í•Ð¡ÑÉÕ”¥ôÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ%¹¥Ñ	Ñ¹ôøñ%½¹¥½¹Ì¹…µ”ô‰ÑÉ…Í µ½ÕÑ±¥¹”ˆÍ¥é”õìÄÙô½±½ÈõíÑ¡•µ”¹½±½È¹•ÉÉ½Éô€¼øñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ%¹¥ÑQ•áÑôù±•…È½Õ¹Ñ¥¹œ…Ñ‡Š˜ð½Q•áÐøð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€¤€è€ 4(€€€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíìµ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µõôø4(€€€€€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õímÍÑå±•Ì¹¡¥¹Ð°ì½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½È°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆõuôùQ¡¥Ì…¹¹½Ð‰”Õ¹‘½¹”¸½¹Í¥‘•È•áÁ½ÉÑ¥¹œ„‰…­ÕÀ™¥ÉÍÐ¸ð½Q•áÐø4(€€€€€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…Àè€à°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´õôø4(€€€€€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ½¹™¥ÉµI•Í•Ð¡™…±Í”¥ôÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ…¹•±	Ñ¹ôøñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ…¹•±Q•áÑôù…¹•°ð½Q•áÐøð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõí‘½I•Í•Ñô‘¥Í…‰±•õíÉ•Í•ÑÑ¥¹ôÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ½¹™¥Éµ	Ñ¹ôùíÉ•Í•ÑÑ¥¹œ€ü€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½È½±½Èôˆ™™˜ˆ€¼ø€è€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ½¹™¥ÉµQ•áÑôùe•Ì°±•…È…½Õ¹Ñ¥¹œ‘…Ñ„ð½Q•áÐùôð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€€€¥ô4(€€€€€€€€€€€€€€€€€ì…½¹™¥Éµ…Ñ½ÉåI•Í•Ð€ü€ 4(€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ½¹™¥Éµ…Ñ½ÉåI•Í•Ð¡ÑÉÕ”¥ôÍÑå±”õímÍÑå±•Ì¹É•Í•Ñ%¹¥Ñ	Ñ¸°ì‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½È€¬€ˆääˆõuôøñ%½¹¥½¹Ì¹…µ”ô‰Ý…É¹¥¹œµ½ÕÑ±¥¹”ˆÍ¥é”õìÄÙô½±½ÈõíÑ¡•µ”¹½±½È¹•ÉÉ½Éô€¼øñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ%¹¥ÑQ•áÑôù…Ñ½ÉäI•Í•Ð•Ù¥—Š˜ð½Q•áÐøð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€¤€è€ 4(€€€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíìµ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µõôø4(€€€€€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õímÍÑå±•Ì¹¡¥¹Ð°ì½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½È°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆõuôùQ¡¥ÌÝ¥Á•Ì•Ù•ÉåÑ¡¥¹œƒŠP…±°‰½½­Ì€˜É•½É‘Ì°‰ÕÍ¥¹•ÍÌ½¹™¥ÕÉ…Ñ¥½¸°Ñ¡”Í…Ù•$­•ä°…¹å½ÕÈÁÉ•™•É•¹•Ì€¡Ñ¡•µ”°…¹¥µ…Ñ¥½¹Ì°‘…Í¡‰½…É±…å½ÕÐ¤ƒŠPÑ¡•¸É•ÑÕÉ¹ÌÑ¼½¹‰½…É‘¥¹œ¸ð½Q•áÐø4(€€€€€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…Àè€à°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´õôø4(€€€€€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõì ¤€ôøÍ•Ñ½¹™¥Éµ…Ñ½ÉåI•Í•Ð¡™…±Í”¥ôÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ…¹•±	Ñ¹ôøñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ…¹•±Q•áÑôù…¹•°ð½Q•áÐøð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”½¹AÉ•ÍÌõí‘½…Ñ½ÉåI•Í•Ñô‘¥Í…‰±•õíÉ•Í•ÑÑ¥¹ôÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ½¹™¥Éµ	Ñ¹ôùíÉ•Í•ÑÑ¥¹œ€ü€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½È½±½Èôˆ™™˜ˆ€¼ø€è€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹É•Í•Ñ½¹™¥ÉµQ•áÑôùe•Ì°™…Ñ½ÉäÉ•Í•Ðð½Q•áÐùôð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€€€¥ô4(€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€ð½½É‘¥½¹I½Üø4(€€€€€€€€€€€€ð½Y¥•Üø4(4(€€€€€€€€€€€íÍÑ…ÑÕÌ€˜˜€ 4(€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õímÍÑå±•Ì¹ÍÑ…ÑÕÌ°ì‰…­É½Õ¹‘½±½ÈèÍÑ…ÑÕÌ¹½¬€üÑ¡•µ”¹½±½È¹ÍÕ•ÍÍ	œ€èÑ¡•µ”¹½±½È¹•ÉÉ½É	œõuôø4(€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”õíÍÑ…ÑÕÌ¹½¬€ü€‰¡•­µ…É¬µ¥É±”ˆ€è€‰…±•ÉÐµ¥É±”‰ôÍ¥é”õìÄáô½±½ÈõíÍÑ…ÑÕÌ¹½¬€üÑ¡•µ”¹½±½È¹ÍÕ•ÍÌ€èÑ¡•µ”¹½±½È¹•ÉÉ½Éô€¼ø4(€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õímÍÑå±•Ì¹ÍÑ…ÑÕÍQ•áÐ°ì½±½ÈèÍÑ…ÑÕÌ¹½¬€üÑ¡•µ”¹½±½È¹ÍÕ•ÍÌ€èÑ¡•µ”¹½±½È¹•ÉÉ½ÈõuôùíÍÑ…ÑÕÌ¹µÍôð½Q•áÐø4(€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€¥ô4(4(€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”Ñ•ÍÑ%ô‰‰Ñ¸µÍ…Ù”µÍ•ÑÑ¥¹Ìˆ½¹AÉ•ÍÌõíÍ…Ù•ô‘¥Í…‰±•õíÍ…Ù¥¹ôÍÑå±”õì¡ìÁÉ•ÍÍ•ô¤€ôømÍÑå±•Ì¹ÁÉ¥µ…Éå	Ñ¸°€¡ÁÉ•ÍÍ•ñðÍ…Ù¥¹œ¤€˜˜ì½Á…¥Ñäè€À¸àÔõuôø4(€€€€€€€€€€€€€íÍ…Ù¥¹œ€ü€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½È½±½Èôˆ™™˜ˆ€¼ø€è€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ¥µ…ÉåQ•áÑôùM…Ù”M•ÑÑ¥¹Ìð½Q•áÐùô4(€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíì¡•¥¡Ðè€ÄÈÀõô€¼ø4(€€€€€€€€€€ð½MÉ½±±Y¥•Üø4(€€€€€€€€ð½-•å‰½…É‘Ù½¥‘¥¹Y¥•Üø4(€€€€€€¥ô4(€€€€ð½M…™•É•…Y¥•Üø4(€€¤ì4)ô4(4)™Õ¹Ñ¥½¸µ…­•MÑå±•Ì¡Ñ¡•µ”è…¹ä¤ì4(€É•ÑÕÉ¸MÑå±•M¡••Ð¹É•…Ñ”¡ì4(€€€½¹Ñ…¥¹•Èèì™±•àè€Ä°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”ô°4(€€€ÍÉ½±°èìÁ…‘‘¥¹!½É¥é½¹Ñ…°èÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°Á…‘‘¥¹	½ÑÑ½´è€ØÀô°(€€€Ý½É­™±½ÝM•Ñ¥½¸èì(€€€€€‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°(€€€€€‰½É‘•É]¥‘Ñ è€Ä°(€€€€€‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°(€€€€€Á…‘‘¥¹œè€ÈÀ°(€€€ô°(€€€Ý½É­™±½Ý½¹Ñ•¹Ðèì(€€€€€‰½É‘•ÉQ½Á]¥‘Ñ èMÑå±•M¡••Ð¹¡…¥É±¥¹•]¥‘Ñ °(€€€€€‰½É‘•ÉQ½Á½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°(€€€€€Á…‘‘¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´°(€€€€€Á…‘‘¥¹	½ÑÑ½´èÑ¡•µ”¹ÍÁ…¥¹œ¹áÌ°(€€€ô°(€€€Ý½É­™±½ÝMÑ…ÑÕÌèì(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°(€€€€€…±¥¹%Ñ•µÌè€‰™±•àµÍÑ…ÉÐˆ°(€€€€€…ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°(€€€€€Á…‘‘¥¹Y•ÉÑ¥…°è€ÄÐ°(€€€€€‰½É‘•É	½ÑÑ½µ]¥‘Ñ èMÑå±•M¡••Ð¹¡…¥É±¥¹•]¥‘Ñ °(€€€€€‰½É‘•É	½ÑÑ½µ½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°(€€€ô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍ%½¸èìÝ¥‘Ñ è€ÌØ°¡•¥¡Ðè€ÌØ°‰½É‘•ÉI…‘¥ÕÌè€Äà°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍ½Áäèì™±•àè€Ä°µ¥¹]¥‘Ñ è€Àô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍQ¥Ñ±•I½Üèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´ô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍ	…‘”èì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…Àè€Ô°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•ÉI…‘¥ÕÌè€äää°Á…‘‘¥¹!½É¥é½¹Ñ…°è€à°Á…‘‘¥¹Y•ÉÑ¥…°è€Ðô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍ½ÐèìÝ¥‘Ñ è€Ø°¡•¥¡Ðè€Ø°‰½É‘•ÉI…‘¥ÕÌè€Ìô°(€€€Ý½É­™±½ÝMÑ…ÑÕÍ	…‘•Q•áÐèì™½¹ÑM¥é”è€ÄÀ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆô°(€€€Ý½É­™±½ÝI½Üèì(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°(€€€€€…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°(€€€€€…ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°(€€€€€Á…‘‘¥¹Y•ÉÑ¥…°è€Äà°(€€€€€‰½É‘•É	½ÑÑ½µ]¥‘Ñ èMÑå±•M¡••Ð¹¡…¥É±¥¹•]¥‘Ñ °(€€€€€‰½É‘•É	½ÑÑ½µ½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°(€€€ô°(€€€Ý½É­™±½ÝI½Ý1…ÍÐèì‰½É‘•É	½ÑÑ½µ]¥‘Ñ è€Àô°(€€€±…‰•°èì™½¹ÑM¥é”è€ÄÐ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€¡¥¹Ðèì™½¹ÑM¥é”è€ÄÈ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°µ…É¥¹Q½Àè€Ðô°4(€€€¥¹ÁÕÐèì4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°4(€€€€€‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°4(€€€€€‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°4(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€™½¹ÑM¥é”è€ÄÐ°4(€€€€€½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”°4(€€€ô°4(€€€ÁÉ¥µ…Éå	Ñ¸èì4(€€€€€‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°4(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°4(€€€ô°4(€€€ÁÉ¥µ…ÉåQ•áÐèì½±½Èè€ˆ™™˜ˆ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÔô°4(€€€Í•½¹‘…Éå	Ñ¸èì4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°4(€€€€€‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°4(€€€ô°4(€€€Í•½¹‘…ÉåQ•áÐèì½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÐô°4(€€€ÍÑ…ÑÕÌèì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°4(€€€€€…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°4(€€€€€…Àè€à°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€ô°4(€€€ÍÑ…ÑÕÍQ•áÐèì™½¹ÑM¥é”è€ÄÌ°™½¹Ñ]•¥¡Ðè€ˆÔÀÀˆ°™±•àè€Äô°4(€€€µ½‘•I½Üèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…Àè€à°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µô°4(€€€µ½‘•	Ñ¸èì4(€€€€€™±•àè€Ä°™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°4(€€€€€…Àè€Ø°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°4(€€€ô°4(€€€µ½‘•	Ñ¹Ñ¥Ù”èì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€µ½‘•Q•áÐèì™½¹ÑM¥é”è€ÄÌ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°(€€€µ½‘•Q•áÑÑ¥Ù”èì½±½ÈèÑ¡•µ”¹½±½È¹½¹	É…¹‘AÉ¥µ…Éäô°(€€€Í•ÕÉ¥Ñå¡•­I½Üèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…Àè€à°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°Á…‘‘¥¹Y•ÉÑ¥…°è€àô°(€€€Í•ÕÉ¥Ñå¡•­Q•áÐèì™±•àè€Ä°™½¹ÑM¥é”è€ÄÈ°±¥¹•!•¥¡Ðè€Äà°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°(€€€ÕÉÉ•¹å¡¥Àèì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°4(€€€€€Á…‘‘¥¹Y•ÉÑ¥…°è€ÄÀ°Á…‘‘¥¹!½É¥é½¹Ñ…°è€ÄÐ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°4(€€€€€µ¥¹]¥‘Ñ è€àà°4(€€€ô°4(€€€ÕÉÉ•¹å¡¥ÁÑ¥Ù”èì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€ÕÉÉ•¹å¡¥ÁQ•áÐèì™½¹ÑM¥é”è€ÄÐ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€ÕÉÉ•¹å¡¥ÁQ•áÑÑ¥Ù”èì½±½ÈèÑ¡•µ”¹½±½È¹½¹	É…¹‘AÉ¥µ…Éäô°4(€€€‰…­ÕÁI½Üèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…Àè€à°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µô°4(€€€‰…­ÕÁ	Ñ¸èì4(€€€€€™±•àè€Ä°™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…Àè€Ø°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€ô°4(€€€‰…­ÕÁ	Ñ¹AÉ¥µ…Éäèì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€‰…­ÕÁ	Ñ¹M•½¹‘…Éäèì‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éäô°4(€€€‰…­ÕÁ	Ñ¹Q•áÑAÉ¥µ…Éäèì½±½Èè€ˆ™™˜ˆ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€€€‰…­ÕÁ	Ñ¹Q•áÑM•½¹‘…Éäèì½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€€€É•Í•Ñ%¹¥Ñ	Ñ¸èì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…Àè€Ø°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½È°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€ô°4(€€€É•Í•Ñ%¹¥ÑQ•áÐèì½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½È°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€€€É•Í•Ñ…¹•±	Ñ¸èì™±•àè€Ä°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éäô°4(€€€É•Í•Ñ…¹•±Q•áÐèì½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€€€É•Í•Ñ½¹™¥Éµ	Ñ¸èì™±•àè€Ä¸Ð°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½Èô°4(€€€É•Í•Ñ½¹™¥ÉµQ•áÐèì½±½Èè€ˆ™™˜ˆ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€€€•¹ÑÉåI½Üèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…Àè€àô°4(€€€•¹ÑÉå%¹ÁÕÐèì™±•àè€Äô°4(€€€•¹ÑÉåµ½Õ¹ÐèìÝ¥‘Ñ è€ÄÄÀô°4(€€€µ•µ‰•É…Éèì‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µô°4(€€€ÍÕ‰1…‰•°èì™½¹ÑM¥é”è€ÄÄ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°µ…É¥¹Q½Àè€Èô°4(€€€±½­Q½±”èì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…Àè€à°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€ô°4(€€€±½­Q½±•=¸èì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€±½­Q½±•Q•áÐèì™½¹ÑM¥é”è€ÄÐ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€‰½½­I½Üèì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…Àè€à°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´°4(€€€ô°4(€€€‰½½­I½ÝÑ¥Ù”èì‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä€¬€ˆÄÈˆô°4(€€€‰½½­9…µ”èì™±•àè€Ä°™½¹ÑM¥é”è€ÄÐ°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€É•µ½Ù•	Ñ¸èì4(€€€€€µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹Í´°4(€€€€€‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°4(€€€€€©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°4(€€€ô°4(€€€…‘‘	Ñ¸èì4(€€€€€™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…Àè€Ø°4(€€€€€Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°4(€€€€€‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°4(€€€ô°4(€€€…‘‘Q•áÐèì½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆ°™½¹ÑM¥é”è€ÄÌô°4(€ô¤ì4)ô4(
+      // returns to its pristine system-default look immediately (not the user's
+      // old theme lingering until the next cold start).
+      setMode('system');
+      setAnimationsEnabled(false);
+      router.replace('/onboarding' as any);
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Factory reset failed" });
+    } finally { setResetting(false); setConfirmFactoryReset(false); }
+  };
+  const updateMember = (i: number, field: "name" | "amount" | "profitSharePct", v: string) =>
+    setMembers((prev) => prev.map((m, idx) => (idx === i ? { ...m, [field]: v } : m)));
+  const addMember = () => setMembers((prev) => [...prev, { name: "", amount: "", profitSharePct: "" }]);
+  const removeMember = (i: number) => setMembers((prev) => prev.filter((_, idx) => idx !== i));
+
+  const switchBook = async (id: string) => {
+    if (id === activeBook) return;
+    await api.setActiveBook(id);
+    setActiveBookState(id);
+    const targetBook = books.find((b) => b.id === id);
+    const s = await api.getSettings();
+    const bookTheme = s.themeMode || (id === "default" ? "light" : id.charCodeAt(id.length - 1) % 2 === 0 ? "amoled_blue" : "navy_gold");
+    setMode(bookTheme as any);
+    await api.updateSettings({ themeMode: bookTheme });
+    setStatus({ ok: true, msg: `Switched to "${targetBook?.name || "Account"}". Records & theme updated.` });
+    await load();
+  };
+  const addBook = async () => {
+    if (!newBookName.trim()) return;
+    setAddingBook(true);
+    try {
+      const meta = await api.createBook(newBookName.trim(), newBookPersona);
+      setNewBookName("");
+      const bks = await api.listBooks();
+      setBooks(bks);
+      const defaultNewTheme = bks.length % 3 === 0 ? "navy_gold" : bks.length % 2 === 0 ? "amoled_blue" : "dark";
+      await api.setActiveBook(meta.id);
+      setActiveBookState(meta.id);
+      setMode(defaultNewTheme as any);
+      await api.updateSettings({ themeMode: defaultNewTheme, businessName: meta.name, businessType: newBookPersona });
+      
+      try {
+        const v2 = await api.getV2BookConfig();
+        if (v2) {
+          await api.updateV2BookConfig({
+            ...v2,
+            selectedPersonas: [newBookPersona],
+            activePersona: newBookPersona,
+          });
+        }
+      } catch {}
+
+      setStatus({ ok: true, msg: `Created & switched to new account "${meta.name}".` });
+      await load();
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Could not create account" });
+    } finally { setAddingBook(false); }
+  };
+  const removeBook = async (id: string) => {
+    const ok = await requireAuth("Confirm to delete this account");
+    if (!ok) return;
+    try {
+      await api.deleteBook(id);
+      const bks = await api.listBooks();
+      setBooks(bks);
+      setActiveBookState(api.activeBookId());
+      setStatus({ ok: true, msg: "Account deleted." });
+      await load();
+    } catch (e: any) {
+      setStatus({ ok: false, msg: e.message || "Could not delete account" });
+    }
+  };
+
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const isCustomProvider = provider !== "gemini";
+  const selectedProviderTitle = provider === "gemini"
+    ? "Google Gemini"
+    : provider === "anthropic"
+      ? "Anthropic Compatible"
+      : "OpenAI Compatible";
+  const hostingToneColor = hostingState.tone === "critical"
+    ? theme.color.error
+    : hostingState.tone === "attention"
+      ? theme.color.warning
+      : theme.color.brandPrimary;
+  const hostingBadgeLabel = hostingState.mode === "private_sync" ? "Connected" : "On device";
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.lg, paddingTop: 24, paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM + 6 }}>
+        <Pressable onPress={() => router.back()} style={{ marginRight: 12 }}>
+          <Ionicons name="arrow-back" size={24} color={theme.color.onSurface} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <ScreenHeader embedded title="Advanced" subtitle="System & Workflows" />
+        </View>
+      </View>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={theme.color.brandPrimary} />
+      ) : (
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            
+            <View style={styles.workflowSection}>
+              <AccordionRow title="System & Workflows" subtitle="Book health, sync and import previews" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View style={styles.workflowContent}>
+                <View testID="hosting-mode-summary" style={styles.workflowStatus}>
+                  <View style={[styles.workflowStatusIcon, { backgroundColor: hostingToneColor + "18" }]}>
+                    <Ionicons name={hostingState.mode === 'private_sync' ? 'cloud-done-outline' : 'phone-portrait-outline'} size={20} color={hostingToneColor} />
+                  </View>
+                  <View style={styles.workflowStatusCopy}>
+                    <View style={styles.workflowStatusTitleRow}>
+                      <Text style={styles.bookName}>{hostingState.label}</Text>
+                      <View style={[styles.workflowStatusBadge, { borderColor: hostingToneColor + "55", backgroundColor: hostingToneColor + "10" }]}>
+                        <View style={[styles.workflowStatusDot, { backgroundColor: hostingToneColor }]} />
+                        <Text numberOfLines={1} style={[styles.workflowStatusBadgeText, { color: hostingToneColor }]}>{hostingBadgeLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.subLabel, { marginTop: 5 }]}>{hostingState.summary}</Text>
+                    <Text style={[styles.subLabel, { marginTop: 3 }]}>{hostingState.detail}</Text>
+                  </View>
+                </View>
+                <Pressable testID="open-book-health" onPress={() => router.push('/book-health' as any)} style={styles.workflowRow}>
+                  <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Book Health</Text><Text style={styles.subLabel}>Read-only ledger, backup and recovery checks</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable testID="open-bank-import-preview" onPress={() => router.push('/bank-import-preview' as any)} style={styles.workflowRow}>
+                  <Ionicons name="document-text-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Bank Statement Preview</Text><Text style={styles.subLabel}>Read-only CSV preview; does not post entries</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable onPress={() => router.push('/sync-settings' as any)} style={styles.workflowRow}>
+                  <Ionicons name="cloud-upload-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Self-hosted Sync</Text><Text style={styles.subLabel}>Optional offline-first sync across your devices</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                <Pressable onPress={() => router.push('/sync-conflicts' as any)} style={[styles.workflowRow, styles.workflowRowLast]}>
+                  <Ionicons name="warning-outline" size={20} color={theme.color.brandPrimary} />
+                  <View style={{ flex: 1 }}><Text style={styles.bookName}>Sync Conflict Inbox</Text><Text style={styles.subLabel}>Review retained concurrent edits</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                </Pressable>
+                </View>
+              </AccordionRow>
+              
+              <AccordionRow title="Business Accounts (Books)" subtitle="Main Account (Active)" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Switch active business account. Each account has its own isolated ledger, business profile, workflows, and theme.</Text>
+                  <View style={{ gap: 8, marginTop: theme.spacing.sm }}>
+                    {books.map((b) => {
+                      const isActive = b.id === activeBook;
+                      return (
+                        <Pressable key={b.id} onPress={() => switchBook(b.id)} style={[{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface }, isActive && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "15" }]}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                            <Ionicons name={isActive ? "business" : "business-outline"} size={20} color={isActive ? theme.color.brandPrimary : theme.color.muted} />
+                            <Text style={[{ fontSize: 14, fontWeight: "700", color: theme.color.onSurface }, isActive && { color: theme.color.brandPrimary }]}>{b.name}</Text>
+                          </View>
+                          {isActive ? (
+                            <View style={{ backgroundColor: theme.color.brandPrimary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}><Text style={{ fontSize: 11, fontWeight: "700", color: theme.color.onBrandPrimary }}>Active</Text></View>
+                          ) : (
+                            <Text style={{ fontSize: 12, fontWeight: "600", color: theme.color.brandPrimary }}>Switch</Text>
+                          )}
+                          {b.id !== "default" && !isActive && (
+                            <Pressable onPress={() => removeBook(b.id)} style={{ marginLeft: 12 }}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <View style={{ marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.color.border }}>
+                    <Text style={[styles.label, { fontSize: 13, marginBottom: theme.spacing.xs }]}>+ Create New Business Account</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
+                      {PERSONAS.map(p => (
+                        <Pressable key={`new-${p.id}`} onPress={() => setNewBookPersona(p.id)} style={[{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceTertiary }, newBookPersona === p.id && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "20" }]}>
+                          <Text style={[{ fontSize: 12, fontWeight: "600", color: theme.color.onSurface }, newBookPersona === p.id && { color: theme.color.brandPrimary }]}>{p.label}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                    <View style={styles.entryRow}>
+                      <TextInput value={newBookName} onChangeText={setNewBookName} placeholder="New account name" placeholderTextColor={theme.color.muted} style={[styles.input, styles.entryInput]} />
+                      <Pressable onPress={addBook} disabled={addingBook || !newBookName.trim()} style={styles.addBtn}>
+                        {addingBook ? <ActivityIndicator color={theme.color.brandPrimary} /> : <><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add</Text></>}
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </AccordionRow>
+              <AccordionRow title="Accounting & Workflow" subtitle={accountingStyle === 'retail_partnership' ? "Basis, Style, Capital Accounts" : "Basis, Style"} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.label}>Accounting Basis</Text>
+                  <View style={styles.modeRow}>
+                    {(["cash", "accrual"] as const).map((b) => (
+                      <Pressable key={b} onPress={() => setAccountingBasis(b)} style={[styles.modeBtn, accountingBasis === b && styles.modeBtnActive]}>
+                        <Text style={[styles.modeText, accountingBasis === b && styles.modeTextActive]}>{b === "cash" ? "Cash Basis" : "Accrual Basis"}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Style</Text>
+                  <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
+                    <Pressable onPress={() => updateAccountingStyle('retail_partnership')} style={[styles.bookRow, accountingStyle === 'retail_partnership' && styles.bookRowActive]}>
+                      <Ionicons name={accountingStyle === 'retail_partnership' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'retail_partnership' ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Equity Split</Text></View>
+                    </Pressable>
+                    <Pressable onPress={() => updateAccountingStyle('standard')} style={[styles.bookRow, accountingStyle === 'standard' && styles.bookRowActive]}>
+                      <Ionicons name={accountingStyle === 'standard' ? 'radio-button-on' : 'radio-button-off'} size={20} color={accountingStyle === 'standard' ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}><Text style={styles.bookName}>Standard Entity</Text></View>
+                    </Pressable>
+                  </View>
+
+                  <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Accounting Periods</Text>
+                  <Text style={styles.hint}>Choose when transactions become permanently locked. Flexible is the default for ongoing books. This setting never unlocks an already-closed period.</Text>
+                  <View style={{ gap: 10, marginTop: theme.spacing.sm }}>
+                    <Pressable testID="period-policy-flexible" onPress={() => setPeriodMode("flexible")} style={[styles.bookRow, periodMode === "flexible" && styles.bookRowActive]}>
+                      <Ionicons name={periodMode === "flexible" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "flexible" ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bookName}>Flexible (Recommended)</Text>
+                        <Text style={styles.subLabel}>No assumed year-end. Keep entering dated records and close whenever you decide the period is complete.</Text>
+                      </View>
+                    </Pressable>
+                    <Pressable testID="period-policy-fixed" onPress={() => setPeriodMode("fixed")} style={[styles.bookRow, periodMode === "fixed" && styles.bookRowActive]}>
+                      <Ionicons name={periodMode === "fixed" ? "radio-button-on" : "radio-button-off"} size={20} color={periodMode === "fixed" ? theme.color.brandPrimary : theme.color.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bookName}>Fixed start and end dates</Text>
+                        <Text style={styles.subLabel}>Use a formal accounting window. Closing is allowed on the configured end date.</Text>
+                      </View>
+                    </Pressable>
+                  </View>
+                  {periodMode === "fixed" ? (
+                    <View style={[styles.entryRow, { marginTop: theme.spacing.sm }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.subLabel}>Start date</Text>
+                        <TextInput testID="period-fixed-start" value={periodStart} onChangeText={setPeriodStart} onBlur={() => { if (periodStart.trim()) setPeriodStart(normalizeDateInput(periodStart)); }} autoCapitalize="none" keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.subLabel}>End date</Text>
+                        <TextInput testID="period-fixed-end" value={periodEnd} onChangeText={setPeriodEnd} onBlur={() => { if (periodEnd.trim()) setPeriodEnd(normalizeDateInput(periodEnd)); }} autoCapitalize="none" keyboardType="numbers-and-punctuation" placeholder="YYYY-MM-DD" placeholderTextColor={theme.color.muted} style={styles.input} />
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {accountingStyle === 'retail_partnership' ? (
+                    <>
+                      <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>Capital Accounts</Text>
+                      {members.map((m, i) => (
+                        <View key={`member-${i}`} style={styles.memberCard}>
+                          <View style={styles.entryRow}>
+                            <TextInput value={m.name} onChangeText={(v) => updateMember(i, "name", v)} placeholder="Name" placeholderTextColor={theme.color.muted} autoCapitalize="words" style={[styles.input, styles.entryInput]} />
+                            <Pressable onPress={() => removeMember(i)} style={styles.removeBtn}><Ionicons name="trash-outline" size={18} color={theme.color.error} /></Pressable>
+                          </View>
+                          <View style={[styles.entryRow, { marginTop: 8 }]}>
+                            <View style={{ flex: 1 }}><Text style={styles.subLabel}>Investment (opt)</Text><TextInput value={m.amount} onChangeText={(v) => updateMember(i, "amount", v)} keyboardType="decimal-pad" placeholder="e.g. 5000" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                            <View style={{ flex: 1 }}><Text style={styles.subLabel}>Profit Share %</Text><TextInput value={m.profitSharePct} onChangeText={(v) => updateMember(i, "profitSharePct", v)} keyboardType="decimal-pad" placeholder="e.g. 50" placeholderTextColor={theme.color.muted} style={styles.input} /></View>
+                          </View>
+                        </View>
+                      ))}
+                      <Pressable onPress={addMember} style={styles.addBtn}><Ionicons name="add-outline" size={18} color={theme.color.brandPrimary} /><Text style={styles.addText}>Add Member</Text></Pressable>
+                    </>
+                  ) : null}
+                </View>
+              </AccordionRow>
+            </View>
+
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>AI & Integrations</Text>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Configure your AI provider and secure API access.</Text>
+              <AccordionRow title="AI Provider" subtitle={selectedProviderTitle} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <View style={styles.modeRow}>
+                    <Pressable
+                      onPress={() => chooseProvider("gemini")}
+                      style={[styles.modeBtn, !isCustomProvider && styles.modeBtnActive]}
+                    >
+                      <Text style={[styles.modeText, !isCustomProvider && styles.modeTextActive]}>Google Gemini</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => { if (provider === "gemini") chooseProvider("openai"); }}
+                      style={[styles.modeBtn, isCustomProvider && styles.modeBtnActive]}
+                    >
+                      <Text style={[styles.modeText, isCustomProvider && styles.modeTextActive]}>Custom Provider</Text>
+                    </Pressable>
+                  </View>
+                  {isCustomProvider && (
+                    <View style={[styles.modeRow, { marginTop: 8 }]}>
+                      <Pressable
+                        onPress={() => chooseProvider("openai")}
+                        style={[styles.modeBtn, provider === "openai" && styles.modeBtnActive]}
+                      >
+                        <Text style={[styles.modeText, provider === "openai" && styles.modeTextActive]}>OpenAI Compatible</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => chooseProvider("anthropic")}
+                        style={[styles.modeBtn, provider === "anthropic" && styles.modeBtnActive]}
+                      >
+                        <Text style={[styles.modeText, provider === "anthropic" && styles.modeTextActive]}>Anthropic Compatible</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
+                  <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
+                  <Text style={[styles.hint, { marginTop: 6 }]}>{Platform.OS === "web" ? "On web this key is stored in the browser, not a device keychain." : "Stored in this device's secure credential storage."}</Text>
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>
+                  <TextInput value={modelName} onChangeText={setModelName} placeholder={PROVIDERS.find((item) => item.id === provider)?.defaultModel || "model name"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                  {isCustomProvider ? (
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={styles.label}>Image / OCR model (optional)</Text>
+                      <TextInput testID="vision-model" value={visionModelName} onChangeText={setVisionModelName} placeholder="Leave blank to use the chat model" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                      <Text style={styles.hint}>Choose a vision-capable model for receipt photos and image Scan & Import. PDF upload remains Gemini-only; use page images or pasted text with other providers.</Text>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text model</Text>
+                      <TextInput testID="voice-transcription-model" value={transcriptionModelName} onChangeText={setTranscriptionModelName} placeholder="whisper-1" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text Base URL (optional)</Text>
+                      <TextInput testID="voice-transcription-base-url" value={transcriptionBaseUrl} onChangeText={(value) => { setTranscriptionBaseUrl(value); setCustomHostConfirmed(false); }} placeholder="https://api.openai.com/v1 or another speech host" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text API key (optional)</Text>
+                      <TextInput testID="voice-transcription-api-key" value={transcriptionKey} onChangeText={setTranscriptionKey} placeholder={provider === "openai" ? "Leave blank to reuse the chat key" : "Required for a separate speech host"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
+                      <Text style={styles.hint}>{provider === "openai" ? "Leave the voice URL and key blank only when the chat host supports /audio/transcriptions. OpenRouter chat commonly needs a separate speech endpoint." : "Anthropic has no speech endpoint. Add an OpenAI-compatible speech URL and key while keeping Anthropic for chat and image OCR."}</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.hint, { marginTop: theme.spacing.md }]}>Gemini uses the selected model for chat, image OCR, and voice transcription.</Text>
+                  )}
+                  {isCustomProvider && (
+                    <>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Base URL</Text>
+                      <TextInput
+                        value={baseUrl}
+                        onChangeText={(value) => { setBaseUrl(value); setCustomHostConfirmed(false); }}
+                        placeholder={provider === "openai" ? "https://openrouter.ai/api/v1 or any /v1 host" : "https://api.anthropic.com/v1"}
+                        placeholderTextColor={theme.color.muted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.input}
+                      />
+                      <Text style={styles.hint}>Your API key and selected book context will be sent to this host over HTTPS.</Text>
+                      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: customHostConfirmed }} onPress={() => setCustomHostConfirmed((value) => !value)} style={styles.securityCheckRow}>
+                        <Ionicons name={customHostConfirmed ? "checkbox" : "square-outline"} size={20} color={customHostConfirmed ? theme.color.brandPrimary : theme.color.muted} />
+                        <Text style={styles.securityCheckText}>I trust these custom chat, OCR, and voice hosts with the corresponding API keys and selected media or book data.</Text>
+                      </Pressable>
+                    </>
+                  )}
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
+                    <Pressable onPress={testKey} disabled={testing || !key} style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}>{testing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <Text style={styles.secondaryText}>Test Chat Connection</Text>}</Pressable>
+                    {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
+                  </View>
+                </View>
+              </AccordionRow>
+            </View>
+
+            <View style={{ backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, marginTop: theme.spacing.lg, padding: 20 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: theme.color.brandPrimary, marginBottom: 8 }}>Security & Data</Text>
+              <Text style={{ fontSize: 13, color: theme.color.muted, marginBottom: 16, lineHeight: 18 }}>Protect your sensitive actions and backups.</Text>
+              <AccordionRow title="App Lock" subtitle="Fingerprint / PIN" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Use your phoneâ€™s fingerprint / face / PIN to protect sensitive actions.</Text>
+                  <Pressable onPress={() => setLockEnabled((v) => !v)} style={[styles.lockToggle, lockEnabled && styles.lockToggleOn]}>
+                    <Ionicons name={lockEnabled ? "lock-closed" : "lock-open-outline"} size={18} color={lockEnabled ? theme.color.onBrandPrimary : theme.color.onSurface} />
+                    <Text style={[styles.lockToggleText, lockEnabled && { color: theme.color.onBrandPrimary }]}>{lockEnabled ? "App Lock ON" : "App Lock OFF"}</Text>
+                  </Pressable>
+                </View>
+              </AccordionRow>
+              <AccordionRow title="Backup & Restore" subtitle="Encrypted export and verified restore" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Create passphrase-encrypted recovery files, validate imports without changing data, and restore through the existing atomic multi-book engine.</Text>
+                  <Pressable testID="open-backup-recovery" onPress={() => router.push('/backup-recovery' as any)} style={[styles.bookRow, { marginTop: theme.spacing.sm }]}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color={theme.color.brandPrimary} />
+                    <View style={{ flex: 1 }}><Text style={styles.bookName}>Open Backup & Recovery</Text><Text style={styles.subLabel}>Encrypted export and verified restore</Text></View>
+                    <Ionicons name="chevron-forward" size={18} color={theme.color.muted} />
+                  </Pressable>
+                </View>
+              </AccordionRow>
+              <AccordionRow title="Danger Zone"
+                subtitle="Clear accounting data or reset this device" isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <View>
+                  <Text style={styles.hint}>Clear accounting data removes books, transactions, business accounts, inventory and periods while preserving preferences and AI configuration. Factory reset also removes business settings and AI credentials.</Text>
+                  {!confirmReset ? (
+                    <Pressable onPress={() => setConfirmReset(true)} style={styles.resetInitBtn}><Ionicons name="trash-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Clear Accounting Dataâ€¦</Text></Pressable>
+                  ) : (
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This cannot be undone. Consider exporting a backup first.</Text>
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                        <Pressable onPress={() => setConfirmReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
+                        <Pressable onPress={doReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, clear accounting data</Text>}</Pressable>
+                      </View>
+                    </View>
+                  )}
+                  {!confirmFactoryReset ? (
+                    <Pressable onPress={() => setConfirmFactoryReset(true)} style={[styles.resetInitBtn, { borderColor: theme.color.error + "99" }]}><Ionicons name="warning-outline" size={16} color={theme.color.error} /><Text style={styles.resetInitText}>Factory Reset Deviceâ€¦</Text></Pressable>
+                  ) : (
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={[styles.hint, { color: theme.color.error, fontWeight: "600" }]}>This wipes everything â€” all books & records, business configuration, the saved AI key, and your preferences (theme, animations, dashboard layout) â€” then returns to onboarding.</Text>
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.sm }}>
+                        <Pressable onPress={() => setConfirmFactoryReset(false)} style={styles.resetCancelBtn}><Text style={styles.resetCancelText}>Cancel</Text></Pressable>
+                        <Pressable onPress={doFactoryReset} disabled={resetting} style={styles.resetConfirmBtn}>{resetting ? <ActivityIndicator color="#fff" /> : <Text style={styles.resetConfirmText}>Yes, factory reset</Text>}</Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </AccordionRow>
+            </View>
+
+            {status && (
+              <View style={[styles.status, { backgroundColor: status.ok ? theme.color.successBg : theme.color.errorBg }]}>
+                <Ionicons name={status.ok ? "checkmark-circle" : "alert-circle"} size={18} color={status.ok ? theme.color.success : theme.color.error} />
+                <Text style={[styles.statusText, { color: status.ok ? theme.color.success : theme.color.error }]}>{status.msg}</Text>
+              </View>
+            )}
+
+            <Pressable testID="btn-save-settings" onPress={save} disabled={saving} style={({ pressed }) => [styles.primaryBtn, (pressed || saving) && { opacity: 0.85 }]}>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Save Settings</Text>}
+            </Pressable>
+            <View style={{ height: 120 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+function makeStyles(theme: any) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.color.surface },
+    scroll: { paddingHorizontal: theme.spacing.lg, paddingBottom: 60 },
+    workflowSection: {
+      backgroundColor: theme.color.surfaceSecondary,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.color.border,
+      marginTop: theme.spacing.lg,
+      padding: 20,
+    },
+    workflowContent: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.color.border,
+      paddingTop: theme.spacing.sm,
+      paddingBottom: theme.spacing.xs,
+    },
+    workflowStatus: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: theme.spacing.md,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.color.border,
+    },
+    workflowStatusIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+    workflowStatusCopy: { flex: 1, minWidth: 0 },
+    workflowStatusTitleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+    workflowStatusBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+    workflowStatusDot: { width: 6, height: 6, borderRadius: 3 },
+    workflowStatusBadgeText: { fontSize: 10, fontWeight: "700" },
+    workflowRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+      paddingVertical: 18,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.color.border,
+    },
+    workflowRowLast: { borderBottomWidth: 0 },
+    label: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+    hint: { fontSize: 12, color: theme.color.muted, marginTop: 4 },
+    input: {
+      marginTop: theme.spacing.md,
+      borderWidth: 1,
+      borderColor: theme.color.border,
+      backgroundColor: theme.color.surface,
+      borderRadius: theme.radius.md,
+      padding: theme.spacing.md,
+      fontSize: 14,
+      color: theme.color.onSurface,
+    },
+    primaryBtn: {
+      backgroundColor: theme.color.brandPrimary,
+      padding: theme.spacing.lg,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      marginTop: theme.spacing.lg,
+    },
+    primaryText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+    secondaryBtn: {
+      marginTop: theme.spacing.md,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: theme.color.brandPrimary,
+    },
+    secondaryText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 14 },
+    status: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      marginTop: theme.spacing.md,
+    },
+    statusText: { fontSize: 13, fontWeight: "500", flex: 1 },
+    modeRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.md },
+    modeBtn: {
+      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+      gap: 6, padding: theme.spacing.md, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+    },
+    modeBtnActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    modeText: { fontSize: 13, fontWeight: "600", color: theme.color.onSurface },
+    modeTextActive: { color: theme.color.onBrandPrimary },
+    securityCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: theme.spacing.md, paddingVertical: 8 },
+    securityCheckText: { flex: 1, fontSize: 12, lineHeight: 18, color: theme.color.onSurface },
+    currencyChip: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center",
+      paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      minWidth: 88,
+    },
+    currencyChipActive: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    currencyChipText: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+    currencyChipTextActive: { color: theme.color.onBrandPrimary },
+    backupRow: { flexDirection: "row", gap: 8, marginTop: theme.spacing.md },
+    backupBtn: {
+      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      padding: theme.spacing.md, borderRadius: theme.radius.md,
+    },
+    backupBtnPrimary: { backgroundColor: theme.color.brandPrimary },
+    backupBtnSecondary: { borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
+    backupBtnTextPrimary: { color: "#fff", fontWeight: "600", fontSize: 13 },
+    backupBtnTextSecondary: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
+    resetInitBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      padding: theme.spacing.md, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.error, marginTop: theme.spacing.md,
+    },
+    resetInitText: { color: theme.color.error, fontWeight: "600", fontSize: 13 },
+    resetCancelBtn: { flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
+    resetCancelText: { color: theme.color.onSurface, fontWeight: "600", fontSize: 13 },
+    resetConfirmBtn: { flex: 1.4, padding: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center", backgroundColor: theme.color.error },
+    resetConfirmText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+    entryRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    entryInput: { flex: 1 },
+    entryAmount: { width: 110 },
+    memberCard: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, marginTop: theme.spacing.md },
+    subLabel: { fontSize: 11, color: theme.color.muted, marginTop: 2 },
+    lockToggle: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+      padding: theme.spacing.md, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      marginTop: theme.spacing.md,
+    },
+    lockToggleOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+    lockToggleText: { fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+    bookRow: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      padding: theme.spacing.md, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+      marginTop: theme.spacing.sm,
+    },
+    bookRowActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandPrimary + "12" },
+    bookName: { flex: 1, fontSize: 14, fontWeight: "600", color: theme.color.onSurface },
+    removeBtn: {
+      marginTop: theme.spacing.md,
+      padding: theme.spacing.sm,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      padding: theme.spacing.md, borderRadius: theme.radius.md,
+      borderWidth: 1, borderColor: theme.color.brandPrimary, marginTop: theme.spacing.md,
+    },
+    addText: { color: theme.color.brandPrimary, fontWeight: "600", fontSize: 13 },
+  });
+}
