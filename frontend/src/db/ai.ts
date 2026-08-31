@@ -135,7 +135,7 @@ function resolveBaseUrl(cfg: AIConfig): string {
  * Core text/multimodal call. Returns raw text (possibly JSON string).
  * parts: array of { inlineData: { mimeType, data(base64) } } for images/audio.
  */
-type AICallOptions = { maxOutputTokens?: number };
+export type AICallOptions = { maxOutputTokens?: number; timeoutMs?: number };
 
 async function call(
   cfg: AIConfig,
@@ -163,9 +163,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
+async function fetchOnce(url: string, init: RequestInit, timeoutMs = AI_REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error: any) {
@@ -177,19 +177,18 @@ async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
 }
 
 /**
- * Fetch with a 60s timeout and one automatic retry for temporary provider,
- * rate-limit, network, or timeout failures. Permanent failures are returned
- * immediately so callers can show the provider's actionable error.
+ * Fetch with an automatic retry for temporary provider, rate-limit, network, or timeout failures.
+ * Permanent failures are returned immediately so callers can show the provider's actionable error.
  */
-async function fetchAI(url: string, init: RequestInit): Promise<Response> {
+async function fetchAI(url: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
   try {
-    const res = await fetchOnce(url, init);
+    const res = await fetchOnce(url, init, timeoutMs);
     if (!TRANSIENT_AI_STATUSES.has(res.status)) return res;
   } catch {
     // A second attempt below covers brief connectivity and timeout failures.
   }
   await delay(AI_TRANSIENT_RETRY_MS);
-  return fetchOnce(url, init);
+  return fetchOnce(url, init, timeoutMs);
 }
 
 /**
@@ -242,7 +241,7 @@ async function callGeminiModel(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey, 'x-request-id': requestId },
     body: JSON.stringify(body),
-  });
+  }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -304,7 +303,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     headers['HTTP-Referer'] = 'https://ledgr.app';
     headers['X-Title'] = 'Ledgr';
   }
-  const res = await fetchAI(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetchAI(url, { method: 'POST', headers, body: JSON.stringify(body) }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -363,7 +362,7 @@ async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-  });
+  }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -390,8 +389,9 @@ function parseJson(raw: string): any {
 // ================= Public surface (same as old gemini.ts) =================
 
 export async function testKey(cfg: AIConfig) {
-  const out = await call(cfg, 'Reply with the single word: OK');
-  return { ok: true, reply: (out || '').trim() };
+  const out = await call(cfg, 'Reply with the single word: OK', [], undefined, { maxOutputTokens: 5, timeoutMs: 10_000 });
+  const cleaned = (out || '').replace(/^["']|["']$/g, '').trim();
+  return { ok: true, reply: cleaned };
 }
 
 const PARSE_SCHEMA = {
