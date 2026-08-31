@@ -5,13 +5,12 @@ const root = path.join(__dirname, '..');
 const readApp = (relativePath: string) => fs.readFileSync(path.join(root, 'app', relativePath), 'utf8');
 
 describe('271269 UI/UX remediation contracts', () => {
-  it('keeps Ask AI voice retry inline and reserves navigation for explicit provider setup', () => {
+  it('keeps Ask AI chat and voice transaction entry as separate, explicit workflows', () => {
     const source = readApp('ask.tsx');
-    expect(source).toContain('testID="ask-voice-inline"');
-    expect(source).toContain('Retry Ask AI voice input');
-    expect(source).toContain('voicePhase === "setup" || voicePhase === "error" ? startAskVoice');
-    expect(source).toContain('testID="ask-open-provider-setup"');
-    expect(source).not.toMatch(/voicePhase === "setup" \? openVoiceSetup/);
+    expect(source).toContain('accessibilityLabel="Open voice transaction assistant"');
+    expect(source).toContain('router.push("/voice" as Href)');
+    expect(source).not.toContain('testID="ask-voice-inline"');
+    expect(source).not.toContain('Adding it to this chat');
   });
 
   it('keeps accounting configuration out of Main Settings and canonical in Advanced Settings', () => {

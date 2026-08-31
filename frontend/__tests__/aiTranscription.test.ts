@@ -74,7 +74,26 @@ describe('voice transcription provider routing', () => {
     global.fetch = fetchSpy as any;
 
     await expect(transcribe({ provider: 'anthropic', apiKey: 'test-key', model: 'claude-sonnet-4-6' }, 'YQ=='))
-      .rejects.toThrow('Anthropic does not provide a speech-to-text endpoint');
+      .rejects.toThrow('Anthropic does not include speech-to-text');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('lets Anthropic chat use a separate OpenAI-compatible voice endpoint', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue(response({ text: 'paid supplier 100 today' }));
+    global.fetch = fetchSpy as any;
+
+    await expect(transcribe({
+      provider: 'anthropic',
+      apiKey: 'anthropic-key',
+      model: 'claude-sonnet-4-6',
+      transcriptionModel: 'whisper-large-v3',
+      transcriptionBaseUrl: 'https://speech.example.com/v1',
+      transcriptionApiKey: 'speech-key',
+    }, 'YQ==', 'audio/m4a')).resolves.toEqual({ transcript: 'paid supplier 100 today' });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://speech.example.com/v1/audio/transcriptions',
+      expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer speech-key' } }),
+    );
+    expect((fetchSpy.mock.calls[0][1].body as FormData).get('model')).toBe('whisper-large-v3');
   });
 });

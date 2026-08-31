@@ -17,16 +17,12 @@ describe('271412 UI/UX remediation contracts', () => {
     expect(theme).toContain("surfaceSecondary: '#F1F5F2'");
   });
 
-  it('keeps Ask AI voice inside the composer with a bounded themed waveform and stop/cancel recovery', () => {
+  it('uses one voice transaction workflow while preserving the themed voice orb', () => {
     const ask = readApp('ask.tsx');
     const orb = readSource('components/VoiceOrb.tsx');
-    expect(ask).toContain('testID="ask-voice-inline"');
-    expect(ask).toContain('Tap Stop to add');
-    expect(ask).toContain('Stop Ask AI voice input');
-    expect(ask).toContain('Cancel Ask AI voice input');
-    expect(ask).toContain('overflow: "visible"');
-    expect(ask).toContain('voicePhase === "idle" || input.trim().length > 0');
-    expect(ask).toContain('voiceInputWrapper');
+    expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
+    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).not.toContain('voiceInputWrapper');
     expect(orb).toContain('backgroundColor: accent');
     expect(orb).toContain('waveCompact');
     expect(orb).toContain('minWidth: 30');

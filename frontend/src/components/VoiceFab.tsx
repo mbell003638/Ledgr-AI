@@ -6,8 +6,9 @@ import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
-import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
+import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
@@ -47,19 +48,7 @@ export default function VoiceFab() {
     ]);
     const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
     if (!resolution.ok) throw new Error(resolution.question);
-    const p: any = resolution.command;
-    const proposalByIntent: Record<string, any> = {
-      expense: { type: 'add_expense', params: { category: p.category || 'General', amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-      bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-      sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-      receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
-      supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-      drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-      inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
-    };
-    const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
-    if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);
-    return { parsed: p, validation };
+    return buildVoiceTransactionDraft(resolution.command);
   };
 
   const start = useCallback(async () => {
@@ -67,8 +56,6 @@ export default function VoiceFab() {
     try {
       const config = await api.getAIConfig();
       if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
-      if (config.provider === "anthropic") throw new Error("Anthropic can answer text, but it does not provide speech-to-text. Choose Gemini or an OpenAI-compatible provider.");
-      if (config.provider === "openai" && !config.baseUrl?.trim()) throw new Error("Add the OpenAI-compatible Base URL in Advanced Settings before using voice input.");
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
@@ -253,7 +240,9 @@ export default function VoiceFab() {
             <View style={styles.errorDock}>
               <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
               <View style={styles.errorCopy}>
+                {transcript ? <TextInput accessibilityLabel="Editable failed voice transcript" testID="voice-fab-error-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
                 <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+                {transcript ? <Pressable testID="voice-fab-error-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                 {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>

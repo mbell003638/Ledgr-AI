@@ -14,33 +14,18 @@ describe('271344 UI/UX remediation contracts', () => {
     expect(home).not.toContain('shadowOffset: { width: 0, height: 10 }');
   });
 
-  it('keeps compact Ask AI voice waveform visible beside the mic', () => {
+  it('routes the Ask AI microphone to the shared voice transaction assistant', () => {
     const ask = readApp('ask.tsx');
     const orb = readSource('components/VoiceOrb.tsx');
-    expect(ask).toContain('askVoiceInline');
-    expect(ask).toContain('overflow: "visible"');
-    expect(ask).toContain('boxShadow: "none"');
-    expect(orb).toContain('const bars = compact ? BAR_HEIGHTS.slice(3, 10) : BAR_HEIGHTS');
-    expect(orb).toContain('waveCompact');
-    expect(orb).toContain('overflow: "visible"');
-    expect(ask).toContain('Stop Ask AI voice input');
-    expect(ask).toContain('Cancel Ask AI voice input');
-    expect(ask).toContain('voicePhase === "review"');
-    expect(ask).toContain('Retry Ask AI voice input');
-    expect(ask).toContain('Cancel Ask AI voice review');
-    expect(ask).toContain('Send transcribed message');
-    expect(ask).toContain('setInput(transcript)');
-    expect(ask).toContain('RecordingPresets.LOW_QUALITY');
-    expect(ask).toContain('isNeutralTranscript(q)');
+    expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
+    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).not.toContain('Adding it to this chat');
+    expect(ask).not.toContain('useAudioRecorder');
     expect(ask).toContain('testID="ask-attachment-actions"');
     expect(ask).toContain('accessibilityLabel="Use camera for receipt"');
     expect(ask).toContain('accessibilityLabel="Choose receipt image"');
     expect(ask).toContain('accessibilityLabel="Scan receipt"');
-    expect(ask).toContain('height: 48, minHeight: 48');
-    expect(ask).toContain('justifyContent: "center"');
-    expect(ask).toContain('borderTopLeftRadius: 24');
-    expect(ask).toContain('borderTopRightRadius: 24');
-    expect(ask).toContain('width: 36, height: 36, borderRadius: 18');
+    expect(orb).toContain('const bars = compact ? BAR_HEIGHTS.slice(3, 10) : BAR_HEIGHTS');
   });
 
   it('keeps Reports cards single-surface and location chips stable on narrow screens', () => {

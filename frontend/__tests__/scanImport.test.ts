@@ -103,6 +103,54 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     expect(normalizeScanDate('9999-01-01')).toBeNull();
     expect(normalizeScanDate('junk')).toBeNull();
   });
+  it('uses the configured vision model and retries without unsupported JSON mode', async () => {
+    const previousFetch = global.fetch;
+    const valid = JSON.stringify({ docType: 'receipt', summary: 'Fuel receipt', entries: [] });
+    const fetchSpy = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request', text: async () => JSON.stringify({ error: { message: 'response_format json_object is unsupported' } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ choices: [{ message: { content: valid } }] }) });
+    global.fetch = fetchSpy as any;
+    try {
+      await expect(analyzeDocumentAI(
+        { provider: 'openai', apiKey: 'test-key', model: 'chat-only', visionModel: 'vision-model', baseUrl: 'https://example.com/v1' },
+        { base64: 'aW1hZ2U=', mimeType: 'image/jpeg' },
+      )).resolves.toMatchObject({ docType: 'receipt', summary: 'Fuel receipt' });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const firstBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      const secondBody = JSON.parse(fetchSpy.mock.calls[1][1].body);
+      expect(firstBody.model).toBe('vision-model');
+      expect(firstBody.messages[0].content[1].image_url.url).toContain('data:image/jpeg;base64,aW1hZ2U=');
+      expect(firstBody.response_format).toEqual({ type: 'json_object' });
+      expect(secondBody.response_format).toBeUndefined();
+      expect(secondBody.messages[0].content[0].text).toMatch(/valid JSON object only/i);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+  it('uses a separate vision model for Anthropic image OCR', async () => {
+    const previousFetch = global.fetch;
+    const valid = JSON.stringify({ docType: 'receipt', summary: 'Store receipt', entries: [] });
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: valid }] }),
+    });
+    global.fetch = fetchSpy as any;
+    try {
+      await expect(analyzeDocumentAI(
+        { provider: 'anthropic', apiKey: 'anthropic-key', model: 'chat-model', visionModel: 'vision-model' },
+        { base64: 'aW1hZ2U=', mimeType: 'image/jpeg' },
+      )).resolves.toMatchObject({ docType: 'receipt', summary: 'Store receipt' });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://api.anthropic.com/v1/messages',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.model).toBe('vision-model');
+      expect(body.messages[0].content[1]).toMatchObject({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'aW1hZ2U=' } });
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
 });
 
 describe('mapAnalyzedDocument', () => {
