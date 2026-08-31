@@ -6,7 +6,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { Card } from "@/src/components/UI";
 import {
@@ -28,6 +28,7 @@ const scanNote = (base?: string) => `${SCAN_TAG} ${base || "Imported from docume
 
 // Hard cap on the base64 payload we send to the AI provider (~8MB of base64).
 const MAX_BASE64_CHARS = 8 * 1024 * 1024;
+const MAX_SOURCE_BYTES = Math.floor(MAX_BASE64_CHARS * 3 / 4);
 
 type RowStatus = { state: "created" | "failed"; message: string };
 type AnalysisInput = { base64?: string; mimeType?: string; text?: string };
@@ -101,7 +102,7 @@ export default function ScanImport() {
 
   const analyze = async (input: AnalysisInput) => {
     if (input.base64 && input.base64.length > MAX_BASE64_CHARS) {
-      setError("That file is too large (over ~8MB). Try a smaller photo, a lower-resolution scan, or paste the text instead.");
+      setError("That encoded file is too large for a direct AI upload. Try a file under 6MB, a lower-resolution scan, or paste the text instead.");
       return;
     }
     lastAnalysisInput.current = input;
@@ -156,16 +157,25 @@ export default function ScanImport() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { setError("Camera permission denied"); return; }
     const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets[0].base64) return;
-    await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
+    if (res.canceled) return;
+    const asset = res.assets[0];
+    if (!asset?.base64) { setError("The camera did not return readable image data. Try taking the photo again."); return; }
+    await analyze({ base64: asset.base64, mimeType: "image/jpeg" });
   };
 
   const pickGallery = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setError("Gallery permission denied"); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (res.canceled || !res.assets[0].base64) return;
-    await analyze({ base64: res.assets[0].base64, mimeType: res.assets[0].mimeType || "image/jpeg" });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      base64: true,
+      quality: 0.7,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+    });
+    if (res.canceled) return;
+    const asset = res.assets[0];
+    if (!asset?.base64) { setError("The selected file did not contain readable image data. Try a JPEG or PNG image."); return; }
+    await analyze({ base64: asset.base64, mimeType: "image/jpeg" });
   };
 
   const pickPdf = async () => {
@@ -174,7 +184,17 @@ export default function ScanImport() {
       const FileSystem = await import("expo-file-system");
       const res = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
       if (res.canceled || !res.assets?.[0]) return;
-      const file = new FileSystem.File(res.assets[0].uri);
+      const asset = res.assets[0];
+      const config = await getAIConfig();
+      if (config.provider !== "gemini") {
+        setError("PDF Scan & Import requires the Gemini provider. With another provider, upload page images or paste the PDF text.");
+        return;
+      }
+      if (Number(asset.size || 0) > MAX_SOURCE_BYTES) {
+        setError("That PDF is too large for a direct AI upload. Use a file under 6MB, split it into smaller PDFs, or paste the text.");
+        return;
+      }
+      const file = new FileSystem.File(asset.uri);
       const b64 = file.base64Sync();
       await analyze({ base64: b64, mimeType: "application/pdf" });
     } catch (e: any) {

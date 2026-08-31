@@ -225,13 +225,13 @@ export default function AdvancedSettingsScreen() {
     setTestResult(null);
     try {
       const meta = PROVIDERS.find((p) => p.id === provider)!;
-      await setAIConfig({
+      const draftConfig = {
         provider,
         apiKey: key.trim(),
         model: modelName.trim() || meta.defaultModel,
         baseUrl: baseUrl.trim() || undefined,
-      });
-      await api.testKey();
+      };
+      await api.testKey(draftConfig);
       setTestResult({ ok: true, msg: `✓ Connected` });
     } catch (e: any) {
       setTestResult({ ok: false, msg: `✗ ${e.message || "Failed"}` });

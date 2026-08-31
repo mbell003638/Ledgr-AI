@@ -23,6 +23,51 @@ const normalized = (value: unknown) => String(value || '').trim().toLocaleLowerC
 const exact = (rows: NamedAccount[], name: string) => rows.filter((row) => normalized(row.name) === normalized(name));
 const one = (rows: NamedAccount[]) => rows.length === 1 ? rows[0] : null;
 
+/**
+ * Parse the common "paid AMOUNT ... to NAME" shape locally. This deliberately
+ * handles only a narrow, high-confidence form: broader language still goes to
+ * the configured AI provider. Keeping party resolution local means summary
+ * mode does not have to disclose account names just to identify an exact
+ * Supplier or Capital Account.
+ */
+export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | null {
+  const match = transcript.match(/\b(?:pay|paid|paying|send|sent|gave|transfer|transferred)\b([\s\S]*?)\bto\b\s+([\s\S]+)$/i);
+  if (!match) return null;
+
+  // Explicit non-today dates need the provider's date parser; never silently
+  // turn them into today's date.
+  if (/\b(?:yesterday|tomorrow)\b|\b\d{4}-\d{1,2}-\d{1,2}\b|\bon\s+\d{1,2}[\/-]\d{1,2}/i.test(transcript)) return null;
+
+  const amountMatch = match[1].match(/(?:[$€£₹]\s*)?(\d[\d,]*(?:\.\d+)?)\s*(?:[$€£₹]|(?:USD|CAD|EUR|GBP|INR)\b)?/i);
+  if (!amountMatch) return null;
+  const amount = Number(amountMatch[1].replace(/,/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const name = match[2]
+    .replace(/\s+(?:today|now)\s*$/i, '')
+    .replace(/\s+(?:via|using|by|from)\s+(?:cash|bank(?:\s+transfer)?|card|mobile|upi)\b[\s\S]*$/i, '')
+    .replace(/\s+(?:as|for)\s+(?:a\s+)?(?:supplier\s+payment|capital\s+(?:account|withdrawal)|drawing)\b[\s\S]*$/i, '')
+    .replace(/^\s*(?:supplier|vendor|capital\s+account)\s+/i, '')
+    .replace(/[.,!?;:]+\s*$/, '')
+    .trim();
+  if (!name || name.length > 160) return null;
+
+  const method = /\bupi\b/i.test(transcript) ? 'upi'
+    : /\bmobile\b/i.test(transcript) ? 'mobile'
+    : /\bcard\b/i.test(transcript) ? 'card'
+    : /\bbank(?:\s+transfer)?\b/i.test(transcript) ? 'bank'
+    : /\bcash\b/i.test(transcript) ? 'cash'
+    : undefined;
+
+  return {
+    intent: 'supplier_payment',
+    amount,
+    supplierName: name,
+    ...(method ? { method } : {}),
+    summary: `Pay ${amount} to ${name}`,
+  };
+}
+
 function spokenName(command: VoiceCommand): string {
   return String(command.supplierName || command.customerName || command.partnerName || '').trim();
 }
@@ -105,6 +150,10 @@ export function resolveVoicePartyCommand(
   const supplier = one(suppliers);
   if (supplier && customers.length === 0 && capitalAccounts.length === 0) {
     return { ok: true, command: { ...input, intent: 'supplier_payment', supplierName: supplier.name, customerName: undefined, partnerName: undefined } };
+  }
+  const capital = one(capitalAccounts);
+  if (capital && suppliers.length === 0 && customers.length === 0) {
+    return { ok: true, command: { ...input, intent: 'drawing', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Withdraw ${Number(input.amount || 0)} from ${capital.name} Capital Account` } };
   }
   return roleQuestion(name, roles);
 }

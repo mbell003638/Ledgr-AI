@@ -1,4 +1,4 @@
-import { resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
+import { parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
 import { V2AppService } from '../src/accountingV2/appService';
 
 const supplier = { id: 'supplier-amit', name: 'Amit' };
@@ -7,12 +7,22 @@ const capital = { id: 'member-amit', name: 'Amit' };
 const command = { intent: 'supplier_payment', supplierName: 'Amit', amount: 100, summary: 'Paid 100 to Amit' };
 
 describe('voice party-role resolution', () => {
-  it('asks before treating an ambiguous payment to a Capital Account as a withdrawal', () => {
+  it('routes an exact Capital Account-only payment to a withdrawal without another role question', () => {
     const result = resolveVoicePartyCommand(command, 'Paid 100 to Amit', {
       suppliers: [], customers: [], capitalAccounts: [capital],
     });
-    expect(result).toMatchObject({ ok: false });
-    if (!result.ok) expect(result.question).toMatch(/Capital Account.*withdraw capital/i);
+    expect(result).toMatchObject({
+      ok: true,
+      command: { intent: 'drawing', partnerName: 'Amit', amount: 100 },
+    });
+  });
+
+  it('parses a currency-after-amount outgoing payment for local exact matching', () => {
+    expect(parseSimpleOutgoingPayment('Paid 100$ today to Amit')).toMatchObject({
+      intent: 'supplier_payment',
+      supplierName: 'Amit',
+      amount: 100,
+    });
   });
 
   it('keeps Supplier Payment when only an exact Supplier matches', () => {
@@ -65,13 +75,13 @@ describe('voice party-role resolution', () => {
     })).toMatchObject({ ok: false });
   });
 
-  it('does not let a payment misclassified as a bill bypass role clarification', () => {
+  it('recovers a paid-to Capital Account even when the provider labeled it as a bill', () => {
     const result = resolveVoicePartyCommand(
       { intent: 'bill', supplierName: 'Amit', amount: 100 },
       'Paid 100 to Amit',
       { suppliers: [], customers: [], capitalAccounts: [capital] },
     );
-    expect(result).toMatchObject({ ok: false });
+    expect(result).toMatchObject({ ok: true, command: { intent: 'drawing', partnerName: 'Amit' } });
   });
 
   it('requires an exact existing Supplier for bills but allows an unnamed walk-in cash sale receipt', () => {
