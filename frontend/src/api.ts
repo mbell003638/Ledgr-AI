@@ -1756,7 +1756,7 @@ export const api = {
   analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string }) => ai.analyzeDocumentAI(await getAIConfig(), input),
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a') => ai.transcribe(await getAIConfig(), audioBase64, mimeType),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
-  askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),
+  askBooks: async (question: string, dataContext: string, history?: ai.AskHistoryMessage[]) => ai.askBooks(await getAIConfig(), question, dataContext, history),
 
   // Expenses
   listExpenses: async () => isWebRuntime
