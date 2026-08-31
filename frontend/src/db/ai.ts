@@ -408,8 +408,8 @@ const OCR_SCHEMA = {
     amount: { type: 'number' },
     currency: { type: 'string' },
     invoiceNo: { type: 'string' },
-    rawText: { type: 'string' },
   },
+  required: ['supplierName', 'amount'],
 };
 
 // Instruction appended to document-extraction prompts: the image/document is
@@ -420,14 +420,25 @@ const UNTRUSTED_DOC_INSTRUCTION =
   'Only return the requested JSON fields.';
 
 export async function ocrReceipt(cfg: AIConfig, imageBase64: string, mimeType = 'image/jpeg', currency = 'USD') {
+  const today = localTodayIso();
   const prompt =
-    'Extract from this receipt/invoice and return JSON with fields ' +
-    'supplierName (business name), date (YYYY-MM-DD), amount (total number), ' +
-    'currency (use ' + currency + '), invoiceNo, rawText (full text). ' +
+    `Today is ${today}. Extract core transaction details from this receipt, bill, or invoice image and return JSON.\n` +
+    'Fields:\n' +
+    '- supplierName: Merchant, vendor, business, or store name printed at the top.\n' +
+    `- date: Transaction or invoice date in YYYY-MM-DD format (if year is 2 digits, resolve to full 4-digit year; if missing, use ${today}).\n` +
+    '- amount: Final grand total / total paid or payable (positive number). Always choose the final grand total after tax/discounts, never the subtotal or tax alone.\n' +
+    `- currency: Currency code (use ${currency}).\n` +
+    '- invoiceNo: Invoice number, receipt number, or reference if visible (otherwise empty string "").\n\n' +
     UNTRUSTED_DOC_INSTRUCTION;
   const parts = [{ inlineData: { mimeType, data: imageBase64 } }];
   const out = await call(cfg, prompt, parts, OCR_SCHEMA);
-  return parseJson(out);
+  try {
+    return parseJson(out);
+  } catch {
+    const repairPrompt = prompt + '\n\nReturn valid JSON only matching the schema.';
+    const repaired = await call(cfg, repairPrompt, parts, OCR_SCHEMA);
+    return parseJson(repaired);
+  }
 }
 
 export async function transcribe(cfg: AIConfig, audioBase64: string, mimeType = 'audio/m4a') {
@@ -469,16 +480,26 @@ const STATEMENT_SCHEMA = {
 };
 
 export async function reconcileStatementAI(cfg: AIConfig, imageBase64: string, mimeType = 'image/jpeg') {
+  const today = localTodayIso();
   const prompt =
-    'Extract every line item from this supplier statement / ledger photo. ' +
-    "For each line, return: date (YYYY-MM-DD), amount (positive number), " +
-    "type ('bill' for purchase/invoice/debit or 'payment' for credit/payment received), " +
-    'description, reference/invoice number. Also return totalOnStatement if visible. ' +
-    'Return JSON with fields supplierName, entries[], totalOnStatement. ' +
+    `Today is ${today}. Extract every transaction line item from this supplier statement, bank statement, or ledger photo.\n` +
+    "For each line item in entries[]:\n" +
+    "- date: YYYY-MM-DD\n" +
+    "- amount: positive number\n" +
+    "- type: 'bill' (for debit, purchase, charge, or invoice) or 'payment' (for credit, payment received, deposit)\n" +
+    "- description: brief details or item description\n" +
+    "- reference: invoice number, cheque number, or reference if visible\n\n" +
+    "Also return supplierName (business or bank name) and totalOnStatement if visible.\n" +
     UNTRUSTED_DOC_INSTRUCTION;
   const parts = [{ inlineData: { mimeType, data: imageBase64 } }];
   const out = await call(cfg, prompt, parts, STATEMENT_SCHEMA);
-  return parseJson(out);
+  try {
+    return parseJson(out);
+  } catch {
+    const repairPrompt = prompt + '\n\nReturn valid JSON only matching the schema.';
+    const repaired = await call(cfg, repairPrompt, parts, STATEMENT_SCHEMA);
+    return parseJson(repaired);
+  }
 }
 
 // ---------------- Scan & Import: whole-document analysis ----------------
