@@ -18,7 +18,7 @@ describe('V2 UI contracts', () => {
   it.each(['ask.tsx', 'voice.tsx'])('%s routes writes through the explicit V2 confirmation gate', (screen) => {
     const source = readApp(screen);
 
-    expect(source).toContain('validateAssistantProposal');
+    expect(source).toMatch(/validateAssistantProposal|buildVoiceTransactionDraft/);
     expect(source).toContain('executeAssistantProposal');
     expect(source).toMatch(/executeAssistantProposal\([\s\S]*?\{\s*confirmed:\s*true\s*\}/);
   });
@@ -34,7 +34,7 @@ describe('V2 UI contracts', () => {
 
   it('voice validates the draft before showing confirmation and executes only from the confirm handler', () => {
     const source = readApp('voice.tsx');
-    const validationIndex = source.indexOf('validateAssistantProposal');
+    const validationIndex = source.indexOf('const draft = await buildVoiceDraft');
     const confirmPhaseIndex = source.indexOf('setPhase("confirm")');
     const confirmHandlerIndex = source.indexOf('const confirmSave');
     const executeIndex = source.indexOf('await executeAssistantProposal', confirmHandlerIndex);
@@ -447,6 +447,10 @@ describe('V2 UI contracts', () => {
     const advanced = readApp('advanced-settings.tsx');
 
     expect(advanced).toContain('Google Gemini');
+    expect(advanced).toContain('voice-transcription-model');
+    expect(advanced).toContain('voice-transcription-base-url');
+    expect(advanced).toContain('voice-transcription-api-key');
+    expect(advanced).toContain('vision-model');
     expect(advanced).toContain('Custom Provider');
     expect(advanced).toContain('OpenAI Compatible');
     expect(advanced).toContain('Anthropic Compatible');
@@ -475,7 +479,7 @@ describe('V2 UI contracts', () => {
     expect(picker).toContain('OpenAI Compatible');
     expect(picker).toContain('Anthropic Compatible');
 
-    const baseUrlIdx = advanced.indexOf('Base URL', apiKeyStart);
+    const baseUrlIdx = advanced.indexOf('>Base URL</Text>', apiKeyStart);
     expect(baseUrlIdx).toBeGreaterThan(apiKeyStart);
     const baseUrlGate = advanced.slice(Math.max(0, baseUrlIdx - 240), baseUrlIdx);
     expect(baseUrlGate).toMatch(

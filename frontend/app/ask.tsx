@@ -270,508 +270,4 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
     case "delete_entry":
       switch (p.entity) {
         case "expense": await api.deleteExpense(String(p.id)); break;
-        case "sale": await api.deleteSale(String(p.id)); break;
-        case "bill": await api.deleteBill(String(p.id)); break;
-        case "supplier_payment":
-        case "drawing": await api.deletePayment(String(p.id)); break;
-        case "receipt": await api.deleteReceipt(String(p.id)); break;
-        case "invoice": await api.deleteInvoice(String(p.id)); break;
-        case "quote": await api.deleteQuote(String(p.id)); break;
-        case "delivery_note": await api.deleteDeliveryNote(String(p.id)); break;
-        case "note": await api.deleteNote(String(p.id)); break;
-        case "inventory_count": await api.deleteV2InventoryCount(String(p.id)); break;
-        case "cash_entry": await api.deleteCashEntry(String(p.id)); break;
-        case "capital": {
-          const memberId = String(p.memberId || "");
-          if (!memberId) throw new Error("The Capital Account is missing. Ask again using the partner name.");
-          await api.deleteInvestorCapital(memberId, String(p.id));
-          break;
-        }
-        default: throw new Error("That entry type cannot be reversed or deleted from Ask AI.");
-      }
-      return ["quote", "delivery_note"].includes(String(p.entity)) ? "Entry deleted âœ“" : "Entry safely reversed âœ“";
-    default:
-      throw new Error("Unknown action â€” no changes made.");
-  }
-}
-
-const SUGGESTIONS = [
-  "What was my profit this month?",
-  "How do I create an invoice?",
-  "Record a 500 expense for fuel",
-  "Who owes me the most money?",
-];
-
-export default function AskBooks() {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const styles = useMemo(() => makeStyles(theme), [theme]);
-  const router = useRouter();
-  const scrollRef = useRef<FlatList<Msg>>(null);
-  const historyKey = useMemo(() => askHistoryStorageKey(api.activeBookId()), []);
-  const historyLoaded = useRef(false);
-
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [applyingProposal, setApplyingProposal] = useState(false);
-  const applyingProposalRef = useRef(false);
-  const [pendingProposal, setPendingProposal] = useState<ValidatedProposal | null>(null);
-  const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    AsyncStorage.getItem(historyKey)
-      .then((raw) => {
-        if (!active) return;
-        if (raw) setMessages(normalizeAskHistory(JSON.parse(raw)));
-      })
-      .catch(() => {})
-      .finally(() => { if (active) historyLoaded.current = true; });
-    return () => { active = false; };
-  }, [historyKey]);
-
-  useEffect(() => {
-    if (!historyLoaded.current) return;
-    AsyncStorage.setItem(historyKey, JSON.stringify(normalizeAskHistory(messages))).catch(() => {});
-  }, [historyKey, messages]);
-
-  useEffect(() => {
-    const applyFrame = (e?: { endCoordinates?: { height?: number } }) => {
-      const height = Math.max(0, e?.endCoordinates?.height ?? 0);
-      setKeyboardVisible(height > 0);
-      setKeyboardHeight(height);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-    };
-    const shown = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", applyFrame);
-    const hidden = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
-    });
-    const changed = Platform.OS === "android"
-      ? Keyboard.addListener("keyboardDidChangeFrame", applyFrame)
-      : { remove() {} };
-    return () => { shown.remove(); hidden.remove(); changed.remove(); };
-  }, []);
-
-  // Edge-to-edge Android ignores adjustResize, so lift the composer by IME height.
-  const composerBottomPad =
-    theme.spacing.md
-    + (Platform.OS === "android" ? keyboardHeight : 0)
-    + (keyboardVisible ? 0 : insets.bottom);
-
-  const clearHistory = () => {
-    confirmAction(
-      "Clear Ask AI history?",
-      "This clears the saved conversation for this business book only. It does not change any accounting entries.",
-      async () => {
-        try {
-          await AsyncStorage.removeItem(historyKey);
-          setMessages([]);
-          setPendingClarification(null);
-          setPendingProposal(null);
-          setInput("");
-          Keyboard.dismiss();
-        } catch (e: any) {
-          showAlert("Could Not Clear History", e?.message || "Please try again.");
-        }
-      },
-      "Clear History",
-    );
-  };
-
-  const confirmAiTransfer = async (): Promise<boolean> => {
-    const cfg = await getAIConfig();
-    const provider = getProviderMeta(cfg.provider);
-    const consentKey = `ledgr:ai-transfer-consent:${api.activeBookId()}:${provider.id}`;
-    if (await AsyncStorage.getItem(consentKey) === "1") return true;
-    const message = `When you continue, Ledgr sends your prompt and only the accounting details relevant to it to ${provider.label}. This may include amounts and, when needed, business-account names or notes. Ledgr sends data directly from this device to your selected provider and does not run an AI server of its own.`;
-
-    if (Platform.OS === "web") {
-      if (typeof window === "undefined" || !window.confirm(`Send data to ${provider.label}?\n\n${message}`)) return false;
-      await AsyncStorage.setItem(consentKey, "1");
-      return true;
-    }
-
-    return new Promise<boolean>((resolve) => {
-      Alert.alert(
-        `Send data to ${provider.label}?`,
-        message,
-        [
-          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-          {
-            text: "Continue",
-            onPress: () => {
-              AsyncStorage.setItem(consentKey, "1")
-                .then(() => resolve(true))
-                .catch(() => {
-                  showAlert("Could Not Save Consent", "Ledgr did not send anything. Please try again.");
-                  resolve(false);
-                });
-            },
-          },
-        ],
-        { cancelable: false },
-      );
-    });
-  };
-
-  const buildContext = async (question: string): Promise<string> => {
-    const today = new Date();
-    const snapshot = await api.aiSnapshot(`${today.getFullYear()}-01-01`, localTodayIso());
-    const withSymbol = { ...snapshot, currencySymbol: getCurrencySymbol(snapshot.currency || "USD") };
-    return JSON.stringify(scopeAiSnapshot(withSymbol, question));
-  };
-  const applyPendingProposal = async () => {
-    const proposal = pendingProposal;
-    if (!proposal || applyingProposalRef.current) return;
-    applyingProposalRef.current = true;
-    setApplyingProposal(true);
-    try {
-      const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
-      setPendingProposal(null);
-      setMessages((m) => [...m, { role: "assistant", text: String(result) }]);
-    } catch (err: any) {
-      setMessages((m) => [...m, { role: "assistant", text: `I couldn't apply that change: ${err?.message || "error"}` }]);
-    } finally {
-      applyingProposalRef.current = false;
-      setApplyingProposal(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  };
-
-  const cancelPendingProposal = (includeUserMessage = false) => {
-    setPendingProposal(null);
-    setMessages((m) => [
-      ...m,
-      ...(includeUserMessage ? [{ role: "user" as const, text: "Cancel" }] : []),
-      { role: "assistant", text: "Okay â€” I did not change your books." },
-    ]);
-  };
-
-  const send = async (text: string) => {
-    const q = text.trim();
-    if (!q || loading || applyingProposal) return;
-
-    if (pendingProposal && /^(yes\b|y$|i confirm\b|confirm\b|apply\b|proceed\b|ok(?:ay)?\b|please (?:apply|record|enter|save)\b)/i.test(q)) {
-      setInput("");
-      setMessages((m) => [...m, { role: "user", text: q }]);
-      await applyPendingProposal();
-      return;
-    }
-    if (pendingProposal && /^(no\b|n$|cancel\b|stop\b|discard\b|never ?mind\b)/i.test(q)) {
-      setInput("");
-      cancelPendingProposal(true);
-      return;
-    }
-
-    const priorProposal = pendingProposal;
-    const clarification = pendingClarification;
-    const originalRequest = clarification?.originalRequest || q;
-    const skipLocalPartyResolution = clarification?.kind === "party" && /\b(?:expense|refund|another|other|none|no)\b/i.test(q);
-    const localPaymentCommand = priorProposal || skipLocalPartyResolution
-      ? null
-      : clarification?.kind === "party"
-        ? clarification.command
-        : parseSimpleOutgoingPayment(q);
-    const questionForAi = priorProposal
-      ? `The user is revising this pending Ledgr transaction entry. Existing action JSON: ${JSON.stringify(priorProposal.action)}. User follow-up: ${q}. Return the full revised action, or ask one counter-question.`
-      : clarification
-        ? `Continue this one pending Ledgr transaction request without losing its details.\nOriginal user request: ${clarification.originalRequest}\nAssistant counter-question: ${clarification.question}\nUser answer: ${q}\nUse the original amount, date, and party together with the user's answer. Return the complete action, or ask exactly one remaining counter-question.`
-        : q;
-    if (!localPaymentCommand) {
-      try {
-        if (!(await confirmAiTransfer())) return;
-      } catch (e: any) {
-        showAlert("Could Not Check AI Consent", e?.message || "Ledgr did not send anything. Please try again.");
-        return;
-      }
-    }
-    if (priorProposal) setPendingProposal(null);
-    if (clarification) setPendingClarification(null);
-    setInput("");
-    setMessages((m) => [...m, { role: "user", text: q }]);
-    setLoading(true);
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    try {
-      if (localPaymentCommand) {
-        const [suppliers, customers, capitalAccounts] = await Promise.all([
-          api.listSuppliers(),
-          api.listDebtors(),
-          api.listInvestors(),
-        ]);
-        const resolution = resolveVoicePartyCommand(
-          localPaymentCommand,
-          clarification?.kind === "party" ? `${clarification.originalRequest}\nUser clarification: ${q}` : q,
-          { suppliers, customers, capitalAccounts },
-        );
-        if (!resolution.ok) {
-          setPendingClarification({
-            kind: "party",
-            originalRequest,
-            question: resolution.question,
-            command: localPaymentCommand,
-          });
-          setMessages((m) => [...m, { role: "assistant", text: resolution.question }]);
-          return;
-        }
-        const rawAction = paymentActionFromCommand(resolution.command);
-        if (rawAction) {
-          const proposal = validateAssistantProposal(rawAction, "ai");
-          if (!proposal.ok) {
-            const question = `I need one more detail before I can prepare that change: ${proposal.errors[0]}.`;
-            setPendingClarification({ kind: "provider", originalRequest, question });
-            setMessages((m) => [...m, { role: "assistant", text: question }]);
-          } else {
-            setPendingProposal(proposal);
-            setPendingClarification(null);
-            const partyName = String(resolution.command.partnerName || resolution.command.supplierName || "").trim();
-            const actionLabel = resolution.command.intent === "drawing" ? "capital withdrawal" : "supplier payment";
-            setMessages((m) => [...m, { role: "assistant", text: `I matched "${partyName}" to the exact Ledgr account and prepared the ${actionLabel} for your review.` }]);
-          }
-          return;
-        }
-      }
-
-      const context = await buildContext(questionForAi);
-      const res: any = await api.askBooks(questionForAi, context);
-      const answer = typeof res === "string" ? res : res?.answer || "";
-      const action = typeof res === "string" ? null : res?.action || null;
-      if (action && action.type) {
-        const proposal = validateAssistantProposal(action, "ai");
-        if (!proposal.ok) {
-          const question = `I need one more detail before I can prepare that change: ${proposal.errors[0]}.`;
-          setPendingClarification({ kind: "provider", originalRequest, question });
-          setMessages((m) => [...m, { role: "assistant", text: question }]);
-        } else {
-          setPendingProposal(proposal);
-          setPendingClarification(null);
-          if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
-        }
-      } else if (answer) {
-        if (isExplicitBookMutationRequest(originalRequest) && /\?\s*$/.test(answer.trim())) {
-          setPendingClarification({ kind: "provider", originalRequest, question: answer.trim() });
-        } else {
-          setPendingClarification(null);
-        }
-        setMessages((m) => [...m, { role: "assistant", text: answer }]);
-      }
-    } catch (e: any) {
-      if (clarification) setPendingClarification(clarification);
-      setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. ${e?.message || "Check your AI key in Settings."}` }]);
-    } finally {
-      setLoading(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  };
-
-  return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.headerBar}>
-        <Pressable accessibilityLabel="Back" onPress={() => { Keyboard.dismiss(); router.back(); }}><Ionicons name="chevron-back" size={26} color={theme.color.onSurface} /></Pressable>
-        <Text style={styles.headerTitle}>Ask about your books</Text>
-        {messages.length > 0 ? (
-          <Pressable accessibilityLabel="Clear Ask AI history" hitSlop={8} onPress={clearHistory}>
-            <Ionicons name="trash-outline" size={23} color={theme.color.error} />
-          </Pressable>
-        ) : <View style={{ width: 26 }} />}
-      </View>
-
-      <KeyboardAvoidingView
-        enabled={Platform.OS === "ios"}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.body}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-      >
-        <FlatList
-          ref={scrollRef}
-          style={{ flex: 1 }}
-          data={messages}
-          keyExtractor={(_, i) => String(i)}
-          contentContainerStyle={styles.messageContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-          onContentSizeChange={() => messages.length > 0 && scrollRef.current?.scrollToEnd({ animated: false })}
-          ListHeaderComponent={messages.length === 0 ? (
-            <View>
-              <View style={styles.welcome}>
-                <Ionicons name="sparkles-outline" size={32} color={theme.color.brandPrimary} />
-                <Text style={styles.welcomeText}>Ask me anything about your finances. Iâ€™ll answer using your actual data.</Text>
-              </View>
-              <Text style={styles.suggestLabel}>Try asking</Text>
-              {SUGGESTIONS.map((s) => (
-                <Pressable key={s} onPress={() => send(s)} style={styles.suggestChip}>
-                  <Text style={styles.suggestText}>{s}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          renderItem={({ item: m }) => (
-            <View style={[styles.bubble, m.role === "user" ? styles.bubbleUser : styles.bubbleAI]}>
-              <Text style={[styles.bubbleText, m.role === "user" && { color: "#fff" }]}>{m.text}</Text>
-            </View>
-          )}
-          ListFooterComponent={
-            <>
-              {pendingProposal ? (
-                <View testID="ask-pending-action-card" style={[styles.proposalCard, pendingProposal.action.isDestructive && styles.proposalCardDestructive]}>
-                  <View style={styles.proposalHeader}>
-                    <Ionicons name={pendingProposal.action.isDestructive ? "warning-outline" : "checkmark-circle-outline"} size={20} color={pendingProposal.action.isDestructive ? theme.color.error : theme.color.brandPrimary} />
-                    <Text style={styles.proposalTitle}>{pendingProposal.action.isDestructive ? "Review reversal" : "Review Ledgr change"}</Text>
-                  </View>
-                  <Text style={styles.proposalPreview}>{pendingProposal.action.confirmation.preview}</Text>
-                  <Text style={styles.proposalHint}>Nothing changes until you tap Apply.</Text>
-                  <View style={styles.proposalButtons}>
-                    <Pressable testID="ask-proposal-cancel" disabled={applyingProposal} onPress={() => cancelPendingProposal()} style={styles.proposalCancel}>
-                      <Text style={styles.proposalCancelText}>Cancel</Text>
-                    </Pressable>
-                    <Pressable testID="ask-proposal-apply" disabled={applyingProposal} onPress={applyPendingProposal} style={[styles.proposalApply, pendingProposal.action.isDestructive && styles.proposalApplyDestructive, applyingProposal && { opacity: 0.6 }]}>
-                      {applyingProposal ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.proposalApplyText}>{pendingProposal.action.isDestructive ? "Reverse / Delete" : "Apply"}</Text>}
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
-              {loading ? (
-                <View style={[styles.bubble, styles.bubbleAI]}>
-                  <ActivityIndicator color={theme.color.brandPrimary} />
-                </View>
-              ) : null}
-            </>
-          }
-        />
-
-        <View style={[styles.inputBar, { paddingBottom: composerBottomPad }]}>
-          <View style={styles.inputWrapper}>
-            <Pressable
-              style={styles.attachBtn}
-              onPress={async () => {
-                try {
-                  const perm = await ImagePicker.requestCameraPermissionsAsync();
-                  if (!perm.granted) return;
-                  const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-                  if (res.canceled) return;
-                  const asset = res.assets[0];
-                  if (!asset?.base64) throw new Error("The camera did not return readable image data. Try taking the photo again.");
-                  setLoading(true);
-                  // Expo ImagePicker documents base64 output as JPEG data. Use
-                  // the matching MIME type even when the source asset was HEIC.
-                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
-                  const prompt = buildReceiptPrompt(ocr);
-                  send(prompt);
-                } catch (e: any) {
-                  Alert.alert("Camera Error", e.message || "Failed to open camera");
-                  setLoading(false);
-                }
-              }}
-            >
-              <Ionicons name="camera-outline" size={24} color={theme.color.muted} />
-            </Pressable>
-            <Pressable
-              style={styles.attachBtn}
-              onPress={async () => {
-                try {
-                  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (!perm.granted) return;
-                  const res = await ImagePicker.launchImageLibraryAsync({
-                    base64: true,
-                    quality: 0.5,
-                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-                  });
-                  if (res.canceled) return;
-                  const asset = res.assets[0];
-                  if (!asset?.base64) throw new Error("The selected file did not contain readable image data. Try a JPEG or PNG image.");
-                  setLoading(true);
-                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
-                  const prompt = buildReceiptPrompt(ocr);
-                  send(prompt);
-                } catch (e: any) {
-                  Alert.alert("Library Error", e.message || "Failed to open library");
-                  setLoading(false);
-                }
-              }}
-            >
-              <Ionicons name="image-outline" size={24} color={theme.color.muted} />
-            </Pressable>
-            <Pressable
-              testID="btn-scan-import"
-              style={styles.attachBtn}
-              onPress={() => router.push("/scan-import" as Href)}
-            >
-              <Ionicons name="scan-outline" size={24} color={theme.color.muted} />
-            </Pressable>
-            {Platform.OS === 'web' && (
-              <style>{`
-                textarea::-webkit-scrollbar { display: none !important; width: 0 !important; }
-                textarea { -ms-overflow-style: none; scrollbar-width: none; }
-              `}</style>
-            )}
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="Message Ledgr..."
-              placeholderTextColor={theme.color.muted}
-              style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
-              multiline
-              numberOfLines={1}
-              submitBehavior="submit"
-              returnKeyType="send"
-              onSubmitEditing={() => send(input)}
-              maxLength={4000}
-            />
-            {input.trim().length > 0 ? (
-              <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
-                <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
-              </Pressable>
-            ) : (
-              <Pressable style={styles.micBtn} onPress={() => router.push("/voice")}>
-                <Ionicons name="mic-outline" size={22} color={theme.color.muted} />
-              </Pressable>
-            )}
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
-
-function makeStyles(theme: any) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: theme.color.surface },
-    body: { flex: 1 },
-    headerBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: theme.spacing.lg, borderBottomWidth: 1, borderBottomColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary },
-    headerTitle: { fontSize: 16, fontWeight: "700", color: theme.color.onSurface },
-    messageContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md, flexGrow: 1 },
-    welcome: { alignItems: "center", padding: theme.spacing.xl, gap: 12 },
-    welcomeText: { textAlign: "center", color: theme.color.muted, fontSize: 14, lineHeight: 20 },
-    suggestLabel: { fontSize: 12, fontWeight: "700", color: theme.color.muted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm },
-    suggestChip: { padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, marginBottom: 8 },
-    suggestText: { fontSize: 14, color: theme.color.onSurface },
-    bubble: { maxWidth: "85%", minWidth: 0, padding: theme.spacing.md, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm },
-    bubbleUser: { alignSelf: "flex-end", backgroundColor: theme.color.brandPrimary },
-    bubbleAI: { alignSelf: "flex-start", backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
-    bubbleText: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface, flexShrink: 1 },
-    proposalCard: { width: "100%", padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary, marginBottom: theme.spacing.sm },
-    proposalCardDestructive: { borderColor: theme.color.error },
-    proposalHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-    proposalTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: theme.color.onSurface },
-    proposalPreview: { fontSize: 14, lineHeight: 20, color: theme.color.onSurface },
-    proposalHint: { fontSize: 12, color: theme.color.muted, marginTop: 6 },
-    proposalButtons: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: theme.spacing.md },
-    proposalCancel: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border },
-    proposalCancelText: { color: theme.color.onSurface, fontWeight: "600" },
-    proposalApply: { minWidth: 88, minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, borderRadius: theme.radius.md, backgroundColor: theme.color.brandPrimary },
-    proposalApplyDestructive: { backgroundColor: theme.color.error },
-    proposalApplyText: { color: "#fff", fontWeight: "700" },
-    inputBar: { flexDirection: "row", paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, gap: 12, borderTopWidth: 1, borderTopColor: theme.color.border, backgroundColor: theme.color.surfaceSecondary, alignItems: "flex-end" },
-    attachBtn: { padding: 4, justifyContent: "center", alignItems: "center", marginRight: 4 },
-    inputWrapper: { flex: 1, flexDirection: "row", alignItems: "flex-end", borderWidth: 1, borderColor: theme.color.border, borderRadius: 24, backgroundColor: theme.color.surface, paddingLeft: theme.spacing.md, paddingRight: 4, paddingVertical: 8, minHeight: 48, maxHeight: 140 },
-    input: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, color: theme.color.onSurface, padding: 0, margin: 0, minHeight: 24, maxHeight: 112, textAlignVertical: "top" },
-    micBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
-    sendBtn: { padding: 8, justifyContent: "center", alignItems: "center", marginRight: 2 },
-  });
-}
+  ßÝ»¶‰žËkºwµça‘É…Ý…°ˆ€è€‰ÍÕÁÁ±¥•ÈÁ…åµ•¹Ðˆì(€€€€€€€€€€€Í•Ñ5•ÍÍ…•Ì ¡´¤€ôøl¸¸¹´°ìÉ½±”è€‰…ÍÍ¥ÍÑ…¹Ðˆ°Ñ•áÐè$µ…Ñ¡•€ˆ‘íÁ…ÉÑå9…µ•ôˆÑ¼Ñ¡”•á…Ð1•‘È…½Õ¹Ð…¹ÁÉ•Á…É•Ñ¡”€‘í…Ñ¥½¹1…‰•±ô™½Èå½ÕÈÉ•Ù¥•Ü¹€õt¤ì(€€€€€€€€€ô(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€ô((€€€€€½¹ÍÐ½¹Ñ•áÐ€ô…Ý…¥Ð‰Õ¥±‘½¹Ñ•áÐ¡ÅÕ•ÍÑ¥½¹½É¤¤ì(€€€€€½¹ÍÐÉ•Ìè…¹ä€ô…Ý…¥Ð…Á¤¹…Í­	½½­Ì¡ÅÕ•ÍÑ¥½¹½É¤°½¹Ñ•áÐ¤ì(€€€€€½¹ÍÐ…¹ÍÝ•È€ôÑåÁ•½˜É•Ì€ôôô€‰ÍÑÉ¥¹œˆ€üÉ•Ì€èÉ•Ìü¹…¹ÍÝ•Èñð€ˆˆì(€€€€€½¹ÍÐ…Ñ¥½¸€ôÑåÁ•½˜É•Ì€ôôô€‰ÍÑÉ¥¹œˆ€ü¹Õ±°€èÉ•Ìü¹…Ñ¥½¸ñð¹Õ±°ì(€€€€€¥˜€¡…Ñ¥½¸€˜˜…Ñ¥½¸¹ÑåÁ”¤ì(€€€€€€€½¹ÍÐÁÉ½Á½Í…°€ôÙ…±¥‘…Ñ•ÍÍ¥ÍÑ…¹ÑAÉ½Á½Í…°¡…Ñ¥½¸°€‰…¤ˆ¤ì(€€€€€€€¥˜€ …ÁÉ½Á½Í…°¹½¬¤ì(€€€€€€€€€½¹ÍÐÅÕ•ÍÑ¥½¸€ô$¹••½¹”µ½É”‘•Ñ…¥°‰•™½É”$…¸ÁÉ•Á…É”Ñ¡…Ð¡…¹”è€‘íÁÉ½Á½Í…°¹•ÉÉ½ÉÍlÁuô¹€ì(€€€€€€€€€Í•ÑA•¹‘¥¹±…É¥™¥…Ñ¥½¸¡ì­¥¹è€‰ÁÉ½Ù¥‘•Èˆ°½É¥¥¹…±I•ÅÕ•ÍÐ°ÅÕ•ÍÑ¥½¸ô¤ì(€€€€€€€€€Í•Ñ5•ÍÍ…•Ì ¡´¤€ôøl¸¸¹´°ìÉ½±”è€‰…ÍÍ¥ÍÑ…¹Ðˆ°Ñ•áÐèÅÕ•ÍÑ¥½¸õt¤ì(€€€€€€€ô•±Í”ì(€€€€€€€€€Í•ÑA•¹‘¥¹AÉ½Á½Í…°¡ÁÉ½Á½Í…°¤ì(€€€€€€€€€Í•ÑA•¹‘¥¹±…É¥™¥…Ñ¥½¸¡¹Õ±°¤ì(€€€€€€€€€¥˜€¡…¹ÍÝ•È¤Í•Ñ5•ÍÍ…•Ì ¡´¤€ôøl¸¸¹´°ìÉ½±”è€‰…ÍÍ¥ÍÑ…¹Ðˆ°Ñ•áÐè…¹ÍÝ•Èõt¤ì(€€€€€€€ô(€€€€€ô•±Í”¥˜€¡…¹ÍÝ•È¤ì(€€€€€€€¥˜€¡¥ÍáÁ±¥¥Ñ	½½­5ÕÑ…Ñ¥½¹I•ÅÕ•ÍÐ¡½É¥¥¹…±I•ÅÕ•ÍÐ¤€˜˜€½pýqÌ¨¼¹Ñ•ÍÐ¡…¹ÍÝ•È¹ÑÉ¥´ ¤¤¤ì(€€€€€€€€€Í•ÑA•¹‘¥¹±…É¥™¥…Ñ¥½¸¡ì­¥¹è€‰ÁÉ½Ù¥‘•Èˆ°½É¥¥¹…±I•ÅÕ•ÍÐ°ÅÕ•ÍÑ¥½¸è…¹ÍÝ•È¹ÑÉ¥´ ¤ô¤ì(€€€€€€€ô•±Í”ì(€€€€€€€€€Í•ÑA•¹‘¥¹±…É¥™¥…Ñ¥½¸¡¹Õ±°¤ì(€€€€€€€ô(€€€€€€€Í•Ñ5•ÍÍ…•Ì ¡´¤€ôøl¸¸¹´°ìÉ½±”è€‰…ÍÍ¥ÍÑ…¹Ðˆ°Ñ•áÐè…¹ÍÝ•Èõt¤ì(€€€€€ô(€€€ô…Ñ €¡”è…¹ä¤ì(€€€€€¥˜€¡±…É¥™¥…Ñ¥½¸¤Í•ÑA•¹‘¥¹±…É¥™¥…Ñ¥½¸¡±…É¥™¥…Ñ¥½¸¤ì(€€€€€Í•Ñ5•ÍÍ…•Ì ¡´¤€ôøl¸¸¹´°ìÉ½±”è€‰…ÍÍ¥ÍÑ…¹Ðˆ°Ñ•áÐèM½ÉÉä°$½Õ±‘¸Ð…¹ÍÝ•ÈÑ¡…Ð¸€‘í”ü¹µ•ÍÍ…”ñð€‰¡•¬å½ÕÈ$­•ä¥¸M•ÑÑ¥¹Ì¸‰õ€õt¤ì(€€€ô™¥¹…±±äì4(€€€€€Í•Ñ1½…‘¥¹œ¡™…±Í”¤ì4(€€€€€Í•ÑQ¥µ•½ÕÐ  ¤€ôøÍÉ½±±I•˜¹ÕÉÉ•¹Ðü¹ÍÉ½±±Q½¹¡ì…¹¥µ…Ñ•èÑÉÕ”ô¤°€ÄÀÀ¤ì4(€€€ô4(€ôì4(4(€É•ÑÕÉ¸€ 4(€€€€ñM…™•É•…Y¥•ÜÍÑå±”õíÍÑå±•Ì¹½¹Ñ…¥¹•Éô•‘•Ìõíl‰Ñ½À‰uôø4(€€€€€€ñY¥•ÜÍÑå±”õíÍÑå±•Ì¹¡•…‘•É	…Éôø4(€€€€€€€€ñAÉ•ÍÍ…‰±”…•ÍÍ¥‰¥±¥Ñå1…‰•°ô‰	…¬ˆ½¹AÉ•ÍÌõì ¤€ôøì-•å‰½…É¹‘¥Íµ¥ÍÌ ¤ìÉ½ÕÑ•È¹‰…¬ ¤ìõôøñ%½¹¥½¹Ì¹…µ”ô‰¡•ÙÉ½¸µ‰…¬ˆÍ¥é”õìÈÙô½±½ÈõíÑ¡•µ”¹½±½È¹½¹MÕÉ™…•ô€¼øð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹¡•…‘•ÉQ¥Ñ±•ôùÍ¬…‰½ÕÐå½ÕÈ‰½½­Ìð½Q•áÐø4(€€€€€€€íµ•ÍÍ…•Ì¹±•¹Ñ €ø€À€ü€ 4(€€€€€€€€€€ñAÉ•ÍÍ…‰±”…•ÍÍ¥‰¥±¥Ñå1…‰•°ô‰±•…ÈÍ¬$¡¥ÍÑ½Éäˆ¡¥ÑM±½Àõìáô½¹AÉ•ÍÌõí±•…É!¥ÍÑ½Éåôø4(€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰ÑÉ…Í µ½ÕÑ±¥¹”ˆÍ¥é”õìÈÍô½±½ÈõíÑ¡•µ”¹½±½È¹•ÉÉ½Éô€¼ø4(€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€¤€è€ñY¥•ÜÍÑå±”õíìÝ¥‘Ñ è€ÈØõô€¼ùô4(€€€€€€ð½Y¥•Üø4(4(€€€€€€ñ-•å‰½…É‘Ù½¥‘¥¹Y¥•Ü4(€€€€€€€•¹…‰±•õíA±…Ñ™½É´¹=L€ôôô€‰¥½Ì‰ô4(€€€€€€€‰•¡…Ù¥½ÈõíA±…Ñ™½É´¹=L€ôôô€‰¥½Ìˆ€ü€‰Á…‘‘¥¹œˆ€èÕ¹‘•™¥¹•‘ô4(€€€€€€€ÍÑå±”õíÍÑå±•Ì¹‰½‘åô4(€€€€€€€­•å‰½…É‘Y•ÉÑ¥…±=™™Í•ÐõíA±…Ñ™½É´¹=L€ôôô€‰¥½Ìˆ€ü€àÀ€è€Áô4(€€€€€€ø4(€€€€€€€€ñ±…Ñ1¥ÍÐ4(€€€€€€€€€É•˜õíÍÉ½±±I•™ô4(€€€€€€€€€ÍÑå±”õíì™±•àè€Äõô4(€€€€€€€€€‘…Ñ„õíµ•ÍÍ…•Íô4(€€€€€€€€€­•åáÑÉ…Ñ½Èõì¡|°¤¤€ôøMÑÉ¥¹œ¡¤¥ô4(€€€€€€€€€½¹Ñ•¹Ñ½¹Ñ…¥¹•ÉMÑå±”õíÍÑå±•Ì¹µ•ÍÍ…•½¹Ñ•¹Ñô4(€€€€€€€€€­•å‰½…É‘M¡½Õ±‘A•ÉÍ¥ÍÑQ…ÁÌô‰¡…¹‘±•ˆ4(€€€€€€€€€­•å‰½…É‘¥Íµ¥ÍÍ5½‘”ô‰½¸µ‘É…œˆ4(€€€€€€€€€…ÕÑ½µ…Ñ¥…±±å‘©ÕÍÑ-•å‰½…É‘%¹Í•ÑÌõíA±…Ñ™½É´¹=L€ôôô€‰¥½Ì‰ô4(€€€€€€€€€½¹½¹Ñ•¹ÑM¥é•¡…¹”õì ¤€ôøµ•ÍÍ…•Ì¹±•¹Ñ €ø€À€˜˜ÍÉ½±±I•˜¹ÕÉÉ•¹Ðü¹ÍÉ½±±Q½¹¡ì…¹¥µ…Ñ•è™…±Í”ô¥ô4(€€€€€€€€€1¥ÍÑ!•…‘•É½µÁ½¹•¹Ðõíµ•ÍÍ…•Ì¹±•¹Ñ €ôôô€À€ü€ 4(€€€€€€€€€€€€ñY¥•Üø4(€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíÍÑå±•Ì¹Ý•±½µ•ôø4(€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰ÍÁ…É­±•Ìµ½ÕÑ±¥¹”ˆÍ¥é”õìÌÉô½±½ÈõíÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø4(€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹Ý•±½µ•Q•áÑôùÍ¬µ”…¹åÑ¡¥¹œ…‰½ÕÐå½ÕÈ™¥¹…¹•Ì¸'Še±°…¹ÍÝ•ÈÕÍ¥¹œå½ÕÈ…ÑÕ…°‘…Ñ„¸ð½Q•áÐø4(€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÍÕ•ÍÑ1…‰•±ôùQÉä…Í­¥¹œð½Q•áÐø4(€€€€€€€€€€€€€íMUMQ%=9L¹µ…À ¡Ì¤€ôø€ 4(€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”­•äõíÍô½¹AÉ•ÍÌõì ¤€ôøÍ•¹¡Ì¥ôÍÑå±”õíÍÑå±•Ì¹ÍÕ•ÍÑ¡¥Áôø4(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÍÕ•ÍÑQ•áÑôùíÍôð½Q•áÐø4(€€€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€¤¥ô4(€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€¤€è¹Õ±±ô4(€€€€€€€€€É•¹‘•É%Ñ•´õì¡ì¥Ñ•´è´ô¤€ôø€ 4(€€€€€€€€€€€€ñY¥•ÜÍÑå±”õímÍÑå±•Ì¹‰Õ‰‰±”°´¹É½±”€ôôô€‰ÕÍ•Èˆ€üÍÑå±•Ì¹‰Õ‰‰±•UÍ•È€èÍÑå±•Ì¹‰Õ‰‰±•%uôø4(€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õímÍÑå±•Ì¹‰Õ‰‰±•Q•áÐ°´¹É½±”€ôôô€‰ÕÍ•Èˆ€˜˜ì½±½Èè€ˆ™™˜ˆõuôùí´¹Ñ•áÑôð½Q•áÐø4(€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€¥ô4(€€€€€€€€€1¥ÍÑ½½Ñ•É½µÁ½¹•¹Ðõì4(€€€€€€€€€€€€ðø4(€€€€€€€€€€€€€íÁ•¹‘¥¹AÉ½Á½Í…°€ü€ 4(€€€€€€€€€€€€€€€€ñY¥•ÜÑ•ÍÑ%ô‰…Í¬µÁ•¹‘¥¹œµ…Ñ¥½¸µ…ÉˆÍÑå±”õímÍÑå±•Ì¹ÁÉ½Á½Í…±…É°Á•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€˜˜ÍÑå±•Ì¹ÁÉ½Á½Í…±…É‘•ÍÑÉÕÑ¥Ù•uôø4(€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±!•…‘•Éôø4(€€€€€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”õíÁ•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€ü€‰Ý…É¹¥¹œµ½ÕÑ±¥¹”ˆ€è€‰¡•­µ…É¬µ¥É±”µ½ÕÑ±¥¹”‰ôÍ¥é”õìÈÁô½±½ÈõíÁ•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€üÑ¡•µ”¹½±½È¹•ÉÉ½È€èÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø4(€€€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±Q¥Ñ±•ôùíÁ•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€ü€‰I•Ù¥•ÜÉ•Ù•ÉÍ…°ˆ€è€‰I•Ù¥•Ü1•‘È¡…¹”‰ôð½Q•áÐø4(€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±AÉ•Ù¥•ÝôùíÁ•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹½¹™¥Éµ…Ñ¥½¸¹ÁÉ•Ù¥•Ýôð½Q•áÐø4(€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±!¥¹Ñôù9½Ñ¡¥¹œ¡…¹•ÌÕ¹Ñ¥°å½ÔÑ…ÀÁÁ±ä¸ð½Q•áÐø4(€€€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±	ÕÑÑ½¹Íôø4(€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”Ñ•ÍÑ%ô‰…Í¬µÁÉ½Á½Í…°µ…¹•°ˆ‘¥Í…‰±•õí…ÁÁ±å¥¹AÉ½Á½Í…±ô½¹AÉ•ÍÌõì ¤€ôø…¹•±A•¹‘¥¹AÉ½Á½Í…° ¥ôÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±…¹•±ôø4(€€€€€€€€€€€€€€€€€€€€€€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±…¹•±Q•áÑôù…¹•°ð½Q•áÐø4(€€€€€€€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”Ñ•ÍÑ%ô‰…Í¬µÁÉ½Á½Í…°µ…ÁÁ±äˆ‘¥Í…‰±•õí…ÁÁ±å¥¹AÉ½Á½Í…±ô½¹AÉ•ÍÌõí…ÁÁ±åA•¹‘¥¹AÉ½Á½Í…±ôÍÑå±”õímÍÑå±•Ì¹ÁÉ½Á½Í…±ÁÁ±ä°Á•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€˜˜ÍÑå±•Ì¹ÁÉ½Á½Í…±ÁÁ±å•ÍÑÉÕÑ¥Ù”°…ÁÁ±å¥¹AÉ½Á½Í…°€˜˜ì½Á…¥Ñäè€À¸Øõuôø4(€€€€€€€€€€€€€€€€€€€€€í…ÁÁ±å¥¹AÉ½Á½Í…°€ü€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½ÈÍ¥é”ô‰Íµ…±°ˆ½±½Èôˆ™™˜ˆ€¼ø€è€ñQ•áÐÍÑå±”õíÍÑå±•Ì¹ÁÉ½Á½Í…±ÁÁ±åQ•áÑôùíÁ•¹‘¥¹AÉ½Á½Í…°¹…Ñ¥½¸¹¥Í•ÍÑÉÕÑ¥Ù”€ü€‰I•Ù•ÉÍ”€¼•±•Ñ”ˆ€è€‰ÁÁ±ä‰ôð½Q•áÐùô4(€€€€€€€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€¤€è¹Õ±±ô4(€€€€€€€€€€€€€í±½…‘¥¹œ€ü€ 4(€€€€€€€€€€€€€€€€ñY¥•ÜÍÑå±”õímÍÑå±•Ì¹‰Õ‰‰±”°ÍÑå±•Ì¹‰Õ‰‰±•%uôø4(€€€€€€€€€€€€€€€€€€ñÑ¥Ù¥Ñå%¹‘¥…Ñ½È½±½ÈõíÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø4(€€€€€€€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€€€€€€€¤€è¹Õ±±ô4(€€€€€€€€€€€€ð¼ø4(€€€€€€€€€ô4(€€€€€€€€¼ø4(4(€€€€€€€€ñY¥•ÜÍÑå±”õímÍÑå±•Ì¹¥¹ÁÕÑ	…È°ìÁ…‘‘¥¹	½ÑÑ½´è½µÁ½Í•É	½ÑÑ½µA…õuôø4(€€€€€€€€€€ñY¥•ÜÍÑå±”õíÍÑå±•Ì¹¥¹ÁÕÑ]É…ÁÁ•Éôø4(€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”4(€€€€€€€€€€€€€ÍÑå±”õíÍÑå±•Ì¹…ÑÑ…¡	Ñ¹ô4(€€€€€€€€€€€€€½¹AÉ•ÍÌõí…Íå¹Œ€ ¤€ôøì4(€€€€€€€€€€€€€€€ÑÉäì4(€€€€€€€€€€€€€€€€€½¹ÍÐÁ•É´€ô…Ý…¥Ð%µ…•A¥­•È¹É•ÅÕ•ÍÑ…µ•É…A•Éµ¥ÍÍ¥½¹ÍÍå¹Œ ¤ì(€€€€€€€€€€€€€€€€€¥˜€ …Á•É´¹É…¹Ñ•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð%µ…•A¥­•È¹±…Õ¹¡…µ•É…Íå¹Œ¡ì‰…Í”ØÐèÑÉÕ”°ÅÕ…±¥Ñäè€À¸Ô°µ•‘¥…QåÁ•Ìè%µ…•A¥­•È¹5•‘¥…QåÁ•=ÁÑ¥½¹Ì¹%µ…•Ìô¤ì(€€€€€€€€€€€€€€€€€¥˜€¡É•Ì¹…¹•±•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€½¹ÍÐ…ÍÍ•Ð€ôÉ•Ì¹…ÍÍ•ÑÍlÁtì(€€€€€€€€€€€€€€€€€¥˜€ ……ÍÍ•Ðü¹‰…Í”ØÐ¤Ñ¡É½Ü¹•ÜÉÉ½È ‰Q¡”…µ•É„‘¥¹½ÐÉ•ÑÕÉ¸É•…‘…‰±”¥µ…”‘…Ñ„¸QÉäÑ…­¥¹œÑ¡”Á¡½Ñ¼……¥¸¸ˆ¤ì(€€€€€€€€€€€€€€€€€Í•Ñ1½…‘¥¹œ¡ÑÉÕ”¤ì(€€€€€€€€€€€€€€€€€€¼¼áÁ¼%µ…•A¥­•È‘½Õµ•¹ÑÌ‰…Í”ØÐ½ÕÑÁÕÐ…Ì)A‘…Ñ„¸UÍ”(€€€€€€€€€€€€€€€€€€¼¼Ñ¡”µ…Ñ¡¥¹œ5%5ÑåÁ”•Ù•¸Ý¡•¸Ñ¡”Í½ÕÉ”…ÍÍ•ÐÝ…Ì!%¸(€€€€€€€€€€€€€€€€€½¹ÍÐ½È€ô…Ý…¥Ð…Á¤¹½ÉI••¥ÁÐ¡…ÍÍ•Ð¹‰…Í”ØÐ°€‰¥µ…”½©Á•œˆ¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐÁÉ½µÁÐ€ô‰Õ¥±‘I••¥ÁÑAÉ½µÁÐ¡½È¤ì4(€€€€€€€€€€€€€€€€€Í•¹¡ÁÉ½µÁÐ¤ì4(€€€€€€€€€€€€€€€ô…Ñ €¡”è…¹ä¤ì4(€€€€€€€€€€€€€€€€€±•ÉÐ¹…±•ÉÐ ‰…µ•É„ÉÉ½Èˆ°”¹µ•ÍÍ…”ñð€‰…¥±•Ñ¼½Á•¸…µ•É„ˆ¤ì4(€€€€€€€€€€€€€€€€€Í•Ñ1½…‘¥¹œ¡™…±Í”¤ì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€õô4(€€€€€€€€€€€€ø4(€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰…µ•É„µ½ÕÑ±¥¹”ˆÍ¥é”õìÈÑô½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô€¼ø4(€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”4(€€€€€€€€€€€€€ÍÑå±”õíÍÑå±•Ì¹…ÑÑ…¡	Ñ¹ô4(€€€€€€€€€€€€€½¹AÉ•ÍÌõí…Íå¹Œ€ ¤€ôøì4(€€€€€€€€€€€€€€€ÑÉäì4(€€€€€€€€€€€€€€€€€½¹ÍÐÁ•É´€ô…Ý…¥Ð%µ…•A¥­•È¹É•ÅÕ•ÍÑ5•‘¥…1¥‰É…ÉåA•Éµ¥ÍÍ¥½¹ÍÍå¹Œ ¤ì(€€€€€€€€€€€€€€€€€¥˜€ …Á•É´¹É…¹Ñ•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€½¹ÍÐÉ•Ì€ô…Ý…¥Ð%µ…•A¥­•È¹±…Õ¹¡%µ…•1¥‰É…ÉåÍå¹Œ¡ì(€€€€€€€€€€€€€€€€€€€‰…Í”ØÐèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€ÅÕ…±¥Ñäè€À¸Ô°(€€€€€€€€€€€€€€€€€€€µ•‘¥…QåÁ•Ìè%µ…•A¥­•È¹5•‘¥…QåÁ•=ÁÑ¥½¹Ì¹%µ…•Ì°(€€€€€€€€€€€€€€€€€€€ÁÉ•™•ÉÉ•‘ÍÍ•ÑI•ÁÉ•Í•¹Ñ…Ñ¥½¹5½‘”è%µ…•A¥­•È¹U%%µ…•A¥­•ÉAÉ•™•ÉÉ•‘ÍÍ•ÑI•ÁÉ•Í•¹Ñ…Ñ¥½¹5½‘”¹½µÁ…Ñ¥‰±”°(€€€€€€€€€€€€€€€€€ô¤ì(€€€€€€€€€€€€€€€€€¥˜€¡É•Ì¹…¹•±•¤É•ÑÕÉ¸ì(€€€€€€€€€€€€€€€€€½¹ÍÐ…ÍÍ•Ð€ôÉ•Ì¹…ÍÍ•ÑÍlÁtì(€€€€€€€€€€€€€€€€€¥˜€ ……ÍÍ•Ðü¹‰…Í”ØÐ¤Ñ¡É½Ü¹•ÜÉÉ½È ‰Q¡”Í•±•Ñ•™¥±”‘¥¹½Ð½¹Ñ…¥¸É•…‘…‰±”¥µ…”‘…Ñ„¸QÉä„)A½ÈA9¥µ…”¸ˆ¤ì(€€€€€€€€€€€€€€€€€Í•Ñ1½…‘¥¹œ¡ÑÉÕ”¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐ½È€ô…Ý…¥Ð…Á¤¹½ÉI••¥ÁÐ¡…ÍÍ•Ð¹‰…Í”ØÐ°€‰¥µ…”½©Á•œˆ¤ì(€€€€€€€€€€€€€€€€€½¹ÍÐÁÉ½µÁÐ€ô‰Õ¥±‘I••¥ÁÑAÉ½µÁÐ¡½È¤ì4(€€€€€€€€€€€€€€€€€Í•¹¡ÁÉ½µÁÐ¤ì4(€€€€€€€€€€€€€€€ô…Ñ €¡”è…¹ä¤ì4(€€€€€€€€€€€€€€€€€±•ÉÐ¹…±•ÉÐ ‰1¥‰É…ÉäÉÉ½Èˆ°”¹µ•ÍÍ…”ñð€‰…¥±•Ñ¼½Á•¸±¥‰É…Éäˆ¤ì4(€€€€€€€€€€€€€€€€€Í•Ñ1½…‘¥¹œ¡™…±Í”¤ì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€õô4(€€€€€€€€€€€€ø4(€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰¥µ…”µ½ÕÑ±¥¹”ˆÍ¥é”õìÈÑô½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô€¼ø4(€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”4(€€€€€€€€€€€€€Ñ•ÍÑ%ô‰‰Ñ¸µÍ…¸µ¥µÁ½ÉÐˆ4(€€€€€€€€€€€€€ÍÑå±”õíÍÑå±•Ì¹…ÑÑ…¡	Ñ¹ô4(€€€€€€€€€€€€€½¹AÉ•ÍÌõì ¤€ôøÉ½ÕÑ•È¹ÁÕÍ  ˆ½Í…¸µ¥µÁ½ÉÐˆ…Ì!É•˜¥ô4(€€€€€€€€€€€€ø4(€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰Í…¸µ½ÕÑ±¥¹”ˆÍ¥é”õìÈÑô½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô€¼ø4(€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€íA±…Ñ™½É´¹=L€ôôô€Ý•ˆœ€˜˜€ 4(€€€€€€€€€€€€€€ñÍÑå±”ùí€4(€€€€€€€€€€€€€€€Ñ•áÑ…É•„èèµÝ•‰­¥ÐµÍÉ½±±‰…Èì‘¥ÍÁ±…äè¹½¹”€…¥µÁ½ÉÑ…¹ÐìÝ¥‘Ñ è€À€…¥µÁ½ÉÑ…¹Ðìô4(€€€€€€€€€€€€€€€Ñ•áÑ…É•„ì€µµÌµ½Ù•É™±½ÜµÍÑå±”è¹½¹”ìÍÉ½±±‰…ÈµÝ¥‘Ñ è¹½¹”ìô4(€€€€€€€€€€€€€ôð½ÍÑå±”ø4(€€€€€€€€€€€€¥ô4(€€€€€€€€€€€€ñQ•áÑ%¹ÁÕÐ4(€€€€€€€€€€€€€Ù…±Õ”õí¥¹ÁÕÑô4(€€€€€€€€€€€€€½¹¡…¹•Q•áÐõíÍ•Ñ%¹ÁÕÑô4(€€€€€€€€€€€€€Á±…•¡½±‘•Èô‰5•ÍÍ…”1•‘È¸¸¸ˆ4(€€€€€€€€€€€€€Á±…•¡½±‘•ÉQ•áÑ½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô4(€€€€€€€€€€€€€ÍÑå±”õímÍÑå±•Ì¹¥¹ÁÕÐ°A±…Ñ™½É´¹=L€ôôô€Ý•ˆœ€˜˜ì½ÕÑ±¥¹•MÑå±”è€¹½¹”œô…Ì…¹åuô4(€€€€€€€€€€€€€µÕ±Ñ¥±¥¹”4(€€€€€€€€€€€€€¹Õµ‰•É=™1¥¹•ÌõìÅô4(€€€€€€€€€€€€€ÍÕ‰µ¥Ñ	•¡…Ù¥½Èô‰ÍÕ‰µ¥Ðˆ4(€€€€€€€€€€€€€É•ÑÕÉ¹-•åQåÁ”ô‰Í•¹ˆ4(€€€€€€€€€€€€€½¹MÕ‰µ¥Ñ‘¥Ñ¥¹œõì ¤€ôøÍ•¹¡¥¹ÁÕÐ¥ô4(€€€€€€€€€€€€€µ…á1•¹Ñ õìÐÀÀÁô4(€€€€€€€€€€€€¼ø4(€€€€€€€€€€€í¥¹ÁÕÐ¹ÑÉ¥´ ¤¹±•¹Ñ €ø€À€ü€ 4(€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”…•ÍÍ¥‰¥±¥Ñå1…‰•°ô‰M•¹µ•ÍÍ…”ˆ¡¥ÑM±½Àõìáô½¹AÉ•ÍÌõì ¤€ôøÍ•¹¡¥¹ÁÕÐ¥ô‘¥Í…‰±•õí±½…‘¥¹œñð…ÁÁ±å¥¹AÉ½Á½Í…±ôÍÑå±”õímÍÑå±•Ì¹Í•¹‘	Ñ¸°±½…‘¥¹œ€˜˜ì½Á…¥Ñäè€À¸Ôõuôø4(€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰Í•¹ˆÍ¥é”õìÈÉô½±½ÈõíÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éåô€¼ø4(€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€¤€è€ 4(€€€€€€€€€€€€€€ñAÉ•ÍÍ…‰±”…•ÍÍ¥‰¥±¥ÑåI½±”ô‰‰ÕÑÑ½¸ˆ…•ÍÍ¥‰¥±¥Ñå1…‰•°ô‰=Á•¸Ù½¥”ÑÉ…¹Í…Ñ¥½¸…ÍÍ¥ÍÑ…¹ÐˆÍÑå±”õíÍÑå±•Ì¹µ¥	Ñ¹ô½¹AÉ•ÍÌõì ¤€ôøÉ½ÕÑ•È¹ÁÕÍ  ˆ½Ù½¥”ˆ¥ôø4(€€€€€€€€€€€€€€€€ñ%½¹¥½¹Ì¹…µ”ô‰µ¥Œµ½ÕÑ±¥¹”ˆÍ¥é”õìÈÉô½±½ÈõíÑ¡•µ”¹½±½È¹µÕÑ•‘ô€¼ø4(€€€€€€€€€€€€€€ð½AÉ•ÍÍ…‰±”ø4(€€€€€€€€€€€€¥ô4(€€€€€€€€€€ð½Y¥•Üø4(€€€€€€€€ð½Y¥•Üø4(€€€€€€ð½-•å‰½…É‘Ù½¥‘¥¹Y¥•Üø4(€€€€ð½M…™•É•…Y¥•Üø4(€€¤ì4)ô4(4)™Õ¹Ñ¥½¸µ…­•MÑå±•Ì¡Ñ¡•µ”è…¹ä¤ì4(€É•ÑÕÉ¸MÑå±•M¡••Ð¹É•…Ñ”¡ì4(€€€½¹Ñ…¥¹•Èèì™±•àè€Ä°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”ô°4(€€€‰½‘äèì™±•àè€Äô°4(€€€¡•…‘•É	…Èèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰ÍÁ…”µ‰•ÑÝ••¸ˆ°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°‰½É‘•É	½ÑÑ½µ]¥‘Ñ è€Ä°‰½É‘•É	½ÑÑ½µ½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éäô°4(€€€¡•…‘•ÉQ¥Ñ±”èì™½¹ÑM¥é”è€ÄØ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€µ•ÍÍ…•½¹Ñ•¹ÐèìÁ…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°Á…‘‘¥¹	½ÑÑ½´èÑ¡•µ”¹ÍÁ…¥¹œ¹µ°™±•áÉ½Üè€Äô°4(€€€Ý•±½µ”èì…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹á°°…Àè€ÄÈô°4(€€€Ý•±½µ•Q•áÐèìÑ•áÑ±¥¸è€‰•¹Ñ•Èˆ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°™½¹ÑM¥é”è€ÄÐ°±¥¹•!•¥¡Ðè€ÈÀô°4(€€€ÍÕ•ÍÑ1…‰•°èì™½¹ÑM¥é”è€ÄÈ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°Ñ•áÑQÉ…¹Í™½É´è€‰ÕÁÁ•É…Í”ˆ°±•ÑÑ•ÉMÁ…¥¹œè€À¸Ô°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹±œ°µ…É¥¹	½ÑÑ½´èÑ¡•µ”¹ÍÁ…¥¹œ¹Í´ô°4(€€€ÍÕ•ÍÑ¡¥ÀèìÁ…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°µ…É¥¹	½ÑÑ½´è€àô°4(€€€ÍÕ•ÍÑQ•áÐèì™½¹ÑM¥é”è€ÄÐ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€‰Õ‰‰±”èìµ…á]¥‘Ñ è€ˆàÔ”ˆ°µ¥¹]¥‘Ñ è€À°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°µ…É¥¹	½ÑÑ½´èÑ¡•µ”¹ÍÁ…¥¹œ¹Í´ô°4(€€€‰Õ‰‰±•UÍ•Èèì…±¥¹M•±˜è€‰™±•àµ•¹ˆ°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€‰Õ‰‰±•$èì…±¥¹M•±˜è€‰™±•àµÍÑ…ÉÐˆ°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•Èô°4(€€€‰Õ‰‰±•Q•áÐèì™½¹ÑM¥é”è€ÄÐ°±¥¹•!•¥¡Ðè€ÈÀ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”°™±•áM¡É¥¹¬è€Äô°4(€€€ÁÉ½Á½Í…±…ÉèìÝ¥‘Ñ è€ˆÄÀÀ”ˆ°Á…‘‘¥¹œèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éä°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°µ…É¥¹	½ÑÑ½´èÑ¡•µ”¹ÍÁ…¥¹œ¹Í´ô°4(€€€ÁÉ½Á½Í…±…É‘•ÍÑÉÕÑ¥Ù”èì‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½Èô°4(€€€ÁÉ½Á½Í…±!•…‘•Èèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°…Àè€à°µ…É¥¹	½ÑÑ½´è€àô°4(€€€ÁÉ½Á½Í…±Q¥Ñ±”èì™±•àè€Ä°™½¹ÑM¥é”è€ÄÐ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€ÁÉ½Á½Í…±AÉ•Ù¥•Üèì™½¹ÑM¥é”è€ÄÐ°±¥¹•!•¥¡Ðè€ÈÀ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”ô°4(€€€ÁÉ½Á½Í…±!¥¹Ðèì™½¹ÑM¥é”è€ÄÈ°½±½ÈèÑ¡•µ”¹½±½È¹µÕÑ•°µ…É¥¹Q½Àè€Øô°4(€€€ÁÉ½Á½Í…±	ÕÑÑ½¹Ìèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰™±•àµ•¹ˆ°…Àè€ÄÀ°µ…É¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µô°4(€€€ÁÉ½Á½Í…±…¹•°èìÁ…‘‘¥¹Y•ÉÑ¥…°è€ÄÀ°Á…‘‘¥¹!½É¥é½¹Ñ…°è€ÄØ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•Èô°4(€€€ÁÉ½Á½Í…±…¹•±Q•áÐèì½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”°™½¹Ñ]•¥¡Ðè€ˆØÀÀˆô°4(€€€ÁÉ½Á½Í…±ÁÁ±äèìµ¥¹]¥‘Ñ è€àà°µ¥¹!•¥¡Ðè€ÐÀ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°Á…‘‘¥¹!½É¥é½¹Ñ…°è€ÄØ°‰½É‘•ÉI…‘¥ÕÌèÑ¡•µ”¹É…‘¥ÕÌ¹µ°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹‰É…¹‘AÉ¥µ…Éäô°4(€€€ÁÉ½Á½Í…±ÁÁ±å•ÍÑÉÕÑ¥Ù”èì‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹•ÉÉ½Èô°4(€€€ÁÉ½Á½Í…±ÁÁ±åQ•áÐèì½±½Èè€ˆ™™˜ˆ°™½¹Ñ]•¥¡Ðè€ˆÜÀÀˆô°4(€€€¥¹ÁÕÑ	…Èèì™±•á¥É•Ñ¥½¸è€‰É½Üˆ°Á…‘‘¥¹!½É¥é½¹Ñ…°èÑ¡•µ”¹ÍÁ…¥¹œ¹µ°Á…‘‘¥¹Q½ÀèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°…Àè€ÄÈ°‰½É‘•ÉQ½Á]¥‘Ñ è€Ä°‰½É‘•ÉQ½Á½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…•M•½¹‘…Éä°…±¥¹%Ñ•µÌè€‰™±•àµ•¹ˆô°4(€€€…ÑÑ…¡	Ñ¸èìÁ…‘‘¥¹œè€Ð°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°µ…É¥¹I¥¡Ðè€Ðô°4(€€€¥¹ÁÕÑ]É…ÁÁ•Èèì™±•àè€Ä°™±•á¥É•Ñ¥½¸è€‰É½Üˆ°…±¥¹%Ñ•µÌè€‰™±•àµ•¹ˆ°‰½É‘•É]¥‘Ñ è€Ä°‰½É‘•É½±½ÈèÑ¡•µ”¹½±½È¹‰½É‘•È°‰½É‘•ÉI…‘¥ÕÌè€ÈÐ°‰…­É½Õ¹‘½±½ÈèÑ¡•µ”¹½±½È¹ÍÕÉ™…”°Á…‘‘¥¹1•™ÐèÑ¡•µ”¹ÍÁ…¥¹œ¹µ°Á…‘‘¥¹I¥¡Ðè€Ð°Á…‘‘¥¹Y•ÉÑ¥…°è€à°µ¥¹!•¥¡Ðè€Ðà°µ…á!•¥¡Ðè€ÄÐÀô°4(€€€¥¹ÁÕÐèì™±•àè€Ä°µ¥¹]¥‘Ñ è€À°™½¹ÑM¥é”è€ÄÔ°±¥¹•!•¥¡Ðè€ÈÀ°½±½ÈèÑ¡•µ”¹½±½È¹½¹MÕÉ™…”°Á…‘‘¥¹œè€À°µ…É¥¸è€À°µ¥¹!•¥¡Ðè€ÈÐ°µ…á!•¥¡Ðè€ÄÄÈ°Ñ•áÑ±¥¹Y•ÉÑ¥…°è€‰Ñ½Àˆô°4(€€€µ¥	Ñ¸èìÁ…‘‘¥¹œè€à°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°µ…É¥¹I¥¡Ðè€Èô°4(€€€Í•¹‘	Ñ¸èìÁ…‘‘¥¹œè€à°©ÕÍÑ¥™å½¹Ñ•¹Ðè€‰•¹Ñ•Èˆ°…±¥¹%Ñ•µÌè€‰•¹Ñ•Èˆ°µ…É¥¹I¥¡Ðè€Èô°4(€ô¤ì4)ô4(

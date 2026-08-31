@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
+import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
@@ -43,6 +44,15 @@ export default function VoiceFab() {
     }
   }, [motionEnabled, phase, pulseScale]);
 
+  const buildVoiceDraft = async (txt: string) => {
+    const parsedCommand = await api.parseCommand(txt);
+    const [suppliers, customers, capitalAccounts] = await Promise.all([
+      api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+    ]);
+    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) throw new Error(resolution.question);
+    return buildVoiceTransactionDraft(resolution.command);
+  };
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
@@ -86,27 +96,9 @@ export default function VoiceFab() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
       
-      const parsedCommand = await api.parseCommand(txt);
-      const [suppliers, customers, capitalAccounts] = await Promise.all([
-        api.listSuppliers(),
-        api.listDebtors(),
-        api.listInvestors(),
-      ]);
-      const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-      if (!resolution.ok) throw new Error(resolution.question);
-      const p: any = resolution.command;
-      const proposalByIntent: Record<string, any> = {
-        expense: { type: 'add_expense', params: { category: p.category || 'General', amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
-        supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
-      };
-      const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
-      if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);      setParsed(p);
-      setValidatedAction(validation);
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -114,6 +106,20 @@ export default function VoiceFab() {
     }
   };
 
+  const rebuildDraft = async () => {
+    const txt = transcript.trim();
+    if (!txt) return;
+    setError(""); setPhase("processing");
+    try {
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
+      setPhase("confirm");
+    } catch (e: any) {
+      setError(e?.message || "Could not update the draft from that transcript.");
+      setPhase("error");
+    }
+  };
   const confirmSave = async () => {
     if (!parsed) return;
     setSaving(true);
@@ -252,7 +258,8 @@ export default function VoiceFab() {
               <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
                 {transcript ? (
                   <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <Text style={{ fontStyle: "italic", color: theme.color.muted }}>“{transcript}”</Text>
+                    <TextInput accessibilityLabel="Editable homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={{ fontStyle: "italic", color: theme.color.onSurface }} />
+                    <Pressable accessibilityRole="button" accessibilityLabel="Update homepage voice draft" onPress={() => void rebuildDraft()}><Text style={{ color: theme.color.brandPrimary, fontWeight: "700", marginTop: 8 }}>Update draft</Text></Pressable>
                   </View>
                 ) : null}
 
@@ -281,7 +288,9 @@ export default function VoiceFab() {
             ) : phase === "error" ? (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={32} color={theme.color.error} />
+                {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
                 <Text style={styles.errorText}>{error}</Text>
+                {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                 <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
                   <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
                 </Pressable>

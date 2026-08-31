@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,8 +9,9 @@ import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { Card } from "@/src/components/UI";
-import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
+import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
+import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
 import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
 
@@ -34,6 +35,15 @@ export default function VoiceModal() {
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
 
+  const buildVoiceDraft = async (txt: string) => {
+    const parsedCommand = await api.parseCommand(txt);
+    const [suppliers, customers, capitalAccounts] = await Promise.all([
+      api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+    ]);
+    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) throw new Error(resolution.question);
+    return buildVoiceTransactionDraft(resolution.command);
+  };
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
@@ -62,28 +72,9 @@ export default function VoiceModal() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
 
-      const parsedCommand = await api.parseCommand(txt);
-      const [suppliers, customers, capitalAccounts] = await Promise.all([
-        api.listSuppliers(),
-        api.listDebtors(),
-        api.listInvestors(),
-      ]);
-      const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-      if (!resolution.ok) throw new Error(resolution.question);
-      const p: any = resolution.command;
-
-      const proposalByIntent: Record<string, any> = {
-        bill: { type: 'add_bill', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        sale: { type: 'add_sale', params: { amount: p.amount, date: p.date, paymentType: p.paymentType, notes: p.notes || p.summary } },
-        expense: { type: 'add_expense', params: { amount: p.amount, date: p.date, category: p.category || 'General', notes: p.notes || p.summary } },
-        receipt: { type: 'create_receipt', params: { amount: p.amount, date: p.date, mode: p.receiptMode, customerName: p.customerName, method: p.method, notes: p.notes || p.summary } },
-        supplier_payment: { type: 'create_supplier_payment', params: { supplierName: p.supplierName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        drawing: { type: 'create_drawing', params: { partnerName: p.partnerName, amount: p.amount, date: p.date, method: p.method, notes: p.notes || p.summary } },
-        inventory: { type: 'record_inventory', params: { amount: p.amount, date: p.date, notes: p.notes || p.summary } },
-      };
-      const validation = validateAssistantProposal(proposalByIntent[p.intent], 'voice');
-      if (!validation.ok) throw new Error(`Invalid voice action: ${validation.errors.join('; ')}`);      setParsed(p);
-      setValidatedAction(validation);
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -91,6 +82,20 @@ export default function VoiceModal() {
     }
   };
 
+  const rebuildDraft = async () => {
+    const txt = transcript.trim();
+    if (!txt) return;
+    setError(""); setPhase("processing");
+    try {
+      const draft = await buildVoiceDraft(txt);
+      setParsed(draft.parsed);
+      setValidatedAction(draft.validation);
+      setPhase("confirm");
+    } catch (e: any) {
+      setError(e?.message || "Could not update the draft from that transcript.");
+      setPhase("error");
+    }
+  };
   const confirmSave = async () => {
     if (!parsed) return;
     setSaving(true);
@@ -204,7 +209,7 @@ export default function VoiceModal() {
               {phase === "recording" ? "Listening… tap to stop" :
                 phase === "processing" ? "Transcribing…" :
                   phase === "confirm" ? "Review draft below" :
-                    phase === "error" ? "Try again" :
+                    phase === "error" ? "Edit transcript or try again" :
                       "Tap microphone to start"}
             </Text>
           </View>
@@ -212,7 +217,8 @@ export default function VoiceModal() {
           {transcript ? (
             <View style={styles.transcriptBox}>
               <Text style={styles.transcriptLabel}>Transcript</Text>
-              <Text style={styles.transcript} testID="voice-transcript">{transcript}</Text>
+              <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={styles.transcript} />
+              {phase === "confirm" || phase === "error" ? <Pressable accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10 }]}><Text style={styles.actionText}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
 

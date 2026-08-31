@@ -39,7 +39,7 @@ describe('factoryReset — device-level key wipe (api.ts wiring)', () => {
   // app/(tabs)/index.tsx. If a new persisted pref is added without being wired
   // into the reset, this list — and the assertions below — must be updated.
   const PREF_KEYS = ['theme_mode', 'animations_enabled', 'ledgr_tile_order', 'ledgr_tile_usage'];
-  const AI_KEYS = ['ai_provider', 'ai_api_key', 'ai_model', 'ai_base_url', 'gemini_api_key', 'gemini_model'];
+  const AI_KEYS = ['ai_provider', 'ai_api_key', 'ai_model', 'ai_vision_model', 'ai_transcription_model', 'ai_transcription_base_url', 'ai_transcription_api_key', 'ai_base_url', 'gemini_api_key', 'gemini_model'];
 
   it('declares the complete preference-key list as a single exported constant', () => {
     const block = API_SRC.match(/FACTORY_RESET_PREF_KEYS\s*=\s*\[([\s\S]*?)\]/);
@@ -61,6 +61,11 @@ describe('factoryReset — device-level key wipe (api.ts wiring)', () => {
     expect(body).toContain('AI_PROVIDER_KEY');
     expect(body).toContain('AI_MODEL_KEY');
     expect(body).toContain('secureRemove(AI_API_KEY_KEY)');
+    expect(body).toContain('secureRemove(AI_TRANSCRIPTION_API_KEY_KEY)');
+    expect(body).toContain('AI_VISION_MODEL_KEY');
+    expect(body).toContain('AI_TRANSCRIPTION_MODEL_KEY');
+    expect(body).toContain('AI_TRANSCRIPTION_BASE_URL_KEY');
+    expect(body).toContain('AI_TRANSCRIPTION_API_KEY_KEY');
     expect(body).toContain('beClearAskHistory(books.map((book) => book.id))');
     expect(API_SRC).toContain("AI_TRANSFER_CONSENT_PREFIX = 'ledgr:ai-transfer-consent:'");
     expect(body).toContain('getAllKeys()');
