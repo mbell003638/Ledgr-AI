@@ -130,6 +130,11 @@ function resolveBaseUrl(cfg: AIConfig): string {
   return getProviderMeta(cfg.provider).defaultBaseUrl.replace(/\/+$/, '');
 }
 
+export interface CallOptions {
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+}
+
 /**
  * Core text/multimodal call. Returns raw text (possibly JSON string).
  * parts: array of { inlineData: { mimeType, data(base64) } } for images/audio.
@@ -139,15 +144,16 @@ async function call(
   prompt: string,
   parts: { inlineData: { mimeType: string; data: string } }[] = [],
   jsonSchema?: any,
+  options?: CallOptions,
 ): Promise<string> {
   requireKey(cfg);
   const api = resolveApi(cfg);
-  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema);
-  if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema);
+  if (api === 'gemini') return callGemini(cfg, prompt, parts, jsonSchema, options);
+  if (api === 'anthropic') return callAnthropic(cfg, prompt, parts, jsonSchema, options);
   if (!resolveBaseUrl(cfg)) {
     throw new Error('Set a Base URL for the OpenAI-compatible provider (for example https://openrouter.ai/api/v1).');
   }
-  return callOpenAI(cfg, prompt, parts, jsonSchema);
+  return callOpenAI(cfg, prompt, parts, jsonSchema, options);
 }
 
 const AI_REQUEST_TIMEOUT_MS = 60_000;
@@ -158,9 +164,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
+async function fetchOnce(url: string, init: RequestInit, timeoutMs = AI_REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error: any) {
@@ -172,19 +178,18 @@ async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
 }
 
 /**
- * Fetch with a 60s timeout and one automatic retry for temporary provider,
- * rate-limit, network, or timeout failures. Permanent failures are returned
- * immediately so callers can show the provider's actionable error.
+ * Fetch with an automatic retry for temporary provider, rate-limit, network, or timeout failures.
+ * Permanent failures are returned immediately so callers can show the provider's actionable error.
  */
-async function fetchAI(url: string, init: RequestInit): Promise<Response> {
+async function fetchAI(url: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
   try {
-    const res = await fetchOnce(url, init);
+    const res = await fetchOnce(url, init, timeoutMs);
     if (!TRANSIENT_AI_STATUSES.has(res.status)) return res;
   } catch {
     // A second attempt below covers brief connectivity and timeout failures.
   }
   await delay(AI_TRANSIENT_RETRY_MS);
-  return fetchOnce(url, init);
+  return fetchOnce(url, init, timeoutMs);
 }
 
 /**
@@ -220,6 +225,7 @@ async function callGeminiModel(
   prompt: string,
   parts: any[],
   schema?: any,
+  options?: CallOptions,
 ): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/models/${model}:generateContent`;
@@ -227,6 +233,7 @@ async function callGeminiModel(
     contents: [{ role: 'user', parts: [{ text: prompt }, ...parts] }],
     generationConfig: {
       temperature: 0,
+      ...(options?.maxOutputTokens ? { maxOutputTokens: options.maxOutputTokens } : {}),
       ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}),
     },
   };
@@ -234,7 +241,7 @@ async function callGeminiModel(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey },
     body: JSON.stringify(body),
-  });
+  }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -250,22 +257,23 @@ async function callGemini(
   prompt: string,
   parts: any[],
   schema?: any,
+  options?: CallOptions,
 ): Promise<string> {
   try {
-    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema);
+    return await callGeminiModel(cfg, cfg.model, prompt, parts, schema, options);
   } catch (error: any) {
     // If a model-not-found surfaces for the (deprecated) DEFAULT model, retry once
     // with the current alias before letting the actionable error from (d) bubble up.
     const msg = error?.message || '';
     const looksLikeModelIssue = isModelNotFoundError(0, msg) || /update the model name/i.test(msg);
     if (looksLikeModelIssue && cfg.model === DEPRECATED_DEFAULT_GEMINI_MODEL) {
-      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema);
+      return callGeminiModel({ ...cfg, model: DEFAULT_GEMINI_MODEL }, DEFAULT_GEMINI_MODEL, prompt, parts, schema, options);
     }
     throw error;
   }
 }
 // ---------------- OpenAI-compatible (OpenAI, OpenRouter, custom) ----------------
-async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
+async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: any, options?: CallOptions): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/chat/completions`;
   const content: any[] = [{ type: 'text', text: prompt }];
@@ -283,6 +291,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     model: cfg.model,
     temperature: 0,
     messages: [{ role: 'user', content }],
+    ...(options?.maxOutputTokens ? { max_tokens: options.maxOutputTokens } : {}),
     ...(schema ? { response_format: { type: 'json_object' } } : {}),
   };
   const headers: any = {
@@ -293,7 +302,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
     headers['HTTP-Referer'] = 'https://ledgr.app';
     headers['X-Title'] = 'Ledgr';
   }
-  const res = await fetchAI(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetchAI(url, { method: 'POST', headers, body: JSON.stringify(body) }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -305,7 +314,7 @@ async function callOpenAI(cfg: AIConfig, prompt: string, parts: any[], schema?: 
 }
 
 // ---------------- Anthropic ----------------
-async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema?: any): Promise<string> {
+async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema?: any, options?: CallOptions): Promise<string> {
   const base = resolveBaseUrl(cfg);
   const url = `${base}/messages`;
   const content: any[] = [{ type: 'text', text: prompt + (schema ? '\n\nRespond with ONLY valid JSON, no prose.' : '') }];
@@ -319,7 +328,7 @@ async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema
   }
   const body: any = {
     model: cfg.model,
-    max_tokens: 8192,
+    max_tokens: options?.maxOutputTokens || 8192,
     temperature: 0,
     messages: [{ role: 'user', content }],
   };
@@ -331,7 +340,7 @@ async function callAnthropic(cfg: AIConfig, prompt: string, parts: any[], schema
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-  });
+  }, options?.timeoutMs);
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -358,8 +367,9 @@ function parseJson(raw: string): any {
 // ================= Public surface (same as old gemini.ts) =================
 
 export async function testKey(cfg: AIConfig) {
-  const out = await call(cfg, 'Reply with the single word: OK');
-  return { ok: true, reply: (out || '').trim() };
+  const out = await call(cfg, 'Reply with the single word: OK', [], undefined, { maxOutputTokens: 5, timeoutMs: 10_000 });
+  const cleaned = (out || '').replace(/^["']|["']$/g, '').trim();
+  return { ok: true, reply: cleaned };
 }
 
 const PARSE_SCHEMA = {

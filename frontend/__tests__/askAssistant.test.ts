@@ -1,4 +1,4 @@
-import { askBooks, isClearlyExternalQuestion, isExplicitBookMutationRequest } from '../src/db/ai';
+import { askBooks, isClearlyExternalQuestion, isExplicitBookMutationRequest, testKey } from '../src/db/ai';
 
 const geminiConfig = { provider: 'gemini' as const, apiKey: 'test-key', model: 'gemini-3.6-flash' };
 const geminiResponse = (payload: unknown) => ({
@@ -97,6 +97,16 @@ describe('Ask AI assistant routing', () => {
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.contents[0].parts[0].text).toContain('=== RECENT CONVERSATION HISTORY ===');
     expect(body.contents[0].parts[0].text).toContain('Paid 100 to amit today');
+  });
+
+  it('tests connection with small token budget and fast completion', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue(geminiResponse('OK'));
+    global.fetch = fetchSpy as any;
+
+    const res = await testKey(geminiConfig);
+    expect(res).toEqual({ ok: true, reply: 'OK' });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.generationConfig.maxOutputTokens).toBe(5);
   });
 
   it('recognizes explicit natural-language writes, multi-turn follow-ups, and external topics', () => {
