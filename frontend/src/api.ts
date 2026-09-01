@@ -6,6 +6,7 @@ import { round2 } from '@/src/money';
 import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig } from '@/src/db/ai';
+import { recognizeLocalOcr } from '@/src/utils/localOcr';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
@@ -52,6 +53,8 @@ const AI_TRANSCRIPTION_MODEL_KEY = 'ai_transcription_model';
 const AI_TRANSCRIPTION_BASE_URL_KEY = 'ai_transcription_base_url';
 const AI_TRANSCRIPTION_API_KEY_KEY = 'ai_transcription_api_key';
 const AI_BASE_URL_KEY = 'ai_base_url';
+const AI_VOICE_PROVIDER_KEY = 'ai_voice_provider';
+const AI_OCR_PROVIDER_KEY = 'ai_ocr_provider';
 
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
 // per-book settings blob. A factory reset must wipe these too so the device is
@@ -80,7 +83,7 @@ let webSessionTranscriptionAiKey = '';
 const isWebRuntime = typeof window !== 'undefined' && typeof document !== 'undefined';
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl] = await Promise.all([
+  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     isWebRuntime ? Promise.resolve(webSessionAiKey) : storage.secureGet(AI_API_KEY_KEY, ''),
     isWebRuntime ? Promise.resolve(null) : AsyncStorage.getItem(AI_API_KEY_KEY),
@@ -90,6 +93,8 @@ export async function getAIConfig(): Promise<AIConfig> {
     AsyncStorage.getItem(AI_TRANSCRIPTION_BASE_URL_KEY),
     isWebRuntime ? Promise.resolve(webSessionTranscriptionAiKey) : storage.secureGet(AI_TRANSCRIPTION_API_KEY_KEY, ''),
     AsyncStorage.getItem(AI_BASE_URL_KEY),
+    AsyncStorage.getItem(AI_VOICE_PROVIDER_KEY),
+    AsyncStorage.getItem(AI_OCR_PROVIDER_KEY),
   ]);
   if (isWebRuntime) await AsyncStorage.removeItem(AI_API_KEY_KEY).catch(() => {});
   const resolvedKey = isWebRuntime ? webSessionAiKey : (secureKey || storedKey || '');
@@ -108,6 +113,8 @@ export async function getAIConfig(): Promise<AIConfig> {
     transcriptionBaseUrl: transcriptionBaseUrl ?? undefined,
     transcriptionApiKey: secureTranscriptionKey || undefined,
     baseUrl: baseUrl ?? undefined,
+    voiceProvider: voiceProvider === 'android-device' || voiceProvider === 'cloud' ? voiceProvider : 'auto',
+    ocrProvider: ocrProvider === 'android-device' || ocrProvider === 'cloud' ? ocrProvider : 'auto',
   };
 }
 
@@ -137,6 +144,8 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   if (cfg.transcriptionModel !== undefined) ops.push(AsyncStorage.setItem(AI_TRANSCRIPTION_MODEL_KEY, cfg.transcriptionModel));
   if (cfg.transcriptionBaseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_TRANSCRIPTION_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.transcriptionBaseUrl)));
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
+  if (cfg.voiceProvider !== undefined) ops.push(AsyncStorage.setItem(AI_VOICE_PROVIDER_KEY, cfg.voiceProvider));
+  if (cfg.ocrProvider !== undefined) ops.push(AsyncStorage.setItem(AI_OCR_PROVIDER_KEY, cfg.ocrProvider));
   const [secureOk, transcriptionSecureOk] = await Promise.all([
     secureKeyWrite ?? Promise.resolve(true),
     transcriptionKeyWrite ?? Promise.resolve(true),
@@ -1759,7 +1768,7 @@ export const api = {
       storage.secureRemove(AI_API_KEY_KEY),
       storage.secureRemove(AI_TRANSCRIPTION_API_KEY_KEY),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
@@ -1773,7 +1782,19 @@ export const api = {
   // AI
   parseCommand: async (text: string) => { const settings = await db.getSettings(); return ai.parseCommand(await getAIConfig(), text, settings.currency || 'USD'); },
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },
-  analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string }) => ai.analyzeDocumentAI(await getAIConfig(), input),
+  analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string; uri?: string }) => {
+    const config = await getAIConfig();
+    const isImage = Boolean(input.uri && input.mimeType?.startsWith('image/'));
+    if (isImage && config.ocrProvider !== 'cloud') {
+      try {
+        const text = await recognizeLocalOcr(input.uri!);
+        return await ai.analyzeDocumentAI(config, { text });
+      } catch (error) {
+        if (config.ocrProvider === 'android-device') throw error;
+      }
+    }
+    return ai.analyzeDocumentAI(config, input);
+  },
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a', audioUri?: string) => ai.transcribe(await getAIConfig(), audioBase64, mimeType, audioUri),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),
   askBooks: async (question: string, dataContext: string) => ai.askBooks(await getAIConfig(), question, dataContext),

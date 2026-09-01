@@ -9,13 +9,16 @@ import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askHistoryStorageKey } from "@/src/utils/askHistory";
-import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { PROVIDERS, type ProviderId, type VoiceProvider } from "@/src/db/ai";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { saveJsonFile, shareJsonFile, pickJsonFile } from "@/src/utils/share";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
 import { PERSONAS, type PersonaId } from "@/src/accountingV2/config";
 import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/utils/dateValidation";
+import { getAICapabilities } from "@/src/db/aiCapabilities";
+import { getDeviceSpeechStatus } from "@/src/utils/deviceSpeechRecognizer";
+import { getLocalOcrStatus } from "@/src/utils/localOcr";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -99,6 +102,8 @@ export default function AdvancedSettingsScreen() {
   const [transcriptionModelName, setTranscriptionModelName] = useState("whisper-1");
   const [transcriptionBaseUrl, setTranscriptionBaseUrl] = useState("");
   const [transcriptionKey, setTranscriptionKey] = useState("");
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("auto");
+  const [ocrProvider, setOcrProvider] = useState<"auto" | "android-device" | "cloud">("auto");
   const [baseUrl, setBaseUrl] = useState("");
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [aiRememberHistory, setAiRememberHistory] = useState(false);
@@ -172,6 +177,8 @@ export default function AdvancedSettingsScreen() {
       setTranscriptionModelName(cfg.transcriptionModel || "whisper-1");
       setTranscriptionBaseUrl(cfg.transcriptionBaseUrl || "");
       setTranscriptionKey(cfg.transcriptionApiKey || "");
+      setVoiceProvider(cfg.voiceProvider || "auto");
+      setOcrProvider(cfg.ocrProvider || "auto");
       setBaseUrl(cfg.baseUrl || "");
       setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
       setAiRememberHistory(s.aiRememberHistory === true);
@@ -257,6 +264,8 @@ export default function AdvancedSettingsScreen() {
         transcriptionModel: transcriptionModelName.trim() || "whisper-1",
         transcriptionBaseUrl: transcriptionBaseUrl.trim(),
         transcriptionApiKey: transcriptionKey.trim(),
+        voiceProvider,
+        ocrProvider,
         baseUrl: baseUrl.trim(),
       });
       try {
@@ -311,6 +320,8 @@ export default function AdvancedSettingsScreen() {
         transcriptionModel: transcriptionModelName.trim() || "whisper-1",
         transcriptionBaseUrl: transcriptionBaseUrl.trim(),
         transcriptionApiKey: transcriptionKey.trim(),
+        voiceProvider,
+        ocrProvider,
         baseUrl: baseUrl.trim(),
       };
       await api.testKey(draftConfig);
@@ -320,6 +331,53 @@ export default function AdvancedSettingsScreen() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const draftAIConfig = () => {
+    const meta = PROVIDERS.find((p) => p.id === provider)!;
+    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, baseUrl: baseUrl.trim() };
+  };
+
+  const testVoiceCapability = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const device = voiceProvider !== 'cloud' ? await getDeviceSpeechStatus() : null;
+      if (voiceProvider === 'android-device' && !device?.available) throw new Error(device?.reason || 'Android device recognition is unavailable.');
+      const cloud = getAICapabilities(draftAIConfig()).transcription;
+      if (voiceProvider === 'cloud' && !cloud.configured) throw new Error(cloud.reason || 'Cloud voice is not configured.');
+      if (voiceProvider === 'auto' && !device?.available && !cloud.configured) throw new Error(device?.reason || cloud.reason || 'No voice provider is available.');
+      setTestResult({ ok: true, msg: device?.available ? 'Android voice is available.' : 'Cloud voice configuration is ready.' });
+    } catch (e: any) { setTestResult({ ok: false, msg: e?.message || 'Voice capability failed.' }); }
+    finally { setTesting(false); }
+  };
+
+  const testOcrCapability = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const device = ocrProvider !== 'cloud' ? await getLocalOcrStatus() : null;
+      if (ocrProvider === 'android-device' && !device?.available) throw new Error(device?.reason || 'Android OCR is unavailable.');
+      const cloud = getAICapabilities(draftAIConfig()).vision;
+      if (ocrProvider === 'cloud' && !cloud.configured) throw new Error(cloud.reason || 'Cloud OCR is not configured.');
+      if (ocrProvider === 'auto' && !device?.available && !cloud.configured) throw new Error(device?.reason || cloud.reason || 'No OCR provider is available.');
+      setTestResult({ ok: true, msg: device?.available ? 'Android OCR is available.' : 'Cloud OCR configuration is ready.' });
+    } catch (e: any) { setTestResult({ ok: false, msg: e?.message || 'OCR capability failed.' }); }
+    finally { setTesting(false); }
+  };
+
+  const testAllCapabilities = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const draft = draftAIConfig();
+      await api.testKey(draft);
+      const [deviceVoice, deviceOcr] = await Promise.all([getDeviceSpeechStatus(), getLocalOcrStatus()]);
+      const cloud = getAICapabilities(draft);
+      const voiceReady = voiceProvider === 'android-device' ? deviceVoice.available : voiceProvider === 'cloud' ? cloud.transcription.configured : deviceVoice.available || cloud.transcription.configured;
+      const ocrReady = ocrProvider === 'android-device' ? deviceOcr.available : ocrProvider === 'cloud' ? cloud.vision.configured : deviceOcr.available || cloud.vision.configured;
+      if (!voiceReady) throw new Error('Chat passed, but no selected voice provider is available.');
+      if (!ocrReady) throw new Error('Chat passed, but no selected OCR provider is available.');
+      setTestResult({ ok: true, msg: 'Chat, voice, and OCR capabilities are ready.' });
+    } catch (e: any) { setTestResult({ ok: false, msg: e?.message || 'Capability test failed.' }); }
+    finally { setTesting(false); }
   };
 
   const [busy, setBusy] = useState<"export" | "save" | "import" | null>(null);
@@ -677,7 +735,8 @@ export default function AdvancedSettingsScreen() {
                       <Text style={styles.label}>Image / OCR model (optional)</Text>
                       <TextInput testID="vision-model" value={visionModelName} onChangeText={setVisionModelName} placeholder="Leave blank to use the chat model" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
                       <Text style={styles.hint}>For receipt and image Scan & Import, choose a vision-capable model available at the chat provider. PDF upload remains Gemini-only; other providers can use page images or pasted text.</Text>
-                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text model</Text>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Image / OCR provider</Text><View style={styles.modeRow}><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "auto" }} onPress={() => setOcrProvider("auto")} style={[styles.modeBtn, ocrProvider === "auto" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "auto" && styles.modeTextActive]}>Automatic</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "android-device" }} onPress={() => setOcrProvider("android-device")} style={[styles.modeBtn, ocrProvider === "android-device" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "android-device" && styles.modeTextActive]}>Android device</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "cloud" }} onPress={() => setOcrProvider("cloud")} style={[styles.modeBtn, ocrProvider === "cloud" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "cloud" && styles.modeTextActive]}>Cloud</Text></Pressable></View><Text style={styles.hint}>Automatic extracts text with Android ML Kit first, then falls back to the configured vision provider.</Text>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice input provider</Text><View style={styles.modeRow}><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "auto" }} onPress={() => setVoiceProvider("auto")} style={[styles.modeBtn, voiceProvider === "auto" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "auto" && styles.modeTextActive]}>Automatic</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "android-device" }} onPress={() => setVoiceProvider("android-device")} style={[styles.modeBtn, voiceProvider === "android-device" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "android-device" && styles.modeTextActive]}>Android device</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "cloud" }} onPress={() => setVoiceProvider("cloud")} style={[styles.modeBtn, voiceProvider === "cloud" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "cloud" && styles.modeTextActive]}>Cloud</Text></Pressable></View><Text style={styles.hint}>Automatic uses Android recognition when available, then your configured cloud provider.</Text><Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text model</Text>
                       <TextInput testID="voice-transcription-model" value={transcriptionModelName} onChangeText={setTranscriptionModelName} placeholder="whisper-1" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice-to-text Base URL (optional)</Text>
                       <TextInput testID="voice-transcription-base-url" value={transcriptionBaseUrl} onChangeText={(value) => { setTranscriptionBaseUrl(value); setCustomHostConfirmed(false); }} placeholder="https://api.openai.com/v1 or another speech host" placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} />
@@ -686,7 +745,11 @@ export default function AdvancedSettingsScreen() {
                       <Text style={styles.hint}>{provider === "openai" ? "Leave the voice URL and key blank only when the chat host itself supports /audio/transcriptions. OpenRouter chat commonly needs a separate OpenAI-compatible speech endpoint." : "Anthropic has no speech endpoint. Add an OpenAI-compatible speech URL and key here while keeping Anthropic for chat and image OCR."}</Text>
                     </View>
                   ) : (
-                    <Text style={[styles.hint, { marginTop: theme.spacing.md }]}>Gemini uses the selected model for chat, image OCR, and voice transcription.</Text>
+                    <View style={{ marginTop: theme.spacing.md }}>
+                      <Text style={styles.label}>Image / OCR provider</Text><View style={styles.modeRow}><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "auto" }} onPress={() => setOcrProvider("auto")} style={[styles.modeBtn, ocrProvider === "auto" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "auto" && styles.modeTextActive]}>Automatic</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "android-device" }} onPress={() => setOcrProvider("android-device")} style={[styles.modeBtn, ocrProvider === "android-device" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "android-device" && styles.modeTextActive]}>Android device</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: ocrProvider === "cloud" }} onPress={() => setOcrProvider("cloud")} style={[styles.modeBtn, ocrProvider === "cloud" && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === "cloud" && styles.modeTextActive]}>Cloud</Text></Pressable></View>
+                      <Text style={styles.hint}>Automatic uses Android ML Kit first and Gemini vision as fallback.</Text>
+                      <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice input provider</Text><View style={styles.modeRow}><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "auto" }} onPress={() => setVoiceProvider("auto")} style={[styles.modeBtn, voiceProvider === "auto" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "auto" && styles.modeTextActive]}>Automatic</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "android-device" }} onPress={() => setVoiceProvider("android-device")} style={[styles.modeBtn, voiceProvider === "android-device" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "android-device" && styles.modeTextActive]}>Android device</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: voiceProvider === "cloud" }} onPress={() => setVoiceProvider("cloud")} style={[styles.modeBtn, voiceProvider === "cloud" && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === "cloud" && styles.modeTextActive]}>Cloud</Text></Pressable></View><Text style={styles.hint}>Automatic uses Android recognition when available and Gemini transcription as fallback.</Text>
+                    </View>
                   )}
                   {isCustomProvider && (
                     <>
@@ -707,10 +770,13 @@ export default function AdvancedSettingsScreen() {
                       </Pressable>
                     </>
                   )}
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: theme.spacing.md, gap: theme.spacing.sm }}>
                     <Pressable onPress={testKey} disabled={testing || !key} style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}>{testing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <Text style={styles.secondaryText}>Test Chat Connection</Text>}</Pressable>
-                    {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
+                    <Pressable onPress={testVoiceCapability} disabled={testing} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Test Voice-to-Text</Text></Pressable>
+                    <Pressable onPress={testOcrCapability} disabled={testing} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Test Image/OCR</Text></Pressable>
+                    <Pressable onPress={testAllCapabilities} disabled={testing || !key} style={styles.secondaryBtn}><Text style={styles.secondaryText}>Test All</Text></Pressable>
                   </View>
+                  {testResult && <Text style={{ marginTop: theme.spacing.sm, fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error }}>{testResult.msg}</Text>}
                   <Text style={styles.hint}>Chat testing does not test voice. OpenAI-compatible voice needs a speech model and a Base URL that implements /audio/transcriptions; Anthropic needs a separate speech endpoint.</Text>
                 </View>
               </AccordionRow>

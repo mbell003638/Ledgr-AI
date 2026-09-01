@@ -1,7 +1,7 @@
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { AppState, LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable , Image, Animated } from "react-native";
+import { AppState, LogBox, View, Platform, Linking, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable , Image, Animated } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -15,6 +15,7 @@ import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
 import { api } from "@/src/api";
 import { isCapabilityEnabled, type CapabilityKey } from "@/src/utils/capabilities";
 import { SyncStatusIndicator } from "@/src/components/SyncStatusIndicator";
+import { parseExternalIntent, externalIntentPath } from "@/src/utils/externalIntent";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -369,6 +370,21 @@ export default function RootLayout() {
       subscription.remove();
     };
   }, [attemptUnlock, storageReady]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    let active = true;
+    const handleUrl = (url: string | null) => {
+      if (!active || !url) return;
+      try {
+        const intent = parseExternalIntent(url);
+        if (intent) router.replace({ pathname: externalIntentPath(intent) as any, params: intent.target === 'draft' ? { text: intent.text } : {} });
+      } catch { }
+    };
+    Linking.getInitialURL().then(handleUrl).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => { active = false; sub.remove(); };
+  }, [unlocked]);
 
   if (!storageReady) {
     return <AppOpeningSplashScreen />;

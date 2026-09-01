@@ -1,19 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView, Keyboard, TextInput } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
-import { VoiceOrb } from "@/src/components/VoiceOrb";
+import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -26,6 +26,7 @@ export default function VoiceModal() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ assistantText?: string }>();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -33,38 +34,55 @@ export default function VoiceModal() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
+  const transcriptRef = useRef("");
+
+  useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
+
+  useEffect(() => {
+    const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
+    if (text) { setTranscript(text); void buildVoiceDraft(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
+  }, [params.assistantText]);
 
 
   const buildVoiceDraft = async (txt: string) => {
     const parsedCommand = await api.parseCommand(txt);
     const [suppliers, customers, capitalAccounts] = await Promise.all([
-      api.listSuppliers(),
-      api.listDebtors(),
-      api.listInvestors(),
+      api.listSuppliers(), api.listDebtors(), api.listInvestors(),
     ]);
     const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
     if (!resolution.ok) throw new Error(resolution.question);
     return buildVoiceTransactionDraft(resolution.command);
   };
-
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
-      const config = await api.getAIConfig();
-      if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
+      const cfg = await getAIConfig();
+      const mode = cfg.voiceProvider || "auto";
+      if (mode !== "cloud") {
+        const status = await getDeviceSpeechStatus();
+        if (status.available) {
+          transcriptRef.current = "";
+          deviceStopRef.current = await startDeviceSpeechRecognition({ onPartial: (text) => { transcriptRef.current = text; setTranscript(text); }, onFinal: (text) => { transcriptRef.current = text; setTranscript(text); }, onError: (speechError) => { setError(speechError.message); setPhase("error"); } });
+          setPhase("recording");
+          return;
+        }
+        if (mode === "android-device") throw new Error(status.reason || "Android device speech recognition is unavailable.");
+      }
       await startVoiceRecorder(recorder);
       setPhase("recording");
-    } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
+    } catch (e: any) { setError(e.message); setPhase("error"); }
   };
 
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      const captured = await captureVoiceRecording(recorder);
-      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
-      const txt = (t.transcript || "").trim();
+      let txt = "";
+      if (deviceStopRef.current) { await deviceStopRef.current(); deviceStopRef.current = null; txt = transcriptRef.current.trim(); }
+      else { const captured = await captureVoiceRecording(recorder); const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri); txt = (t.transcript || "").trim(); }
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
+
       const draft = await buildVoiceDraft(txt);
       setParsed(draft.parsed);
       setValidatedAction(draft.validation);
@@ -77,7 +95,7 @@ export default function VoiceModal() {
 
   const rebuildDraft = async () => {
     const txt = transcript.trim();
-    if (!txt) { setError("Enter or dictate a transaction before rebuilding the draft."); return; }
+    if (!txt) return;
     setError(""); setPhase("processing");
     try {
       const draft = await buildVoiceDraft(txt);
@@ -85,11 +103,10 @@ export default function VoiceModal() {
       setValidatedAction(draft.validation);
       setPhase("confirm");
     } catch (e: any) {
-      setError(e.message || "Could not rebuild the draft from that transcript.");
+      setError(e?.message || "Could not update the draft from that transcript.");
       setPhase("error");
     }
   };
-
   const confirmSave = async () => {
     if (!parsed) return;
     setSaving(true);
@@ -168,16 +185,13 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
-    void cancelVoiceRecorder(recorder);
     setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
   };
-
-  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
-        <Pressable testID="btn-close-voice" accessibilityRole="button" accessibilityLabel="Close voice assistant" onPress={() => { void cancelVoiceRecorder(recorder); router.back(); }}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
+        <Pressable testID="btn-close-voice" onPress={() => router.back()}><Ionicons name="close" size={26} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
@@ -191,14 +205,16 @@ export default function VoiceModal() {
 
           <View style={styles.micArea}>
             {phase === "recording" ? (
-              <Pressable testID="btn-stop-voice" accessibilityRole="button" accessibilityLabel="Stop recording and process voice note" onPress={stopAndProcess}>
-                <VoiceOrb phase="recording" theme={theme} />
+              <Pressable testID="btn-stop-voice" onPress={stopAndProcess} style={[styles.micBtn, styles.micRecording]}>
+                <Ionicons name="stop" size={40} color="#fff" />
               </Pressable>
             ) : phase === "processing" ? (
-              <VoiceOrb phase="processing" theme={theme} />
+              <View style={[styles.micBtn, { backgroundColor: theme.color.brandSecondary }]}>
+                <ActivityIndicator color="#fff" size="large" />
+              </View>
             ) : (
-              <Pressable testID="btn-start-voice" accessibilityRole="button" accessibilityLabel="Start voice recording" accessibilityHint="Records a transaction description for review" onPress={start}>
-                <VoiceOrb phase="idle" theme={theme} />
+              <Pressable testID="btn-start-voice" onPress={start} style={styles.micBtn}>
+                <Ionicons name="mic" size={40} color="#fff" />
               </Pressable>
             )}
             <Text style={styles.micLabel}>
@@ -212,9 +228,9 @@ export default function VoiceModal() {
 
           {transcript ? (
             <View style={styles.transcriptBox}>
-              <Text style={styles.transcriptLabel}>Transcript — edit before saving</Text>
-              <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={styles.transcriptInput} placeholderTextColor={theme.color.muted} />
-              {phase === "confirm" || phase === "error" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={styles.rebuildBtn}><Text style={styles.rebuildText}>Update draft</Text></Pressable> : null}
+              <Text style={styles.transcriptLabel}>Transcript</Text>
+              <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={styles.transcript} />
+              {phase === "confirm" || phase === "error" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10 }]}><Text style={styles.actionText}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
 
@@ -240,10 +256,10 @@ export default function VoiceModal() {
                 </View>
               ) : null}
               <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                <Pressable testID="btn-voice-cancel" accessibilityRole="button" accessibilityLabel="Discard draft and try again" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                <Pressable testID="btn-voice-cancel" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                   <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Try Again</Text>
                 </Pressable>
-                <Pressable testID="btn-voice-confirm" accessibilityRole="button" accessibilityLabel={isDestructive ? "Confirm close books" : "Confirm and save transaction"} accessibilityHint={isDestructive ? "Permanently closes the accounting period" : "Posts the reviewed transaction to the ledger"} onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
+                <Pressable testID="btn-voice-confirm" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
                   {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>{isDestructive ? "Close Books" : "Confirm & Save"}</Text>}
                 </Pressable>
               </View>
@@ -256,7 +272,7 @@ export default function VoiceModal() {
               <Ionicons name="alert-circle" size={18} color={theme.color.error} />
               <View style={{ flex: 1, gap: 7 }}>
                 <Text style={styles.errorText} testID="voice-error">{error}</Text>
-                {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={styles.setupLink}>Open AI provider settings</Text></Pressable> : null}
+                {/API key|Anthropic|Base URL|Advanced Settings|provider/i.test(error) ? <Pressable testID="voice-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={styles.setupLink}>Open AI provider settings</Text></Pressable> : null}
               </View>
             </View>
           ) : null}
@@ -291,10 +307,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   micLabel: { color: theme.color.muted, fontSize: 13, fontWeight: "500" },
   transcriptBox: { marginTop: 8, padding: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md },
   transcriptLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
-  transcript: { fontSize: 14, color: theme.color.onSurface, marginTop: 4, fontStyle: "italic" },
-  transcriptInput: { minHeight: 74, color: theme.color.onSurface, fontSize: 14, lineHeight: 20, marginTop: 6, padding: 10, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, textAlignVertical: "top" },
-  rebuildBtn: { alignSelf: "flex-start", marginTop: 9, paddingVertical: 8, paddingHorizontal: 12, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.brandPrimary },
-  rebuildText: { color: theme.color.brandPrimary, fontWeight: "700", fontSize: 12 },
+  transcript: { minHeight: 74, color: theme.color.onSurface, fontSize: 14, lineHeight: 20, marginTop: 6, padding: 10, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, textAlignVertical: "top" },
   draft: { marginTop: theme.spacing.md, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.color.brandTertiary },
   draftLabel: { fontSize: 11, color: theme.color.brandPrimary, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   draftSummary: { fontSize: 15, color: theme.color.onSurface, fontWeight: "600", marginTop: 6 },

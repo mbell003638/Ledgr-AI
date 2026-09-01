@@ -8,6 +8,8 @@
 import { localTodayIso } from '../utils/dateValidation';
 
 export type ProviderId = 'gemini' | 'openai' | 'anthropic';
+export type VoiceProvider = 'auto' | 'android-device' | 'cloud';
+export type OcrProvider = 'auto' | 'android-device' | 'cloud';
 
 // Default provider used when the stored provider is missing/unknown/legacy.
 export const DEFAULT_PROVIDER: ProviderId = 'gemini';
@@ -23,6 +25,8 @@ export interface AIConfig {
   transcriptionBaseUrl?: string;
   transcriptionApiKey?: string;
   baseUrl?: string; // OpenAI-compatible or Anthropic-compatible endpoint
+  voiceProvider?: VoiceProvider;
+  ocrProvider?: OcrProvider;
 }
 
 export interface ProviderMeta {

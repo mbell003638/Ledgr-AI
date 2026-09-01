@@ -1,0 +1,9 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": [
+      "expo.modules.ledgrnativeai.LedgrSpeechRecognizerModule",
+      "expo.modules.ledgrnativeai.LedgrLocalOcrModule"
+    ]
+  }
+}

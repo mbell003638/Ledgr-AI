@@ -15,6 +15,7 @@ import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { VoiceOrb } from "@/src/components/VoiceOrb";
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { subscribeToVoiceAssistantRequest } from "@/src/utils/voiceAssistantRequest";
+import { DeviceSpeechSession, getDeviceSpeechBridge, isDeviceSpeechAvailable } from "@/src/utils/deviceSpeechRecognizer";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -28,6 +29,7 @@ export default function VoiceFab() {
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
   const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const deviceSession = useRef<DeviceSpeechSession | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,7 +37,7 @@ export default function VoiceFab() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
+  useEffect(() => () => { deviceSession.current?.cancel(); deviceSession.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
   const stopExistingRecorder = () => cancelVoiceRecorder(recorder);
 
@@ -55,6 +57,19 @@ export default function VoiceFab() {
     setError(""); setTranscript(""); setParsed(null);
     try {
       const config = await api.getAIConfig();
+      const bridge = getDeviceSpeechBridge();
+      const available = bridge ? await isDeviceSpeechAvailable(bridge) : false;
+      if (config.voiceProvider === "android-device" || (config.voiceProvider !== "cloud" && available)) {
+        if (!bridge || !available) throw new Error("Android device speech recognition is unavailable on this device.");
+        deviceSession.current = new DeviceSpeechSession(bridge);
+        setPhase("recording");
+        deviceSession.current.promise.then(async (txt) => {
+          deviceSession.current = null; setTranscript(txt);
+          const draft = await buildVoiceDraft(txt);
+          setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
+        }).catch((e: any) => { deviceSession.current = null; if (e?.code !== "CANCELLED") { setError(e?.message || "Device voice input failed."); setPhase("error"); } });
+        return;
+      }
       if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
       await startVoiceRecorder(recorder);
       setPhase("recording");
@@ -67,6 +82,7 @@ export default function VoiceFab() {
   }), [voiceAvailable, phase]);
 
   const stopAndProcess = async () => {
+    if (deviceSession.current) { await deviceSession.current.stop(); return; }
     setPhase("processing");
     try {
       const captured = await captureVoiceRecording(recorder);

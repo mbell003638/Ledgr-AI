@@ -6,7 +6,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Href, useRouter, useFocusEffect } from "expo-router";
+import { Href, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
@@ -359,6 +359,8 @@ export default function AskBooks() {
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const params = useLocalSearchParams<{ text?: string }>();
+  useEffect(() => { if (typeof params.text === "string" && params.text.trim()) setInput(params.text.trim()); }, [params.text]);
   const [loading, setLoading] = useState(false);
   const [applyingProposal, setApplyingProposal] = useState(false);
   const applyingProposalRef = useRef(false);
