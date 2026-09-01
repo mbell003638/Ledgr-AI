@@ -39,7 +39,7 @@ class LedgrSpeechRecognizerModule : Module(), RecognitionListener {
 
       appContext.currentActivity?.runOnUiThread {
         destroyRecognizer()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { it.setRecognitionListener(this) }
+        recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {\n          it.setRecognitionListener(this@LedgrSpeechRecognizerModule)\n        }
         active = true
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
           putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
