@@ -12,6 +12,7 @@ export type AssistantAction =
   | 'record_receipt'
   | 'add_capital'
   | 'open_ask_ai'
+  | 'open_voice'
   | 'open_scanner';
 
 export type AssistantDraft = {
@@ -28,13 +29,13 @@ export type AssistantDraft = {
 
 export type AssistantIntentResult =
   | { kind: 'draft'; draft: AssistantDraft }
-  | { kind: 'navigation'; target: 'ask-ai' | 'scanner' }
+  | { kind: 'navigation'; target: 'ask-ai' | 'voice' | 'scanner' }
   | { kind: 'rejected'; reason: string };
 
 const MAX_TEXT = 240;
 const ACTIONS = new Set<AssistantAction>([
   'record_payment', 'record_expense', 'record_receipt', 'add_capital',
-  'open_ask_ai', 'open_scanner',
+  'open_ask_ai', 'open_voice', 'open_scanner',
 ]);
 
 function text(value: unknown, field: string): string | undefined {
@@ -77,6 +78,7 @@ export function parseAssistantIntent(input: unknown): AssistantIntentResult {
     }
     const action = rawAction as AssistantAction;
     if (action === 'open_ask_ai') return { kind: 'navigation', target: 'ask-ai' };
+    if (action === 'open_voice') return { kind: 'navigation', target: 'voice' };
     if (action === 'open_scanner') return { kind: 'navigation', target: 'scanner' };
 
     const draft: AssistantDraft = {

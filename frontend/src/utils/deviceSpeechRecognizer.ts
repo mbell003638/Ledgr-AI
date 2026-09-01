@@ -1,4 +1,7 @@
-import { NativeModules, Platform } from "react-native";
+/* eslint-disable @typescript-eslint/no-require-imports */
+function nativeRuntime(): { NativeModules: Record<string, unknown>; Platform: { OS: string } } {
+  try { return require('react-native'); } catch { return { NativeModules: {}, Platform: { OS: 'unknown' } }; }
+}
 
 export type DeviceSpeechStatus = {
   supported: boolean;
@@ -30,11 +33,29 @@ type NativeSpeechRecognizer = {
  * without coupling the JS voice flow to a specific third-party package.
  */
 function nativeModule(): NativeSpeechRecognizer | null {
+  const { NativeModules, Platform } = nativeRuntime();
   if (Platform.OS !== "android") return null;
-  return (NativeModules as any).LedgrSpeechRecognizer || null;
+  try {
+    return require('expo-modules-core').requireOptionalNativeModule("LedgrSpeechRecognizer")
+      || (NativeModules as any).LedgrSpeechRecognizer
+      || null;
+  } catch { return (NativeModules as any).LedgrSpeechRecognizer || null; }
+}
+
+async function ensureMicrophonePermission(): Promise<void> {
+  try {
+    const audio = require('expo-audio');
+    const permission = await audio.AudioModule?.requestRecordingPermissionsAsync?.();
+    if (permission && !permission.granted) {
+      throw new Error('Microphone permission is required for Android device recognition.');
+    }
+  } catch (error: any) {
+    if (/permission/i.test(String(error?.message || error))) throw error;
+  }
 }
 
 export async function getDeviceSpeechStatus(): Promise<DeviceSpeechStatus> {
+  const { Platform } = nativeRuntime();
   const module = nativeModule();
   if (!module) {
     return {
@@ -61,6 +82,8 @@ export async function startDeviceSpeechRecognition(
   if (!module) {
     throw new Error("Android device recognition requires a native Ledgr build. Choose a cloud voice provider or install the native build.");
   }
+
+  await ensureMicrophonePermission();
 
   const subscriptions = [
     module.addListener?.("partial", (payload) => callbacks.onPartial?.(String(payload?.text || payload || ""))),

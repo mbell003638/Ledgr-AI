@@ -1,4 +1,7 @@
-import { NativeModules, Platform } from 'react-native';
+/* eslint-disable @typescript-eslint/no-require-imports */
+function nativeRuntime(): { NativeModules: Record<string, unknown>; Platform: { OS: string } } {
+  try { return require('react-native'); } catch { return { NativeModules: {}, Platform: { OS: 'unknown' } }; }
+}
 
 export type LocalOcrStatus = { supported: boolean; available: boolean; reason?: string };
 type NativeLocalOcr = {
@@ -7,12 +10,18 @@ type NativeLocalOcr = {
 };
 
 function nativeModule(): NativeLocalOcr | null {
+  const { NativeModules, Platform } = nativeRuntime();
   if (Platform.OS !== 'android') return null;
-  return (NativeModules as any).LedgrLocalOcr || null;
+  try {
+    return require('expo-modules-core').requireOptionalNativeModule('LedgrLocalOcr')
+      || (NativeModules as any).LedgrLocalOcr
+      || null;
+  } catch { return (NativeModules as any).LedgrLocalOcr || null; }
 }
 
 /** Optional native OCR boundary; extracted text must still pass scan/import review. */
 export async function getLocalOcrStatus(): Promise<LocalOcrStatus> {
+  const { Platform } = nativeRuntime();
   const module = nativeModule();
   if (!module) return { supported: Platform.OS === 'android', available: false, reason: Platform.OS === 'android' ? 'Local OCR is available in a native build only.' : 'Local OCR is supported only on Android.' };
   try {

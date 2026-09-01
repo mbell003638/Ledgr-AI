@@ -31,7 +31,7 @@ const MAX_BASE64_CHARS = 8 * 1024 * 1024;
 const MAX_SOURCE_BYTES = Math.floor(MAX_BASE64_CHARS * 3 / 4);
 
 type RowStatus = { state: "created" | "failed"; message: string };
-type AnalysisInput = { base64?: string; mimeType?: string; text?: string };
+type AnalysisInput = { base64?: string; mimeType?: string; text?: string; uri?: string };
 type MissingPartyLedger = { name: string; role: "customer" | "supplier" };
 type PartyPreflightItem = MissingPartyLedger & {
   status: "existing" | "missing" | "role_missing" | "ignored_generic_ap";
@@ -160,7 +160,7 @@ export default function ScanImport() {
     if (res.canceled) return;
     const asset = res.assets[0];
     if (!asset?.base64) { setError("The camera did not return readable image data. Try taking the photo again."); return; }
-    await analyze({ base64: asset.base64, mimeType: "image/jpeg" });
+    await analyze({ base64: asset.base64, mimeType: "image/jpeg", uri: asset.uri });
   };
 
   const pickGallery = async () => {
@@ -175,7 +175,7 @@ export default function ScanImport() {
     if (res.canceled) return;
     const asset = res.assets[0];
     if (!asset?.base64) { setError("The selected file did not contain readable image data. Try a JPEG or PNG image."); return; }
-    await analyze({ base64: asset.base64, mimeType: "image/jpeg" });
+    await analyze({ base64: asset.base64, mimeType: "image/jpeg", uri: asset.uri });
   };
 
   const pickPdf = async () => {

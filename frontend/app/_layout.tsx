@@ -278,7 +278,7 @@ export default function RootLayout() {
     if (!storageReady || !unlocked) return;
     return installAssistantLinkingHandlers({
       onResult: (result) => {
-        if (result.kind === 'navigation') { router.push(result.target === 'scanner' ? '/scan-import' : '/ask'); return; }
+        if (result.kind === 'navigation') { router.push(result.target === 'scanner' ? '/scan-import' : result.target === 'voice' ? '/voice' : '/ask'); return; }
         if (result.kind === 'draft') { router.push({ pathname: '/ask', params: { assistantDraft: JSON.stringify(result.draft) } }); }
       },
       onError: (error) => console.warn('Assistant link handling failed', error),
