@@ -12,7 +12,11 @@ describe('Android native AI integration', () => {
       'expo.modules.ledgrnativeai.LedgrLocalOcrModule',
     ]));
     expect(read('modules/ledgr-native-ai/android/build.gradle')).toContain("com.google.mlkit:text-recognition");
-    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrSpeechRecognizerModule.kt')).toContain('SpeechRecognizer.createSpeechRecognizer');
+    const speechModule = read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrSpeechRecognizerModule.kt');
+    expect(speechModule).toContain('SpeechRecognizer.createSpeechRecognizer');
+    expect(speechModule).toContain('this@LedgrSpeechRecognizerModule');
+    expect(speechModule).not.toContain('setRecognitionListener(this)');
+    expect(speechModule).not.toContain('\\n');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('TextRecognition.getClient');
   });
 
@@ -24,6 +28,11 @@ describe('Android native AI integration', () => {
     expect(plugin).toContain('record_receipt');
     expect(plugin).toContain('add_capital');
     expect(plugin).toContain('open_voice');
+    expect(plugin).toContain('withStringsXml');
+    expect(plugin).toContain('android:shortcutShortLabel="@string/ledgr_shortcut_ask_ai"');
+    expect(plugin).toContain('android:shortcutShortLabel="@string/ledgr_shortcut_voice_assistant"');
+    expect(plugin).toContain('android:shortcutShortLabel="@string/ledgr_shortcut_scan_receipt"');
+    expect(plugin).not.toMatch(/android:shortcutShortLabel="(?!@string\/)/);
   });
 
   it('persists OCR mode and routes image URIs through local OCR', () => {
@@ -34,3 +43,4 @@ describe('Android native AI integration', () => {
     expect(scan).toContain('uri: asset.uri');
   });
 });
+
