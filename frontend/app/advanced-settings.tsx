@@ -711,6 +711,7 @@ export default function AdvancedSettingsScreen() {
                     <Pressable onPress={testKey} disabled={testing || !key} style={({ pressed }) => [styles.secondaryBtn, { alignSelf: 'flex-start', paddingHorizontal: 16 }, (pressed || testing) && { opacity: 0.7 }]}>{testing ? <ActivityIndicator color={theme.color.brandPrimary} /> : <Text style={styles.secondaryText}>Test Chat Connection</Text>}</Pressable>
                     {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
                   </View>
+                  <Text style={styles.hint}>Chat testing does not test voice. OpenAI-compatible voice needs a speech model and a Base URL that implements /audio/transcriptions; Anthropic needs a separate speech endpoint.</Text>
                 </View>
               </AccordionRow>
               <AccordionRow title="AI Data & History" subtitle={aiDataMode === 'detailed' ? 'Detailed context enabled' : 'Summary only by default'} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>

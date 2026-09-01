@@ -1,54 +1,93 @@
 import { AudioModule, setAudioModeAsync, type AudioRecorder } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
+import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
 
-export type CapturedVoice = { audioBase64: string; mime: string };
+export type CapturedVoice = { audioBase64: string; mime: string; uploadUri?: string };
 
-/**
- * Starts a recorder without preparing an already-prepared expo-audio instance.
- * Stopped recorders remain usable, so only call prepare when canRecord is false.
- */
-export async function startVoiceRecorder(recorder: AudioRecorder): Promise<void> {
-  if (recorder.getStatus().isRecording || recorder.isRecording) {
-    await recorder.stop().catch(() => {});
-  }
-  const permission = await AudioModule.requestRecordingPermissionsAsync();
-  if (!permission.granted) throw new Error("Microphone permission is required to use voice entry.");
-  await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-  if (!recorder.getStatus().canRecord) await recorder.prepareToRecordAsync();
-  recorder.record();
+const recorderTails = new WeakMap<object, Promise<void>>();
+const pendingStarts = new WeakMap<object, Promise<void>>();
+
+function recorderIsRecording(recorder: AudioRecorder): boolean {
+  return recorder.getStatus().isRecording || recorder.isRecording;
 }
 
-/** Stops the current recording and returns a provider-neutral base64 payload. */
-export async function captureVoiceRecording(recorder: AudioRecorder): Promise<CapturedVoice> {
-  if (recorder.getStatus().isRecording || recorder.isRecording) await recorder.stop();
-  const uri = recorder.uri;
-  if (!uri) throw new Error("No audio was captured. Try again.");
+function runExclusive<T>(recorder: AudioRecorder, operation: () => Promise<T>): Promise<T> {
+  const key = recorder as object;
+  const previous = recorderTails.get(key) || Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  const tail = current.then(() => undefined, () => undefined);
+  recorderTails.set(key, tail);
+  return current.finally(() => {
+    if (recorderTails.get(key) === tail) recorderTails.delete(key);
+  });
+}
 
-  if (Platform.OS === "web") {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const audioBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = String(reader.result || "");
-        const encoded = result.split(",")[1];
-        if (encoded) resolve(encoded);
-        else reject(new Error("Could not read the recorded audio."));
-      };
-      reader.onerror = () => reject(new Error("Could not read the recorded audio."));
-      reader.readAsDataURL(blob);
-    });
-    return { audioBase64, mime: "audio/webm" };
-  }
+/**
+ * Starts recording once even when two UI events arrive before permission or
+ * preparation finishes. Expo can retain a prepared recorder after stop, so a
+ * second prepare call must be avoided.
+ */
+export function startVoiceRecorder(recorder: AudioRecorder): Promise<void> {
+  const key = recorder as object;
+  const existing = pendingStarts.get(key);
+  if (existing) return existing;
 
-  return {
-    audioBase64: await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 }),
-    mime: "audio/m4a",
-  };
+  const start = runExclusive(recorder, async () => {
+    if (recorderIsRecording(recorder)) return;
+    const permission = await runWithSystemPrompt(() => AudioModule.requestRecordingPermissionsAsync());
+    if (!permission.granted) throw new Error("Microphone access is required to use the voice assistant.");
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    if (!recorder.getStatus().canRecord) {
+      try {
+        await recorder.prepareToRecordAsync();
+      } catch (error: any) {
+        if (!/already been prepared/i.test(String(error?.message || error))) throw error;
+      }
+    }
+    if (!recorderIsRecording(recorder)) recorder.record();
+  });
+
+  pendingStarts.set(key, start);
+  return start.finally(() => {
+    if (pendingStarts.get(key) === start) pendingStarts.delete(key);
+  });
+}
+
+/** Stops the recording and returns both cross-provider base64 and a native upload URI. */
+export function captureVoiceRecording(recorder: AudioRecorder): Promise<CapturedVoice> {
+  return runExclusive(recorder, async () => {
+    if (recorderIsRecording(recorder)) await recorder.stop();
+    const uri = recorder.uri;
+    if (!uri) throw new Error("No audio was captured. Try again.");
+
+    if (Platform.OS === "web") {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const audioBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const encoded = String(reader.result || "").split(",")[1];
+          if (encoded) resolve(encoded);
+          else reject(new Error("Could not read the recorded audio."));
+        };
+        reader.onerror = () => reject(new Error("Could not read the recorded audio."));
+        reader.readAsDataURL(blob);
+      });
+      return { audioBase64, mime: "audio/webm" };
+    }
+
+    return {
+      audioBase64: await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 }),
+      mime: "audio/m4a",
+      uploadUri: uri,
+    };
+  });
 }
 
 /** Stops an active recorder during cancel, close, or unmount without surfacing cleanup errors. */
-export async function cancelVoiceRecorder(recorder: AudioRecorder): Promise<void> {
-  if (recorder.getStatus().isRecording || recorder.isRecording) await recorder.stop().catch(() => {});
+export function cancelVoiceRecorder(recorder: AudioRecorder): Promise<void> {
+  return runExclusive(recorder, async () => {
+    if (recorderIsRecording(recorder)) await recorder.stop().catch(() => {});
+  });
 }

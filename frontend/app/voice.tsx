@@ -61,7 +61,7 @@ export default function VoiceModal() {
     setPhase("processing");
     try {
       const captured = await captureVoiceRecording(recorder);
-      const t = await api.transcribe(captured.audioBase64, captured.mime);
+      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);

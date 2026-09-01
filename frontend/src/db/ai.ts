@@ -126,6 +126,10 @@ export function validateAIBaseUrl(value: string): string {
   if (parsed.username || parsed.password) {
     throw new Error('AI Base URL must not contain credentials.');
   }
+  if (['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase())) {
+    throw new Error('Use an AI API endpoint, not the github.com website. For GitHub Models use its documented inference API host; voice also requires an endpoint that supports /audio/transcriptions.');
+  }
+
   return trimmed;
 }
 
@@ -340,16 +344,25 @@ function resolveTranscriptionConfig(cfg: AIConfig): { baseUrl: string; apiKey: s
   return { baseUrl, apiKey, model: cfg.transcriptionModel?.trim() || 'whisper-1' };
 }
 
-async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: string): Promise<{ transcript?: string; text?: string }> {
+async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: string, audioUri?: string): Promise<{ transcript?: string; text?: string }> {
   const voice = resolveTranscriptionConfig(cfg);
   const extension = mimeType.includes('webm') ? 'webm' : mimeType.includes('wav') ? 'wav' : 'm4a';
-  const binary = globalThis.atob(audioBase64);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  const audioBlob = new Blob([bytes], { type: mimeType });
   const form = new FormData();
-  form.append('file', audioBlob, `ledgr-voice.${extension}`);
+  const filename = `ledgr-voice.${extension}`;
+  if (audioUri) {
+    // React Native uploads local files through its URI FormData part. Building
+    // a Blob from Uint8Array/ArrayBuffer is unsupported on Android.
+    form.append('file', { uri: audioUri, name: filename, type: mimeType } as any);
+  } else {
+    const binary = globalThis.atob(audioBase64);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    form.append('file', new Blob([bytes], { type: mimeType }), filename);
+  }
   form.append('model', voice.model);
-  const res = await fetchAI(`${voice.baseUrl}/audio/transcriptions`, {
+  const endpoint = /\/audio\/transcriptions$/i.test(voice.baseUrl)
+    ? voice.baseUrl
+    : `${voice.baseUrl}/audio/transcriptions`;
+  const res = await fetchAI(endpoint, {
     method: 'POST',
     headers: { Authorization: `Bearer ${voice.apiKey}` },
     body: form,
@@ -359,7 +372,7 @@ async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: st
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
   if (!res.ok) {
     if ([404, 405, 501].includes(res.status)) {
-      throw new Error('This voice Base URL does not provide /audio/transcriptions. Configure an OpenAI-compatible speech-to-text endpoint in Advanced Settings.');
+      throw new Error(`Chat and voice use different capabilities. ${endpoint} does not provide speech-to-text. Configure a voice Base URL and transcription model that support /audio/transcriptions.`);
     }
     throw aiHttpError(res.status, res.statusText, data);
   }
@@ -506,10 +519,10 @@ export async function ocrReceipt(cfg: AIConfig, imageBase64: string, mimeType = 
   }
 }
 
-export async function transcribe(cfg: AIConfig, audioBase64: string, mimeType = 'audio/m4a') {
+export async function transcribe(cfg: AIConfig, audioBase64: string, mimeType = 'audio/m4a', audioUri?: string) {
   const provider = resolveApi(cfg);
   if (provider === 'openai' || cfg.transcriptionBaseUrl?.trim()) {
-    const result = await transcribeOpenAI(cfg, audioBase64, mimeType);
+    const result = await transcribeOpenAI(cfg, audioBase64, mimeType, audioUri);
     return { transcript: String(result.transcript || result.text || '').trim() };
   }
   if (provider === 'anthropic') {

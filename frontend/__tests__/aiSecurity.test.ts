@@ -16,4 +16,9 @@ describe('AI endpoint security', () => {
   test('rejects embedded credentials', () => {
     expect(() => validateAIBaseUrl('https://user:secret@example.com/v1')).toThrow(/credentials/);
   });
+
+  test('rejects the GitHub website when an API host is required', () => {
+    expect(() => validateAIBaseUrl('https://github.com/v1')).toThrow(/not the github\.com website/);
+    expect(validateAIBaseUrl('https://models.github.ai/inference')).toBe('https://models.github.ai/inference');
+  });
 });
