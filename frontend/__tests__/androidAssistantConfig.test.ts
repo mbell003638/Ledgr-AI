@@ -14,6 +14,10 @@ describe('Android Assistant native configuration', () => {
     expect(source).toContain('withAndroidManifest');
     expect(source).toContain('android.intent.action.VIEW');
     expect(source).toContain('shortcuts.xml');
+    expect(source).toContain('withStringsXml');
+    expect(source).toContain('@string/ledgr_shortcut_ask_ai');
+    expect(source).not.toMatch(/android:shortcutShortLabel="(?!@string\/)/);
     expect(source).not.toMatch(/insert|journal|ledgerWrite|postEntry/i);
   });
 });
+
