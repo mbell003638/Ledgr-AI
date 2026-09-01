@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, TextInput } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
-import * as FileSystem from "expo-file-system/legacy";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -13,7 +12,7 @@ import { executeAssistantProposal, type AssistantProposalValidationResult } from
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
-import { runWithSystemPrompt } from "@/src/utils/systemPrompt";
+import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -34,6 +33,8 @@ export default function VoiceModal() {
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
+  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
+
 
   const buildVoiceDraft = async (txt: string) => {
     const parsedCommand = await api.parseCommand(txt);
@@ -47,13 +48,7 @@ export default function VoiceModal() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
-      const permission = await runWithSystemPrompt(() => AudioModule.requestRecordingPermissionsAsync());
-      if (!permission.granted) {
-        throw new Error("Microphone access is required to use the voice assistant.");
-      }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+      await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message); setPhase("error"); }
   };
@@ -61,13 +56,8 @@ export default function VoiceModal() {
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) throw new Error("No audio captured");
-      const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      // Determine mime
-      const mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
-      const t = await api.transcribe(audioBase64, mime);
+      const captured = await captureVoiceRecording(recorder);
+      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);

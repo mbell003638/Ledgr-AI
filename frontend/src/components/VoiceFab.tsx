@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
-import * as FileSystem from "expo-file-system/legacy";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
@@ -12,6 +11,7 @@ import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
+import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -27,6 +27,8 @@ export default function VoiceFab() {
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
 
   const pulseScale = useSharedValue(1);
+
+  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
 
   useEffect(() => {
     if (phase === "recording") {
@@ -56,11 +58,7 @@ export default function VoiceFab() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
-      const perm = await AudioModule.requestRecordingPermissionsAsync();
-      if (!perm.granted) throw new Error("Microphone permission required.");
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+      await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message); setPhase("error"); }
   };
@@ -68,30 +66,8 @@ export default function VoiceFab() {
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) throw new Error("No audio captured");
-      let audioBase64: string;
-      let mime: string;
-      if (Platform.OS === 'web') {
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        audioBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]); // Extract base64
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        mime = "audio/webm";
-      } else {
-        audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-        mime = Platform.OS === "ios" ? "audio/m4a" : "audio/m4a";
-      }
-      
-      const t = await api.transcribe(audioBase64, mime);
+      const captured = await captureVoiceRecording(recorder);
+      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
