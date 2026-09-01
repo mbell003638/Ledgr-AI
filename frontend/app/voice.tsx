@@ -1,18 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -25,6 +26,7 @@ export default function VoiceModal() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const router = useRouter();
+  const params = useLocalSearchParams<{ assistantText?: string }>();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
@@ -32,8 +34,15 @@ export default function VoiceModal() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
+  const transcriptRef = useRef("");
 
-  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
+  useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
+
+  useEffect(() => {
+    const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
+    if (text) { setTranscript(text); void buildVoiceDraft(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
+  }, [params.assistantText]);
 
 
   const buildVoiceDraft = async (txt: string) => {
@@ -48,6 +57,18 @@ export default function VoiceModal() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
+      const cfg = await getAIConfig();
+      const mode = cfg.voiceProvider || "auto";
+      if (mode !== "cloud") {
+        const status = await getDeviceSpeechStatus();
+        if (status.available) {
+          transcriptRef.current = "";
+          deviceStopRef.current = await startDeviceSpeechRecognition({ onPartial: (text) => { transcriptRef.current = text; setTranscript(text); }, onFinal: (text) => { transcriptRef.current = text; setTranscript(text); }, onError: (speechError) => { setError(speechError.message); setPhase("error"); } });
+          setPhase("recording");
+          return;
+        }
+        if (mode === "android-device") throw new Error(status.reason || "Android device speech recognition is unavailable.");
+      }
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message); setPhase("error"); }
@@ -56,9 +77,9 @@ export default function VoiceModal() {
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      const captured = await captureVoiceRecording(recorder);
-      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
-      const txt = (t.transcript || "").trim();
+      let txt = "";
+      if (deviceStopRef.current) { await deviceStopRef.current(); deviceStopRef.current = null; txt = transcriptRef.current.trim(); }
+      else { const captured = await captureVoiceRecording(recorder); const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri); txt = (t.transcript || "").trim(); }
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
 

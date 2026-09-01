@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
 import { AppState, LogBox, View, Platform, useWindowDimensions, Text, ScrollView, FlatList, SectionList, Pressable , Image, Animated } from "react-native";
@@ -13,6 +13,7 @@ import { initStorage } from "@/src/db/backend";
 import { requireAuth } from "@/src/utils/lock";
 import { scheduleBackgroundLock } from "@/src/utils/systemPrompt";
 import { api } from "@/src/api";
+import { installAssistantLinkingHandlers } from "@/src/utils/assistantLinking";
 
 
 // Keep scrolling functional while removing platform scrollbar chrome globally.
@@ -230,6 +231,7 @@ function WebScrollbarStyles() {
 
 export default function RootLayout() {
 
+  const router = useRouter();
   const [storageReady, setStorageReady] = useState(false);
   const [unlocked, setUnlocked] = useState(Platform.OS === "web");
   const [unlocking, setUnlocking] = useState(false);
@@ -271,6 +273,17 @@ export default function RootLayout() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!storageReady || !unlocked) return;
+    return installAssistantLinkingHandlers({
+      onResult: (result) => {
+        if (result.kind === 'navigation') { router.push(result.target === 'scanner' ? '/scan-import' : '/ask'); return; }
+        if (result.kind === 'draft') { router.push({ pathname: '/ask', params: { assistantDraft: JSON.stringify(result.draft) } }); }
+      },
+      onError: (error) => console.warn('Assistant link handling failed', error),
+    });
+  }, [router, storageReady, unlocked]);
 
   useEffect(() => {
     if (!storageReady) return;

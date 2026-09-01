@@ -73,7 +73,8 @@
           "backgroundColor": "#1C4030"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withAndroidAssistant"
     ],
     "experiments": {
       "typedRoutes": true

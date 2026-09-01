@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
@@ -12,6 +12,7 @@ import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -25,10 +26,12 @@ export default function VoiceFab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
+  const transcriptRef = useRef("");
 
   const pulseScale = useSharedValue(1);
 
-  useEffect(() => () => { void cancelVoiceRecorder(recorder); }, [recorder]);
+  useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
   useEffect(() => {
     if (phase === "recording") {
@@ -58,6 +61,18 @@ export default function VoiceFab() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null);
     try {
+      const cfg = await getAIConfig();
+      const mode = cfg.voiceProvider || "auto";
+      if (mode !== "cloud") {
+        const status = await getDeviceSpeechStatus();
+        if (status.available) {
+          transcriptRef.current = "";
+          deviceStopRef.current = await startDeviceSpeechRecognition({ onPartial: (text) => { transcriptRef.current = text; setTranscript(text); }, onFinal: (text) => { transcriptRef.current = text; setTranscript(text); }, onError: (speechError) => { setError(speechError.message); setPhase("error"); } });
+          setPhase("recording");
+          return;
+        }
+        if (mode === "android-device") throw new Error(status.reason || "Android device speech recognition is unavailable.");
+      }
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message); setPhase("error"); }
@@ -66,9 +81,9 @@ export default function VoiceFab() {
   const stopAndProcess = async () => {
     setPhase("processing");
     try {
-      const captured = await captureVoiceRecording(recorder);
-      const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri);
-      const txt = (t.transcript || "").trim();
+      let txt = "";
+      if (deviceStopRef.current) { await deviceStopRef.current(); deviceStopRef.current = null; txt = transcriptRef.current.trim(); }
+      else { const captured = await captureVoiceRecording(recorder); const t = await api.transcribe(captured.audioBase64, captured.mime, captured.uploadUri); txt = (t.transcript || "").trim(); }
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
       
