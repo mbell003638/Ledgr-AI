@@ -46,7 +46,7 @@ describe('V2 UI contracts', () => {
 
   it('voice entry points match the production-safe Ask AI voice workflow', () => {
     const source = readApp('voice.tsx');
-    expect(source).toContain('await api.getAIConfig()');
+    expect(source).toMatch(/await (api\.)?getAIConfig\(\)/);
     expect(source).toContain('await api.transcribe');
     expect(source).not.toContain('config.provider ===');
     expect(source).toContain('Editable voice transcript');
