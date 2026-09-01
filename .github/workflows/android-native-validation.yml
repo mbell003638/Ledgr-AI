@@ -54,10 +54,9 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
 
-      - name: Compile native AI and link resources
+      - name: Build release APK
         working-directory: frontend/android
         run: |
           chmod +x gradlew
-          ./gradlew :ledgr-native-ai:compileReleaseKotlin :app:processReleaseResources --no-daemon
-
+          ./gradlew assembleRelease --no-daemon
 
