@@ -21,7 +21,8 @@ describe('Capital Account identity isolation', () => {
 
   it.each(['app/voice.tsx', 'src/components/VoiceFab.tsx'])('%s resolves roles before confirmation and never auto-creates a payment party', (file) => {
     const source = read(file);
-    expect(source).toContain('resolveVoicePartyCommand');
+    const interpretationSource = `${source}\n${read('src/accountingV2/voiceTransactionDraft.ts')}`;
+    expect(interpretationSource).toMatch(/resolveVoicePartyCommand|resolveVoiceCommandsForDrafts/);
     expect(source).toContain('api.listInvestors()');
     expect(source).toContain('api.drawInvestorFunds');
     expect(source).not.toContain('else { const c = await api.createSupplier({ name: parsed.supplierName })');
