@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
-import { PROVIDERS, type InterpretationMode, type ProviderId } from "@/src/db/ai";
+import { DEFAULT_ENTRY_HELP_ORDER, PROVIDERS, type EntryHelpOrder, type InterpretationMode, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
@@ -74,6 +74,7 @@ export default function AdvancedSettingsScreen() {
   const [voiceProvider, setVoiceProvider] = useState<"auto" | "android-device" | "cloud">("auto");
   const [ocrProvider, setOcrProvider] = useState<"auto" | "android-device" | "cloud">("auto");
   const [interpretationMode, setInterpretationMode] = useState<InterpretationMode>("auto");
+  const [entryHelpOrder, setEntryHelpOrder] = useState<EntryHelpOrder>(DEFAULT_ENTRY_HELP_ORDER);
   const [baseUrl, setBaseUrl] = useState("");
   const [customHostConfirmed, setCustomHostConfirmed] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -148,6 +149,7 @@ export default function AdvancedSettingsScreen() {
       setVoiceProvider(cfg.voiceProvider || "auto");
       setOcrProvider(cfg.ocrProvider || "auto");
       setInterpretationMode(cfg.interpretationMode || "auto");
+      setEntryHelpOrder(cfg.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER);
       setBaseUrl(cfg.baseUrl || "");
       const providerMeta = PROVIDERS.find((item) => item.id === cfg.provider);
       const chatBaseUrl = cfg.baseUrl?.trim() || '';
@@ -221,6 +223,7 @@ export default function AdvancedSettingsScreen() {
         voiceProvider,
         ocrProvider,
         interpretationMode,
+        entryHelpOrder,
         baseUrl: baseUrl.trim(),
       });
       try {
@@ -276,6 +279,7 @@ export default function AdvancedSettingsScreen() {
         voiceProvider,
         ocrProvider,
         interpretationMode,
+        entryHelpOrder,
         baseUrl: baseUrl.trim(),
       };
       await api.testKey(draftConfig);
@@ -289,7 +293,7 @@ export default function AdvancedSettingsScreen() {
 
   const draftAIConfig = () => {
     const meta = PROVIDERS.find((p) => p.id === provider)!;
-    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, interpretationMode, baseUrl: baseUrl.trim() };
+    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, interpretationMode, entryHelpOrder, baseUrl: baseUrl.trim() };
   };
 
   const testVoiceCapability = async () => {
@@ -665,7 +669,13 @@ export default function AdvancedSettingsScreen() {
                     <Pressable testID="interpretation-device-only" onPress={() => setInterpretationMode('device-only')} style={[styles.modeBtn, interpretationMode === 'device-only' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'device-only' && styles.modeTextActive]}>On-device only</Text></Pressable>
                     <Pressable testID="interpretation-cloud" onPress={() => setInterpretationMode('cloud')} style={[styles.modeBtn, interpretationMode === 'cloud' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'cloud' && styles.modeTextActive]}>Cloud AI</Text></Pressable>
                   </View>
-                  <Text style={styles.hint}>Automatic prepares common entries locally first and uses cloud AI only when local interpretation cannot understand them. On-device only never sends the transaction text to an AI provider. Every result remains a reviewable draft.</Text>
+                  <Text style={styles.hint}>Automatic follows the order below. On-device only never sends the transaction text to an AI provider. Every result remains a reviewable draft.</Text>
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Automatic order</Text>
+                  <View style={styles.modeRow} testID="entry-help-order">
+                    <Pressable testID="entry-help-cloud-first" onPress={() => setEntryHelpOrder('cloud-first')} style={[styles.modeBtn, entryHelpOrder === 'cloud-first' && styles.modeBtnActive]}><Text style={[styles.modeText, entryHelpOrder === 'cloud-first' && styles.modeTextActive]}>AI first</Text></Pressable>
+                    <Pressable testID="entry-help-device-first" onPress={() => setEntryHelpOrder('device-first')} style={[styles.modeBtn, entryHelpOrder === 'device-first' && styles.modeBtnActive]}><Text style={[styles.modeText, entryHelpOrder === 'device-first' && styles.modeTextActive]}>On-device first</Text></Pressable>
+                  </View>
+                  <Text style={styles.hint}>AI first uses your configured model, then Android/local help if the key is missing, the provider is slow, or it fails. On-device first keeps speech and OCR on this device and only uses cloud when local parsing cannot finish.</Text>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.hint, { marginTop: 6 }]}>{Platform.OS === "web" ? "On web this key is stored in the browser, not a device keychain." : "Stored in this device's secure credential storage."}</Text>

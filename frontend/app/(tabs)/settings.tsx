@@ -7,8 +7,7 @@ import { router, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 
 import { useAnimations, useTheme, useThemeMode } from "@/src/context/ThemeContext";
-import { api, getAIConfig, setAIConfig } from "@/src/api";
-import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { api } from "@/src/api";
 import { CURRENCIES, type TaxLabel } from "@/src/utils/currency";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
@@ -53,10 +52,6 @@ export default function SettingsScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { mode, setMode } = useThemeMode();
   const { animationsEnabled, deviceReduceMotion, setAnimationsEnabled } = useAnimations();
-  const [provider, setProvider] = useState<ProviderId>("gemini");
-  const [key, setKey] = useState("");
-  const [modelName, setModelName] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
   const [lockEnabled, setLockEnabled] = useState(false);
   const [currency, setCurrency] = useState("USD");
   const [taxLabel, setTaxLabel] = useState<TaxLabel>("None");
@@ -119,13 +114,6 @@ export default function SettingsScreen() {
       if (lockEnabled && !(await deviceHasLock())) {
         throw new Error("Set up a device PIN, fingerprint, or face unlock before enabling App Lock.");
       }
-      const meta = PROVIDERS.find((p) => p.id === provider)!;
-      await setAIConfig({
-        provider,
-        apiKey: key.trim(),
-        model: modelName.trim() || meta.defaultModel,
-        baseUrl: baseUrl.trim() || undefined,
-      });
       await api.updateSettings({
         lockEnabled,
         currency,

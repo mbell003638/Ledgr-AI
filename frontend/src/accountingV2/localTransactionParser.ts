@@ -1,5 +1,12 @@
 import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
-import type { VoiceCommand } from './voicePartyResolution';
+import {
+  commandWithCreatedParty,
+  parseVoicePartyCreateRole,
+  sanitizeSpokenPartyName,
+  suggestedVoicePartyCreateRole,
+  voiceCommandPartyName,
+  type VoiceCommand,
+} from './voicePartyResolution';
 
 export type LocalParseConfidence = 'high' | 'medium' | 'low';
 export type LocalClarificationField = 'intent' | 'amount' | 'party' | 'method' | 'date' | 'paymentType';
@@ -103,7 +110,7 @@ function partyAfter(text: string, marker: 'to' | 'from'): string | undefined {
     .replace(METHODS, '')
     .replace(/^(?:supplier|vendor|customer|client|capital\s+account|partner|owner)\s+/i, '')
     .replace(/\b(?:on|by|via|using)\s*$/i, ''));
-  return party || undefined;
+  return sanitizeSpokenPartyName(party) || undefined;
 }
 
 function categoryFrom(text: string): string | undefined {
@@ -225,10 +232,20 @@ export function continueLocalTransaction(
     if (/\bcredit\b/i.test(value)) command.paymentType = 'credit';
     else if (/\b(?:cash|paid)\b/i.test(value)) command.paymentType = 'cash';
   } else if (pending.field === 'party') {
-    const party = cleanName(value);
-    if (command.intent === 'bill' || command.intent === 'supplier_payment') command.supplierName = party;
-    else if (command.intent === 'receipt') command.customerName = party;
-    else command.partnerName = party;
+    const role = parseVoicePartyCreateRole(value, suggestedVoicePartyCreateRole(String(command.intent)));
+    if (role === 'capital') {
+      return clarify(command, pending.transcript, 'party', 'Capital Accounts must be added from Accounts so opening capital and profit share stay correct.');
+    }
+    if (role === 'supplier' || role === 'customer') {
+      const name = voiceCommandPartyName(command);
+      if (!name) return clarify(command, pending.transcript, 'party', 'Which name should I create?');
+      Object.assign(command, commandWithCreatedParty(command, name, role));
+    } else {
+      const party = cleanName(value);
+      if (command.intent === 'bill' || command.intent === 'supplier_payment') command.supplierName = party;
+      else if (command.intent === 'receipt') command.customerName = party;
+      else command.partnerName = party;
+    }
   } else if (pending.field === 'intent') {
     return parseLocalTransaction(`${value} ${command.amount || ''} ${pending.transcript}`, options);
   }

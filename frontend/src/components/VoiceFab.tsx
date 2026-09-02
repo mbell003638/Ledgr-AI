@@ -5,7 +5,7 @@ import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
-import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
+import { materializePendingVoiceParty, resolveVoicePartyCommand, type VoicePartyCreateProposal } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
@@ -29,6 +29,8 @@ export default function VoiceFab() {
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
   const [pendingClarification, setPendingClarification] = useState<PendingVoiceClarification | null>(null);
   const [followUpAnswer, setFollowUpAnswer] = useState("");
+  const [createProposal, setCreateProposal] = useState<VoicePartyCreateProposal | null>(null);
+  const [bookCurrency, setBookCurrency] = useState("USD");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
 
@@ -65,10 +67,14 @@ export default function VoiceFab() {
     ]);
     const resolution = resolveVoicePartyCommand(interpretation.command, interpretation.transcript, { suppliers, customers, capitalAccounts });
     if (!resolution.ok) {
-      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "intent", question: resolution.question, transcript: interpretation.transcript });
+      setCreateProposal(resolution.createProposal || null);
+      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "party", question: resolution.question, transcript: interpretation.transcript });
       throw new Error(resolution.question);
     }
     let resolvedCommand = resolution.command;
+    if (!resolvedCommand.method && ["expense", "receipt", "supplier_payment", "drawing", "capital"].includes(String(resolvedCommand.intent))) {
+      resolvedCommand = { ...resolvedCommand, method: "cash" };
+    }
     if (resolvedCommand.intent === "receipt" && resolvedCommand.receiptMode === "against_invoice" && resolvedCommand.customerName) {
       const customer = customers.find((item: any) => item.name.trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase());
       const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
@@ -76,27 +82,31 @@ export default function VoiceFab() {
     }
     setPendingClarification(null);
     setFollowUpAnswer("");
+    setCreateProposal(null);
     return buildVoiceTransactionDraft(resolvedCommand);
   };
   const buildVoiceDraft = async (txt: string) => {
     setPendingClarification(null);
     setFollowUpAnswer("");
+    setCreateProposal(null);
     const [cfg, settings] = await Promise.all([getAIConfig(), api.getSettings()]);
+    setBookCurrency(settings.currency || "USD");
     const interpretation = await interpretVoiceTransaction({
       transcript: txt,
       mode: cfg.interpretationMode || "auto",
       hasCloudAI: Boolean(cfg.apiKey),
       parseCloud: api.parseCommand,
-      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true },
+      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false },
+      entryHelpOrder: cfg.entryHelpOrder,
     });
     return draftFromInterpretation(interpretation);
   };
-  const continueDraft = async () => {
-    if (!pendingClarification || !followUpAnswer.trim()) return;
+  const continueDraft = async (answer = followUpAnswer) => {
+    if (!pendingClarification || !answer.trim()) return;
     setError(""); setPhase("processing");
     try {
       const settings = await api.getSettings();
-      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true });
+      const interpretation = continueVoiceTransaction(pendingClarification, answer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false });
       if (interpretation.kind !== "command") {
         if (interpretation.kind === "clarification") setPendingClarification(interpretation);
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
@@ -107,7 +117,7 @@ export default function VoiceFab() {
     } catch (e: any) { setError(e?.message || "Could not continue the draft."); setPhase("error"); }
   };
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setFollowUpAnswer("");
+    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -168,6 +178,13 @@ export default function VoiceFab() {
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
+        const command = await materializePendingVoiceParty(parsed, {
+          supplier: (name) => api.createSupplier({ name }),
+          customer: (name) => api.createDebtor({ name }),
+        });
+        parsed.supplierName = command.supplierName;
+        parsed.customerName = command.customerName;
+        parsed.intent = command.intent;
         if (parsed.intent === "expense") {
           await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash" });
         } else if (parsed.intent === "bill") {
@@ -238,7 +255,7 @@ export default function VoiceFab() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
   };
 
   const isModalOpen = phase !== "idle";
@@ -311,7 +328,8 @@ export default function VoiceFab() {
                 <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
                 
                 <View style={styles.draftGrid}>
-                  {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, "USD")} theme={theme} />}
+                  {parsed.pendingPartyCreate ? <Text style={{ color: theme.color.brandPrimary, marginBottom: 8 }}>Will create {parsed.pendingPartyCreate.role === "customer" ? "Customer" : "Supplier"} “{parsed.pendingPartyCreate.name}” on save.</Text> : null}
+                  {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, bookCurrency)} theme={theme} />}
                   {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
                   {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
                   {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
@@ -335,7 +353,21 @@ export default function VoiceFab() {
                 <Ionicons name="alert-circle" size={32} color={theme.color.error} />
                 {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
                 <Text style={styles.errorText}>{error}</Text>
-                {pendingClarification ? <><TextInput accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
+                {createProposal ? (
+                  <View style={{ width: "100%", marginTop: 12, gap: 8 }}>
+                    {(createProposal.suggestions || []).map((name) => (
+                      <Pressable key={name} accessibilityRole="button" onPress={() => { setFollowUpAnswer(name); void continueDraft(name); }} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                        <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Use existing “{name}”</Text>
+                      </Pressable>
+                    ))}
+                    <Pressable accessibilityRole="button" onPress={() => void continueDraft("supplier")} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                      <Text style={[styles.actionText, { color: "#000" }]}>Create Supplier{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => void continueDraft("customer")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                      <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Create Customer{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                    </Pressable>
+                  </View>
+                ) : pendingClarification ? <><TextInput accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
                 {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                 <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
                   <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>

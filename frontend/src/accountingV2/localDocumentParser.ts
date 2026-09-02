@@ -109,10 +109,25 @@ function extractTotals(lines: string[]): { selected?: AmountCandidate; ambiguous
     else if (/\b(?:amount|paid)\b/i.test(line) && /[$€£₹]|\d+[.,]\d{2}\b/.test(line)) { priority = 45; label = 'amount'; }
     if (priority) candidates.push({ amount, label, priority, line });
   }
+  if (!candidates.length) {
+    for (const line of lines) {
+      if (/\b(?:qty|quantity|change|tender(?:ed)?|items?|rate)\b/i.test(line)) continue;
+      if (/\b(?:tax|vat|gst|sub\s*total)\b/i.test(line)) continue;
+      if (/\b(?:20\d{2}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]20\d{2}|date)\b/i.test(line)) continue;
+      const amounts = amountsOnLine(line).filter((value) => !(Number.isInteger(value) && value >= 1900 && value <= 2100));
+      if (!amounts.length) continue;
+      candidates.push({ amount: amounts[amounts.length - 1], label: 'visible amount', priority: 20, line });
+    }
+  }
   if (!candidates.length) return { ambiguous: false, candidates, subtotal, tax };
   const maxPriority = Math.max(...candidates.map((row) => row.priority));
   const best = candidates.filter((row) => row.priority === maxPriority);
   const distinct = unique(best.map((row) => row.amount));
+  if (maxPriority <= 20 && distinct.length > 1) {
+    const largest = Math.max(...distinct);
+    const chosen = best.filter((row) => row.amount === largest);
+    return { selected: chosen[chosen.length - 1], ambiguous: false, candidates, subtotal, tax };
+  }
   return { selected: best[best.length - 1], ambiguous: distinct.length > 1, candidates, subtotal, tax };
 }
 
@@ -295,7 +310,14 @@ export function parseLocalDocumentText(sourceText: string, options: LocalDocumen
   }
 
   const evidence = evidenceFor(dates, totals, []);
-  if (!totals.selected) return { kind: 'unsupported', confidence: 'low', reason: 'No labelled final total was readable. Review the image or enter the transaction manually.', sourceText: text };
+  if (!totals.selected) {
+    const analysis: LocalDocumentAnalysis = {
+      docType: 'other',
+      summary: 'Local OCR found document text but no readable amount. Enter the total to continue.',
+      entries: [],
+    };
+    return clarify(analysis, 'amount', 'I could not find a total on this document. Enter the amount to record.', text, evidence);
+  }
 
   const invoice = lines.some((line) => /\b(?:tax\s+invoice|invoice\s*(?:no|number|#)|amount\s+due|bill\s+to|payment\s+terms)\b/i.test(line));
   const receipt = lines.some((line) => /\b(?:receipt|thank\s+you|change|tendered|paid)\b/i.test(line));
@@ -324,22 +346,32 @@ export function parseLocalDocumentText(sourceText: string, options: LocalDocumen
   ].filter(Boolean).join('; ');
   const analysis: LocalDocumentAnalysis = {
     docType: receipt ? 'receipt' : invoice ? 'statement' : 'other',
-    summary: 'Local OCR prepared one accounting draft from a labelled final total. Verify the type, party, date, tax and payment method.',
+    summary: totals.selected.label === 'visible amount'
+      ? 'Local OCR inferred a total from visible amounts. Verify the type, party, date, tax and payment method.'
+      : 'Local OCR prepared one accounting draft from a labelled final total. Verify the type, party, date, tax and payment method.',
     entries: [{ type, ...(dates.selected ? { date: dates.selected } : {}), ...(partyName ? { partyName } : {}), amount: totals.selected.amount, ...(method ? { method } : {}), notes }],
   };
 
   if (totals.ambiguous) return clarify(analysis, 'amount', 'More than one different final total was detected. Which amount should be recorded?', text, evidence, unique(totals.candidates.filter((row) => row.priority === totals.selected!.priority).map((row) => row.amount.toFixed(2))));
   if (dates.ambiguous || !dates.selected) return clarify(analysis, 'date', dates.ambiguous ? 'Which visible date is the transaction date?' : 'What transaction date is printed on the document?', text, evidence, dates.candidates);
-  if (invoice && !explicitSupplier && !explicitCustomer && !capitalEvidence) return clarify(analysis, 'documentType', 'Is this a Supplier bill you received or a Sales invoice you issued?', text, evidence, ['supplier bill', 'sales invoice']);
+  if (invoice && !explicitSupplier && !explicitCustomer && !capitalEvidence) {
+    type = 'purchase_bill';
+    analysis.entries[0].type = type;
+    analysis.summary = 'Local OCR prepared a supplier-bill draft. Confirm the party and total before import.';
+  }
   if (partyMatch.candidates.length > 1) return clarify(analysis, 'party', 'Which existing account matches the OCR name?', text, evidence, partyMatch.candidates);
   if (capitalEvidence && !partyMatch.selected) return clarify(analysis, 'party', 'Which existing Capital Account received this contribution?', text, evidence, partyPool.map((party) => party.name));
   if (['purchase_bill', 'receipt_in', 'payment_out'].includes(type) && !partyName) return clarify(analysis, 'party', type === 'receipt_in' ? 'Which Customer is this from?' : 'Which Supplier is this from?', text, evidence);
   if (type === 'capital_contribution' && method && method !== 'cash') {
     return { kind: 'unsupported', confidence: 'low', reason: 'On-device Capital contribution import currently supports Cash only. Record a Bank, Card, or Mobile-funded contribution manually so the correct funding account is used.', sourceText: text };
   }
-  if (!method) return type === 'capital_contribution'
-    ? clarify(analysis, 'method', 'Was this paid into Cash? Non-cash Capital funding must currently be recorded manually.', text, evidence, ['cash'])
-    : clarify(analysis, 'method', 'Was this Cash, Credit, Bank, Card, or Mobile / UPI?', text, evidence, ['cash', 'credit', 'bank', 'card', 'mobile']);
+  if (!method) {
+    if (type === 'capital_contribution') {
+      return clarify(analysis, 'method', 'Was this paid into Cash? Non-cash Capital funding must currently be recorded manually.', text, evidence, ['cash']);
+    }
+    analysis.entries[0].method = 'cash';
+    analysis.entries[0].notes = [analysis.entries[0].notes, 'Payment method assumed cash; change it on the review screen if needed.'].filter(Boolean).join('; ');
+  }
 
   // A merchant receipt with a clear total/date/method is a safe expense draft;
   // it remains editable and still passes through mapAnalyzedDocument + review.
@@ -364,8 +396,9 @@ export function continueLocalDocumentParse(
     if (analysis.setup) analysis.setup.asOfDate = date;
   } else if (pending.field === 'amount') {
     const amount = amountsOnLine(value)[0];
-    if (!entry || amount === undefined) return pending;
-    entry.amount = amount;
+    if (amount === undefined) return pending;
+    if (!entry) analysis.entries.push({ type: 'expense', amount, notes: 'Amount entered after local OCR.' });
+    else entry.amount = amount;
   } else if (pending.field === 'party') {
     if (entry) entry.partyName = value;
     else if (analysis.setup?.partners?.length === 1) analysis.setup.partners[0].name = value;

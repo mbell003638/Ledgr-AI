@@ -6,6 +6,8 @@ export type VoicePartyDirectory = {
   capitalAccounts: NamedAccount[];
 };
 
+export type VoicePartyCreateRole = 'supplier' | 'customer';
+
 export type VoiceCommand = Record<string, unknown> & {
   intent?: string;
   amount?: number;
@@ -13,11 +15,18 @@ export type VoiceCommand = Record<string, unknown> & {
   customerName?: string;
   partnerName?: string;
   summary?: string;
+  pendingPartyCreate?: { role: VoicePartyCreateRole; name: string };
+};
+
+export type VoicePartyCreateProposal = {
+  name: string;
+  suggestedRole?: VoicePartyCreateRole;
+  suggestions?: string[];
 };
 
 export type VoicePartyResolution =
   | { ok: true; command: VoiceCommand }
-  | { ok: false; question: string };
+  | { ok: false; question: string; createProposal?: VoicePartyCreateProposal };
 
 const normalized = (value: unknown) => String(value || '').trim().toLocaleLowerCase();
 const exact = (rows: NamedAccount[], name: string) => rows.filter((row) => normalized(row.name) === normalized(name));
@@ -43,13 +52,10 @@ export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | n
   const amount = Number(amountMatch[1].replace(/,/g, ''));
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
-  const name = match[2]
-    .replace(/\s+(?:today|now)\s*$/i, '')
+  const name = sanitizeSpokenPartyName(match[2]
     .replace(/\s+(?:via|using|by|from)\s+(?:cash|bank(?:\s+transfer)?|card|mobile|upi)\b[\s\S]*$/i, '')
     .replace(/\s+(?:as|for)\s+(?:a\s+)?(?:supplier\s+payment|capital\s+(?:account|withdrawal)|drawing)\b[\s\S]*$/i, '')
-    .replace(/^\s*(?:supplier|vendor|capital\s+account)\s+/i, '')
-    .replace(/[.,!?;:]+\s*$/, '')
-    .trim();
+    .replace(/^\s*(?:supplier|vendor|capital\s+account)\s+/i, ''));
   if (!name || name.length > 160) return null;
 
   const method = /\bupi\b/i.test(transcript) ? 'upi'
@@ -68,13 +74,111 @@ export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | n
   };
 }
 
-function spokenName(command: VoiceCommand): string {
-  return String(command.supplierName || command.customerName || command.partnerName || '').trim();
+export function sanitizeSpokenPartyName(name: string): string {
+  const cleaned = String(name || '')
+    .replace(/\s+(?:today|now|please)$/i, '')
+    .replace(/[.,!?;:]+$/g, '')
+    .trim();
+  if (!cleaned) return '';
+  if (/^(make|made|pay|paid|get|got|buy|bought|do|did|go|went|take|took|send|sent|have|had)$/i.test(cleaned)) return '';
+  return cleaned;
 }
 
-function roleQuestion(name: string, roles: string[]): VoicePartyResolution {
+export function suggestPartyNames(name: string, directory: VoicePartyDirectory): string[] {
+  const needle = normalized(name);
+  if (needle.length < 2) return [];
+  const pool = [...directory.suppliers, ...directory.customers, ...directory.capitalAccounts];
+  const hits = pool.filter((row) => {
+    const value = normalized(row.name);
+    return value === needle || value.includes(needle) || needle.includes(value) || (needle.length >= 3 && value.startsWith(needle.slice(0, 3)));
+  });
+  return [...new Set(hits.map((row) => row.name))].slice(0, 3);
+}
+
+export function voiceCommandPartyName(command: VoiceCommand): string {
+  return sanitizeSpokenPartyName(String(command.supplierName || command.customerName || command.partnerName || ''));
+}
+
+export function suggestedVoicePartyCreateRole(intent?: string): VoicePartyCreateRole | undefined {
+  if (intent === 'receipt') return 'customer';
+  if (intent === 'bill' || intent === 'supplier_payment') return 'supplier';
+  return undefined;
+}
+
+export function parseVoicePartyCreateRole(
+  answer: string,
+  suggested?: VoicePartyCreateRole,
+): VoicePartyCreateRole | 'capital' | null {
+  const text = String(answer || '').trim().toLowerCase();
+  if (!text) return null;
+  if (/\b(supplier|vendor|creditor)\b/.test(text)) return 'supplier';
+  if (/\b(customer|client|debtor)\b/.test(text)) return 'customer';
+  if (/\b(capital|partner|owner|investor)\b/.test(text)) return 'capital';
+  if (suggested && /^(yes|y|ok|okay|create|new|do it|add it)$/i.test(text)) return suggested;
+  return null;
+}
+
+export function commandWithCreatedParty(
+  command: VoiceCommand,
+  name: string,
+  role: VoicePartyCreateRole,
+): VoiceCommand {
+  if (role === 'customer') {
+    return {
+      ...command,
+      intent: command.intent === 'receipt' ? command.intent : 'receipt',
+      customerName: name,
+      supplierName: undefined,
+      partnerName: undefined,
+      pendingPartyCreate: { role, name },
+    };
+  }
+  const intent = command.intent === 'bill' ? 'bill' : 'supplier_payment';
+  return {
+    ...command,
+    intent,
+    supplierName: name,
+    customerName: undefined,
+    partnerName: undefined,
+    pendingPartyCreate: { role, name },
+  };
+}
+
+export async function materializePendingVoiceParty(
+  command: VoiceCommand,
+  create: { supplier: (name: string) => Promise<unknown>; customer: (name: string) => Promise<unknown> },
+): Promise<VoiceCommand> {
+  const pending = command.pendingPartyCreate;
+  if (!pending?.name) return command;
+  if (pending.role === 'supplier') await create.supplier(pending.name);
+  else await create.customer(pending.name);
+  const next = { ...command };
+  delete next.pendingPartyCreate;
+  return next;
+}
+
+function unknownPartyQuestion(name: string, intent?: string, directory?: VoicePartyDirectory): VoicePartyResolution {
+  const suggested = suggestedVoicePartyCreateRole(intent);
+  const suggestions = directory ? suggestPartyNames(name, directory) : [];
+  const recommended = suggested === 'customer'
+    ? ' Create a Customer (recommended for this receipt) or a Supplier.'
+    : suggested === 'supplier'
+      ? ' Create a Supplier (recommended for this payment) or a Customer.'
+      : ' Create a Supplier or Customer.';
+  const didYouMean = suggestions.length ? ` Did you mean ${suggestions.join(' or ')}?` : '';
+  return {
+    ok: false,
+    question: `No existing account named "${name}".${recommended}${didYouMean} Nothing is saved until you confirm the draft.`,
+    createProposal: { name, suggestedRole: suggested, suggestions },
+  };
+}
+
+function roleQuestion(name: string, roles: string[], intent?: string, directory?: VoicePartyDirectory): VoicePartyResolution {
   if (!roles.length) {
-    return { ok: false, question: `I could not find an existing Supplier, Customer, or Capital Account named "${name}". Add the correct account first, then try again.` };
+    if (intent === 'capital' || intent === 'drawing') {
+      return { ok: false, question: `No Capital Account named "${name}" exists. Add it from Accounts, then try again.` };
+    }
+    return unknownPartyQuestion(name, intent, directory);
   }
   if (roles.length === 1 && roles[0] === 'Customer') {
     return { ok: false, question: `${name} is a Customer. Is this a refund, an expense, or another outgoing payment?` };
@@ -87,8 +191,9 @@ function roleQuestion(name: string, roles: string[]): VoicePartyResolution {
 
 /**
  * Resolves money-movement party roles against existing app records before the
- * voice UI offers a confirmation. It never creates a party and never guesses
- * between Supplier, Customer, and Capital Account records that share a name.
+ * voice UI offers a confirmation. It never silently creates a party and never
+ * guesses between Supplier, Customer, and Capital Account records that share a
+ * name. A missing name can be created after the user names the role.
  */
 export function resolveVoicePartyCommand(
   input: VoiceCommand,
@@ -97,7 +202,7 @@ export function resolveVoicePartyCommand(
 ): VoicePartyResolution {
   if (!['bill', 'supplier_payment', 'drawing', 'capital', 'receipt'].includes(String(input.intent || ''))) return { ok: true, command: { ...input } };
 
-  const name = spokenName(input);
+  const name = voiceCommandPartyName(input);
   if (!name && input.intent === 'receipt' && input.receiptMode === 'cash_sale') return { ok: true, command: { ...input } };
   if (!name) return { ok: false, question: 'Which Supplier, Customer, or Capital Account is this payment for?' };
 
@@ -119,7 +224,7 @@ export function resolveVoicePartyCommand(
     const capital = one(capitalAccounts);
     return capital
       ? { ok: true, command: { ...input, intent: 'capital', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Add ${Number(input.amount || 0)} capital for ${capital.name}` } }
-      : roleQuestion(name, roles);
+      : roleQuestion(name, roles, 'capital', directory);
   }
 
   if (input.intent === 'receipt') {
@@ -127,7 +232,10 @@ export function resolveVoicePartyCommand(
     if (customer && (explicitlyCustomer || (suppliers.length === 0 && capitalAccounts.length === 0))) {
       return { ok: true, command: { ...input, customerName: customer.name, supplierName: undefined, partnerName: undefined } };
     }
-    return roleQuestion(name, roles);
+    if (explicitlyCustomer && !roles.length) {
+      return { ok: true, command: commandWithCreatedParty(input, name, 'customer') };
+    }
+    return roleQuestion(name, roles, input.intent, directory);
   }
 
   if (input.intent === 'bill' && !(soundsLikePayment && !soundsLikePurchase)) {
@@ -135,23 +243,32 @@ export function resolveVoicePartyCommand(
     if (supplier && (explicitlySupplier || (customers.length === 0 && capitalAccounts.length === 0))) {
       return { ok: true, command: { ...input, supplierName: supplier.name, customerName: undefined, partnerName: undefined } };
     }
-    return roleQuestion(name, roles);
+    if (explicitlySupplier && !roles.length) {
+      return { ok: true, command: commandWithCreatedParty(input, name, 'supplier') };
+    }
+    return roleQuestion(name, roles, input.intent, directory);
   }
 
-  if (explicitlySupplier && explicitlyCapital) return roleQuestion(name, roles);
+  if (explicitlySupplier && explicitlyCapital) return roleQuestion(name, roles, input.intent, directory);
 
   if (explicitlySupplier) {
     const supplier = one(suppliers);
-    return supplier
-      ? { ok: true, command: { ...input, intent: 'supplier_payment', supplierName: supplier.name, customerName: undefined, partnerName: undefined } }
-      : roleQuestion(name, roles);
+    if (supplier) {
+      return { ok: true, command: { ...input, intent: 'supplier_payment', supplierName: supplier.name, customerName: undefined, partnerName: undefined } };
+    }
+    if (!roles.length) return { ok: true, command: commandWithCreatedParty({ ...input, intent: 'supplier_payment' }, name, 'supplier') };
+    return roleQuestion(name, roles, 'supplier_payment', directory);
+  }
+
+  if (explicitlyCustomer && !roles.length) {
+    return { ok: true, command: commandWithCreatedParty({ ...input, intent: 'receipt' }, name, 'customer') };
   }
 
   if (explicitlyCapital || input.intent === 'drawing') {
     const capital = one(capitalAccounts);
     return capital
       ? { ok: true, command: { ...input, intent: 'drawing', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Withdraw ${Number(input.amount || 0)} from ${capital.name} Capital Account` } }
-      : roleQuestion(name, roles);
+      : roleQuestion(name, roles, 'drawing', directory);
   }
 
   const supplier = one(suppliers);
@@ -162,5 +279,5 @@ export function resolveVoicePartyCommand(
   if (capital && suppliers.length === 0 && customers.length === 0) {
     return { ok: true, command: { ...input, intent: 'drawing', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Withdraw ${Number(input.amount || 0)} from ${capital.name} Capital Account` } };
   }
-  return roleQuestion(name, roles);
+  return roleQuestion(name, roles, String(input.intent || 'supplier_payment'), directory);
 }

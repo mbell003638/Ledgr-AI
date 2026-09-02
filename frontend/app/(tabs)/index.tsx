@@ -69,7 +69,7 @@ const TILES = [
   { key: "reports", label: "Reports", icon: BarChart2, route: "/reports", iconColor: "#FBBF24", iconBackground: "rgba(224,224,218,0.20)" },
   { key: "monthly", label: "Monthly Report", icon: Calendar, route: "/monthly-summary", iconColor: "#F97316", iconBackground: "rgba(239,220,200,0.20)" },
   { key: "ask", label: "Ask AI", icon: Sparkles, route: "/ask", usesBrandIcon: true },
-  { key: "voice", label: "AI Assistant", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
+  { key: "voice", label: "Voice", icon: Mic, route: "/voice", usesBrandIcon: true, solidBrand: true },
 ] as const;
 
 // Persona-driven tile visibility is derived centrally in

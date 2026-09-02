@@ -55,6 +55,7 @@ const AI_BASE_URL_KEY = 'ai_base_url';
 const AI_VOICE_PROVIDER_KEY = 'ai_voice_provider';
 const AI_OCR_PROVIDER_KEY = 'ai_ocr_provider';
 const AI_INTERPRETATION_MODE_KEY = 'ai_interpretation_mode';
+const AI_ENTRY_HELP_ORDER_KEY = 'ai_entry_help_order';
 const AI_TRANSFER_CONSENT_PREFIX = 'ledgr:ai-transfer-consent:';
 const MAX_AI_DOCUMENT_BASE64_CHARS = 8 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ export const FACTORY_RESET_PREF_KEYS = [
 ] as const;
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider, interpretationMode] = await Promise.all([
+  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider, interpretationMode, entryHelpOrder] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     storage.secureGet(AI_API_KEY_KEY, ''),
     AsyncStorage.getItem(AI_API_KEY_KEY),
@@ -91,6 +92,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     AsyncStorage.getItem(AI_VOICE_PROVIDER_KEY),
     AsyncStorage.getItem(AI_OCR_PROVIDER_KEY),
     AsyncStorage.getItem(AI_INTERPRETATION_MODE_KEY),
+    AsyncStorage.getItem(AI_ENTRY_HELP_ORDER_KEY),
   ]);
   const resolvedKey = secureKey || storedKey || '';
   if (resolvedKey && !secureKey) {
@@ -109,6 +111,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     voiceProvider: voiceProvider === 'android-device' || voiceProvider === 'cloud' ? voiceProvider : 'auto',
     ocrProvider: ocrProvider === 'android-device' || ocrProvider === 'cloud' ? ocrProvider : 'auto',
     interpretationMode: interpretationMode === 'device-only' || interpretationMode === 'cloud' ? interpretationMode : 'auto',
+    entryHelpOrder: ai.normalizeEntryHelpOrder(entryHelpOrder),
   };
 }
 
@@ -137,6 +140,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   if (cfg.voiceProvider !== undefined) ops.push(AsyncStorage.setItem(AI_VOICE_PROVIDER_KEY, cfg.voiceProvider));
   if (cfg.ocrProvider !== undefined) ops.push(AsyncStorage.setItem(AI_OCR_PROVIDER_KEY, cfg.ocrProvider));
   if (cfg.interpretationMode !== undefined) ops.push(AsyncStorage.setItem(AI_INTERPRETATION_MODE_KEY, cfg.interpretationMode));
+  if (cfg.entryHelpOrder !== undefined) ops.push(AsyncStorage.setItem(AI_ENTRY_HELP_ORDER_KEY, ai.normalizeEntryHelpOrder(cfg.entryHelpOrder)));
   await Promise.all(ops);
 }
 // Convenience aliases used by the current voice and bill screens.
@@ -1512,7 +1516,7 @@ export const api = {
       storage.secureRemove(AI_TRANSCRIPTION_API_KEY_KEY),
       beClearAskHistory(books.map((book) => book.id)),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY, AI_INTERPRETATION_MODE_KEY,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY, AI_INTERPRETATION_MODE_KEY, AI_ENTRY_HELP_ORDER_KEY,
         ...consentKeys,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
@@ -1542,6 +1546,7 @@ export const api = {
         return ai.analyzeDocumentAI(config, cloudInput);
       },
       parserOptions: { defaultCurrency: settings.currency || 'USD', knownSuppliers: suppliers, knownCustomers: customers, knownCapitalAccounts: capitalAccounts },
+      entryHelpOrder: config.entryHelpOrder,
     });
     return {
       ...route.analysis,

@@ -7,6 +7,7 @@ export type LocalOcrStatus = { supported: boolean; available: boolean; reason?: 
 type NativeLocalOcr = {
   isAvailable?: () => boolean | Promise<boolean>;
   recognize: (uri: string, language?: string) => string | Promise<string>;
+  recognizePdf?: (uri: string, maxPages?: number) => string | Promise<string>;
 };
 
 function nativeModule(): NativeLocalOcr | null {
@@ -34,7 +35,10 @@ export async function recognizeLocalOcr(uri: string, language?: string): Promise
   if (!uri.trim()) throw new Error('A receipt image is required for local OCR.');
   const module = nativeModule();
   if (!module) throw new Error('Local OCR requires an Android native build. Choose a configured vision provider instead.');
-  const text = await module.recognize(uri, language);
+  const looksPdf = /\.pdf($|\?)/i.test(uri) || uri.toLowerCase().includes('application/pdf');
+  const text = looksPdf && module.recognizePdf
+    ? await module.recognizePdf(uri, 8)
+    : await module.recognize(uri, language);
   if (!String(text || '').trim()) throw new Error('Local OCR did not detect readable text.');
   return String(text).trim();
 }

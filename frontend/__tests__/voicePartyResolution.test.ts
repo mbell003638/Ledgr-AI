@@ -63,6 +63,33 @@ describe('voice party-role resolution', () => {
     });
     expect(customerResult).toMatchObject({ ok: false });
     expect(unknownResult).toMatchObject({ ok: false });
+    if (!unknownResult.ok) {
+      expect(unknownResult.question).toMatch(/create a supplier/i);
+      expect(unknownResult.createProposal).toMatchObject({ name: 'Amit', suggestedRole: 'supplier' });
+    }
+  });
+
+  it('does not treat the spoken verb "make" as a new Supplier', () => {
+    const unknown = { intent: 'supplier_payment', supplierName: 'make', amount: 100, summary: 'Paid 100 to make' };
+    const asked = resolveVoicePartyCommand(unknown, 'paid $100 to make today', {
+      suppliers: [], customers: [], capitalAccounts: [],
+    });
+    expect(asked).toMatchObject({ ok: false });
+    if (!asked.ok) expect(asked.question).toMatch(/which/i);
+  });
+
+  it('creates a pending Supplier when the user names that role for an unknown party', () => {
+    const unknown = { intent: 'supplier_payment', supplierName: 'Make Hardware', amount: 100, summary: 'Paid 100 to Make Hardware' };
+    expect(resolveVoicePartyCommand(unknown, 'paid $100 to supplier Make Hardware', {
+      suppliers: [], customers: [], capitalAccounts: [],
+    })).toMatchObject({
+      ok: true,
+      command: {
+        intent: 'supplier_payment',
+        supplierName: 'Make Hardware',
+        pendingPartyCreate: { role: 'supplier', name: 'Make Hardware' },
+      },
+    });
   });
 
   it('requires an existing exact Customer for a receipt', () => {

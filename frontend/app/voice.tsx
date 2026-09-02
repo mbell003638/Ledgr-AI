@@ -9,7 +9,7 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
-import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
+import { materializePendingVoiceParty, resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
@@ -62,10 +62,13 @@ export default function VoiceModal() {
     ]);
     const resolution = resolveVoicePartyCommand(interpretation.command, interpretation.transcript, { suppliers, customers, capitalAccounts });
     if (!resolution.ok) {
-      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "intent", question: resolution.question, transcript: interpretation.transcript });
+      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "party", question: resolution.question, transcript: interpretation.transcript });
       throw new Error(resolution.question);
     }
     let resolvedCommand = resolution.command;
+    if (!resolvedCommand.method && ["expense", "receipt", "supplier_payment", "drawing", "capital"].includes(String(resolvedCommand.intent))) {
+      resolvedCommand = { ...resolvedCommand, method: "cash" };
+    }
     if (resolvedCommand.intent === "receipt" && resolvedCommand.receiptMode === "against_invoice" && resolvedCommand.customerName) {
       const customer = customers.find((item: any) => item.name.trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase());
       const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
@@ -84,7 +87,8 @@ export default function VoiceModal() {
       mode: cfg.interpretationMode || "auto",
       hasCloudAI: Boolean(cfg.apiKey),
       parseCloud: api.parseCommand,
-      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true },
+      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false },
+      entryHelpOrder: cfg.entryHelpOrder,
     });
     return draftFromInterpretation(interpretation);
   };
@@ -94,7 +98,7 @@ export default function VoiceModal() {
     setError(""); setPhase("processing");
     try {
       const settings = await api.getSettings();
-      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true });
+      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false });
       if (interpretation.kind !== "command") {
         if (interpretation.kind === "clarification") setPendingClarification(interpretation);
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
@@ -166,6 +170,13 @@ export default function VoiceModal() {
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
+      const command = await materializePendingVoiceParty(parsed, {
+        supplier: (name) => api.createSupplier({ name }),
+        customer: (name) => api.createDebtor({ name }),
+      });
+      parsed.supplierName = command.supplierName;
+      parsed.customerName = command.customerName;
+      parsed.intent = command.intent;
       if (parsed.intent === "bill") {
         const list = await api.listSuppliers();
         const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());

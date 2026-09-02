@@ -18,7 +18,7 @@ import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistor
 
 import { getProviderMeta, isExplicitBookMutationRequest } from "@/src/db/ai";
 import { scopeAiSnapshot } from "@/src/utils/aiContextScope";
-import { parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
+import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 type Msg = { role: "user" | "assistant"; text: string };
 type PendingClarification =
   | { kind: "party"; originalRequest: string; question: string; command: VoiceCommand }
@@ -438,6 +438,16 @@ export default function AskBooks() {
     applyingProposalRef.current = true;
     setApplyingProposal(true);
     try {
+      if (proposal.action.type === "create_supplier_payment" && proposal.action.params?.supplierName) {
+        await materializePendingVoiceParty({
+          intent: "supplier_payment",
+          supplierName: String(proposal.action.params.supplierName),
+          pendingPartyCreate: { role: "supplier", name: String(proposal.action.params.supplierName) },
+        }, {
+          supplier: (name) => api.createSupplier({ name }),
+          customer: (name) => api.createDebtor({ name }),
+        });
+      }
       const result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
       setPendingProposal(null);
       setMessages((m) => [...m, { role: "assistant", text: String(result) }]);

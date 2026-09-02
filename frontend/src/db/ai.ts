@@ -11,6 +11,27 @@ export type ProviderId = 'gemini' | 'openai' | 'anthropic';
 export type VoiceProvider = 'auto' | 'android-device' | 'cloud';
 export type OcrProvider = 'auto' | 'android-device' | 'cloud';
 export type InterpretationMode = 'auto' | 'device-only' | 'cloud';
+export type EntryHelpOrder = 'cloud-first' | 'device-first';
+export const DEFAULT_ENTRY_HELP_ORDER: EntryHelpOrder = 'cloud-first';
+export const CLOUD_HELP_TIMEOUT_MS = 12_000;
+
+export function normalizeEntryHelpOrder(value: string | null | undefined): EntryHelpOrder {
+  return value === 'device-first' ? 'device-first' : 'cloud-first';
+}
+
+export async function withCloudHelpTimeout<T>(work: Promise<T>, ms = CLOUD_HELP_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('The AI provider did not respond in time. Using on-device help instead.')), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 // Default provider used when the stored provider is missing/unknown/legacy.
 export const DEFAULT_PROVIDER: ProviderId = 'gemini';
@@ -30,6 +51,8 @@ export interface AIConfig {
   ocrProvider?: OcrProvider;
   /** Controls transaction interpretation separately from speech recognition. */
   interpretationMode?: InterpretationMode;
+  /** When Automatic is selected, try cloud AI first or on-device first. */
+  entryHelpOrder?: EntryHelpOrder;
 }
 
 export interface ProviderMeta {

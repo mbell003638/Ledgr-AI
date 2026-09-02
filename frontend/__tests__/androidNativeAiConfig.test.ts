@@ -18,6 +18,8 @@ describe('Android native AI integration', () => {
     expect(speechModule).not.toContain('setRecognitionListener(this)');
     expect(speechModule).not.toContain('\\n');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('TextRecognition.getClient');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('recognizePdf');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrSpeechRecognizerModule.kt')).toContain('EXTRA_PREFER_OFFLINE, true');
   });
 
   it('generates shortcuts metadata and bounded Assistant action URLs', () => {

@@ -12,6 +12,12 @@ describe('settings UI contracts', () => {
     expect(advancedSettings).toContain('I trust these custom chat, OCR, and voice hosts');
   });
 
+  it('does not write AI keys from main Settings save', () => {
+    expect(mainSettings).not.toContain('setAIConfig');
+    expect(advancedSettings).toContain('entryHelpOrder');
+    expect(advancedSettings).toContain('AI first');
+  });
+
   it('keeps Accounting & Workflow only in Advanced Settings', () => {
     expect(mainSettings).not.toContain('Accounting Style');
     expect(mainSettings).not.toContain('updateV2BookConfig');

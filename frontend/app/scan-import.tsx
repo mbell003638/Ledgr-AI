@@ -207,12 +207,19 @@ export default function ScanImport() {
       if (res.canceled || !res.assets?.[0]) return;
       const asset = res.assets[0];
       const config = await getAIConfig();
-      if (config.ocrProvider === "android-device") {
-        setError("On-device PDF OCR is unavailable. Upload the PDF pages as images or paste the PDF text; cloud AI remains disabled in this mode.");
-        return;
+      if (config.ocrProvider !== "cloud") {
+        try {
+          await analyze({ mimeType: "application/pdf", uri: asset.uri });
+          return;
+        } catch {
+          if (config.ocrProvider === "android-device" || !config.apiKey) {
+            setError("On-device PDF OCR could not read this file. Upload page images or paste the PDF text.");
+            return;
+          }
+        }
       }
       if (config.provider !== "gemini" || !config.apiKey) {
-        setError("PDF Scan & Import needs configured Gemini cloud vision. Otherwise upload page images for on-device OCR or paste the PDF text.");
+        setError("Cloud PDF Scan & Import needs configured Gemini vision. Otherwise upload page images for on-device OCR or paste the PDF text.");
         return;
       }
       if (Number(asset.size || 0) > MAX_SOURCE_BYTES) {

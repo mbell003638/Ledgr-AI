@@ -49,7 +49,7 @@ class LedgrSpeechRecognizerModule : Module(), RecognitionListener {
           putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
           putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale?.takeIf { it.isNotBlank() } ?: Locale.getDefault().toLanguageTag())
           if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
           }
         }
         recognizer?.startListening(intent)

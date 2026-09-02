@@ -1,4 +1,5 @@
-import type { InterpretationMode } from '../db/ai';
+import type { EntryHelpOrder, InterpretationMode } from '../db/ai';
+import { DEFAULT_ENTRY_HELP_ORDER, withCloudHelpTimeout } from '../db/ai';
 import {
   continueLocalTransaction,
   parseLocalTransaction,
@@ -19,23 +20,46 @@ type InterpretationRequest = {
   hasCloudAI: boolean;
   parseCloud: (text: string) => Promise<VoiceCommand>;
   parserOptions?: LocalTransactionParserOptions;
+  entryHelpOrder?: EntryHelpOrder;
 };
 
 /**
  * Keeps transaction interpretation independent from speech recognition.
- * Automatic mode is local-first and only calls cloud AI for unsupported text;
- * focused local clarification questions retain the original command instead.
+ * Automatic mode follows the Advanced Settings order: cloud-first (default)
+ * tries AI with a timeout then on-device parsing; device-first stays local
+ * unless the parser cannot understand the sentence.
  */
 export async function interpretVoiceTransaction(request: InterpretationRequest): Promise<VoiceInterpretationResult> {
-  if (request.mode === 'cloud') {
-    return { kind: 'command', command: await request.parseCloud(request.transcript), transcript: request.transcript, source: 'cloud' };
+  const parseLocal = () => parseLocalTransaction(request.transcript, request.parserOptions);
+  const parseCloud = () => withCloudHelpTimeout(request.parseCloud(request.transcript));
+  const order = request.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER;
+
+  if (request.mode === 'device-only') {
+    const local = parseLocal();
+    if (local.kind === 'confident') return { kind: 'command', command: local.command, transcript: local.transcript, source: 'local' };
+    return local;
   }
 
-  const local = parseLocalTransaction(request.transcript, request.parserOptions);
-  if (local.kind === 'confident') return { kind: 'command', command: local.command, transcript: local.transcript, source: 'local' };
-  if (local.kind === 'clarification' || request.mode === 'device-only' || !request.hasCloudAI) return local;
+  if (request.mode === 'cloud' || (request.mode === 'auto' && order === 'cloud-first' && request.hasCloudAI)) {
+    try {
+      return { kind: 'command', command: await parseCloud(), transcript: request.transcript, source: 'cloud' };
+    } catch (error) {
+      if (request.mode === 'cloud') throw error;
+      const local = parseLocal();
+      if (local.kind === 'confident') return { kind: 'command', command: local.command, transcript: local.transcript, source: 'local' };
+      if (local.kind !== 'unsupported') return local;
+      throw error;
+    }
+  }
 
-  return { kind: 'command', command: await request.parseCloud(request.transcript), transcript: request.transcript, source: 'cloud' };
+  const local = parseLocal();
+  if (local.kind === 'confident') return { kind: 'command', command: local.command, transcript: local.transcript, source: 'local' };
+  if (local.kind === 'clarification' || !request.hasCloudAI) return local;
+  try {
+    return { kind: 'command', command: await parseCloud(), transcript: request.transcript, source: 'cloud' };
+  } catch {
+    return local;
+  }
 }
 
 export function continueVoiceTransaction(
