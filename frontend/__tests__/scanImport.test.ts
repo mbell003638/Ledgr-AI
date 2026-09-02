@@ -181,6 +181,9 @@ describe('mapAnalyzedDocument', () => {
 
     expect(mapped.flaggedRows).toHaveLength(1);
     expect(mapped.flaggedRows[0]).toMatchObject({ label: 'Asset Cash USD in Shop 0' });
+    expect(mapped.validRows.filter((row) => row.kind === 'asset').map((row) => row.kind === 'asset' ? row.name : '')).toEqual([
+      'Cash USD at Home', 'Cash FC in Shop', 'Physical Stock', 'Shop Deposit', 'House Deposit',
+    ]);
     const result = buildBalancedOpeningSet(mapped.validRows);
     expect(result.error).toBeNull();
     expect(result.value).toEqual({
@@ -283,12 +286,17 @@ describe('mapAnalyzedDocument', () => {
 
     const opening = mapped.validRows.find((r) => r.kind === 'opening_balances') as ScanOpeningRow;
     expect(opening).toBeDefined();
-    expect(opening.openingCash).toBe(1750); // 1000 + 500 + 250 — all cash rows summed
-    expect(opening.stockValue).toBe(2000); // Physical Stock folded into stock value
+    expect(opening.openingCash).toBe(1000);
+    expect(opening.stockValue).toBe(0);
     expect(opening.asOfDate).toBe('2026-06-30');
 
     const assets = mapped.validRows.filter((r) => r.kind === 'asset');
-    expect(assets).toEqual([{ kind: 'asset', name: 'Security Deposit', amount: 300, date: '2026-06-30' }]);
+    expect(assets).toEqual([
+      { kind: 'asset', name: 'Cash USD at Home', amount: 500, date: '2026-06-30' },
+      { kind: 'asset', name: 'Cash at Shop 2', amount: 250, date: '2026-06-30' },
+      { kind: 'asset', name: 'Physical Stock', amount: 2000, date: '2026-06-30' },
+      { kind: 'asset', name: 'Security Deposit', amount: 300, date: '2026-06-30' },
+    ]);
 
     const liabilities = mapped.validRows.filter((r) => r.kind === 'liability');
     expect(liabilities).toEqual([

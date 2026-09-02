@@ -44,10 +44,11 @@ function expectPartnerClosingSetup(result: ReturnType<typeof parseLocalDocumentT
   expect(result.analysis.docType).toBe('closing_report');
   expect(result.analysis.entries).toEqual([]);
   expect(result.analysis.setup).toMatchObject({
-    openingCash: 38689.21,
-    stockValue: 150527.46,
     creditorsTotal: 36215.42,
     extraAssets: [
+      { name: 'Cash USD at Home', amount: 37741.17 },
+      { name: 'Cash FC in Shop', amount: 948.04 },
+      { name: 'Physical Stock', amount: 150527.46 },
       { name: 'Shop Deposit', amount: 7500 },
       { name: 'House Deposit', amount: 750 },
     ],
@@ -57,6 +58,8 @@ function expectPartnerClosingSetup(result: ReturnType<typeof parseLocalDocumentT
       { name: 'Rahim', capital: 86252.62, profitSharePct: 50 },
     ],
   });
+  expect(result.analysis.setup?.openingCash).toBeUndefined();
+  expect(result.analysis.setup?.stockValue).toBeUndefined();
 }
 
 describe('local document parser', () => {
@@ -98,6 +101,9 @@ describe('local document parser', () => {
     if (continued.kind !== 'confident') return;
     const mapped = mapAnalyzedDocument(continued.analysis);
     expect(mapped.validRows.some((row) => row.kind === 'transaction')).toBe(false);
+    expect(mapped.validRows.filter((row) => row.kind === 'asset').map((row) => row.kind === 'asset' ? row.name : '')).toEqual([
+      'Cash USD at Home', 'Cash FC in Shop', 'Physical Stock', 'Shop Deposit', 'House Deposit',
+    ]);
     const balanced = buildBalancedOpeningSet(mapped.validRows);
     expect(balanced.error).toBeNull();
     expect(balanced.value?.totalAssets).toBeCloseTo(197466.67, 2);

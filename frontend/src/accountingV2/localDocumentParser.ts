@@ -302,8 +302,10 @@ function parseOpeningAnalysis(lines: string[], dates: ReturnType<typeof extractD
     if (/^\s*commission\b/i.test(row.name) && !/\bpayable\b/i.test(row.name)) continue;
     if (/\b(?:total|net\s+worth|assets?|liabilities?|profit|loss|revenue|sales|expenses?)\b/i.test(row.name)
         && !/\b(?:cash|stock|inventory|creditors?|accounts?\s+payable)\b/i.test(row.name)) continue;
-    if (/\b(?:cash(?:\s+in\s+hand)?|petty\s+cash|cash\s+at)\b/i.test(row.name)) setup.openingCash = cents((setup.openingCash || 0) + row.amount);
-    else if (/\b(?:stock|inventory)\b/i.test(row.name)) setup.stockValue = cents((setup.stockValue || 0) + row.amount);
+    if (/\b(?:cash(?:\s+in\s+hand)?|petty\s+cash|cash\s+at)\b/i.test(row.name)
+        || /\b(?:stock|inventory)\b/i.test(row.name)) {
+      setup.extraAssets!.push({ name: row.name, amount: row.amount });
+    }
     else if (/\b(?:creditors?|accounts?\s+payable)\b/i.test(row.name)) setup.creditorsTotal = cents((setup.creditorsTotal || 0) + row.amount);
     else if (/\b(?:loan|payable|liabilit|accrued)\b/i.test(row.name)) setup.extraLiabilities!.push({ name: row.name, amount: row.amount });
     else {
@@ -324,7 +326,7 @@ function parseOpeningAnalysis(lines: string[], dates: ReturnType<typeof extractD
   }
   applyVisiblePartnerSplit(setup.partners!, lines);
   if (dates.selected) setup.asOfDate = dates.selected;
-  return { docType: 'closing_report', summary: 'Local OCR found a balance or closing report. Review every balance before importing.', entries: [], setup };
+  return { docType: 'closing_report', summary: 'Local OCR found labelled balances for review. Totals such as Net Profit and Total Assets are not imported as extra rows.', entries: [], setup };
 }
 
 function evidenceFor(dates: ReturnType<typeof extractDates>, totals: ReturnType<typeof extractTotals>, parties: string[]): LocalDocumentEvidence {

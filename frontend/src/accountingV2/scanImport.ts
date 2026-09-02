@@ -112,7 +112,8 @@ const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 10
 export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResult {
   const setupRows = rows.filter((row) => row.kind !== 'transaction');
   const openings = setupRows.filter((row): row is ScanOpeningRow => row.kind === 'opening_balances');
-  if (openings.length !== 1) return { value: null, error: 'A balance report must contain exactly one cash and stock opening row' };
+  if (openings.length > 1) return { value: null, error: 'A balance report must contain at most one unnamed cash and stock opening row' };
+  if (!setupRows.length) return { value: null, error: 'A balance report must contain cash, stock, or other opening rows' };
 
   const dateValues = setupRows.map((row) => row.kind === 'opening_balances' ? row.asOfDate : row.date);
   const normalizedDates = dateValues.map(normalizeScanDate);
@@ -123,7 +124,7 @@ export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResu
   if (dates.length !== 1) return { value: null, error: 'All opening-balance rows must use the same statement date' };
 
   const opening = openings[0];
-  if (![opening.openingCash, opening.stockValue].every((value) => Number.isFinite(value) && value >= 0 && value <= MAX_AI_AMOUNT)) {
+  if (opening && ![opening.openingCash, opening.stockValue].every((value) => Number.isFinite(value) && value >= 0 && value <= MAX_AI_AMOUNT)) {
     return { value: null, error: AMOUNT_BOUNDS_REASON };
   }
   const assets = setupRows.filter((row): row is ScanAssetRow => row.kind === 'asset');
@@ -135,12 +136,15 @@ export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResu
     return { value: null, error: 'Every opening asset, liability, and partner needs a name and valid positive amount' };
   }
 
-  const assetBreakdown = assets.map((row) => ({ name: row.name.trim(), amount: cents(row.amount) }));
+  const cashAssets = assets.filter((row) => CASH_NAME.test(row.name));
+  const stockAssets = assets.filter((row) => STOCK_NAME.test(row.name) && !CASH_NAME.test(row.name));
+  const otherAssetRows = assets.filter((row) => !CASH_NAME.test(row.name) && !STOCK_NAME.test(row.name));
+  const assetBreakdown = otherAssetRows.map((row) => ({ name: row.name.trim(), amount: cents(row.amount) }));
   const liabilityBreakdown = liabilities.map((row) => ({
     name: row.name.trim(), amount: cents(row.amount), type: CREDITOR_NAME.test(row.name.trim()) ? 'creditor' as const : 'other' as const,
   }));
-  const cash = cents(opening.openingCash);
-  const inventory = cents(opening.stockValue);
+  const cash = cents((opening?.openingCash || 0) + cashAssets.reduce((sum, row) => sum + row.amount, 0));
+  const inventory = cents((opening?.stockValue || 0) + stockAssets.reduce((sum, row) => sum + row.amount, 0));
   const otherAssets = cents(assetBreakdown.reduce((sum, row) => sum + row.amount, 0));
   const accountsPayable = cents(liabilityBreakdown.filter((row) => row.type === 'creditor').reduce((sum, row) => sum + row.amount, 0));
   const otherLiabilities = cents(liabilityBreakdown.filter((row) => row.type === 'other').reduce((sum, row) => sum + row.amount, 0));
@@ -178,10 +182,10 @@ export function buildBalancedOpeningSet(rows: ScanRow[]): BalancedOpeningSetResu
  * instructs the model to do the same):
  * - entries[] → transaction rows; missing dates stay blank for editable review;
  *   invalid supplied amount/date/type → flagged.
- * - setup.extraAssets rows whose NAME contains "cash" are summed into opening
- *   cash; rows named stock/inventory are folded into stockValue; the rest
- *   become manual-asset rows.
- * - openingCash + stockValue collapse into ONE opening-balances row.
+ * - setup.extraAssets become one reviewable asset row each, including named
+ *   cash and stock lines. Import still folds cash-named rows into cash and
+ *   stock-named rows into inventory so the posted opening set stays balanced.
+ * - openingCash + stockValue become one unnamed opening-balances row when set.
  * - creditorsTotal becomes a "Creditors" liability row; extraLiabilities map
  *   one-to-one to liability rows.
  * - partners map to partner-capital rows (the screen decides whether an
@@ -273,13 +277,7 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       const label = `Asset ${name || '?'} ${asset.amount ?? '?'}`;
       if (!name) { flaggedRows.push({ label, reason: 'Asset name is missing' }); continue; }
       if (!isValidScanAmount(asset.amount)) { flaggedRows.push({ label, reason: AMOUNT_BOUNDS_REASON }); continue; }
-      if (CASH_NAME.test(name)) {
-        openingCash = (openingCash ?? 0) + asset.amount; // fold cash rows into opening cash
-      } else if (STOCK_NAME.test(name)) {
-        stockValue = (stockValue ?? 0) + asset.amount; // fold stock rows into stock value
-      } else {
-        assetRows.push({ kind: 'asset', name, amount: asset.amount, date: asOfDate });
-      }
+      assetRows.push({ kind: 'asset', name, amount: asset.amount, date: asOfDate });
     }
 
     const cappedCash = openingCash !== null && openingCash > MAX_AI_AMOUNT ? null : openingCash;
