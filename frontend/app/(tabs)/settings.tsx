@@ -67,11 +67,6 @@ export default function SettingsScreen() {
   const load = useCallback(async () => {
     try {
       const s = await api.getSettings();
-      const cfg = await getAIConfig();
-      setProvider(cfg.provider);
-      setKey(cfg.apiKey || "");
-      setModelName(cfg.model || "");
-      setBaseUrl(cfg.baseUrl || "");
       setLockEnabled(!!s.lockEnabled);
       setCurrency(s.currency || "USD");
       const rawLabel = s.taxLabel || "None";

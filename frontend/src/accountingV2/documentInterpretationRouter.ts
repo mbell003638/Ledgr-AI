@@ -24,7 +24,7 @@ type RouteRequest = {
 function localRoute(text: string, options?: LocalDocumentParserOptions): DocumentAnalysisRoute | null {
   const parsed = parseLocalDocumentText(text, options);
   if (parsed.kind === 'unsupported') return null;
-  const inferred = parsed.kind !== 'unsupported' && parsed.evidence?.selectedTotalLabel === 'visible amount';
+  const inferred = parsed.evidence?.selectedTotalLabel === 'visible amount';
   return {
     analysis: parsed.analysis as Record<string, unknown>,
     source: 'local',

@@ -14,6 +14,7 @@ describe('settings UI contracts', () => {
 
   it('does not write AI keys from main Settings save', () => {
     expect(mainSettings).not.toContain('setAIConfig');
+    expect(mainSettings).not.toContain('getAIConfig');
     expect(advancedSettings).toContain('entryHelpOrder');
     expect(advancedSettings).toContain('AI first');
   });
