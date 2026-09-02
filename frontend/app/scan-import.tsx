@@ -61,9 +61,9 @@ function rowTitle(row: ScanRow): string {
       return labels[row.entryType] || row.entryType;
     }
     case "opening_balances": return "Opening balances (cash + stock)";
-    case "asset": return "Asset";
-    case "liability": return "Liability";
-    case "partner": return "Capital account";
+    case "asset": return row.name ? `Asset — ${row.name}` : "Asset";
+    case "liability": return row.name ? `Liability — ${row.name}` : "Liability";
+    case "partner": return row.name ? `Capital account — ${row.name}` : "Capital account";
   }
 }
 

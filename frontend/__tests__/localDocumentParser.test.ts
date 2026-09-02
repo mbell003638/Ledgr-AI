@@ -44,10 +44,11 @@ function expectPartnerClosingDocument(result: ReturnType<typeof interpretLocalDo
   expect(result.document?.docType).toBe('closing_report');
   expect(result.document?.entries).toEqual([]);
   expect(result.document?.setup).toMatchObject({
-    openingCash: 38689.21,
-    stockValue: 150527.46,
     creditorsTotal: 36215.42,
     extraAssets: [
+      { name: 'Cash USD at Home', amount: 37741.17 },
+      { name: 'Cash FC in Shop', amount: 948.04 },
+      { name: 'Physical Stock', amount: 150527.46 },
       { name: 'Shop Deposit', amount: 7500 },
       { name: 'House Deposit', amount: 750 },
     ],
@@ -57,6 +58,8 @@ function expectPartnerClosingDocument(result: ReturnType<typeof interpretLocalDo
       { name: 'Rahim', capital: 86252.62, profitSharePct: 50 },
     ],
   });
+  expect(result.document?.setup?.openingCash).toBeUndefined();
+  expect(result.document?.setup?.stockValue).toBeUndefined();
 }
 
 describe('local document parser', () => {

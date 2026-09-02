@@ -196,13 +196,6 @@ function labeledAmount(lines: string[], pattern: RegExp): number | undefined {
   return undefined;
 }
 
-function openingBalanceAmount(lines: string[], pattern: RegExp, authoritative: RegExp): number | undefined {
-  const authoritativeValue = labeledAmount(lines, authoritative);
-  if (authoritativeValue !== undefined) return authoritativeValue;
-  const values = lines.filter((line) => pattern.test(line)).map(lastAmount).filter((value): value is number => value !== undefined);
-  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) * 100) / 100 : undefined;
-}
-
 function lineNameBeforeAmount(line: string): string {
   return line.replace(MONEY_TOKEN, ' ').replace(/[:|.-]+$/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -217,8 +210,6 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
   const setup: NonNullable<LocalAnalyzedDocument['setup']> = {};
   const date = extractDate(lines);
   if (date) setup.asOfDate = date;
-  setup.openingCash = openingBalanceAmount(lines, /\bcash\b/i, /\b(?:opening\s+cash|cash\s+balance|total\s+cash)\b/i);
-  setup.stockValue = openingBalanceAmount(lines, /\b(?:stock|inventory)\b/i, /\b(?:stock|inventory)\s+(?:value|balance|total)\b/i);
   setup.creditorsTotal = labeledAmount(lines, /\b(?:creditors?|accounts?\s+payable)\b/i);
   setup.extraAssets = [];
   setup.extraLiabilities = [];
@@ -226,12 +217,16 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
 
   for (const line of labeled) {
     const amount = lastAmount(line);
-    if (amount === undefined) continue;
+    if (amount === undefined || amount <= 0) continue;
     const name = lineNameBeforeAmount(line);
     if (/\btotal\s+(?:assets?|liabilit(?:y|ies)|capital|equity)\b/i.test(line)) continue;
     if (/\b(?:net\s+profit|profit\s+before|profit\s+share|each\s+partner|drawings?\s+this\s+period|capital\s+withdrawn)\b/i.test(line)) continue;
     if (/^\s*commission\b/i.test(line) && !/\bpayable\b/i.test(line)) continue;
-    if (/\b(?:cash|stock|inventory|creditors?|accounts?\s+payable)\b/i.test(line)) continue;
+    if (/\b(?:creditors?|accounts?\s+payable)\b/i.test(line)) continue;
+    if (/\bcash\b/i.test(line) || /\b(?:stock|inventory)\b/i.test(line)) {
+      setup.extraAssets.push({ name, amount });
+      continue;
+    }
     if (/\b(?:capital|stake)\b/i.test(line)) {
       if (/\b(?:opening(?:\s+stake)?|profit\s+share|drawings?)\b/i.test(line) && !/\b(?:ending|closing)\b/i.test(line)) continue;
       const partnerName = line.replace(/\b\d{1,3}(?:\.\d+)?\s*%/g, ' ').replace(MONEY_TOKEN, ' ')
@@ -262,8 +257,8 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
   }
 
   applyVisiblePartnerSplit(setup.partners, lines);
-  if (setup.openingCash === undefined && setup.stockValue === undefined && !setup.extraAssets.length && !setup.extraLiabilities.length && !setup.partners.length) return null;
-  const document: LocalAnalyzedDocument = { docType: 'closing_report', summary: 'Locally extracted opening or closing balances for review.', entries: [], setup };
+  if (!setup.extraAssets.length && !setup.extraLiabilities.length && !setup.partners.length && setup.creditorsTotal === undefined) return null;
+  const document: LocalAnalyzedDocument = { docType: 'closing_report', summary: 'Locally extracted labelled balances for review. Totals such as Net Profit and Total Assets are not imported as extra rows.', entries: [], setup };
   const mapped = mapAnalyzedDocument(document);
   if (!date) return { status: 'clarification', confidence: 0.72, source: 'local-ocr-rules', field: 'date', question: 'What statement date is printed on this opening or closing report?', document, mapped };
   return { status: 'confident', confidence: 0.88, source: 'local-ocr-rules', document, mapped };
