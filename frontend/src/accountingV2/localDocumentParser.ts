@@ -40,9 +40,11 @@ export type LocalDocumentOutcome =
 export type LocalDocumentOptions = { directory?: LocalDocumentDirectory };
 
 const MONEY_TOKEN = /(?:[$€£₹]\s*)?(-?\d[\d,]*(?:\.\d{1,2})?)\s*(?:[$€£₹]|\b(?:USD|CAD|EUR|GBP|INR)\b)?/gi;
-const TOTAL_LABEL = /\b(grand\s+total|amount\s+due|balance\s+due|total\s+due|net\s+(?:total|payable)|total)\b/i;
-const NON_FINAL_TOTAL = /\b(sub\s*total|tax|gst|vat|discount|change|tender(?:ed)?|cash\s+(?:received|paid))\b/i;
+const TOTAL_LABEL = /\b(grand\s+total|amount\s+due|balance\s+due|total\s+due|net\s+(?:total|payable)|total(?!\s+(?:assets?|liabilit|equity|capital)))\b/i;
+const NON_FINAL_TOTAL = /\b(sub\s*total|tax|gst|vat|discount|change|tender(?:ed)?|cash\s+(?:received|paid)|net\s+profit|profit\s+before|profit\s+share)\b/i;
 const NOISE_LINE = /^(?:tax\s+invoice|invoice|receipt|bill|original|duplicate|thank\s+you|tel(?:ephone)?|phone|email|www\.|date\b|time\b)/i;
+const STATEMENT_HEADER_NOISE = /\b(?:net\s+profit|profit\s+share|profit\s+before|each\s+partner|commission|assets?|liabilities?|drawings?|partner\s+stakes?|capital\s+accounts?\s+reconciliation|total)\b/i;
+const POSITION_HEADER = /\b(?:balance\s+sheet|trial\s+balance|closing\s+report|opening\s+balances?|net\s+worth|partner\s+stakes?|capital\s+accounts?\s+reconciliation|drawings?\s+this\s+period|capital\s+withdrawals?\s+this\s+period|each\s+partner(?:'s)?\s+share)\b/i;
 
 function cleanLines(text: string): string[] {
   return text.replace(/\0/g, '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 500);
@@ -62,6 +64,41 @@ function amountTokens(line: string): number[] {
 function lastAmount(line: string): number | undefined {
   const values = amountTokens(line);
   return values.length ? values[values.length - 1] : undefined;
+}
+
+function isAmountOnlyLine(line: string): boolean {
+  const trimmed = line.replace(/^[+\-−]\s*/, '').trim();
+  if (!trimmed) return false;
+  const values = amountTokens(trimmed);
+  if (values.length !== 1) return false;
+  if (Number.isInteger(values[0]) && values[0] >= 1900 && values[0] <= 2100) return false;
+  return trimmed.replace(/(?:[$€£₹]\s*)?(-?\d[\d,]*(?:\.\d{1,2})?)\s*(?:[$€£₹]|\b(?:USD|CAD|EUR|GBP|INR)\b)?/gi, ' ').replace(/\s+/g, ' ').trim().length === 0;
+}
+
+function pairLabelledAmountLines(lines: string[]): string[] {
+  const paired: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const next = lines[index + 1];
+    if (lastAmount(line) === undefined && next && isAmountOnlyLine(next)) {
+      paired.push(`${line} ${next}`);
+      index += 1;
+      continue;
+    }
+    paired.push(line);
+  }
+  return paired;
+}
+
+function applyVisiblePartnerSplit(partners: NonNullable<LocalAnalyzedDocument['setup']>['partners'], lines: string[]): void {
+  if (!partners?.length || partners.some((row) => row.profitSharePct != null)) return;
+  const match = lines.join(' ').match(/\((\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{1,2}))?\)/);
+  if (!match) return;
+  const parts = [match[1], match[2], match[3]].filter(Boolean).map(Number);
+  if (parts.length !== partners.length) return;
+  if (parts.some((value) => !Number.isFinite(value) || value <= 0 || value > 100)) return;
+  if (Math.abs(parts.reduce((sum, value) => sum + value, 0) - 100) > 0.5) return;
+  partners.forEach((partner, index) => { partner.profitSharePct = parts[index]; });
 }
 
 function uniqueMoney(values: number[]): number[] {
@@ -101,7 +138,7 @@ function findKnownParty(lines: string[], rows: LocalDocumentParty[] | undefined)
 
 function merchantName(lines: string[]): string {
   for (const line of lines.slice(0, 12)) {
-    if (line.length < 2 || line.length > 80 || NOISE_LINE.test(line) || TOTAL_LABEL.test(line) || NON_FINAL_TOTAL.test(line)) continue;
+    if (line.length < 2 || line.length > 80 || NOISE_LINE.test(line) || TOTAL_LABEL.test(line) || NON_FINAL_TOTAL.test(line) || STATEMENT_HEADER_NOISE.test(line)) continue;
     if (!/[\p{L}]/u.test(line) || /\b\d{4}[\/.-]\d/.test(line) || /^#?\d+$/.test(line)) continue;
     return line.replace(/[|]+/g, ' ').trim();
   }
@@ -171,8 +208,10 @@ function lineNameBeforeAmount(line: string): string {
 }
 
 function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutcome | null {
-  const balanceSignal = /\b(?:balance\s+sheet|trial\s+balance|closing\s+report|opening\s+balances?|net\s+worth|partner\s+stakes?)\b/i.test(text);
-  const labeled = lines.filter((line) => /\b(?:cash|stock|inventory|asset|equipment|deposit|creditors?|accounts?\s+payable|liabilit|loan|capital|partner\s+stake)\b/i.test(line) && lastAmount(line) !== undefined);
+  const balanceSignal = POSITION_HEADER.test(text)
+    || (lines.some((line) => /^assets$/i.test(line)) && lines.some((line) => /^liabilities$/i.test(line)))
+    || (/\bnet\s+profit\b/i.test(text) && /\b(?:total\s+assets|physical\s+stock|creditors?)\b/i.test(text));
+  const labeled = lines.filter((line) => /\b(?:cash|stock|inventory|asset|equipment|deposit|creditors?|accounts?\s+payable|liabilit|loan|payable|capital|stake)\b/i.test(line) && lastAmount(line) !== undefined);
   if (!balanceSignal && labeled.length < 3) return null;
 
   const setup: NonNullable<LocalAnalyzedDocument['setup']> = {};
@@ -190,13 +229,18 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
     if (amount === undefined) continue;
     const name = lineNameBeforeAmount(line);
     if (/\btotal\s+(?:assets?|liabilit(?:y|ies)|capital|equity)\b/i.test(line)) continue;
+    if (/\b(?:net\s+profit|profit\s+before|profit\s+share|each\s+partner|drawings?\s+this\s+period|capital\s+withdrawn)\b/i.test(line)) continue;
+    if (/^\s*commission\b/i.test(line) && !/\bpayable\b/i.test(line)) continue;
     if (/\b(?:cash|stock|inventory|creditors?|accounts?\s+payable)\b/i.test(line)) continue;
-    if (/\b(?:capital|partner\s+stake)\b/i.test(line)) {
+    if (/\b(?:capital|stake)\b/i.test(line)) {
+      if (/\b(?:opening(?:\s+stake)?|profit\s+share|drawings?)\b/i.test(line) && !/\b(?:ending|closing)\b/i.test(line)) continue;
       const partnerName = line.replace(/\b\d{1,3}(?:\.\d+)?\s*%/g, ' ').replace(MONEY_TOKEN, ' ')
-        .replace(/\b(?:capital(?:\s+account)?|partner\s+stake|opening|closing|balance)\b/gi, ' ').replace(/\s+/g, ' ').trim();
-      if (partnerName) {
+        .replace(/\b(?:capital(?:\s+account)?|partner\s+stakes?|ending|opening|closing|balance|stake)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (partnerName && !/^(?:owner|total|partner)$/i.test(partnerName)) {
         const pct = Number(line.match(/\b(\d{1,3}(?:\.\d+)?)\s*%/)?.[1]);
-        setup.partners.push({ name: partnerName, capital: amount, ...(Number.isFinite(pct) && pct <= 100 ? { profitSharePct: pct } : {}) });
+        const existing = setup.partners.find((row) => normalizeName(row.name) === normalizeName(partnerName));
+        if (existing) existing.capital = amount;
+        else setup.partners.push({ name: partnerName, capital: amount, ...(Number.isFinite(pct) && pct <= 100 ? { profitSharePct: pct } : {}) });
       }
     } else if (/\b(?:liabilit|loan|payable|accrued)\b/i.test(line)) setup.extraLiabilities.push({ name, amount });
     else if (/\b(?:asset|equipment|deposit|receivable|prepaid|vehicle|property)\b/i.test(line)) setup.extraAssets.push({ name, amount });
@@ -209,7 +253,7 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
   for (const line of lines) {
     const pctMatch = line.match(/\b(\d{1,3}(?:\.\d+)?)\s*%/);
     const amount = lastAmount(line);
-    if (!pctMatch || amount === undefined || /\b(?:total|capital|stake|share)\b/i.test(line)) continue;
+    if (!pctMatch || amount === undefined || /\b(?:total|capital|stake|share|commission|payable|profit|drawings?)\b/i.test(line)) continue;
     const name = line.replace(/\b\d{1,3}(?:\.\d+)?\s*%/g, ' ').replace(MONEY_TOKEN, ' ').replace(/[:|.-]+$/g, '').replace(/\s+/g, ' ').trim();
     const pct = Number(pctMatch[1]);
     if (name && /[\p{L}]/u.test(name) && pct >= 0 && pct <= 100 && !setup.partners.some((row) => normalizeName(row.name) === normalizeName(name))) {
@@ -217,6 +261,7 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
     }
   }
 
+  applyVisiblePartnerSplit(setup.partners, lines);
   if (setup.openingCash === undefined && setup.stockValue === undefined && !setup.extraAssets.length && !setup.extraLiabilities.length && !setup.partners.length) return null;
   const document: LocalAnalyzedDocument = { docType: 'closing_report', summary: 'Locally extracted opening or closing balances for review.', entries: [], setup };
   const mapped = mapAnalyzedDocument(document);
@@ -232,8 +277,8 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
 export function interpretLocalDocumentText(text: string, options: LocalDocumentOptions = {}): LocalDocumentOutcome {
   const clipped = String(text || '').trim().slice(0, 20_000);
   if (clipped.length < 8) return { status: 'unsupported', confidence: 0, source: 'local-ocr-rules', reason: 'Local OCR did not return enough readable text.' };
-  const lines = cleanLines(clipped);
-  const opening = parseOpeningDocument(lines, clipped);
+  const lines = pairLabelledAmountLines(cleanLines(clipped));
+  const opening = parseOpeningDocument(lines, lines.join('\n'));
   if (opening) return opening;
 
   if (/\b(?:capital\s+(?:contribution|deposit|injection)|owner\s+investment)\b/i.test(clipped)) {
