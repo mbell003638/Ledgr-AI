@@ -5,8 +5,8 @@ import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
-import { materializePendingVoiceParty, resolveVoicePartyCommand, type VoicePartyCreateProposal } from "@/src/accountingV2/voicePartyResolution";
-import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { materializePendingVoiceParty, type VoicePartyCreateProposal } from "@/src/accountingV2/voicePartyResolution";
+import { buildVoiceTransactionDraft, resolveVoiceCommandsForDrafts, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
@@ -24,6 +24,7 @@ export default function VoiceFab() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
   const [parsed, setParsed] = useState<any>(null);
+  const [drafts, setDrafts] = useState<VoiceTransactionDraft[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
@@ -65,13 +66,15 @@ export default function VoiceFab() {
     const [suppliers, customers, capitalAccounts] = await Promise.all([
       api.listSuppliers(), api.listDebtors(), api.listInvestors(),
     ]);
-    const resolution = resolveVoicePartyCommand(interpretation.command, interpretation.transcript, { suppliers, customers, capitalAccounts });
+    const commands = interpretation.commands?.length ? interpretation.commands : [interpretation.command];
+    const resolution = resolveVoiceCommandsForDrafts(commands, interpretation.transcript, { suppliers, customers, capitalAccounts });
     if (!resolution.ok) {
       setCreateProposal(resolution.createProposal || null);
-      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "party", question: resolution.question, transcript: interpretation.transcript });
+      setPendingClarification({ kind: "clarification", confidence: "low", command: resolution.command, field: "party", question: resolution.question, transcript: interpretation.transcript });
       throw new Error(resolution.question);
     }
-    let resolvedCommand = resolution.command;
+    const ready: VoiceTransactionDraft[] = [];
+    for (let resolvedCommand of resolution.commands) {
     if (!resolvedCommand.method && ["expense", "receipt", "supplier_payment", "drawing", "capital"].includes(String(resolvedCommand.intent))) {
       resolvedCommand = { ...resolvedCommand, method: "cash" };
     }
@@ -80,10 +83,12 @@ export default function VoiceFab() {
       const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
       resolvedCommand = invoices[0] ? { ...resolvedCommand, invoiceId: invoices[0].id } : { ...resolvedCommand, receiptMode: "advance" };
     }
+    ready.push(buildVoiceTransactionDraft(resolvedCommand));
+    }
     setPendingClarification(null);
     setFollowUpAnswer("");
     setCreateProposal(null);
-    return buildVoiceTransactionDraft(resolvedCommand);
+    return ready;
   };
   const buildVoiceDraft = async (txt: string) => {
     setPendingClarification(null);
@@ -112,12 +117,12 @@ export default function VoiceFab() {
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
       }
       setTranscript(interpretation.transcript);
-      const draft = await draftFromInterpretation(interpretation);
-      setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
+      const ready = await draftFromInterpretation(interpretation);
+      setDrafts(ready); setParsed(ready[0]?.parsed || null); setValidatedAction(ready[0]?.validation || null); setPhase("confirm");
     } catch (e: any) { setError(e?.message || "Could not continue the draft."); setPhase("error"); }
   };
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
+    setError(""); setTranscript(""); setParsed(null); setDrafts([]); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -145,9 +150,10 @@ export default function VoiceFab() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
       
-      const draft = await buildVoiceDraft(txt);
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt);
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -160,9 +166,10 @@ export default function VoiceFab() {
     if (!txt) return;
     setError(""); setPhase("processing");
     try {
-      const draft = await buildVoiceDraft(txt);
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt);
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e?.message || "Could not update the draft from that transcript.");
@@ -170,83 +177,84 @@ export default function VoiceFab() {
     }
   };
   const confirmSave = async () => {
-    if (!parsed) return;
+    const toSave = drafts.length ? drafts : (parsed && validatedAction?.ok ? [{ parsed, validation: validatedAction }] : []);
+    if (!toSave.length) return;
     setSaving(true);
     try {
-      const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
-
-      if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
-      await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
-        const command = await materializePendingVoiceParty(parsed, {
+      for (const draft of toSave) {
+      const parsedDraft = draft.parsed;
+      const date = parsedDraft.date || localTodayIso();
+      if (!draft.validation || !draft.validation.ok) throw new Error("Voice action requires validation before saving.");
+      await executeAssistantProposal(draft.validation, { confirmed: true }, async () => {
+        const command = await materializePendingVoiceParty(parsedDraft, {
           supplier: (name) => api.createSupplier({ name }),
           customer: (name) => api.createDebtor({ name }),
         });
-        parsed.supplierName = command.supplierName;
-        parsed.customerName = command.customerName;
-        parsed.intent = command.intent;
-        if (parsed.intent === "expense") {
-          await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash" });
-        } else if (parsed.intent === "bill") {
+        Object.assign(parsedDraft, command);
+        if (parsedDraft.intent === "expense") {
+          await api.createExpense({ date, amount: parsedDraft.amount, currency, category: parsedDraft.category || "General", notes: parsedDraft.notes || parsedDraft.summary, method: parsedDraft.method || "cash" });
+        } else if (parsedDraft.intent === "bill") {
           const list = await api.listSuppliers();
-          const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
-          if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
+          const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsedDraft.supplierName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Supplier "${parsedDraft.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
           await api.createBill({
-            supplierId: match[0].id, date, amount: parsed.amount, currency,
-            paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
-            notes: parsed.notes || parsed.summary,
+            supplierId: match[0].id, date, amount: parsedDraft.amount, currency,
+            paymentType: parsedDraft.paymentType === "cash" ? "cash" : "credit",
+            notes: parsedDraft.notes || parsedDraft.summary,
           });
-        } else if (parsed.intent === "sale") {
-          await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary });
-        } else if (parsed.intent === "receipt") {
-          const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
-          const method = parsed.method || "cash";
-          if (!parsed.customerName || mode === "cash_sale") {
-            await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, method });
+        } else if (parsedDraft.intent === "sale") {
+          await api.createSale({ date, amount: parsedDraft.amount, currency, notes: parsedDraft.notes || parsedDraft.summary });
+        } else if (parsedDraft.intent === "receipt") {
+          const mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
+          const method = parsedDraft.method || "cash";
+          if (!parsedDraft.customerName || mode === "cash_sale") {
+            await api.createSale({ date, amount: parsedDraft.amount, currency, notes: parsedDraft.notes || parsedDraft.summary, method });
           } else {
             let debtorId: string | null = null;
             let allocations: { invoiceId: string; amountApplied: number }[] = [];
             const debtors = await api.listDebtors();
-            const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsed.customerName.trim().toLowerCase());
+            const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsedDraft.customerName.trim().toLowerCase());
             if (match) debtorId = match.id;
-            else throw new Error(`Customer "${parsed.customerName}" was not found. Add the Customer first.`);
+            else throw new Error(`Customer "${parsedDraft.customerName}" was not found. Add the Customer first.`);
             if (mode === "against_invoice") {
               const invs = (await api.listInvoices())
-                .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsed.customerName.toLowerCase()))
+                .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsedDraft.customerName.toLowerCase()))
                 .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-              if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
+              if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsedDraft.amount }];
             }
             await api.createReceipt({
-              mode, date, amount: parsed.amount, method,
-              debtorId, clientName: parsed.customerName,
-              allocations, notes: parsed.notes || parsed.summary,
+              mode, date, amount: parsedDraft.amount, method,
+              debtorId, clientName: parsedDraft.customerName,
+              allocations, notes: parsedDraft.notes || parsedDraft.summary,
             });
           }
-        } else if (parsed.intent === "supplier_payment") {
+        } else if (parsedDraft.intent === "supplier_payment") {
           const list = await api.listSuppliers();
-          const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
-          if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
+          const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsedDraft.supplierName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Supplier "${parsedDraft.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
           await api.createPayment({
-            date, amount: parsed.amount, currency,
+            date, amount: parsedDraft.amount, currency,
             type: "supplier_payment", supplierId: match[0].id,
-            method: parsed.method || "cash", notes: parsed.notes || parsed.summary,
+            method: parsedDraft.method || "cash", notes: parsedDraft.notes || parsedDraft.summary,
           });
-        } else if (parsed.intent === "drawing") {
+        } else if (parsedDraft.intent === "drawing") {
           const members = await api.listInvestors();
-          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
-          if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
-          await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: parsed.notes || parsed.summary });
-        } else if (parsed.intent === "capital") {
+          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsedDraft.partnerName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Capital Account "${parsedDraft.partnerName}" was not found uniquely.`);
+          await api.drawInvestorFunds(match[0].id, { date, amount: parsedDraft.amount, method: parsedDraft.method || "cash", notes: parsedDraft.notes || parsedDraft.summary });
+        } else if (parsedDraft.intent === "capital") {
           const members = await api.listInvestors();
-          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
-          if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
-          await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: parsed.notes || parsed.summary });
-        } else if (parsed.intent === "inventory") {
-          await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary });
+          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsedDraft.partnerName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Capital Account "${parsedDraft.partnerName}" was not found uniquely.`);
+          await api.depositInvestorCapital(match[0].id, { date, amount: parsedDraft.amount, notes: parsedDraft.notes || parsedDraft.summary });
+        } else if (parsedDraft.intent === "inventory") {
+          await api.recordV2InventoryCount({ date, value: Number(parsedDraft.amount), notes: parsedDraft.notes || parsedDraft.summary });
         } else {
           throw new Error("Could not determine intent. Please try again.");
         }
       });
+      }
       reset();
     } catch (e: any) {
       setError(e.message || "Save failed");
@@ -255,7 +263,7 @@ export default function VoiceFab() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
+    setPhase("idle"); setTranscript(""); setParsed(null); setDrafts([]); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer(""); setCreateProposal(null);
   };
 
   const isModalOpen = phase !== "idle";
@@ -297,7 +305,7 @@ export default function VoiceFab() {
             {phase === "recording" || phase === "processing" ? (
               <View style={styles.recordingBox}>
                 <Text style={[styles.hintText, { color: theme.color.muted }]}>
-                  “Paid supplier 1000 USD on July 17”
+                  “Paid 100 to Amit and 50 to Rahim”
                 </Text>
                 <Animated.View style={animatedMicStyle}>
                   <Pressable 
@@ -315,7 +323,7 @@ export default function VoiceFab() {
                   {phase === "recording" ? "Listening... Tap to stop" : "Transcribing AI..."}
                 </Text>
               </View>
-            ) : phase === "confirm" && parsed ? (
+            ) : phase === "confirm" && (drafts.length || parsed) ? (
               <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
                 {transcript ? (
                   <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
@@ -324,27 +332,33 @@ export default function VoiceFab() {
                   </View>
                 ) : null}
 
-                <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Draft {parsed.intent?.replace("_", " ")}</Text>
-                <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
-                
-                <View style={styles.draftGrid}>
-                  {parsed.pendingPartyCreate ? <Text style={{ color: theme.color.brandPrimary, marginBottom: 8 }}>Will create {parsed.pendingPartyCreate.role === "customer" ? "Customer" : "Supplier"} “{parsed.pendingPartyCreate.name}” on save.</Text> : null}
-                  {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, bookCurrency)} theme={theme} />}
-                  {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
-                  {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
-                  {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
-                  {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
-                  {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
-                  {parsed.receiptMode && <DKV k="Receipt type" v={parsed.receiptMode === "against_invoice" ? "Against invoice" : parsed.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
-                  {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
-                </View>
+                {(drafts.length ? drafts : [{ parsed, validation: validatedAction }]).map((draft, index, list) => {
+                  const row = draft.parsed;
+                  return (
+                    <View key={`${row.intent}-${row.amount}-${index}`} style={{ marginTop: index ? 12 : 0 }}>
+                      <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Draft {list.length > 1 ? `${index + 1} of ${list.length} · ` : ""}{String(row.intent || "").replace("_", " ")}</Text>
+                      <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{row.summary}</Text>
+                      <View style={styles.draftGrid}>
+                        {row.pendingPartyCreate ? <Text style={{ color: theme.color.brandPrimary, marginBottom: 8 }}>Will create {row.pendingPartyCreate.role === "customer" ? "Customer" : "Supplier"} “{row.pendingPartyCreate.name}” on save.</Text> : null}
+                        {row.amount != null && <DKV k="Amount" v={fmt(row.amount, bookCurrency)} theme={theme} />}
+                        {row.date && <DKV k="Date" v={row.date} theme={theme} />}
+                        {row.supplierName && <DKV k="Supplier" v={row.supplierName} theme={theme} />}
+                        {row.customerName && <DKV k="Customer" v={row.customerName} theme={theme} />}
+                        {row.partnerName && <DKV k="Capital Account" v={row.partnerName} theme={theme} />}
+                        {row.paymentType && <DKV k="Type" v={row.paymentType} theme={theme} />}
+                        {row.receiptMode && <DKV k="Receipt type" v={row.receiptMode === "against_invoice" ? "Against invoice" : row.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
+                        {row.method && <DKV k="Payment method" v={row.method === "upi" ? "mobile / UPI" : row.method} theme={theme} />}
+                      </View>
+                    </View>
+                  );
+                })}
 
                 <View style={styles.btnRow}>
                   <Pressable onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                     <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text>
                   </Pressable>
                   <Pressable onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                    {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>Save</Text>}
+                    {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}
                   </Pressable>
                 </View>
               </View>

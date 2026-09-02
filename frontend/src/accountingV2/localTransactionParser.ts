@@ -1,4 +1,5 @@
 import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
+import { splitSpokenTransactions } from './spokenTransactions';
 import {
   commandWithCreatedParty,
   parseVoicePartyCreateRole,
@@ -12,7 +13,7 @@ export type LocalParseConfidence = 'high' | 'medium' | 'low';
 export type LocalClarificationField = 'intent' | 'amount' | 'party' | 'method' | 'date' | 'paymentType';
 
 export type LocalTransactionParseResult =
-  | { kind: 'confident'; confidence: 'high' | 'medium'; command: VoiceCommand; transcript: string }
+  | { kind: 'confident'; confidence: 'high' | 'medium'; command: VoiceCommand; commands?: VoiceCommand[]; transcript: string }
   | { kind: 'clarification'; confidence: 'medium' | 'low'; command: VoiceCommand; field: LocalClarificationField; question: string; transcript: string }
   | { kind: 'unsupported'; confidence: 'low'; reason: string; transcript: string };
 
@@ -209,7 +210,22 @@ export function parseLocalTransaction(
   if (options.requirePaymentMethod && ['expense', 'receipt', 'supplier_payment', 'drawing', 'capital'].includes(String(command.intent)) && !command.method) {
     return clarify(command, transcript, 'method', 'Was this Cash, Bank, Card, Mobile / UPI, or Cheque?');
   }
-  return { kind: 'confident', confidence: command.method || ['sale', 'bill'].includes(String(command.intent)) ? 'high' : 'medium', command, transcript };
+  return { kind: 'confident', confidence: command.method || ['sale', 'bill'].includes(String(command.intent)) ? 'high' : 'medium', command, commands: [command], transcript };
+}
+
+/** Parses one or more spoken transactions. Compound amounts become separate drafts. */
+export function parseLocalTransactions(
+  rawTranscript: string,
+  options: LocalTransactionParserOptions = {},
+): LocalTransactionParseResult {
+  const utterances = splitSpokenTransactions(rawTranscript);
+  if (utterances.length <= 1) return parseLocalTransaction(rawTranscript, options);
+  const parsed = utterances.map((utterance) => parseLocalTransaction(utterance, options));
+  const commands = parsed.filter((row): row is Extract<LocalTransactionParseResult, { kind: 'confident' }> => row.kind === 'confident').map((row) => row.command);
+  if (commands.length === parsed.length && commands.length > 1) {
+    return { kind: 'confident', confidence: 'medium', command: commands[0], commands, transcript: cleanText(rawTranscript) };
+  }
+  return parseLocalTransaction(rawTranscript, options);
 }
 
 /** Applies one focused answer without dropping the original transaction. */
