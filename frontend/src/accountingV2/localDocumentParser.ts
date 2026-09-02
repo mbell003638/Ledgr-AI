@@ -121,7 +121,7 @@ function invoiceReference(text: string): string {
   return (text.match(/\b(?:invoice|receipt|reference|ref)\s*(?:no\.?|number|#)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,30})/i)?.[1] || '').trim();
 }
 
-function totalCandidates(lines: string[]): { values: number[]; explicit: boolean } {
+function totalCandidates(lines: string[]): { values: number[]; explicit: boolean; inferred: boolean } {
   const strong: number[] = [];
   const plain: number[] = [];
   for (const line of lines) {
@@ -132,7 +132,22 @@ function totalCandidates(lines: string[]): { values: number[]; explicit: boolean
     else plain.push(amount);
   }
   const preferred = uniqueMoney(strong.length ? strong : plain);
-  return { values: preferred, explicit: preferred.length > 0 };
+  if (preferred.length) return { values: preferred, explicit: true, inferred: false };
+
+  const inferred: number[] = [];
+  for (const line of lines) {
+    if (NON_FINAL_TOTAL.test(line)) continue;
+    if (/\b(?:qty|quantity|items?|rate)\b/i.test(line)) continue;
+    if (/\b(?:20\d{2}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]20\d{2}|date)\b/i.test(line)) continue;
+    const amount = lastAmount(line);
+    if (amount === undefined || amount <= 0) continue;
+    if (Number.isInteger(amount) && amount >= 1900 && amount <= 2100) continue;
+    inferred.push(amount);
+  }
+  const uniqueInferred = uniqueMoney(inferred);
+  if (uniqueInferred.length === 1) return { values: uniqueInferred, explicit: true, inferred: true };
+  if (uniqueInferred.length > 1) return { values: [Math.max(...uniqueInferred)], explicit: true, inferred: true };
+  return { values: [], explicit: false, inferred: false };
 }
 
 function labeledAmount(lines: string[], pattern: RegExp): number | undefined {
@@ -244,8 +259,17 @@ export function interpretLocalDocumentText(text: string, options: LocalDocumentO
   }
 
   const totals = totalCandidates(lines);
+  const date = extractDate(lines);
+  const method = paymentMethod(clipped);
+  const header = merchantName(lines);
   if (!totals.explicit) {
-    return { status: 'clarification', confidence: 0.35, source: 'local-ocr-rules', field: 'amount', question: 'I could not identify a labelled final total. Enter the amount shown as Grand Total or Amount Due.' };
+    return {
+      status: 'clarification',
+      confidence: 0.35,
+      source: 'local-ocr-rules',
+      field: 'amount',
+      question: 'I could not find a total on this document. Enter the amount to record. Scan & Import can still create the supplier or customer when you confirm.',
+    };
   }
   if (totals.values.length !== 1) {
     return { status: 'clarification', confidence: 0.5, source: 'local-ocr-rules', field: 'amount', question: 'More than one possible final total was found. Which amount should be used?', candidates: totals.values };
@@ -253,13 +277,13 @@ export function interpretLocalDocumentText(text: string, options: LocalDocumentO
 
   const amount = totals.values[0];
   if (!(amount > 0)) return { status: 'unsupported', confidence: 0, source: 'local-ocr-rules', reason: 'The detected final total is not a positive transaction amount.' };
-  const date = extractDate(lines);
-  const method = paymentMethod(clipped);
-  const header = merchantName(lines);
   const supplier = findKnownParty(lines, options.directory?.suppliers) || exactParty(header, options.directory?.suppliers);
   const customer = findKnownParty(lines, options.directory?.customers) || exactParty(header, options.directory?.customers);
   const reference = invoiceReference(clipped);
-  const notes = `${reference ? `Reference ${reference}. ` : ''}Locally extracted from OCR; verify the total and party before import.`;
+  const notes = [
+    reference ? `Reference ${reference}.` : '',
+    totals.inferred ? 'Amount inferred from visible figures; confirm before import.' : 'Locally extracted from OCR; verify the total and party before import.',
+  ].filter(Boolean).join(' ');
   const isInvoice = /\b(?:tax\s+invoice|invoice|bill\s+to|amount\s+due|payment\s+terms)\b/i.test(clipped);
   const isPaid = /\b(?:paid|payment\s+(?:received|approved|successful)|balance\s*:?\s*0(?:\.00)?)\b/i.test(clipped) || (method !== undefined && method !== 'credit');
   const isIncoming = /\b(?:payment\s+received|received\s+from|customer\s+receipt)\b/i.test(clipped);
@@ -276,17 +300,11 @@ export function interpretLocalDocumentText(text: string, options: LocalDocumentO
   const resolvedMethod: ScanPaymentMethod = type === 'purchase_bill' && !isPaid ? 'credit' : (method || 'cash');
   const document: LocalAnalyzedDocument = {
     docType: 'receipt',
-    summary: `Locally extracted ${type.replace(/_/g, ' ')}${partyName ? ` for ${partyName}` : ''}.`,
+    summary: `Locally extracted ${type.replace(/_/g, ' ')}${partyName ? ` for ${partyName}` : ''}${totals.inferred ? '. Confirm the inferred total before import' : ''}.`,
     entries: [{ type, ...(date ? { date } : {}), ...(partyName ? { partyName } : {}), amount, method: resolvedMethod, notes }],
   };
   const mapped = mapAnalyzedDocument(document);
 
   if (!date) return { status: 'clarification', confidence: 0.7, source: 'local-ocr-rules', field: 'date', question: 'What transaction date is printed on this document?', document, mapped };
-  if (isIncoming && !customer) {
-    return { status: 'clarification', confidence: 0.66, source: 'local-ocr-rules', field: 'party', question: `Which existing Customer does "${partyName || 'this payment'}" belong to?`, document, mapped };
-  }
-  if (isInvoice && !supplier && !customer) {
-    return { status: 'clarification', confidence: 0.68, source: 'local-ocr-rules', field: 'party', question: `Is "${partyName || 'the document issuer'}" a Supplier or Customer?`, document, mapped };
-  }
-  return { status: 'confident', confidence: supplier || customer ? 0.91 : 0.84, source: 'local-ocr-rules', document, mapped };
+  return { status: 'confident', confidence: supplier || customer ? 0.91 : totals.inferred ? 0.72 : 0.84, source: 'local-ocr-rules', document, mapped };
 }

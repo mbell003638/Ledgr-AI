@@ -57,6 +57,7 @@ const AI_BASE_URL_KEY = 'ai_base_url';
 const AI_VOICE_PROVIDER_KEY = 'ai_voice_provider';
 const AI_OCR_PROVIDER_KEY = 'ai_ocr_provider';
 const AI_INTERPRETATION_PROVIDER_KEY = 'ai_interpretation_provider';
+const AI_ENTRY_HELP_ORDER_KEY = 'ai_entry_help_order';
 
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
 // per-book settings blob. A factory reset must wipe these too so the device is
@@ -85,7 +86,7 @@ let webSessionTranscriptionAiKey = '';
 const isWebRuntime = typeof window !== 'undefined' && typeof document !== 'undefined';
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider, interpretationProvider] = await Promise.all([
+  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider, interpretationProvider, entryHelpOrder] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     isWebRuntime ? Promise.resolve(webSessionAiKey) : storage.secureGet(AI_API_KEY_KEY, ''),
     isWebRuntime ? Promise.resolve(null) : AsyncStorage.getItem(AI_API_KEY_KEY),
@@ -98,6 +99,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     AsyncStorage.getItem(AI_VOICE_PROVIDER_KEY),
     AsyncStorage.getItem(AI_OCR_PROVIDER_KEY),
     AsyncStorage.getItem(AI_INTERPRETATION_PROVIDER_KEY),
+    AsyncStorage.getItem(AI_ENTRY_HELP_ORDER_KEY),
   ]);
   if (isWebRuntime) await AsyncStorage.removeItem(AI_API_KEY_KEY).catch(() => {});
   const resolvedKey = isWebRuntime ? webSessionAiKey : (secureKey || storedKey || '');
@@ -119,6 +121,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     voiceProvider: voiceProvider === 'android-device' || voiceProvider === 'cloud' ? voiceProvider : 'auto',
     ocrProvider: ocrProvider === 'android-device' || ocrProvider === 'cloud' ? ocrProvider : 'auto',
     interpretationProvider: interpretationProvider === 'android-device' || interpretationProvider === 'cloud' ? interpretationProvider : 'auto',
+    entryHelpOrder: ai.normalizeEntryHelpOrder(entryHelpOrder),
   };
 }
 
@@ -151,6 +154,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   if (cfg.voiceProvider !== undefined) ops.push(AsyncStorage.setItem(AI_VOICE_PROVIDER_KEY, cfg.voiceProvider));
   if (cfg.ocrProvider !== undefined) ops.push(AsyncStorage.setItem(AI_OCR_PROVIDER_KEY, cfg.ocrProvider));
   if (cfg.interpretationProvider !== undefined) ops.push(AsyncStorage.setItem(AI_INTERPRETATION_PROVIDER_KEY, cfg.interpretationProvider));
+  if (cfg.entryHelpOrder !== undefined) ops.push(AsyncStorage.setItem(AI_ENTRY_HELP_ORDER_KEY, ai.normalizeEntryHelpOrder(cfg.entryHelpOrder)));
   const [secureOk, transcriptionSecureOk] = await Promise.all([
     secureKeyWrite ?? Promise.resolve(true),
     transcriptionKeyWrite ?? Promise.resolve(true),
@@ -1773,7 +1777,7 @@ export const api = {
       storage.secureRemove(AI_API_KEY_KEY),
       storage.secureRemove(AI_TRANSCRIPTION_API_KEY_KEY),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY, AI_INTERPRETATION_PROVIDER_KEY,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY, AI_INTERPRETATION_PROVIDER_KEY, AI_ENTRY_HELP_ORDER_KEY,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
@@ -1790,40 +1794,57 @@ export const api = {
   analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string; uri?: string }) => {
     const config = await getAIConfig();
     const mode = config.ocrProvider || 'auto';
+    const order = config.entryHelpOrder || 'cloud-first';
     const isImage = Boolean(input.uri && input.mimeType?.startsWith('image/'));
     const isPdf = input.mimeType === 'application/pdf';
-    let localText = String(input.text || '').trim();
-    let localFailure = '';
+    const hasCloudAI = Boolean(config.apiKey.trim());
 
-    if (mode !== 'cloud' && isPdf && !localText) {
-      if (mode === 'android-device') {
-        throw new Error('On-device OCR cannot read a PDF directly. Import page images or paste the PDF text. Nothing was sent to a cloud provider.');
+    const runLocal = async (): Promise<{ document?: any; failure: string }> => {
+      let localText = String(input.text || '').trim();
+      let localFailure = '';
+      if ((isImage || isPdf) && input.uri && !localText) {
+        try {
+          localText = await recognizeLocalOcr(input.uri);
+        } catch (error) {
+          localFailure = String((error as any)?.message || 'Android OCR could not read this document.');
+          if (mode === 'android-device') throw error;
+        }
       }
-    }
-    if (mode !== 'cloud' && isImage) {
-      try {
-        localText = await recognizeLocalOcr(input.uri!);
-      } catch (error) {
-        localFailure = String((error as any)?.message || 'Android OCR could not read this image.');
-        if (mode === 'android-device') throw error;
-      }
-    }
-    if (mode !== 'cloud' && localText) {
+      if (!localText) return { failure: localFailure || 'Local OCR needs an Android image, PDF, or pasted document text.' };
       const [suppliers, customers, capitalAccounts] = await Promise.all([
         api.listSuppliers(), api.listDebtors(), api.listInvestors(),
       ]);
       const local = interpretLocalDocumentText(localText, { directory: { suppliers, customers, capitalAccounts } });
-      if (local.status === 'confident') return local.document;
-      if (local.status === 'clarification' && local.document) {
-        return { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() };
+      if (local.status === 'confident') return { document: local.document, failure: '' };
+      if (local.status === 'clarification' && local.document && local.document.entries.every((entry) => entry.amount > 0)) {
+        return { document: { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() }, failure: '' };
       }
-      localFailure = local.status === 'unsupported' ? local.reason : local.question;
-      if (mode === 'android-device') throw new Error(localFailure);
+      return { failure: local.status === 'unsupported' ? local.reason : local.question };
+    };
+
+    if (mode === 'android-device') {
+      const local = await runLocal();
+      if (local.document) return local.document;
+      throw new Error(local.failure || 'The document needs more information before Ledgr can prepare a draft.');
     }
-    if (mode !== 'cloud' && !config.apiKey.trim()) {
-      throw new Error(`${localFailure || 'Ledgr could not safely understand this document locally.'} Edit or paste clearer text, use a page image, or configure cloud vision for complex documents.`);
+
+    if (mode === 'cloud' || (mode === 'auto' && order === 'cloud-first' && hasCloudAI)) {
+      try {
+        return await ai.withCloudHelpTimeout(ai.analyzeDocumentAI(config, input));
+      } catch (error) {
+        if (mode === 'cloud') throw error;
+        const local = await runLocal();
+        if (local.document) return local.document;
+        throw new Error(`${String((error as any)?.message || 'Cloud document analysis failed.')} ${local.failure}`.trim());
+      }
     }
-    return ai.analyzeDocumentAI(config, input);
+
+    const local = await runLocal();
+    if (local.document) return local.document;
+    if (!hasCloudAI) {
+      throw new Error(`${local.failure || 'Ledgr could not safely understand this document locally.'} Edit or paste clearer text, use a page image, or configure cloud vision for complex documents.`);
+    }
+    return ai.withCloudHelpTimeout(ai.analyzeDocumentAI(config, input));
   },
   transcribe: async (audioBase64: string, mimeType = 'audio/m4a', audioUri?: string) => ai.transcribe(await getAIConfig(), audioBase64, mimeType, audioUri),
   reconcileStatement: (imageBase64: string, partyId: string, mimeType = 'image/jpeg', party: 'supplier' | 'customer' = 'supplier') => reconcileStatement(imageBase64, partyId, mimeType, party),

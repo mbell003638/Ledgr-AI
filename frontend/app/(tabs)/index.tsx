@@ -79,7 +79,7 @@ const WORKFLOW_TILES: WorkflowTile[] = [
   { key: "reports", label: "Reports", subtitle: "", icon: BarChart2, color: "#FBBF24", capability: "reporting", route: "/reports" },
   { key: "monthly-report", label: "Monthly Report", subtitle: "", icon: Calendar, color: "#F97316", capability: "reporting", route: "/monthly-summary" },
   { key: "ask-ai", label: "Ask AI", subtitle: "", icon: Sparkles, color: "#A7F3D0", capability: "ai_assistant", route: "/ask", usesBrandIcon: true },
-  { key: "ai-assistant", label: "AI Assistant", subtitle: "", icon: Mic, color: "#A7F3D0", capability: "voice_assistant", route: "/voice", usesBrandIcon: true, solidBrand: true },
+  { key: "ai-assistant", label: "Voice", subtitle: "Speak an entry", icon: Mic, color: "#A7F3D0", capability: "voice_assistant", route: "/voice", usesBrandIcon: true, solidBrand: true },
 ];
 
 function workflowTilesFor(settings: any): WorkflowTile[] {

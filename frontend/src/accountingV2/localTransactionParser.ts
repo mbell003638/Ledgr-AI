@@ -1,6 +1,11 @@
 import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
 import {
+  commandWithCreatedParty,
+  parseVoicePartyCreateRole,
   resolveVoicePartyCommand,
+  sanitizeSpokenPartyName,
+  suggestedVoicePartyCreateRole,
+  voiceCommandPartyName,
   type VoiceCommand,
   type VoicePartyDirectory,
 } from './voicePartyResolution';
@@ -71,14 +76,14 @@ function parseMethod(transcript: string): VoiceCommand['method'] {
 }
 
 function tidyName(value: string): string {
-  return value
+  return sanitizeSpokenPartyName(value
     .replace(MONEY, ' ')
     .replace(/\b(?:today|yesterday|now|on\s+credit|credit|cash|bank(?:\s+transfer)?|card|mobile|upi)\b/gi, ' ')
     .replace(/\b(?:supplier|vendor|customer|client|owner|partner|capital\s+account)\b/gi, ' ')
     .replace(/\b(?:by|via|using|as|for)\b[\s\S]*$/i, ' ')
     .replace(/[.,!?;:]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim());
 }
 
 function commonCommand(transcript: string, options: LocalTransactionOptions): Pick<VoiceCommand, 'amount' | 'date' | 'method' | 'notes'> & { invalidDate?: boolean } {
@@ -224,11 +229,20 @@ export function continueLocalTransaction(
     else if (command.intent === 'receipt') command.customerName = name;
     else command.supplierName = name;
   }
-  if (pending.missingField === 'party_role' && directory) {
-    resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
-    const resolution = resolveVoicePartyCommand(command, resolutionTranscript, directory);
-    if (!resolution.ok) return clarification(pending.originalTranscript, command, 'party_role', resolution.question, 0.65);
-    Object.assign(command, resolution.command);
+  if (pending.missingField === 'party_role') {
+    const role = parseVoicePartyCreateRole(answer, suggestedVoicePartyCreateRole(String(command.intent)));
+    if (role === 'capital') {
+      return clarification(pending.originalTranscript, command, 'party_role', 'Capital Accounts must be added from Accounts so opening capital and profit share stay correct.', 0.65);
+    }
+    if ((role === 'supplier' || role === 'customer') && voiceCommandPartyName(command)) {
+      Object.assign(command, commandWithCreatedParty(command, voiceCommandPartyName(command), role));
+      resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
+    } else if (directory) {
+      resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
+      const resolution = resolveVoicePartyCommand(command, resolutionTranscript, directory);
+      if (!resolution.ok) return clarification(pending.originalTranscript, command, 'party_role', resolution.question, 0.65);
+      Object.assign(command, resolution.command);
+    }
   }
 
   if (!command.amount) return clarification(pending.originalTranscript, command, 'amount', 'What is the transaction amount?', 0.55);

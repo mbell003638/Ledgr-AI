@@ -9,7 +9,7 @@ import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askHistoryStorageKey } from "@/src/utils/askHistory";
-import { PROVIDERS, type InterpretationProvider, type ProviderId, type VoiceProvider } from "@/src/db/ai";
+import { DEFAULT_ENTRY_HELP_ORDER, PROVIDERS, type EntryHelpOrder, type InterpretationProvider, type ProviderId, type VoiceProvider } from "@/src/db/ai";
 import { ScreenHeader, Card } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { saveJsonFile, shareJsonFile, pickJsonFile } from "@/src/utils/share";
@@ -105,6 +105,7 @@ export default function AdvancedSettingsScreen() {
   const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("auto");
   const [ocrProvider, setOcrProvider] = useState<"auto" | "android-device" | "cloud">("auto");
   const [interpretationProvider, setInterpretationProvider] = useState<InterpretationProvider>("auto");
+  const [entryHelpOrder, setEntryHelpOrder] = useState<EntryHelpOrder>(DEFAULT_ENTRY_HELP_ORDER);
   const [baseUrl, setBaseUrl] = useState("");
   const [aiDataMode, setAiDataMode] = useState<'summary' | 'detailed'>('summary');
   const [aiRememberHistory, setAiRememberHistory] = useState(false);
@@ -181,6 +182,7 @@ export default function AdvancedSettingsScreen() {
       setVoiceProvider(cfg.voiceProvider || "auto");
       setOcrProvider(cfg.ocrProvider || "auto");
       setInterpretationProvider(cfg.interpretationProvider || "auto");
+      setEntryHelpOrder(cfg.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER);
       setBaseUrl(cfg.baseUrl || "");
       setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
       setAiRememberHistory(s.aiRememberHistory === true);
@@ -269,6 +271,7 @@ export default function AdvancedSettingsScreen() {
         voiceProvider,
         ocrProvider,
         interpretationProvider,
+        entryHelpOrder,
         baseUrl: baseUrl.trim(),
       });
       try {
@@ -326,6 +329,7 @@ export default function AdvancedSettingsScreen() {
         voiceProvider,
         ocrProvider,
         interpretationProvider,
+        entryHelpOrder,
         baseUrl: baseUrl.trim(),
       };
       await api.testKey(draftConfig);
@@ -339,7 +343,7 @@ export default function AdvancedSettingsScreen() {
 
   const draftAIConfig = () => {
     const meta = PROVIDERS.find((p) => p.id === provider)!;
-    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, interpretationProvider, baseUrl: baseUrl.trim() };
+    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, interpretationProvider, entryHelpOrder, baseUrl: baseUrl.trim() };
   };
 
   const testVoiceCapability = async () => {
@@ -730,6 +734,12 @@ export default function AdvancedSettingsScreen() {
                       </Pressable>
                     </View>
                   )}
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Automatic order</Text>
+                  <View style={styles.modeRow} testID="entry-help-order">
+                    <Pressable testID="entry-help-cloud-first" onPress={() => setEntryHelpOrder("cloud-first")} style={[styles.modeBtn, entryHelpOrder === "cloud-first" && styles.modeBtnActive]}><Text style={[styles.modeText, entryHelpOrder === "cloud-first" && styles.modeTextActive]}>AI first</Text></Pressable>
+                    <Pressable testID="entry-help-device-first" onPress={() => setEntryHelpOrder("device-first")} style={[styles.modeBtn, entryHelpOrder === "device-first" && styles.modeBtnActive]}><Text style={[styles.modeText, entryHelpOrder === "device-first" && styles.modeTextActive]}>On-device first</Text></Pressable>
+                  </View>
+                  <Text style={styles.hint}>AI first uses your configured model, then Android/local help if the key is missing, the provider is slow, or it fails. On-device first keeps speech and OCR on this device and only uses cloud when local parsing cannot finish.</Text>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Model</Text>

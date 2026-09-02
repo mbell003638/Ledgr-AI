@@ -6,14 +6,29 @@ import {
 } from './localTransactionParser';
 import { resolveVoicePartyCommand } from './voicePartyResolution';
 import { buildVoiceTransactionDraft, type VoiceTransactionDraft } from './voiceTransactionDraft';
+import { DEFAULT_ENTRY_HELP_ORDER, withCloudHelpTimeout } from '../db/ai';
 
 export type VoiceDraftPreparation =
   | { status: 'ready'; draft: VoiceTransactionDraft }
   | { status: 'clarification'; question: string; continuation: LocalTransactionContinuation };
 
+function readyDraft(command: Parameters<typeof buildVoiceTransactionDraft>[0]): VoiceDraftPreparation {
+  const needsMethod = ['expense', 'receipt', 'supplier_payment', 'drawing', 'capital'].includes(String(command.intent));
+  const withMethod = needsMethod && !command.method ? { ...command, method: 'cash' } : command;
+  return { status: 'ready', draft: buildVoiceTransactionDraft(withMethod) };
+}
+
+function partyClarification(transcript: string, command: Parameters<typeof buildVoiceTransactionDraft>[0], question: string): VoiceDraftPreparation {
+  return {
+    status: 'clarification',
+    question,
+    continuation: { originalTranscript: transcript, partial: command, missingField: 'party_role' },
+  };
+}
+
 /**
- * Interprets a transcript locally first. Automatic mode only calls the configured
- * cloud model when the deterministic parser cannot safely understand the entry.
+ * Automatic mode follows Advanced Settings: cloud-first (default) tries AI
+ * with a timeout then on-device parsing. Parties are not written until Save.
  */
 export async function prepareVoiceTransactionDraft(
   transcript: string,
@@ -28,27 +43,47 @@ export async function prepareVoiceTransactionDraft(
   ]);
   const directory = { suppliers, customers, capitalAccounts };
   const mode = config.interpretationProvider || 'auto';
+  const order = config.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER;
+  const hasCloudAI = Boolean(config.apiKey.trim());
 
-  if (mode !== 'cloud') {
-    const local = continuation
-      ? continueLocalTransaction(continuation, clarificationAnswer || transcript, directory)
-      : interpretLocalTransaction(transcript, directory);
-    if (local.status === 'confident') {
-      return { status: 'ready', draft: buildVoiceTransactionDraft(local.command) };
-    }
+  if (continuation) {
+    const local = continueLocalTransaction(continuation, clarificationAnswer || transcript, directory);
+    if (local.status === 'confident') return readyDraft(local.command);
     if (local.status === 'clarification') {
       return { status: 'clarification', question: local.question, continuation: local.continuation };
     }
-    if (mode === 'android-device' || !config.apiKey.trim()) {
-      throw new Error(`${local.reason} Edit the transcript with the transaction type, amount, and party, then update the draft.`);
+    throw new Error(`${local.reason} Edit the transcript with the transaction type, amount, and party, then update the draft.`);
+  }
+
+  const parseLocal = () => interpretLocalTransaction(transcript, directory);
+  const parseCloud = async () => {
+    const parsedCommand = await withCloudHelpTimeout(api.parseCommand(transcript));
+    const resolution = resolveVoicePartyCommand(parsedCommand, transcript, directory);
+    if (!resolution.ok) return partyClarification(transcript, parsedCommand, resolution.question);
+    return readyDraft(resolution.command);
+  };
+
+  if (mode === 'cloud' || (mode === 'auto' && order === 'cloud-first' && hasCloudAI)) {
+    try {
+      return await parseCloud();
+    } catch (error: any) {
+      if (mode === 'cloud') throw error;
+      const local = parseLocal();
+      if (local.status === 'confident') return readyDraft(local.command);
+      if (local.status === 'clarification') {
+        return { status: 'clarification', question: local.question, continuation: local.continuation };
+      }
+      throw new Error(error?.message || local.reason || 'Could not interpret that transaction.');
     }
   }
 
-  if (!config.apiKey.trim()) {
-    throw new Error('Cloud interpretation needs an AI API key. Choose On device or add a key in Advanced Settings.');
+  const local = parseLocal();
+  if (local.status === 'confident') return readyDraft(local.command);
+  if (local.status === 'clarification') {
+    return { status: 'clarification', question: local.question, continuation: local.continuation };
   }
-  const parsedCommand = await api.parseCommand(transcript);
-  const resolution = resolveVoicePartyCommand(parsedCommand, transcript, directory);
-  if (!resolution.ok) throw new Error(resolution.question);
-  return { status: 'ready', draft: buildVoiceTransactionDraft(resolution.command) };
+  if (mode === 'android-device' || !hasCloudAI) {
+    throw new Error(`${local.reason} Edit the transcript with the transaction type, amount, and party, then update the draft.`);
+  }
+  return parseCloud();
 }

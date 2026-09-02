@@ -8,6 +8,7 @@ import { api } from "@/src/api";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
+import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
@@ -74,7 +75,11 @@ export default function VoiceFab() {
         }).catch((e: any) => { deviceSession.current = null; if (e?.code !== "CANCELLED") { setError(e?.message || "Device voice input failed."); setPhase("error"); } });
         return;
       }
-      if (!config.apiKey.trim()) throw new Error("Add an AI API key in Advanced Settings before using voice input.");
+      if (!config.apiKey.trim()) {
+        setError("Android speech was unavailable and no AI key is configured. Type the transaction below, then update the draft.");
+        setPhase("error");
+        return;
+      }
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
@@ -135,6 +140,13 @@ export default function VoiceFab() {
 
       if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
       await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
+        const command = await materializePendingVoiceParty(parsed, {
+          supplier: (name) => api.createSupplier({ name }),
+          customer: (name) => api.createDebtor({ name }),
+        });
+        parsed.supplierName = command.supplierName;
+        parsed.customerName = command.customerName;
+        parsed.intent = command.intent;
         if (parsed.intent === "expense") {
           await api.createExpense({ date, amount: parsed.amount, currency, category: parsed.category || "General", notes: parsed.notes || parsed.summary, method: parsed.method || "cash", ...locationFields });
         } else if (parsed.intent === "bill") {

@@ -19,6 +19,8 @@ describe('Android native AI integration', () => {
     expect(speechModule).not.toContain('setRecognitionListener(this)');
     expect(speechModule).not.toContain('\\n');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('TextRecognition.getClient');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('recognizePdf');
+    expect(speechModule).toContain('EXTRA_PREFER_OFFLINE, true');
   });
 
   it('parses Assistant navigation and draft URLs into review-only intents', () => {
@@ -38,7 +40,7 @@ describe('Android native AI integration', () => {
     const api = read('src/api.ts');
     const scan = read('app/scan-import.tsx');
     expect(api).toContain("AI_OCR_PROVIDER_KEY = 'ai_ocr_provider'");
-    expect(api).toContain('recognizeLocalOcr(input.uri!)');
+    expect(api).toContain('recognizeLocalOcr(input.uri)');
     expect(scan).toContain('uri: asset.uri');
   });
 });

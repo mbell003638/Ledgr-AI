@@ -17,7 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
 import { isExplicitBookMutationRequest } from "@/src/db/ai";
-import { parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
+import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 
 type Msg = { role: "user" | "assistant"; text: string };
 type PendingClarification =
@@ -503,6 +503,16 @@ export default function AskBooks() {
       } else {
         await api.approveWorkflow(workflow.id, "user");
         try {
+          if (proposal.action.type === "create_supplier_payment" && proposal.action.params?.supplierName) {
+            await materializePendingVoiceParty({
+              intent: "supplier_payment",
+              supplierName: String(proposal.action.params.supplierName),
+              pendingPartyCreate: { role: "supplier", name: String(proposal.action.params.supplierName) },
+            }, {
+              supplier: (name) => api.createSupplier({ name }),
+              customer: (name) => api.createDebtor({ name }),
+            });
+          }
           result = await executeAssistantProposal(proposal, { confirmed: true }, () => applyAction(proposal.action));
           await api.markWorkflowPosted(workflow.id, undefined, "system");
         } catch (error: any) {
