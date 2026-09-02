@@ -88,6 +88,65 @@ function amountsOnLine(line: string): number[] {
   return values;
 }
 
+const STATEMENT_HEADER_NOISE = /\b(?:net\s+profit|profit\s+share|profit\s+before|each\s+partner|commission|assets?|liabilities?|drawings?|partner\s+stakes?|capital\s+accounts?\s+reconciliation|total)\b/i;
+const POSITION_HEADER = /\b(?:opening\s+balance|closing\s+(?:report|balance)|trial\s+balance|balance\s+sheet|net\s+worth|statement\s+of\s+financial\s+position|partner\s+stakes?|capital\s+accounts?\s+reconciliation|drawings?\s+this\s+period|capital\s+withdrawals?\s+this\s+period|each\s+partner(?:'s)?\s+share)\b/i;
+const POSITION_TOTAL = /\btotal\s+(?:assets?|liabilit(?:y|ies)|equity|capital)\b/i;
+const PNL_OR_RECON_DETAIL = /\b(?:net\s+profit|profit\s+before\s+commission|profit\s+share|each\s+partner|drawings?\s+this\s+period|capital\s+withdrawn)\b/i;
+
+/** OCR of label-left/amount-right rows often emits the figure on the next line. */
+function isAmountOnlyLine(line: string): boolean {
+  const trimmed = compact(line).replace(/^[+\-−]\s*/, '');
+  if (!trimmed) return false;
+  const amounts = amountsOnLine(trimmed);
+  if (amounts.length !== 1) return false;
+  if (Number.isInteger(amounts[0]) && amounts[0] >= 1900 && amounts[0] <= 2100) return false;
+  return compact(trimmed.replace(/(?:[$€£₹]\s*)?\d[\d,.]*(?:\s*(?:USD|CAD|EUR|GBP|INR))?/gi, '')).length === 0;
+}
+
+function pairLabelledAmountLines(lines: string[]): string[] {
+  const paired: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const next = lines[index + 1];
+    if (!amountsOnLine(line).length && next && isAmountOnlyLine(next)) {
+      paired.push(`${line} ${next}`);
+      index += 1;
+      continue;
+    }
+    paired.push(line);
+  }
+  return paired;
+}
+
+function looksLikePositionReport(lines: string[]): boolean {
+  const text = lines.join('\n');
+  const header = POSITION_HEADER.test(text)
+    || (lines.some((line) => /^assets$/i.test(line)) && lines.some((line) => /^liabilities$/i.test(line)))
+    || (/\bnet\s+profit\b/i.test(text) && /\b(?:total\s+assets|physical\s+stock|creditors?)\b/i.test(text));
+  const balanceRows = lines.filter((line) =>
+    /\b(?:cash(?:\s+in\s+hand)?|stock|inventory|creditors?|accounts?\s+payable|partner\s+capital|capital\s+account|ending\s+stake|deposit)\b/i.test(line)
+    && amountsOnLine(line).length > 0
+  ).length;
+  return (header && balanceRows >= 1) || balanceRows >= 3;
+}
+
+function applyVisiblePartnerSplit(partners: NonNullable<LocalDocumentSetup['partners']>, lines: string[]): void {
+  if (!partners.length || partners.some((row) => row.profitSharePct != null)) return;
+  const match = lines.join(' ').match(/\((\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{1,2}))?\)/);
+  if (!match) return;
+  const parts = [match[1], match[2], match[3]].filter(Boolean).map(Number);
+  if (parts.length !== partners.length) return;
+  if (parts.some((value) => !Number.isFinite(value) || value <= 0 || value > 100)) return;
+  if (Math.abs(parts.reduce((sum, value) => sum + value, 0) - 100) > 0.5) return;
+  partners.forEach((partner, index) => { partner.profitSharePct = parts[index]; });
+}
+
+function upsertPartner(partners: NonNullable<LocalDocumentSetup['partners']>, name: string, capital: number): void {
+  const existing = partners.find((row) => normalizeParty(row.name) === normalizeParty(name));
+  if (existing) existing.capital = capital;
+  else partners.push({ name, capital });
+}
+
 function extractTotals(lines: string[]): { selected?: AmountCandidate; ambiguous: boolean; candidates: AmountCandidate[]; subtotal?: number; tax?: number } {
   const candidates: AmountCandidate[] = [];
   let subtotal: number | undefined;
@@ -105,6 +164,7 @@ function extractTotals(lines: string[]): { selected?: AmountCandidate; ambiguous
     else if (/\b(?:amount|balance)\s+due\b/i.test(line)) { priority = 95; label = 'amount due'; }
     else if (/\bnet\s+total\b/i.test(line)) { priority = 90; label = 'net total'; }
     else if (/\btotal\s+(?:paid|amount)\b/i.test(line)) { priority = 88; label = 'total paid'; }
+    else if (POSITION_TOTAL.test(line) || PNL_OR_RECON_DETAIL.test(line)) { continue; }
     else if (/\btotal\b/i.test(line) && !/\b(?:items?|qty|quantity)\b/i.test(line)) { priority = 80; label = 'total'; }
     else if (/\b(?:amount|paid)\b/i.test(line) && /[$€£₹]|\d+[.,]\d{2}\b/.test(line)) { priority = 45; label = 'amount'; }
     if (priority) candidates.push({ amount, label, priority, line });
@@ -197,6 +257,7 @@ function likelyHeader(lines: string[]): string | undefined {
   if (labelled) return compact(labelled);
   return lines.slice(0, 6).find((line) => /[A-Za-z]{3}/.test(line)
     && !/\b(?:tax\s+invoice|invoice|receipt|date|phone|tel|address|gst|vat|bill\s+to)\b/i.test(line)
+    && !STATEMENT_HEADER_NOISE.test(line)
     && !/^\d[\d\s()+-]+$/.test(line)
     && line.length <= 100);
 }
@@ -237,6 +298,8 @@ function parseOpeningAnalysis(lines: string[], dates: ReturnType<typeof extractD
   for (const line of lines) {
     const row = labelledAmount(line);
     if (!row) continue;
+    if (POSITION_TOTAL.test(row.name) || PNL_OR_RECON_DETAIL.test(row.name)) continue;
+    if (/^\s*commission\b/i.test(row.name) && !/\bpayable\b/i.test(row.name)) continue;
     if (/\b(?:total|net\s+worth|assets?|liabilities?|profit|loss|revenue|sales|expenses?)\b/i.test(row.name)
         && !/\b(?:cash|stock|inventory|creditors?|accounts?\s+payable)\b/i.test(row.name)) continue;
     if (/\b(?:cash(?:\s+in\s+hand)?|petty\s+cash|cash\s+at)\b/i.test(row.name)) setup.openingCash = cents((setup.openingCash || 0) + row.amount);
@@ -244,12 +307,22 @@ function parseOpeningAnalysis(lines: string[], dates: ReturnType<typeof extractD
     else if (/\b(?:creditors?|accounts?\s+payable)\b/i.test(row.name)) setup.creditorsTotal = cents((setup.creditorsTotal || 0) + row.amount);
     else if (/\b(?:loan|payable|liabilit|accrued)\b/i.test(row.name)) setup.extraLiabilities!.push({ name: row.name, amount: row.amount });
     else {
+      const ending = row.name.match(/^(.*?)\s+(?:ending|closing)\s+(?:stake|capital|balance)$/i);
+      if (ending?.[1].trim() && !/^(?:owner|total|partner)$/i.test(ending[1].trim())) {
+        upsertPartner(setup.partners!, ending[1].trim(), row.amount);
+        continue;
+      }
+      if (/\b(?:opening(?:\s+stake)?|profit\s+share|drawings?|capital\s+withdrawn)\b/i.test(row.name)) continue;
       const capital = row.name.match(/^(.*?)\s+(?:capital|stake|closing\s+balance)$/i)
         || row.name.match(/^(?:capital|stake)\s+(?:account\s+)?(?:of\s+)?(.*?)$/i);
-      if (capital && capital[1].trim() && !/^(?:owner|total)$/i.test(capital[1].trim())) setup.partners!.push({ name: capital[1].trim(), capital: row.amount });
-      else if (/\b(?:equipment|deposit|receivable|asset|prepaid|vehicle|property|bank)\b/i.test(row.name)) setup.extraAssets!.push({ name: row.name, amount: row.amount });
+      if (capital && capital[1].trim() && !/^(?:owner|total)$/i.test(capital[1].trim())) {
+        upsertPartner(setup.partners!, capital[1].trim(), row.amount);
+      } else if (/\b(?:equipment|deposit|receivable|asset|prepaid|vehicle|property|bank)\b/i.test(row.name)) {
+        setup.extraAssets!.push({ name: row.name, amount: row.amount });
+      }
     }
   }
+  applyVisiblePartnerSplit(setup.partners!, lines);
   if (dates.selected) setup.asOfDate = dates.selected;
   return { docType: 'closing_report', summary: 'Local OCR found a balance or closing report. Review every balance before importing.', entries: [], setup };
 }
@@ -284,14 +357,12 @@ function clarify(
 export function parseLocalDocumentText(sourceText: string, options: LocalDocumentParserOptions = {}): LocalDocumentParseResult {
   const text = sourceText.trim();
   if (!text) return { kind: 'unsupported', confidence: 'low', reason: 'Local OCR did not return readable document text.', sourceText: text };
-  const lines = linesOf(text);
+  const lines = pairLabelledAmountLines(linesOf(text));
   if (lines.length < 2 && text.length < 12) return { kind: 'unsupported', confidence: 'low', reason: 'Not enough readable text was found to prepare a safe draft.', sourceText: text };
 
   const dates = extractDates(lines);
   const totals = extractTotals(lines);
-  const balanceHeader = lines.some((line) => /\b(?:opening\s+balance|closing\s+(?:report|balance)|trial\s+balance|balance\s+sheet|net\s+worth|statement\s+of\s+financial\s+position)\b/i.test(line));
-  const balanceRows = lines.filter((line) => /\b(?:cash(?:\s+in\s+hand)?|stock|inventory|creditors?|accounts?\s+payable|partner\s+capital|capital\s+account|assets?|liabilities?)\b/i.test(line) && amountsOnLine(line).length > 0).length;
-  if ((balanceHeader && balanceRows >= 1) || balanceRows >= 3) {
+  if (looksLikePositionReport(lines)) {
     const analysis = parseOpeningAnalysis(lines, dates);
     const capitalDirectory = options.knownCapitalAccounts || options.capitalAccounts || [];
     const ambiguousCapitalNames: string[] = [];
