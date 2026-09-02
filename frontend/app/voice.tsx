@@ -14,6 +14,7 @@ import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionD
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
+import { continueVoiceTransaction, interpretVoiceTransaction, type PendingVoiceClarification, type VoiceInterpretationResult } from "@/src/accountingV2/voiceInterpretationRouter";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -34,28 +35,77 @@ export default function VoiceModal() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const [pendingClarification, setPendingClarification] = useState<PendingVoiceClarification | null>(null);
+  const [followUpAnswer, setFollowUpAnswer] = useState("");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
+  const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
   useEffect(() => {
     const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
-    if (text) { setTranscript(text); void buildVoiceDraft(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
+    if (text) { setTranscript(text); void buildVoiceDraftRef.current(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
   }, [params.assistantText]);
 
 
-  const buildVoiceDraft = async (txt: string) => {
-    const parsedCommand = await api.parseCommand(txt);
+  const draftFromInterpretation = async (interpretation: VoiceInterpretationResult) => {
+    if (interpretation.kind === "clarification") {
+      setPendingClarification(interpretation);
+      throw new Error(interpretation.question);
+    }
+    if (interpretation.kind === "unsupported") {
+      throw new Error(`${interpretation.reason} You can edit the transcript${(await getAIConfig()).interpretationMode === "device-only" ? " or enable Automatic cloud fallback in Settings" : ""}.`);
+    }
     const [suppliers, customers, capitalAccounts] = await Promise.all([
       api.listSuppliers(), api.listDebtors(), api.listInvestors(),
     ]);
-    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-    if (!resolution.ok) throw new Error(resolution.question);
-    return buildVoiceTransactionDraft(resolution.command);
+    const resolution = resolveVoicePartyCommand(interpretation.command, interpretation.transcript, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) {
+      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "intent", question: resolution.question, transcript: interpretation.transcript });
+      throw new Error(resolution.question);
+    }
+    let resolvedCommand = resolution.command;
+    if (resolvedCommand.intent === "receipt" && resolvedCommand.receiptMode === "against_invoice" && resolvedCommand.customerName) {
+      const customer = customers.find((item: any) => item.name.trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase());
+      const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+      resolvedCommand = invoices[0] ? { ...resolvedCommand, invoiceId: invoices[0].id } : { ...resolvedCommand, receiptMode: "advance" };
+    }
+    setPendingClarification(null);
+    setFollowUpAnswer("");
+    return buildVoiceTransactionDraft(resolvedCommand);
+  };
+  const buildVoiceDraft = async (txt: string) => {
+    setPendingClarification(null);
+    setFollowUpAnswer("");
+    const [cfg, settings] = await Promise.all([getAIConfig(), api.getSettings()]);
+    const interpretation = await interpretVoiceTransaction({
+      transcript: txt,
+      mode: cfg.interpretationMode || "auto",
+      hasCloudAI: Boolean(cfg.apiKey),
+      parseCloud: api.parseCommand,
+      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true },
+    });
+    return draftFromInterpretation(interpretation);
+  };
+  buildVoiceDraftRef.current = buildVoiceDraft;
+  const continueDraft = async () => {
+    if (!pendingClarification || !followUpAnswer.trim()) return;
+    setError(""); setPhase("processing");
+    try {
+      const settings = await api.getSettings();
+      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true });
+      if (interpretation.kind !== "command") {
+        if (interpretation.kind === "clarification") setPendingClarification(interpretation);
+        throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
+      }
+      setTranscript(interpretation.transcript);
+      const draft = await draftFromInterpretation(interpretation);
+      setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
+    } catch (e: any) { setError(e?.message || "Could not continue the draft."); setPhase("error"); }
   };
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null);
+    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setFollowUpAnswer("");
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -171,6 +221,11 @@ export default function VoiceModal() {
         const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
         if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
         await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary) });
+      } else if (parsed.intent === "capital") {
+        const members = await api.listInvestors();
+        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
+        await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: voiceNote(parsed.notes || parsed.summary) });
       } else if (parsed.intent === "inventory") {
         await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: voiceNote(parsed.notes || parsed.summary) });
       } else {
@@ -185,7 +240,7 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer("");
   };
 
   return (
@@ -246,6 +301,7 @@ export default function VoiceModal() {
                 {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
                 {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
                 {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
+                {parsed.receiptMode && <DKV k="Receipt type" v={parsed.receiptMode === "against_invoice" ? "Against invoice" : parsed.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
                 {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
               </View>
               {isDestructive ? (
@@ -268,8 +324,8 @@ export default function VoiceModal() {
 
           {error ? (
             <View style={styles.errorBox}>
-              <Ionicons name="alert-circle" size={18} color={theme.color.error} />
-              <Text style={styles.errorText} testID="voice-error">{error}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="alert-circle" size={18} color={theme.color.error} /><Text style={styles.errorText} testID="voice-error">{error}</Text></View>
+              {pendingClarification ? <><TextInput testID="voice-follow-up-input" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcript, { backgroundColor: theme.color.surface, borderRadius: theme.radius.sm, padding: theme.spacing.sm }]} /><Pressable testID="btn-voice-follow-up" accessibilityRole="button" onPress={() => void continueDraft()} style={[styles.actionBtn, { marginTop: 8 }]}><Text style={styles.actionText}>Continue draft</Text></Pressable></> : null}
             </View>
           ) : null}
         </Card>
@@ -308,7 +364,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   draftGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   actionBtn: { flex: 1, padding: 12, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
   actionText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
+  errorBox: { gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   errorText: { color: theme.color.error, fontSize: 13, flex: 1 },
   destructiveWarn: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.color.error },
   destructiveWarnText: { color: theme.color.error, fontSize: 13, flex: 1, fontWeight: "600" },

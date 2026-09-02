@@ -20,7 +20,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     const schema: any = ANALYZE_DOCUMENT_SCHEMA;
     expect(schema.required).toEqual(['docType', 'summary', 'entries']);
     expect(schema.properties.docType.enum).toEqual(['receipt', 'statement', 'closing_report', 'transaction_list', 'other']);
-    expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense']);
+    expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense', 'capital_contribution']);
     expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'credit', 'bank', 'card', 'mobile']);
     const setup = schema.properties.setup.properties;
     for (const key of ['asOfDate', 'openingCash', 'stockValue', 'extraAssets', 'extraLiabilities', 'creditorsTotal', 'partners']) {
@@ -437,7 +437,7 @@ describe('scan-import screen UI contract', () => {
     expect(source).toMatch(/Needs review — excluded/);
     expect(source).toContain('editable={r.checked && !screenBusy && phase !== "done"}');
     expect(source).toContain('hasBalancedOpeningSet && edited?.checked && edited.row.kind !== "transaction"');
-    expect(source).toContain('const selectedHasProblems = selected.some((review) => !!rowProblem(review))');
+    expect(source).toContain('const selectedHasProblems = Boolean(pendingDocumentClarification) || selected.some((review) => !!rowProblem(review))');
     expect(source).toMatch(/disabled=\{screenBusy \|\| selected\.length === 0 \|\| selectedHasProblems \|\| !!balancedOpeningProblem\}/);
   });
 

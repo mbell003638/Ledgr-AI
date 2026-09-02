@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { useTheme, useThemeMode, useAnimations } from "@/src/context/ThemeContext";
 import { useOnboardingGate } from "@/src/context/OnboardingContext";
 import { api, getAIConfig, setAIConfig } from "@/src/api";
-import { PROVIDERS, type ProviderId } from "@/src/db/ai";
+import { PROVIDERS, type InterpretationMode, type ProviderId } from "@/src/db/ai";
 import { ScreenHeader } from "@/src/components/UI";
 import { GlowPressable } from "@/src/components/GlowPressable";
 import { deviceHasLock, requireAuth } from "@/src/utils/lock";
@@ -73,6 +73,7 @@ export default function AdvancedSettingsScreen() {
   const [transcriptionKey, setTranscriptionKey] = useState("");
   const [voiceProvider, setVoiceProvider] = useState<"auto" | "android-device" | "cloud">("auto");
   const [ocrProvider, setOcrProvider] = useState<"auto" | "android-device" | "cloud">("auto");
+  const [interpretationMode, setInterpretationMode] = useState<InterpretationMode>("auto");
   const [baseUrl, setBaseUrl] = useState("");
   const [customHostConfirmed, setCustomHostConfirmed] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -146,6 +147,7 @@ export default function AdvancedSettingsScreen() {
       setTranscriptionKey(cfg.transcriptionApiKey || "");
       setVoiceProvider(cfg.voiceProvider || "auto");
       setOcrProvider(cfg.ocrProvider || "auto");
+      setInterpretationMode(cfg.interpretationMode || "auto");
       setBaseUrl(cfg.baseUrl || "");
       const providerMeta = PROVIDERS.find((item) => item.id === cfg.provider);
       const chatBaseUrl = cfg.baseUrl?.trim() || '';
@@ -218,6 +220,7 @@ export default function AdvancedSettingsScreen() {
         transcriptionApiKey: transcriptionKey.trim(),
         voiceProvider,
         ocrProvider,
+        interpretationMode,
         baseUrl: baseUrl.trim(),
       });
       try {
@@ -272,6 +275,7 @@ export default function AdvancedSettingsScreen() {
         transcriptionApiKey: transcriptionKey.trim(),
         voiceProvider,
         ocrProvider,
+        interpretationMode,
         baseUrl: baseUrl.trim(),
       };
       await api.testKey(draftConfig);
@@ -285,7 +289,7 @@ export default function AdvancedSettingsScreen() {
 
   const draftAIConfig = () => {
     const meta = PROVIDERS.find((p) => p.id === provider)!;
-    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, baseUrl: baseUrl.trim() };
+    return { provider, apiKey: key.trim(), model: modelName.trim() || meta.defaultModel, visionModel: visionModelName.trim(), transcriptionModel: transcriptionModelName.trim() || "whisper-1", transcriptionBaseUrl: transcriptionBaseUrl.trim(), transcriptionApiKey: transcriptionKey.trim(), voiceProvider, ocrProvider, interpretationMode, baseUrl: baseUrl.trim() };
   };
 
   const testVoiceCapability = async () => {
@@ -655,6 +659,13 @@ export default function AdvancedSettingsScreen() {
                       </Pressable>
                     </View>
                   )}
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Ledger interpretation</Text>
+                  <View style={styles.modeRow} testID="ledger-interpretation-mode">
+                    <Pressable testID="interpretation-auto" onPress={() => setInterpretationMode('auto')} style={[styles.modeBtn, interpretationMode === 'auto' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'auto' && styles.modeTextActive]}>Automatic</Text></Pressable>
+                    <Pressable testID="interpretation-device-only" onPress={() => setInterpretationMode('device-only')} style={[styles.modeBtn, interpretationMode === 'device-only' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'device-only' && styles.modeTextActive]}>On-device only</Text></Pressable>
+                    <Pressable testID="interpretation-cloud" onPress={() => setInterpretationMode('cloud')} style={[styles.modeBtn, interpretationMode === 'cloud' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'cloud' && styles.modeTextActive]}>Cloud AI</Text></Pressable>
+                  </View>
+                  <Text style={styles.hint}>Automatic prepares common entries locally first and uses cloud AI only when local interpretation cannot understand them. On-device only never sends the transaction text to an AI provider. Every result remains a reviewable draft.</Text>
                   <Text style={[styles.label, { marginTop: theme.spacing.md }]}>API Key</Text>
                   <TextInput value={key} onChangeText={(v) => { setKey(v); setTestResult(null); }} placeholder={PROVIDERS.find((item) => item.id === provider)?.keyHint || "Paste your API key"} placeholderTextColor={theme.color.muted} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} />
                   <Text style={[styles.hint, { marginTop: 6 }]}>{Platform.OS === "web" ? "On web this key is stored in the browser, not a device keychain." : "Stored in this device's secure credential storage."}</Text>
@@ -671,7 +682,7 @@ export default function AdvancedSettingsScreen() {
                         <Pressable onPress={() => setOcrProvider('android-device')} style={[styles.modeBtn, ocrProvider === 'android-device' && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === 'android-device' && styles.modeTextActive]}>Android device</Text></Pressable>
                         <Pressable onPress={() => setOcrProvider('cloud')} style={[styles.modeBtn, ocrProvider === 'cloud' && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === 'cloud' && styles.modeTextActive]}>Cloud</Text></Pressable>
                       </View>
-                      <Text style={styles.hint}>Automatic extracts receipt text on Android first, then falls back to the configured vision provider. Device mode sends extracted text, not the image.</Text>
+                      <Text style={styles.hint}>Automatic uses Android OCR and local accounting extraction first, then falls back to the configured vision provider only when needed. Android device mode keeps the image and extracted text on this device.</Text>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice input provider</Text>
                       <View style={styles.modeRow}>
                         <Pressable onPress={() => setVoiceProvider('auto')} style={[styles.modeBtn, voiceProvider === 'auto' && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === 'auto' && styles.modeTextActive]}>Automatic</Text></Pressable>
@@ -695,7 +706,7 @@ export default function AdvancedSettingsScreen() {
                         <Pressable onPress={() => setOcrProvider('android-device')} style={[styles.modeBtn, ocrProvider === 'android-device' && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === 'android-device' && styles.modeTextActive]}>Android device</Text></Pressable>
                         <Pressable onPress={() => setOcrProvider('cloud')} style={[styles.modeBtn, ocrProvider === 'cloud' && styles.modeBtnActive]}><Text style={[styles.modeText, ocrProvider === 'cloud' && styles.modeTextActive]}>Cloud</Text></Pressable>
                       </View>
-                      <Text style={styles.hint}>Automatic uses Android ML Kit first and Gemini vision as fallback.</Text>
+                      <Text style={styles.hint}>Automatic uses Android ML Kit and local accounting extraction first, with Gemini vision only as an optional fallback. Android device mode never calls cloud AI.</Text>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Voice input provider</Text>
                       <View style={styles.modeRow}>
                         <Pressable onPress={() => setVoiceProvider('auto')} style={[styles.modeBtn, voiceProvider === 'auto' && styles.modeBtnActive]}><Text style={[styles.modeText, voiceProvider === 'auto' && styles.modeTextActive]}>Automatic</Text></Pressable>

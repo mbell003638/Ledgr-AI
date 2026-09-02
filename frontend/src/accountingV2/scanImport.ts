@@ -11,8 +11,8 @@
 import { MAX_AI_AMOUNT, MIN_AI_YEAR, MAX_AI_YEAR } from './aiActions';
 import { normalizeDateInput, isValidDateString } from '../utils/dateValidation';
 
-export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
-export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'];
+export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense' | 'capital_contribution';
+export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense', 'capital_contribution'];
 
 export type ScanPaymentMethod = 'cash' | 'credit' | 'bank' | 'card' | 'mobile';
 export const SCAN_PAYMENT_METHODS: ScanPaymentMethod[] = ['cash', 'credit', 'bank', 'card', 'mobile'];

@@ -95,7 +95,7 @@ export function resolveVoicePartyCommand(
   transcript: string,
   directory: VoicePartyDirectory,
 ): VoicePartyResolution {
-  if (!['bill', 'supplier_payment', 'drawing', 'receipt'].includes(String(input.intent || ''))) return { ok: true, command: { ...input } };
+  if (!['bill', 'supplier_payment', 'drawing', 'capital', 'receipt'].includes(String(input.intent || ''))) return { ok: true, command: { ...input } };
 
   const name = spokenName(input);
   if (!name && input.intent === 'receipt' && input.receiptMode === 'cash_sale') return { ok: true, command: { ...input } };
@@ -114,6 +114,13 @@ export function resolveVoicePartyCommand(
   const explicitlyCapital = /\b(capital|partner|owner|drawing|withdraw(?:al|n)?)\b/i.test(transcript);
   const soundsLikePayment = /\b(pay|paid|payment|settled?)\b/i.test(transcript);
   const soundsLikePurchase = /\b(bill|invoice|bought|buy|purchase[ds]?)\b/i.test(transcript);
+
+  if (input.intent === 'capital') {
+    const capital = one(capitalAccounts);
+    return capital
+      ? { ok: true, command: { ...input, intent: 'capital', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Add ${Number(input.amount || 0)} capital for ${capital.name}` } }
+      : roleQuestion(name, roles);
+  }
 
   if (input.intent === 'receipt') {
     const customer = one(customers);

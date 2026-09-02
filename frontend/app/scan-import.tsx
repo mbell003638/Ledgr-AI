@@ -17,9 +17,11 @@ import {
   AMOUNT_BOUNDS_REASON,
   DATE_BOUNDS_REASON,
   type ScanRow,
+  type ScanPaymentMethod,
   type FlaggedScanRow,
 } from "@/src/accountingV2/scanImport";
 import { normalizeDateInput, isValidDateString } from "@/src/utils/dateValidation";
+import { continueLocalDocumentParse, type LocalDocumentParseResult } from "@/src/accountingV2/localDocumentParser";
 
 // Source tag prefixed onto every note/memo this screen writes (same convention
 // as [AI] on ask.tsx and [Reconcile] on reconcile.tsx).
@@ -48,15 +50,17 @@ type ReviewRow = {
   shareText: string; // partner row only
   dateText: string;
   partyText: string; // party name / asset name / liability name / partner name
+  methodText: string; // transaction payment method; always editable before import
   status?: RowStatus;
 };
+type PendingDocumentClarification = Extract<LocalDocumentParseResult, { kind: "clarification" }>;
 
 function rowTitle(row: ScanRow): string {
   switch (row.kind) {
     case "transaction": {
       const labels: Record<string, string> = {
         sale: "Sale", purchase_bill: "Purchase (bill)", receipt_in: "Money received",
-        payment_out: "Payment out", expense: "Expense",
+        payment_out: "Payment out", expense: "Expense", capital_contribution: "Capital contribution",
       };
       return labels[row.entryType] || row.entryType;
     }
@@ -76,6 +80,10 @@ export default function ScanImport() {
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
   const [docType, setDocType] = useState("");
+  const [analysisSource, setAnalysisSource] = useState<"local" | "cloud" | null>(null);
+  const [analysisNotice, setAnalysisNotice] = useState("");
+  const [pendingDocumentClarification, setPendingDocumentClarification] = useState<PendingDocumentClarification | null>(null);
+  const [documentFollowUpAnswer, setDocumentFollowUpAnswer] = useState("");
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [flagged, setFlagged] = useState<FlaggedScanRow[]>([]);
   const [pasteText, setPasteText] = useState("");
@@ -100,57 +108,70 @@ export default function ScanImport() {
     return message;
   };
 
+  const presentAnalysis = async (raw: any) => {
+    const analysisMeta = raw?.__ledgrAnalysisMeta as { source?: "local" | "cloud"; extractedText?: string; notice?: string; pending?: PendingDocumentClarification } | undefined;
+    const mapped = mapAnalyzedDocument(raw);
+    const config = await api.getV2BookConfig().catch(() => null);
+    const partnership = config?.style === "retail_partnership";
+    let investors: { id: string; name: string; profitSharePct: number }[] = [];
+    if (partnership) investors = await api.listInvestors().catch(() => []);
+    const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
+      const importable = true;
+      let infoReason: string | undefined;
+      if (row.kind === "partner") {
+        const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
+        if (!match && !partnership) infoReason = "Capital accounts require Equity Split and matching capital accounts before this report can be imported.";
+      }
+      return {
+        id: index, row, checked: importable, importable, infoReason,
+        amountText: String(row.kind === "transaction" ? row.amount : row.kind === "opening_balances" ? row.openingCash : row.kind === "partner" ? row.capital : row.amount),
+        stockText: row.kind === "opening_balances" ? String(row.stockValue) : "",
+        shareText: row.kind === "partner" && Number.isFinite(row.profitSharePct) ? String(row.profitSharePct) : "",
+        dateText: row.kind === "transaction" ? row.date : row.kind === "opening_balances" ? row.asOfDate : row.date,
+        partyText: row.kind === "transaction" ? row.partyName : row.kind === "opening_balances" ? "" : row.name,
+        methodText: row.kind === "transaction" ? row.method : "",
+      };
+    });
+    setDocType(mapped.docType); setSummary(mapped.summary); setRows(reviewRows); setFlagged(mapped.flaggedRows);
+    setPartnershipMode(partnership); setConfiguredInvestors(investors); setPartyPreflightItems([]); setPartyLookupReady(false);
+    setAnalysisSource(analysisMeta?.source || null); setAnalysisNotice(analysisMeta?.notice || "");
+    setPendingDocumentClarification(analysisMeta?.pending || null); setDocumentFollowUpAnswer("");
+    if (analysisMeta?.extractedText) setPasteText(analysisMeta.extractedText);
+    setPhase("review");
+  };
+
   const analyze = async (input: AnalysisInput) => {
-    if (input.base64 && input.base64.length > MAX_BASE64_CHARS) {
+    const activeConfig = await getAIConfig();
+    if (activeConfig.ocrProvider === "cloud" && input.base64 && input.base64.length > MAX_BASE64_CHARS) {
       setError("That encoded file is too large for a direct AI upload. Try a file under 6MB, a lower-resolution scan, or paste the text instead.");
       return;
     }
     lastAnalysisInput.current = input;
-    setError(""); setPhase("busy");
+    setError(""); setAnalysisNotice(""); setPendingDocumentClarification(null); setPhase("busy");
     try {
-      const [raw, config] = await Promise.all([api.analyzeDocument(input), api.getV2BookConfig().catch(() => null)]);
-      const mapped = mapAnalyzedDocument(raw);
-      const partnership = config?.style === "retail_partnership";
-      let investors: { id: string; name: string; profitSharePct: number }[] = [];
-      const [investorResult] = await Promise.allSettled([
-        partnership ? api.listInvestors() : Promise.resolve([]),
-      ]);
-      if (investorResult.status === "fulfilled") investors = investorResult.value;
-      const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
-        const importable = true;
-        let infoReason: string | undefined;
-        if (row.kind === "partner") {
-          const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
-          if (!match && !partnership) {
-            infoReason = `Capital accounts require Equity Split and matching capital accounts before this report can be imported.`;
-          }
-        }
-        return {
-          id: index,
-          row,
-          checked: importable,
-          importable,
-          infoReason,
-          amountText: String(row.kind === "transaction" ? row.amount : row.kind === "opening_balances" ? row.openingCash : row.kind === "partner" ? row.capital : row.amount),
-          stockText: row.kind === "opening_balances" ? String(row.stockValue) : "",
-          shareText: row.kind === "partner" && Number.isFinite(row.profitSharePct) ? String(row.profitSharePct) : "",
-          dateText: row.kind === "transaction" ? row.date : row.kind === "opening_balances" ? row.asOfDate : row.date,
-          partyText: row.kind === "transaction" ? row.partyName : row.kind === "opening_balances" ? "" : row.name,
-        };
-      });
-      setDocType(mapped.docType);
-      setSummary(mapped.summary);
-      setRows(reviewRows);
-      setFlagged(mapped.flaggedRows);
-      setPartnershipMode(partnership);
-      setConfiguredInvestors(investors);
-      setPartyPreflightItems([]);
-      setPartyLookupReady(false);
-      setPhase("review");
+      await presentAnalysis(await api.analyzeDocument(input));
     } catch (e: any) {
       setError(friendlyError(e));
       setPhase("pick");
     }
+  };
+
+  const continueDocumentDraft = async () => {
+    if (!pendingDocumentClarification || !documentFollowUpAnswer.trim()) return;
+    setError(""); setPhase("busy");
+    try {
+      const result = continueLocalDocumentParse(pendingDocumentClarification, documentFollowUpAnswer);
+      if (result.kind === "unsupported") throw new Error(result.reason);
+      await presentAnalysis({
+        ...result.analysis,
+        __ledgrAnalysisMeta: {
+          source: "local",
+          extractedText: result.sourceText,
+          notice: result.kind === "clarification" ? result.question : undefined,
+          pending: result.kind === "clarification" ? result : undefined,
+        },
+      });
+    } catch (e: any) { setError(e?.message || "Could not update the local document draft."); setPhase("review"); }
   };
 
   const scanCamera = async () => {
@@ -186,8 +207,12 @@ export default function ScanImport() {
       if (res.canceled || !res.assets?.[0]) return;
       const asset = res.assets[0];
       const config = await getAIConfig();
-      if (config.provider !== "gemini") {
-        setError("PDF Scan & Import requires the Gemini provider. With another provider, upload page images or paste the PDF text.");
+      if (config.ocrProvider === "android-device") {
+        setError("On-device PDF OCR is unavailable. Upload the PDF pages as images or paste the PDF text; cloud AI remains disabled in this mode.");
+        return;
+      }
+      if (config.provider !== "gemini" || !config.apiKey) {
+        setError("PDF Scan & Import needs configured Gemini cloud vision. Otherwise upload page images for on-device OCR or paste the PDF text.");
         return;
       }
       if (Number(asset.size || 0) > MAX_SOURCE_BYTES) {
@@ -229,7 +254,7 @@ export default function ScanImport() {
     const amount = Number(r.amountText);
     const date = r.dateText;
     switch (r.row.kind) {
-      case "transaction": return { ...r.row, amount, date, partyName: r.partyText.trim() };
+      case "transaction": return { ...r.row, amount, date, partyName: r.partyText.trim(), method: r.methodText.trim().toLowerCase() as ScanPaymentMethod };
       case "opening_balances": return { ...r.row, openingCash: amount, stockValue: Number(r.stockText), asOfDate: date };
       case "asset": return { ...r.row, amount, date, name: r.partyText.trim() };
       case "liability": return { ...r.row, amount, date, name: r.partyText.trim() };
@@ -315,12 +340,15 @@ export default function ScanImport() {
       return null;
     }
     if (!isValidScanAmount(Number(r.amountText))) return AMOUNT_BOUNDS_REASON;
+    if (r.row.kind === "transaction" && !["cash", "credit", "bank", "card", "mobile"].includes(r.methodText.trim().toLowerCase())) return "Choose Cash, Credit, Bank, Card, or Mobile";
+    if (r.row.kind === "transaction" && r.row.entryType === "capital_contribution" && r.methodText.trim().toLowerCase() !== "cash") return "Capital contributions currently post to Cash. Choose Cash only when that matches the document; otherwise record it manually against the correct funding account.";
     if (r.row.kind === "transaction" && r.row.entryType === "sale" && r.row.method === "credit" && !r.partyText.trim()) {
       return "Customer name is required for a credit sale";
     }
     if (r.row.kind === "transaction" && (r.row.entryType === "purchase_bill" || r.row.entryType === "payment_out") && !r.partyText.trim()) {
       return "Supplier name is required";
     }
+    if (r.row.kind === "transaction" && r.row.entryType === "capital_contribution" && !r.partyText.trim()) return "Existing Capital Account name is required";
     if ((r.row.kind === "asset" || r.row.kind === "liability" || r.row.kind === "partner") && !r.partyText.trim()) return "Name is required";
     return null;
   };
@@ -333,6 +361,13 @@ export default function ScanImport() {
     const row = r.row;
     if (row.kind === "transaction") {
       const notes = scanNote(row.notes || rowTitle(row));
+      if (row.entryType === "capital_contribution") {
+        const investors = await api.listInvestors();
+        const matches = investors.filter((investor) => investor.name.trim().toLowerCase() === party.toLowerCase());
+        if (matches.length !== 1) throw new Error(`Capital Account "${party}" was not found uniquely. Add or choose the exact Capital Account first.`);
+        await api.depositInvestorCapital(matches[0].id, { amount, date, notes });
+        return;
+      }
       const role = row.entryType === "purchase_bill" || row.entryType === "payment_out" ? "supplier"
         : row.entryType === "receipt_in" || (row.entryType === "sale" && row.method === "credit") ? "customer"
         : null;
@@ -373,7 +408,7 @@ export default function ScanImport() {
   const selected = hasBalancedOpeningSet
     ? [...selectedTransactions, ...includedSetupRows]
     : rows.filter((r) => r.checked && r.importable);
-  const selectedHasProblems = selected.some((review) => !!rowProblem(review));
+  const selectedHasProblems = Boolean(pendingDocumentClarification) || selected.some((review) => !!rowProblem(review));
   const screenBusy = importing || preflighting;
 
   const partyRequests = (): MissingPartyLedger[] => {
@@ -668,6 +703,20 @@ export default function ScanImport() {
                 style={styles.fieldInput}
               />
             </View>
+            {r.row.kind === "transaction" ? (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Method</Text>
+                <TextInput
+                  value={r.methodText}
+                  editable={r.checked && !screenBusy && phase !== "done"}
+                  onChangeText={(t) => updateRow(r.id, { methodText: t })}
+                  placeholder="cash / credit / bank"
+                  placeholderTextColor={theme.color.muted}
+                  autoCapitalize="none"
+                  style={styles.fieldInput}
+                />
+              </View>
+            ) : null}
           </View>
         ) : null}
         {problem ? <Text style={styles.flaggedText}>⚠ {problem}</Text> : null}
@@ -692,7 +741,7 @@ export default function ScanImport() {
               <Text style={styles.name}>Import any business document</Text>
               <Text style={styles.hint}>
                 Photograph or upload a receipt, supplier statement, transaction list, or a closing report from another accounting
-                app. AI proposes the entries and opening balances; you review and import only what you want. Nothing is saved
+                app. Ledgr extracts draft entries locally when possible and can use your configured cloud provider as an optional fallback. You review and import only what you want. Nothing is saved
                 without your confirmation.
               </Text>
               <View style={{ flexDirection: "row", gap: 8, marginTop: theme.spacing.md }}>
@@ -732,8 +781,8 @@ export default function ScanImport() {
         {phase === "busy" && (
           <View style={{ alignItems: "center", padding: theme.spacing.xl }}>
             <ActivityIndicator color={theme.color.brandPrimary} size="large" />
-            <Text style={styles.hint}>AI is analyzing the document…</Text>
-            <Text style={[styles.hint, { textAlign: "center" }]}>Temporary provider or network failures retry automatically. A retry can take up to about two minutes.</Text>
+            <Text style={styles.hint}>Ledgr is reading the document…</Text>
+            <Text style={[styles.hint, { textAlign: "center" }]}>On Android, Automatic mode tries local OCR and accounting extraction first. Cloud processing is used only when configured and needed.</Text>
           </View>
         )}
 
@@ -752,7 +801,10 @@ export default function ScanImport() {
         {(phase === "review" || phase === "done") && (
           <>
             <Card testID="scan-summary">
-              <Text style={styles.section2}>AI read this as: {docType.replace(/_/g, " ")}</Text>
+              <Text style={styles.section2}>Ledgr read this as: {docType.replace(/_/g, " ")}</Text>
+              {analysisSource ? <Text style={styles.infoText} testID="scan-analysis-source">Source: {analysisSource === "local" ? "On-device OCR and local parser" : "Configured cloud AI"}</Text> : null}
+              {analysisNotice ? <Text style={styles.flaggedText} testID="scan-analysis-notice">⚠ {analysisNotice} Review and correct the fields below before importing.</Text> : null}
+              {pendingDocumentClarification && phase === "review" ? <View style={{ marginTop: theme.spacing.sm }}><TextInput testID="scan-follow-up-input" accessibilityLabel="Document follow-up answer" value={documentFollowUpAnswer} onChangeText={setDocumentFollowUpAnswer} placeholder={pendingDocumentClarification.candidates?.length ? `Choose: ${pendingDocumentClarification.candidates.join(" / ")}` : "Your answer"} placeholderTextColor={theme.color.muted} style={styles.fieldInput} /><Pressable testID="btn-scan-follow-up" onPress={() => void continueDocumentDraft()} style={[styles.actionBtn, { marginTop: theme.spacing.sm }]}><Text style={styles.actionText}>Update local draft</Text></Pressable><Text style={styles.infoText}>Import remains blocked until this accounting question is resolved.</Text></View> : null}
               <Text style={styles.hint}>{summary || "No description provided."}</Text>
             </Card>
 
@@ -799,7 +851,7 @@ export default function ScanImport() {
             {flagged.length > 0 ? (
               <>
                 <Text style={styles.section}>Needs review — excluded ({flagged.length})</Text>
-                <Text style={[styles.infoText, { marginBottom: theme.spacing.sm }]}>AI could not map these figures safely. They are not selected or imported; check the document, correct the editable proposals above, or rescan.</Text>
+                <Text style={[styles.infoText, { marginBottom: theme.spacing.sm }]}>Ledgr could not map these figures safely. They are not selected or imported; check the document, correct the editable proposals above, or rescan.</Text>
                 {flagged.map((f, i) => (
                   <View key={i} style={[styles.row, { borderLeftColor: theme.color.error }]} testID={`scan-flagged-${i}`}>
                     <View style={styles.rowHeader}>
@@ -846,7 +898,7 @@ export default function ScanImport() {
                 disabled={screenBusy || selected.length === 0 || selectedHasProblems || !!balancedOpeningProblem}
                 style={[styles.actionBtn, { marginTop: theme.spacing.lg }, (screenBusy || selected.length === 0 || selectedHasProblems || !!balancedOpeningProblem) && { opacity: 0.5 }]}
               >
-                {screenBusy ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
+                {screenBusy ? <ActivityIndicator color="#fff" /> : <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />}
                 <Text style={styles.actionText}>
                   {preflighting ? "Checking ledgers…" : importing ? "Importing…" : willImportBalancedSet ? "Import included balanced set" : `Import ${selected.length} selected`}
                 </Text>

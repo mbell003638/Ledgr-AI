@@ -13,6 +13,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, wit
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
+import { continueVoiceTransaction, interpretVoiceTransaction, type PendingVoiceClarification, type VoiceInterpretationResult } from "@/src/accountingV2/voiceInterpretationRouter";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -26,6 +27,8 @@ export default function VoiceFab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const [pendingClarification, setPendingClarification] = useState<PendingVoiceClarification | null>(null);
+  const [followUpAnswer, setFollowUpAnswer] = useState("");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
 
@@ -49,17 +52,62 @@ export default function VoiceFab() {
     }
   }, [motionEnabled, phase, pulseScale]);
 
-  const buildVoiceDraft = async (txt: string) => {
-    const parsedCommand = await api.parseCommand(txt);
+  const draftFromInterpretation = async (interpretation: VoiceInterpretationResult) => {
+    if (interpretation.kind === "clarification") {
+      setPendingClarification(interpretation);
+      throw new Error(interpretation.question);
+    }
+    if (interpretation.kind === "unsupported") {
+      throw new Error(`${interpretation.reason} You can edit the transcript${(await getAIConfig()).interpretationMode === "device-only" ? " or enable Automatic cloud fallback in Settings" : ""}.`);
+    }
     const [suppliers, customers, capitalAccounts] = await Promise.all([
       api.listSuppliers(), api.listDebtors(), api.listInvestors(),
     ]);
-    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-    if (!resolution.ok) throw new Error(resolution.question);
-    return buildVoiceTransactionDraft(resolution.command);
+    const resolution = resolveVoicePartyCommand(interpretation.command, interpretation.transcript, { suppliers, customers, capitalAccounts });
+    if (!resolution.ok) {
+      setPendingClarification({ kind: "clarification", confidence: "low", command: interpretation.command, field: "intent", question: resolution.question, transcript: interpretation.transcript });
+      throw new Error(resolution.question);
+    }
+    let resolvedCommand = resolution.command;
+    if (resolvedCommand.intent === "receipt" && resolvedCommand.receiptMode === "against_invoice" && resolvedCommand.customerName) {
+      const customer = customers.find((item: any) => item.name.trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase());
+      const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+      resolvedCommand = invoices[0] ? { ...resolvedCommand, invoiceId: invoices[0].id } : { ...resolvedCommand, receiptMode: "advance" };
+    }
+    setPendingClarification(null);
+    setFollowUpAnswer("");
+    return buildVoiceTransactionDraft(resolvedCommand);
+  };
+  const buildVoiceDraft = async (txt: string) => {
+    setPendingClarification(null);
+    setFollowUpAnswer("");
+    const [cfg, settings] = await Promise.all([getAIConfig(), api.getSettings()]);
+    const interpretation = await interpretVoiceTransaction({
+      transcript: txt,
+      mode: cfg.interpretationMode || "auto",
+      hasCloudAI: Boolean(cfg.apiKey),
+      parseCloud: api.parseCommand,
+      parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true },
+    });
+    return draftFromInterpretation(interpretation);
+  };
+  const continueDraft = async () => {
+    if (!pendingClarification || !followUpAnswer.trim()) return;
+    setError(""); setPhase("processing");
+    try {
+      const settings = await api.getSettings();
+      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: true });
+      if (interpretation.kind !== "command") {
+        if (interpretation.kind === "clarification") setPendingClarification(interpretation);
+        throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
+      }
+      setTranscript(interpretation.transcript);
+      const draft = await draftFromInterpretation(interpretation);
+      setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
+    } catch (e: any) { setError(e?.message || "Could not continue the draft."); setPhase("error"); }
   };
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null);
+    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setFollowUpAnswer("");
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -171,6 +219,11 @@ export default function VoiceFab() {
           const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
           if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
           await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: parsed.notes || parsed.summary });
+        } else if (parsed.intent === "capital") {
+          const members = await api.listInvestors();
+          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
+          await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: parsed.notes || parsed.summary });
         } else if (parsed.intent === "inventory") {
           await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary });
         } else {
@@ -185,7 +238,7 @@ export default function VoiceFab() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer("");
   };
 
   const isModalOpen = phase !== "idle";
@@ -264,6 +317,7 @@ export default function VoiceFab() {
                   {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
                   {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
                   {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
+                  {parsed.receiptMode && <DKV k="Receipt type" v={parsed.receiptMode === "against_invoice" ? "Against invoice" : parsed.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
                   {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
                 </View>
 
@@ -281,6 +335,7 @@ export default function VoiceFab() {
                 <Ionicons name="alert-circle" size={32} color={theme.color.error} />
                 {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
                 <Text style={styles.errorText}>{error}</Text>
+                {pendingClarification ? <><TextInput accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
                 {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                 <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
                   <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>

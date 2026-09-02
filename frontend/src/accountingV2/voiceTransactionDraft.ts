@@ -11,13 +11,17 @@ export type VoiceTransactionDraft = {
 
 /** Converts a resolved voice command into a validated, review-only proposal. */
 export function buildVoiceTransactionDraft(parsed: VoiceCommand): VoiceTransactionDraft {
+  if (parsed.intent === 'capital' && parsed.method && parsed.method !== 'cash') {
+    throw new Error('Capital contributions currently post to Cash. Use voice only when Cash matches the transaction; otherwise record the contribution manually against the correct funding account.');
+  }
   const proposalByIntent: Record<string, { type: string; params: Record<string, unknown> }> = {
     expense: { type: 'add_expense', params: { category: parsed.category || 'General', amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     bill: { type: 'add_bill', params: { supplierName: parsed.supplierName, amount: parsed.amount, date: parsed.date, paymentType: parsed.paymentType, notes: parsed.notes || parsed.summary } },
     sale: { type: 'add_sale', params: { amount: parsed.amount, date: parsed.date, paymentType: parsed.paymentType, notes: parsed.notes || parsed.summary } },
-    receipt: { type: 'create_receipt', params: { amount: parsed.amount, date: parsed.date, mode: parsed.receiptMode, customerName: parsed.customerName, method: parsed.method, notes: parsed.notes || parsed.summary } },
+    receipt: { type: 'create_receipt', params: { amount: parsed.amount, date: parsed.date, mode: parsed.receiptMode, customerName: parsed.customerName, invoiceId: parsed.invoiceId, method: parsed.method, notes: parsed.notes || parsed.summary } },
     supplier_payment: { type: 'create_supplier_payment', params: { supplierName: parsed.supplierName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     drawing: { type: 'create_drawing', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
+    capital: { type: 'add_capital', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     inventory: { type: 'record_inventory', params: { amount: parsed.amount, date: parsed.date, notes: parsed.notes || parsed.summary } },
   };
 

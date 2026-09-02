@@ -37,10 +37,11 @@ describe('Android native AI integration', () => {
 
   it('persists OCR mode and routes image URIs through local OCR', () => {
     const api = read('src/api.ts');
+    const router = read('src/accountingV2/documentInterpretationRouter.ts');
     const scan = read('app/scan-import.tsx');
     expect(api).toContain("AI_OCR_PROVIDER_KEY = 'ai_ocr_provider'");
-    expect(api).toContain('recognizeLocalOcr(input.uri!)');
+    expect(api).toContain('recognizeLocal: recognizeLocalOcr');
+    expect(router).toContain('request.recognizeLocal(request.input.uri)');
     expect(scan).toContain('uri: asset.uri');
   });
 });
-
