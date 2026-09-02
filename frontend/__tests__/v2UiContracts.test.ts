@@ -34,7 +34,7 @@ describe('V2 UI contracts', () => {
 
   it('voice validates the draft before showing confirmation and executes only from the confirm handler', () => {
     const source = readApp('voice.tsx');
-    const validationIndex = source.indexOf('const draft = await buildVoiceDraft');
+    const validationIndex = source.indexOf('await buildVoiceDraft');
     const confirmPhaseIndex = source.indexOf('setPhase("confirm")');
     const confirmHandlerIndex = source.indexOf('const confirmSave');
     const executeIndex = source.indexOf('await executeAssistantProposal', confirmHandlerIndex);
