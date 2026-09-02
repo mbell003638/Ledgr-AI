@@ -9,6 +9,7 @@ import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
 import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
+import type { VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
@@ -26,6 +27,7 @@ export default function VoiceFab() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
   const [parsed, setParsed] = useState<any>(null);
+  const [drafts, setDrafts] = useState<VoiceTransactionDraft[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
@@ -54,12 +56,12 @@ export default function VoiceFab() {
     }
     setPendingClarification(null);
     setClarificationAnswer("");
-    return result.draft;
+    return result.drafts?.length ? result.drafts : [result.draft];
   };
   buildVoiceDraftRef.current = buildVoiceDraft;
 
   const start = useCallback(async () => {
-    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setClarificationAnswer("");
+    setError(""); setTranscript(""); setParsed(null); setDrafts([]); setPendingClarification(null); setClarificationAnswer("");
     try {
       const config = await api.getAIConfig();
       const bridge = getDeviceSpeechBridge();
@@ -70,8 +72,8 @@ export default function VoiceFab() {
         setPhase("recording");
         deviceSession.current.promise.then(async (txt) => {
           deviceSession.current = null; setTranscript(txt);
-          const draft = await buildVoiceDraftRef.current(txt);
-          setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
+          const ready = await buildVoiceDraftRef.current(txt);
+          setDrafts(ready); setParsed(ready[0]?.parsed || null); setValidatedAction(ready[0]?.validation || null); setPhase("confirm");
         }).catch((e: any) => { deviceSession.current = null; if (e?.code !== "CANCELLED") { setError(e?.message || "Device voice input failed."); setPhase("error"); } });
         return;
       }
@@ -99,9 +101,10 @@ export default function VoiceFab() {
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
-      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -115,9 +118,10 @@ export default function VoiceFab() {
     if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e?.message || "Could not rebuild the draft from that transcript.");
@@ -126,20 +130,22 @@ export default function VoiceFab() {
   };
 
   const confirmSave = async () => {
-    if (!parsed) return;
+    const toSave = drafts.length ? drafts : (parsed && validatedAction?.ok ? [{ parsed, validation: validatedAction }] : []);
+    if (!toSave.length) return;
     setSaving(true);
     try {
-      const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
       const locationContext = await loadLocationsIfEnabled();
       const locationId = locationContext.activeId;
       if (locationContext.enabled && locationContext.locations.length === 0) throw new Error("Add a shop in Locations before saving this voice entry.");
       if (locationContext.enabled && locationContext.locations.length > 1 && !locationId) throw new Error("Choose the active shop in Locations before saving this voice entry.");
-      if (parsed.intent === "inventory" && locationContext.enabled && locationContext.locations.length > 1) throw new Error("Voice inventory counts are book-level. Enter a shop count from the Inventory workflow instead.");
       const locationFields = locationId ? { locationId } : {};
-
-      if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
-      await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
+      for (const draft of toSave) {
+      const parsed = draft.parsed;
+      const date = parsed.date || localTodayIso();
+      if (parsed.intent === "inventory" && locationContext.enabled && locationContext.locations.length > 1) throw new Error("Voice inventory counts are book-level. Enter a shop count from the Inventory workflow instead.");
+      if (!draft.validation || !draft.validation.ok) throw new Error("Voice action requires validation before saving.");
+      await executeAssistantProposal(draft.validation, { confirmed: true }, async () => {
         const command = await materializePendingVoiceParty(parsed, {
           supplier: (name) => api.createSupplier({ name }),
           customer: (name) => api.createDebtor({ name }),
@@ -213,6 +219,7 @@ export default function VoiceFab() {
           throw new Error("Could not determine intent. Please try again.");
         }
       });
+      }
       reset();
     } catch (e: any) {
       setError(e.message || "Save failed");
@@ -222,7 +229,7 @@ export default function VoiceFab() {
 
   const reset = () => {
     void stopExistingRecorder();
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setDrafts([]); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
   };
 
   if (!voiceAvailable) return null;
@@ -267,11 +274,14 @@ export default function VoiceFab() {
             <View style={styles.reviewDock}>
               {transcript ? <TextInput accessibilityLabel="Editable homepage voice transcript" testID="voice-fab-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
               {transcript ? <Pressable testID="voice-fab-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
-              <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Review {parsed.intent?.replace("_", " ")}</Text>
-              <Text numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface }]}>{parsed.summary}</Text>
+              {(drafts.length ? drafts : [{ parsed }]).map((draft, index) => (
+                <Text key={`${draft.parsed.intent}-${draft.parsed.amount}-${index}`} numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface, marginTop: index ? 6 : 0 }]}>
+                  {drafts.length > 1 ? `${index + 1}. ` : ""}{draft.parsed.summary}
+                </Text>
+              ))}
               <View style={styles.btnRow}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}><Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>{saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>Save</Text>}</Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>{saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}</Pressable>
               </View>
             </View>
           ) : (

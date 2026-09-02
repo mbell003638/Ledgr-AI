@@ -1,4 +1,5 @@
 import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
+import { splitSpokenTransactions } from './spokenTransactions';
 import {
   commandWithCreatedParty,
   parseVoicePartyCreateRole,
@@ -19,7 +20,7 @@ export type LocalTransactionContinuation = {
 };
 
 export type LocalTransactionOutcome =
-  | { status: 'confident'; command: VoiceCommand; confidence: number; source: 'local-rules' }
+  | { status: 'confident'; command: VoiceCommand; commands?: VoiceCommand[]; confidence: number; source: 'local-rules' }
   | {
       status: 'clarification';
       question: string;
@@ -201,7 +202,23 @@ export function interpretLocalTransaction(
   if (needsMethod && !command.method) {
     return clarification(transcript, command, 'method', 'Was this Cash, Bank, Card, or Mobile?', 0.78);
   }
-  return { status: 'confident', command, confidence: 0.92, source: 'local-rules' };
+  return { status: 'confident', command, commands: [command], confidence: 0.92, source: 'local-rules' };
+}
+
+/** Parses compound speech such as “paid 100 to Amit and 50 to Rahim”. */
+export function interpretLocalTransactions(
+  transcript: string,
+  directory?: VoicePartyDirectory,
+  options: LocalTransactionOptions = {},
+): LocalTransactionOutcome {
+  const utterances = splitSpokenTransactions(transcript);
+  if (utterances.length <= 1) return interpretLocalTransaction(transcript, directory, options);
+  const parsed = utterances.map((utterance) => interpretLocalTransaction(utterance, undefined, { ...options, requirePaymentMethod: false }));
+  const commands = parsed.filter((row): row is Extract<LocalTransactionOutcome, { status: 'confident' }> => row.status === 'confident').map((row) => row.command);
+  if (commands.length === parsed.length && commands.length > 1) {
+    return { status: 'confident', command: commands[0], commands, confidence: 0.9, source: 'local-rules' };
+  }
+  return interpretLocalTransaction(transcript, directory, options);
 }
 
 /** Continue one focused clarification without discarding the original draft. */

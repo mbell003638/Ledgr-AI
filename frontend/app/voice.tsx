@@ -10,6 +10,8 @@ import { api, getAIConfig } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
+import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
+import type { VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
@@ -31,6 +33,7 @@ export default function VoiceModal() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
   const [parsed, setParsed] = useState<any>(null);
+  const [drafts, setDrafts] = useState<VoiceTransactionDraft[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
@@ -44,7 +47,7 @@ export default function VoiceModal() {
 
   useEffect(() => {
     const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
-    if (text) { setTranscript(text); void buildVoiceDraftRef.current(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
+    if (text) { setTranscript(text); void buildVoiceDraftRef.current(text).then((ready: VoiceTransactionDraft[]) => { setDrafts(ready); setParsed(ready[0]?.parsed || null); setValidatedAction(ready[0]?.validation || null); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
   }, [params.assistantText]);
 
 
@@ -57,11 +60,11 @@ export default function VoiceModal() {
     }
     setPendingClarification(null);
     setClarificationAnswer("");
-    return result.draft;
+    return result.drafts?.length ? result.drafts : [result.draft];
   };
   buildVoiceDraftRef.current = buildVoiceDraft;
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setClarificationAnswer("");
+    setError(""); setTranscript(""); setParsed(null); setDrafts([]); setPendingClarification(null); setClarificationAnswer("");
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -89,9 +92,10 @@ export default function VoiceModal() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
 
-      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e.message || "Voice processing failed");
@@ -105,9 +109,10 @@ export default function VoiceModal() {
     if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
-      setParsed(draft.parsed);
-      setValidatedAction(draft.validation);
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
       setError(e?.message || "Could not update the draft from that transcript.");
@@ -115,80 +120,87 @@ export default function VoiceModal() {
     }
   };
   const confirmSave = async () => {
-    if (!parsed) return;
+    const toSave = drafts.length ? drafts : (parsed && validatedAction?.ok ? [{ parsed, validation: validatedAction }] : []);
+    if (!toSave.length) return;
     setSaving(true);
     try {
-      const date = parsed.date || localTodayIso();
       const currency = (await api.getSettings()).currency || "USD";
-
-      if (!validatedAction || !validatedAction.ok) throw new Error("Voice action requires validation before saving.");
-      await executeAssistantProposal(validatedAction, { confirmed: true }, async () => {
-      if (parsed.intent === "bill") {
+      for (const draft of toSave) {
+      const parsedDraft = draft.parsed;
+      const date = parsedDraft.date || localTodayIso();
+      if (!draft.validation || !draft.validation.ok) throw new Error("Voice action requires validation before saving.");
+      await executeAssistantProposal(draft.validation, { confirmed: true }, async () => {
+      const command = await materializePendingVoiceParty(parsedDraft, {
+        supplier: (name) => api.createSupplier({ name }),
+        customer: (name) => api.createDebtor({ name }),
+      });
+      Object.assign(parsedDraft, command);
+      if (parsedDraft.intent === "bill") {
         const list = await api.listSuppliers();
-        const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
-        if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
+        const match = list.filter((supplier: any) => supplier.name.trim().toLowerCase() === String(parsedDraft.supplierName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Supplier "${parsedDraft.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
         await api.createBill({
-          supplierId: match[0].id, date, amount: parsed.amount, currency,
-          paymentType: parsed.paymentType === "cash" ? "cash" : "credit",
-          notes: voiceNote(parsed.notes || parsed.summary),
+          supplierId: match[0].id, date, amount: parsedDraft.amount, currency,
+          paymentType: parsedDraft.paymentType === "cash" ? "cash" : "credit",
+          notes: voiceNote(parsedDraft.notes || parsedDraft.summary),
         });
-      } else if (parsed.intent === "sale") {
-        await api.createSale({ date, amount: parsed.amount, currency, notes: voiceNote(parsed.notes || parsed.summary) });
-      } else if (parsed.intent === "expense") {
+      } else if (parsedDraft.intent === "sale") {
+        await api.createSale({ date, amount: parsedDraft.amount, currency, notes: voiceNote(parsedDraft.notes || parsedDraft.summary) });
+      } else if (parsedDraft.intent === "expense") {
         await api.createExpense({
-          date, amount: parsed.amount, currency,
-          category: parsed.category || "General",
-          method: parsed.method || "cash",
-          notes: voiceNote(parsed.notes || parsed.summary),
+          date, amount: parsedDraft.amount, currency,
+          category: parsedDraft.category || "General",
+          method: parsedDraft.method || "cash",
+          notes: voiceNote(parsedDraft.notes || parsedDraft.summary),
         });
-      } else if (parsed.intent === "receipt") {
-        const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
-        const method = parsed.method || "cash";
+      } else if (parsedDraft.intent === "receipt") {
+        const mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
+        const method = parsedDraft.method || "cash";
         let debtorId: string | null = null;
         let allocations: { invoiceId: string; amountApplied: number }[] = [];
-        if (parsed.customerName) {
+        if (parsedDraft.customerName) {
           const debtors = await api.listDebtors();
-          const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsed.customerName.trim().toLowerCase());
+          const match = debtors.find((d: any) => d.name.trim().toLowerCase() === parsedDraft.customerName.trim().toLowerCase());
           if (match) debtorId = match.id;
-          else throw new Error(`Customer "${parsed.customerName}" was not found. Add the Customer first.`);
-          // Auto-allocate an against_invoice receipt to this customer's oldest unpaid invoice.
+          else throw new Error(`Customer "${parsedDraft.customerName}" was not found. Add the Customer first.`);
           if (mode === "against_invoice") {
             const invs = (await api.listInvoices())
-              .filter((i: any) => i.status !== "paid" && (i.partyId === debtorId || i.debtorId === debtorId || (i.clientName && i.clientName.trim().toLowerCase() === parsed.customerName.trim().toLowerCase())))
+              .filter((i: any) => i.status !== "paid" && (i.partyId === debtorId || i.debtorId === debtorId || (i.clientName && i.clientName.trim().toLowerCase() === parsedDraft.customerName.trim().toLowerCase())))
               .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-            if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
+            if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsedDraft.amount }];
           }
         }
         await api.createReceipt({
-          mode, date, amount: parsed.amount, method,
-          debtorId, clientName: parsed.customerName || "",
-          allocations, notes: voiceNote(parsed.notes || parsed.summary),
+          mode, date, amount: parsedDraft.amount, method,
+          debtorId, clientName: parsedDraft.customerName || "",
+          allocations, notes: voiceNote(parsedDraft.notes || parsedDraft.summary),
         });
-      } else if (parsed.intent === "supplier_payment") {
+      } else if (parsedDraft.intent === "supplier_payment") {
         const list = await api.listSuppliers();
-        const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsed.supplierName || "").trim().toLowerCase());
-        if (match.length !== 1) throw new Error(`Supplier "${parsed.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
+        const match = list.filter((s: any) => s.name.trim().toLowerCase() === String(parsedDraft.supplierName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Supplier "${parsedDraft.supplierName}" was not found uniquely. Add or choose the exact Supplier first.`);
         await api.createPayment({
-          date, amount: parsed.amount, currency,
+          date, amount: parsedDraft.amount, currency,
           type: "supplier_payment", supplierId: match[0].id,
-          method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary),
+          method: parsedDraft.method || "cash", notes: voiceNote(parsedDraft.notes || parsedDraft.summary),
         });
-      } else if (parsed.intent === "drawing") {
+      } else if (parsedDraft.intent === "drawing") {
         const members = await api.listInvestors();
-        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
-        if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
-        await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary) });
-      } else if (parsed.intent === "capital") {
+        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsedDraft.partnerName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Capital Account "${parsedDraft.partnerName}" was not found uniquely.`);
+        await api.drawInvestorFunds(match[0].id, { date, amount: parsedDraft.amount, method: parsedDraft.method || "cash", notes: voiceNote(parsedDraft.notes || parsedDraft.summary) });
+      } else if (parsedDraft.intent === "capital") {
         const members = await api.listInvestors();
-        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
-        if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
-        await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: voiceNote(parsed.notes || parsed.summary) });
-      } else if (parsed.intent === "inventory") {
-        await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: voiceNote(parsed.notes || parsed.summary) });
+        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsedDraft.partnerName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Capital Account "${parsedDraft.partnerName}" was not found uniquely.`);
+        await api.depositInvestorCapital(match[0].id, { date, amount: parsedDraft.amount, notes: voiceNote(parsedDraft.notes || parsedDraft.summary) });
+      } else if (parsedDraft.intent === "inventory") {
+        await api.recordV2InventoryCount({ date, value: Number(parsedDraft.amount), notes: voiceNote(parsedDraft.notes || parsedDraft.summary) });
       } else {
         throw new Error("Could not determine intent. Please try again.");
       }
       });
+      }
       router.back();
     } catch (e: any) {
       setError(e.message || "Save failed");
@@ -197,7 +209,7 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setDrafts([]); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
   };
 
   return (
@@ -212,7 +224,7 @@ export default function VoiceModal() {
         <Card>
           <Text style={styles.title}>Say a transaction</Text>
           <Text style={styles.hint}>
-            {'e.g., "We paid supplier 1000 USD on July 17", "Sold 250 today", "Withdrew 500 for owner"'}
+            {'e.g., "Paid 100 to Amit and 50 to Rahim", "Spent 20 on fuel and 30 on rent", "Sold 250 today"'}
           </Text>
 
           <View style={styles.micArea}>
@@ -247,20 +259,22 @@ export default function VoiceModal() {
             </View>
           ) : null}
 
-          {phase === "confirm" && parsed && (() => {
-            const isDestructive = validatedAction?.ok === true && validatedAction.action.isDestructive === true;
+          {phase === "confirm" && (drafts.length ? drafts : parsed ? [{ parsed, validation: validatedAction }] : []).map((draft, index, list) => {
+            const row = draft.parsed;
+            const isDestructive = draft.validation?.ok === true && draft.validation.action.isDestructive === true;
             return (
-            <View style={styles.draft} testID="voice-draft">
-              <Text style={styles.draftLabel}>Draft {parsed.intent?.replace("_", " ")}</Text>
-              <Text style={styles.draftSummary}>{parsed.summary}</Text>
+            <View key={`${row.intent}-${row.amount}-${index}`} style={styles.draft} testID={index === 0 ? "voice-draft" : `voice-draft-${index}`}>
+              <Text style={styles.draftLabel}>Draft {list.length > 1 ? `${index + 1} of ${list.length} · ` : ""}{String(row.intent || "").replace("_", " ")}</Text>
+              <Text style={styles.draftSummary}>{row.summary}</Text>
+              {row.pendingPartyCreate ? <Text style={styles.hint}>Will create {row.pendingPartyCreate.role} “{row.pendingPartyCreate.name}” on save.</Text> : null}
               <View style={styles.draftGrid}>
-                {parsed.amount != null && <DKV k="Amount" v={fmt(parsed.amount, parsed.currency || "USD")} theme={theme} />}
-                {parsed.date && <DKV k="Date" v={parsed.date} theme={theme} />}
-                {parsed.supplierName && <DKV k="Supplier" v={parsed.supplierName} theme={theme} />}
-                {parsed.customerName && <DKV k="Customer" v={parsed.customerName} theme={theme} />}
-                {parsed.partnerName && <DKV k="Capital Account" v={parsed.partnerName} theme={theme} />}
-                {parsed.paymentType && <DKV k="Type" v={parsed.paymentType} theme={theme} />}
-                {parsed.method && <DKV k="Payment method" v={parsed.method === "upi" ? "mobile / UPI" : parsed.method} theme={theme} />}
+                {row.amount != null && <DKV k="Amount" v={fmt(row.amount, row.currency || "USD")} theme={theme} />}
+                {row.date && <DKV k="Date" v={row.date} theme={theme} />}
+                {row.supplierName && <DKV k="Supplier" v={row.supplierName} theme={theme} />}
+                {row.customerName && <DKV k="Customer" v={row.customerName} theme={theme} />}
+                {row.partnerName && <DKV k="Capital Account" v={row.partnerName} theme={theme} />}
+                {row.paymentType && <DKV k="Type" v={row.paymentType} theme={theme} />}
+                {row.method && <DKV k="Payment method" v={row.method === "upi" ? "mobile / UPI" : row.method} theme={theme} />}
               </View>
               {isDestructive ? (
                 <View style={styles.destructiveWarn} testID="voice-destructive-warn">
@@ -268,17 +282,19 @@ export default function VoiceModal() {
                   <Text style={styles.destructiveWarnText}>This closes the period permanently — it cannot be undone.</Text>
                 </View>
               ) : null}
+              {index === list.length - 1 ? (
               <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                 <Pressable testID="btn-voice-cancel" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                   <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Try Again</Text>
                 </Pressable>
                 <Pressable testID="btn-voice-confirm" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: isDestructive ? theme.color.error : theme.color.brandPrimary, flex: 1.4 }]}>
-                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>{isDestructive ? "Close Books" : "Confirm & Save"}</Text>}
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>{isDestructive ? "Close Books" : list.length > 1 ? `Confirm & Save ${list.length}` : "Confirm & Save"}</Text>}
                 </Pressable>
               </View>
+              ) : null}
             </View>
             );
-          })()}
+          })}
 
           {error ? (
             <View style={styles.errorBox}>

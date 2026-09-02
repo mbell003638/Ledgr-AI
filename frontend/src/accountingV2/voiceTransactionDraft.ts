@@ -1,5 +1,11 @@
 import { validateAssistantProposal, type AssistantProposalValidationResult } from './aiActions';
-import type { VoiceCommand } from './voicePartyResolution';
+import {
+  commandWithCreatedParty,
+  resolveVoicePartyCommand,
+  type VoiceCommand,
+  type VoicePartyCreateProposal,
+  type VoicePartyDirectory,
+} from './voicePartyResolution';
 
 export const VOICE_TRANSACTION_GUIDANCE =
   'I could not identify a supported transaction. Include the transaction type and amount, plus the party when relevant—for example, “Paid supplier Amit 100 today”. You can edit the transcript and update the draft.';
@@ -35,4 +41,28 @@ export function buildVoiceTransactionDraft(parsed: VoiceCommand): VoiceTransacti
     throw new Error(`I could not prepare a safe transaction draft: ${validation.errors[0]}. Edit the transcript and update the draft.`);
   }
   return { parsed, validation };
+}
+
+/** Resolves parties for one or more voice commands. Unknown names on a multi-item utterance become create-on-save drafts. */
+export function resolveVoiceCommandsForDrafts(
+  commands: VoiceCommand[],
+  transcript: string,
+  directory: VoicePartyDirectory,
+): { ok: true; commands: VoiceCommand[] } | { ok: false; question: string; command: VoiceCommand; createProposal?: VoicePartyCreateProposal } {
+  const allowPendingCreate = commands.length > 1;
+  const resolved: VoiceCommand[] = [];
+  for (const command of commands) {
+    const resolution = resolveVoicePartyCommand(command, transcript, directory);
+    if (resolution.ok) {
+      resolved.push(resolution.command);
+      continue;
+    }
+    const proposal = resolution.createProposal;
+    if (allowPendingCreate && proposal?.suggestedRole && proposal.name) {
+      resolved.push(commandWithCreatedParty(command, proposal.name, proposal.suggestedRole));
+      continue;
+    }
+    return { ok: false, question: resolution.question, command, createProposal: proposal };
+  }
+  return { ok: true, commands: resolved };
 }
