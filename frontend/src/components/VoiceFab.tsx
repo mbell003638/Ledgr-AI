@@ -7,8 +7,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
-import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
-import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
+import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
@@ -28,8 +28,11 @@ export default function VoiceFab() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const [pendingClarification, setPendingClarification] = useState<LocalTransactionContinuation | null>(null);
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const deviceSession = useRef<DeviceSpeechSession | null>(null);
+  const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => {
     let active = true;
@@ -41,20 +44,21 @@ export default function VoiceFab() {
 
   const stopExistingRecorder = () => cancelVoiceRecorder(recorder);
 
-  const buildVoiceDraft = async (txt: string) => {
-    const parsedCommand = await api.parseCommand(txt);
-    const [suppliers, customers, capitalAccounts] = await Promise.all([
-      api.listSuppliers(),
-      api.listDebtors(),
-      api.listInvestors(),
-    ]);
-    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-    if (!resolution.ok) throw new Error(resolution.question);
-    return buildVoiceTransactionDraft(resolution.command);
+  const buildVoiceDraft = async (txt: string, answer = "") => {
+    const result = await prepareVoiceTransactionDraft(txt, pendingClarification, answer);
+    if (result.status === "clarification") {
+      setPendingClarification(result.continuation);
+      setClarificationAnswer("");
+      throw new Error(result.question);
+    }
+    setPendingClarification(null);
+    setClarificationAnswer("");
+    return result.draft;
   };
+  buildVoiceDraftRef.current = buildVoiceDraft;
 
   const start = useCallback(async () => {
-    setError(""); setTranscript(""); setParsed(null);
+    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setClarificationAnswer("");
     try {
       const config = await api.getAIConfig();
       const bridge = getDeviceSpeechBridge();
@@ -65,7 +69,7 @@ export default function VoiceFab() {
         setPhase("recording");
         deviceSession.current.promise.then(async (txt) => {
           deviceSession.current = null; setTranscript(txt);
-          const draft = await buildVoiceDraft(txt);
+          const draft = await buildVoiceDraftRef.current(txt);
           setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase("confirm");
         }).catch((e: any) => { deviceSession.current = null; if (e?.code !== "CANCELLED") { setError(e?.message || "Device voice input failed."); setPhase("error"); } });
         return;
@@ -90,7 +94,7 @@ export default function VoiceFab() {
       const txt = (t.transcript || "").trim();
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
-      const draft = await buildVoiceDraft(txt);
+      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
       setParsed(draft.parsed);
       setValidatedAction(draft.validation);
       setPhase("confirm");
@@ -103,9 +107,10 @@ export default function VoiceFab() {
   const rebuildDraft = async () => {
     const txt = transcript.trim();
     if (!txt) { setError("Enter or dictate a transaction before rebuilding the draft."); return; }
+    if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const draft = await buildVoiceDraft(txt);
+      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
       setParsed(draft.parsed);
       setValidatedAction(draft.validation);
       setPhase("confirm");
@@ -185,6 +190,11 @@ export default function VoiceFab() {
           const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
           if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
           await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: parsed.notes || parsed.summary, ...locationFields });
+        } else if (parsed.intent === "capital") {
+          const members = await api.listInvestors();
+          const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
+          if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
+          await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: parsed.notes || parsed.summary });
         } else if (parsed.intent === "inventory") {
           await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: parsed.notes || parsed.summary });
         } else {
@@ -200,7 +210,7 @@ export default function VoiceFab() {
 
   const reset = () => {
     void stopExistingRecorder();
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
   };
 
   if (!voiceAvailable) return null;
@@ -258,6 +268,7 @@ export default function VoiceFab() {
               <View style={styles.errorCopy}>
                 {transcript ? <TextInput accessibilityLabel="Editable failed voice transcript" testID="voice-fab-error-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
                 <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+                {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-fab-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.answerInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
                 {transcript ? <Pressable testID="voice-fab-error-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                 {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
               </View>
@@ -321,6 +332,7 @@ const styles = StyleSheet.create({
   errorDock: { flexDirection: "row", alignItems: "center", minHeight: 42, gap: 8 },
   errorCopy: { flex: 1, minWidth: 0, gap: 4 },
   errorText: { fontSize: 11, fontWeight: "600" },
+  answerInput: { minHeight: 38, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, fontSize: 12 },
   setupLink: { fontSize: 11, fontWeight: "800" },
   retryButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderRadius: 10 },
   retryText: { fontSize: 11, fontWeight: "700" },

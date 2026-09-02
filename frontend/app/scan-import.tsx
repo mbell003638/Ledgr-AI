@@ -56,7 +56,7 @@ function rowTitle(row: ScanRow): string {
     case "transaction": {
       const labels: Record<string, string> = {
         sale: "Sale", purchase_bill: "Purchase (bill)", receipt_in: "Money received",
-        payment_out: "Payment out", expense: "Expense",
+        payment_out: "Payment out", expense: "Expense", capital_contribution: "Capital contribution",
       };
       return labels[row.entryType] || row.entryType;
     }
@@ -95,7 +95,7 @@ export default function ScanImport() {
 
   const friendlyError = (e: any): string => {
     const message = String(e?.message || "Analysis failed");
-    if (/api key/i.test(message)) return "No AI key configured. Open Settings → AI Provider and add your API key, then try again.";
+    if (/api key/i.test(message)) return "This document could not be understood locally and cloud vision is not configured. Paste clearer text, use a page image, or add an AI key in Settings.";
     if (/network request failed|failed to fetch|timed out/i.test(message)) return "Could not reach the AI provider — you may be offline. Check your connection and try again.";
     return message;
   };
@@ -113,7 +113,7 @@ export default function ScanImport() {
       const partnership = config?.style === "retail_partnership";
       let investors: { id: string; name: string; profitSharePct: number }[] = [];
       const [investorResult] = await Promise.allSettled([
-        partnership ? api.listInvestors() : Promise.resolve([]),
+        api.listInvestors(),
       ]);
       if (investorResult.status === "fulfilled") investors = investorResult.value;
       const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
@@ -321,6 +321,12 @@ export default function ScanImport() {
     if (r.row.kind === "transaction" && (r.row.entryType === "purchase_bill" || r.row.entryType === "payment_out") && !r.partyText.trim()) {
       return "Supplier name is required";
     }
+    if (r.row.kind === "transaction" && r.row.entryType === "capital_contribution") {
+      if (!r.partyText.trim()) return "Capital Account name is required";
+      const matches = configuredInvestors.filter((member) => member.name.trim().toLowerCase() === r.partyText.trim().toLowerCase());
+      if (matches.length !== 1) return `Choose one existing Capital Account named "${r.partyText.trim()}"`;
+      if (r.row.method === "credit") return "A capital contribution needs a cash, bank, card, or mobile account";
+    }
     if ((r.row.kind === "asset" || r.row.kind === "liability" || r.row.kind === "partner") && !r.partyText.trim()) return "Name is required";
     return null;
   };
@@ -333,6 +339,13 @@ export default function ScanImport() {
     const row = r.row;
     if (row.kind === "transaction") {
       const notes = scanNote(row.notes || rowTitle(row));
+      if (row.entryType === "capital_contribution") {
+        const investors = await api.listInvestors();
+        const matches = investors.filter((member) => member.name.trim().toLowerCase() === party.toLowerCase());
+        if (matches.length !== 1) throw new Error(`No unique Capital Account named "${party}" was found. Add or select it first.`);
+        await api.depositInvestorCapital(matches[0].id, { amount, date, notes });
+        return;
+      }
       const role = row.entryType === "purchase_bill" || row.entryType === "payment_out" ? "supplier"
         : row.entryType === "receipt_in" || (row.entryType === "sale" && row.method === "credit") ? "customer"
         : null;
@@ -732,7 +745,7 @@ export default function ScanImport() {
         {phase === "busy" && (
           <View style={{ alignItems: "center", padding: theme.spacing.xl }}>
             <ActivityIndicator color={theme.color.brandPrimary} size="large" />
-            <Text style={styles.hint}>AI is analyzing the document…</Text>
+            <Text style={styles.hint}>Reading the document and preparing a review…</Text>
             <Text style={[styles.hint, { textAlign: "center" }]}>Temporary provider or network failures retry automatically. A retry can take up to about two minutes.</Text>
           </View>
         )}
@@ -799,7 +812,7 @@ export default function ScanImport() {
             {flagged.length > 0 ? (
               <>
                 <Text style={styles.section}>Needs review — excluded ({flagged.length})</Text>
-                <Text style={[styles.infoText, { marginBottom: theme.spacing.sm }]}>AI could not map these figures safely. They are not selected or imported; check the document, correct the editable proposals above, or rescan.</Text>
+                <Text style={[styles.infoText, { marginBottom: theme.spacing.sm }]}>Ledgr could not map these figures safely. They are not selected or imported; check the document, correct the editable proposals above, or rescan.</Text>
                 {flagged.map((f, i) => (
                   <View key={i} style={[styles.row, { borderLeftColor: theme.color.error }]} testID={`scan-flagged-${i}`}>
                     <View style={styles.rowHeader}>

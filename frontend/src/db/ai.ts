@@ -10,6 +10,7 @@ import { localTodayIso } from '../utils/dateValidation';
 export type ProviderId = 'gemini' | 'openai' | 'anthropic';
 export type VoiceProvider = 'auto' | 'android-device' | 'cloud';
 export type OcrProvider = 'auto' | 'android-device' | 'cloud';
+export type InterpretationProvider = 'auto' | 'android-device' | 'cloud';
 
 // Default provider used when the stored provider is missing/unknown/legacy.
 export const DEFAULT_PROVIDER: ProviderId = 'gemini';
@@ -27,6 +28,7 @@ export interface AIConfig {
   baseUrl?: string; // OpenAI-compatible or Anthropic-compatible endpoint
   voiceProvider?: VoiceProvider;
   ocrProvider?: OcrProvider;
+  interpretationProvider?: InterpretationProvider;
 }
 
 export interface ProviderMeta {
@@ -597,7 +599,7 @@ export const ANALYZE_DOCUMENT_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'] },
+          type: { type: 'string', enum: ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense', 'capital_contribution'] },
           date: { type: 'string' },
           partyName: { type: 'string' },
           amount: { type: 'number' },
@@ -659,7 +661,7 @@ export function buildAnalyzeDocumentPrompt(pastedText?: string): string {
     "- If a figure, label, or date is unclear, omit that field or flag the uncertainty in the summary; never guess it from today's date or surrounding values.\n" +
     "- docType: classify as 'receipt', 'statement', 'closing_report', 'transaction_list', or 'other'.\n" +
     "- entries[]: individual dated transactions. type is 'sale' (revenue), 'purchase_bill' (bought from a supplier), " +
-    "'receipt_in' (money received), 'payment_out' (money paid out to a supplier/party), or 'expense' (operating cost). " +
+    "'receipt_in' (money received), 'payment_out' (money paid out to a supplier/party), 'expense' (operating cost), or 'capital_contribution' only when the document explicitly records owner/partner capital being contributed. " +
          "Use ISO dates (YYYY-MM-DD); amounts are positive numbers; method is one of 'cash', 'bank', 'card', 'mobile', 'upi', or 'credit' when stated. Never silently convert a stated bank, card, or mobile method to cash.\n" +
 
     '- setup: fill ONLY for balance/closing-style documents that show point-in-time balances (opening balances, closing report, ' +

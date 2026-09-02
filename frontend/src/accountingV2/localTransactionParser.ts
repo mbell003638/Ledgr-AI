@@ -1,0 +1,258 @@
+import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
+import {
+  resolveVoicePartyCommand,
+  type VoiceCommand,
+  type VoicePartyDirectory,
+} from './voicePartyResolution';
+
+export type LocalTransactionMissingField = 'amount' | 'date' | 'party' | 'party_role' | 'method' | 'transaction_type';
+
+export type LocalTransactionContinuation = {
+  originalTranscript: string;
+  partial: VoiceCommand;
+  missingField: LocalTransactionMissingField;
+};
+
+export type LocalTransactionOutcome =
+  | { status: 'confident'; command: VoiceCommand; confidence: number; source: 'local-rules' }
+  | {
+      status: 'clarification';
+      question: string;
+      partial: VoiceCommand;
+      confidence: number;
+      continuation: LocalTransactionContinuation;
+      source: 'local-rules';
+    }
+  | { status: 'unsupported'; reason: string; confidence: 0; source: 'local-rules' };
+
+export type LocalTransactionOptions = {
+  /** Local calendar date used for "today" and "yesterday". */
+  today?: string;
+  /** Ask for the settlement account instead of silently assuming cash. */
+  requirePaymentMethod?: boolean;
+};
+
+const MONEY = /(?:[$€£₹]\s*)?(\d[\d,]*(?:\.\d{1,2})?)\s*(?:[$€£₹]|\b(?:USD|CAD|EUR|GBP|INR)\b)?/gi;
+const METHOD_WORDS = /\b(cash|bank(?:\s+transfer)?|card|mobile|upi)\b/i;
+
+function isoDaysBefore(iso: string, days: number): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() - days);
+  return localTodayIso(date);
+}
+
+function parseDate(transcript: string, today: string): { date?: string; invalid?: boolean } {
+  if (/\byesterday\b/i.test(transcript)) return { date: isoDaysBefore(today, 1) };
+  if (/\btoday\b/i.test(transcript)) return { date: today };
+
+  const match = transcript.match(/\b(\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4})\b/);
+  if (!match) return {};
+  const normalized = normalizeDateInput(match[1]);
+  return isValidDateString(normalized) ? { date: normalized } : { invalid: true };
+}
+
+function parseAmount(transcript: string): number | undefined {
+  const withoutDates = transcript
+    .replace(/\b\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2}\b/g, ' ')
+    .replace(/\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\b/g, ' ');
+  for (const match of withoutDates.matchAll(MONEY)) {
+    const amount = Number(match[1].replace(/,/g, ''));
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  }
+  return undefined;
+}
+
+function parseMethod(transcript: string): VoiceCommand['method'] {
+  const match = transcript.match(METHOD_WORDS)?.[1]?.toLowerCase();
+  if (!match) return undefined;
+  if (match === 'upi') return 'mobile';
+  return match.startsWith('bank') ? 'bank' : match;
+}
+
+function tidyName(value: string): string {
+  return value
+    .replace(MONEY, ' ')
+    .replace(/\b(?:today|yesterday|now|on\s+credit|credit|cash|bank(?:\s+transfer)?|card|mobile|upi)\b/gi, ' ')
+    .replace(/\b(?:supplier|vendor|customer|client|owner|partner|capital\s+account)\b/gi, ' ')
+    .replace(/\b(?:by|via|using|as|for)\b[\s\S]*$/i, ' ')
+    .replace(/[.,!?;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function commonCommand(transcript: string, options: LocalTransactionOptions): Pick<VoiceCommand, 'amount' | 'date' | 'method' | 'notes'> & { invalidDate?: boolean } {
+  const today = options.today && isValidDateString(options.today) ? options.today : localTodayIso();
+  const parsedDate = parseDate(transcript, today);
+  return {
+    amount: parseAmount(transcript),
+    ...(parsedDate.date ? { date: parsedDate.date } : {}),
+    method: parseMethod(transcript),
+    notes: transcript.trim(),
+    ...(parsedDate.invalid ? { invalidDate: true } : {}),
+  };
+}
+
+function parseCommand(transcript: string, options: LocalTransactionOptions): VoiceCommand | null {
+  const text = transcript.trim();
+  if (!text || text.length > 1_000) return null;
+  const common = commonCommand(text, options);
+
+  // Capital movements are checked before generic receipts/payments so the
+  // accounting meaning is not lost when the sentence also contains "cash".
+  if (/\b(?:invested|contributed|capital\s+(?:contribution|deposit|injection)|added\s+capital)\b/i.test(text)) {
+    const leading = text.match(/^([\p{L}][\p{L}\p{M}' .-]{0,100}?)\s+(?:invested|contributed)\b/iu)?.[1];
+    const from = text.match(/\bfrom\s+([\s\S]+)$/i)?.[1];
+    const partnerName = tidyName(leading || from || '');
+    return { ...common, intent: 'capital', ...(partnerName ? { partnerName } : {}), summary: `Capital contribution${common.amount ? ` of ${common.amount}` : ''}${partnerName ? ` from ${partnerName}` : ''}` };
+  }
+
+  if (/\b(?:withdrew|withdraw|drawing|personal\s+(?:use|withdrawal)|took\s+(?:out|cash))\b/i.test(text)) {
+    const leading = text.match(/^([\p{L}][\p{L}\p{M}' .-]{0,100}?)\s+(?:withdrew|withdraws?)\b/iu)?.[1];
+    const from = text.match(/\bfrom\s+([\s\S]+)$/i)?.[1];
+    const partnerName = tidyName(leading || from || '');
+    return { ...common, intent: 'drawing', ...(partnerName ? { partnerName } : {}), summary: `Capital withdrawal${common.amount ? ` of ${common.amount}` : ''}${partnerName ? ` for ${partnerName}` : ''}` };
+  }
+
+  if (/\b(?:received|collected|receipt)\b/i.test(text)) {
+    const from = text.match(/\bfrom\s+([\s\S]+)$/i)?.[1] || '';
+    const customerName = tidyName(from);
+    return {
+      ...common,
+      intent: 'receipt',
+      // Leave a named-customer receipt unallocated until the review flow can
+      // select an invoice. An unnamed receipt is an unambiguous walk-in sale.
+      ...(customerName ? {} : { receiptMode: 'cash_sale' }),
+      ...(customerName ? { customerName } : {}),
+      summary: `Receipt${common.amount ? ` of ${common.amount}` : ''}${customerName ? ` from ${customerName}` : ''}`,
+    };
+  }
+
+  if (/\b(?:cash\s+sale|sale|sold)\b/i.test(text)) {
+    return { ...common, intent: 'sale', paymentType: /\bcredit\b/i.test(text) ? 'credit' : 'cash', summary: `Sale${common.amount ? ` of ${common.amount}` : ''}` };
+  }
+
+  if (/\b(?:bill|invoice\s+from|bought|purchased?|buy)\b/i.test(text)) {
+    const from = text.match(/\bfrom\s+([\s\S]+)$/i)?.[1] || '';
+    const supplierName = tidyName(from);
+    return {
+      ...common,
+      intent: 'bill',
+      paymentType: /\b(?:on\s+credit|credit)\b/i.test(text) ? 'credit' : 'cash',
+      ...(supplierName ? { supplierName } : {}),
+      summary: `Purchase${common.amount ? ` of ${common.amount}` : ''}${supplierName ? ` from ${supplierName}` : ''}`,
+    };
+  }
+
+  if (/\b(?:spent|expense|fuel|rent|utilities|salary|wages|office\s+supplies)\b/i.test(text)) {
+    const category = tidyName(text.match(/\b(?:on|for)\s+([\s\S]+)$/i)?.[1] || '') || 'General';
+    return { ...common, intent: 'expense', category, summary: `Expense${common.amount ? ` of ${common.amount}` : ''} for ${category}` };
+  }
+
+  if (/\b(?:pay|paid|paying|send|sent|gave|transfer|transferred|settled)\b/i.test(text)) {
+    const to = text.match(/\bto\s+([\s\S]+)$/i)?.[1];
+    const afterRole = text.match(/\b(?:supplier|vendor)\s+([\s\S]+)$/i)?.[1];
+    const supplierName = tidyName(to || afterRole || '');
+    return { ...common, intent: 'supplier_payment', ...(supplierName ? { supplierName } : {}), summary: `Payment${common.amount ? ` of ${common.amount}` : ''}${supplierName ? ` to ${supplierName}` : ''}` };
+  }
+
+  return null;
+}
+
+function clarification(originalTranscript: string, partial: VoiceCommand, missingField: LocalTransactionMissingField, question: string, confidence: number): LocalTransactionOutcome {
+  return {
+    status: 'clarification', question, partial, confidence, source: 'local-rules',
+    continuation: { originalTranscript, partial, missingField },
+  };
+}
+
+/**
+ * Interprets routine accounting speech without an API call. The result is only
+ * a draft command: it never writes to the ledger and must still pass the shared
+ * proposal validator and explicit review/confirmation flow.
+ */
+export function interpretLocalTransaction(
+  transcript: string,
+  directory?: VoicePartyDirectory,
+  options: LocalTransactionOptions = {},
+): LocalTransactionOutcome {
+  const command = parseCommand(transcript, options);
+  if (!command) return { status: 'unsupported', reason: 'The local parser could not identify a supported transaction type.', confidence: 0, source: 'local-rules' };
+  if (command.invalidDate) return clarification(transcript, command, 'date', 'I could not read that date. Please use YYYY-MM-DD.', 0.35);
+  if (!command.amount) return clarification(transcript, command, 'amount', 'What is the transaction amount?', 0.55);
+
+  if (directory && ['bill', 'supplier_payment', 'drawing', 'receipt', 'capital'].includes(String(command.intent))) {
+    const resolution = resolveVoicePartyCommand(command, transcript, directory);
+    if (!resolution.ok) return clarification(transcript, command, 'party_role', resolution.question, 0.65);
+    Object.assign(command, resolution.command);
+  } else if (['bill', 'supplier_payment'].includes(String(command.intent)) && !command.supplierName) {
+    return clarification(transcript, command, 'party', 'Which supplier is this for?', 0.6);
+  } else if (command.intent === 'capital' && !command.partnerName) {
+    return clarification(transcript, command, 'party', 'Which Capital Account made this contribution?', 0.6);
+  }
+
+  const needsMethod = options.requirePaymentMethod !== false
+    && ['expense', 'supplier_payment', 'drawing', 'capital'].includes(String(command.intent));
+  if (needsMethod && !command.method) {
+    return clarification(transcript, command, 'method', 'Was this Cash, Bank, Card, or Mobile?', 0.78);
+  }
+  return { status: 'confident', command, confidence: 0.92, source: 'local-rules' };
+}
+
+/** Continue one focused clarification without discarding the original draft. */
+export function continueLocalTransaction(
+  pending: LocalTransactionContinuation,
+  answer: string,
+  directory?: VoicePartyDirectory,
+  options: LocalTransactionOptions = {},
+): LocalTransactionOutcome {
+  const command: VoiceCommand = { ...pending.partial };
+  let resolutionTranscript = pending.originalTranscript;
+  if (pending.missingField === 'amount') command.amount = parseAmount(answer);
+  if (pending.missingField === 'date') {
+    const today = options.today && isValidDateString(options.today) ? options.today : localTodayIso();
+    const parsedDate = parseDate(answer, today);
+    if (parsedDate.date) {
+      command.date = parsedDate.date;
+      delete command.invalidDate;
+    }
+  }
+  if (pending.missingField === 'method') command.method = parseMethod(answer);
+  if (pending.missingField === 'party') {
+    const name = tidyName(answer);
+    if (command.intent === 'capital' || command.intent === 'drawing') command.partnerName = name;
+    else if (command.intent === 'receipt') command.customerName = name;
+    else command.supplierName = name;
+  }
+  if (pending.missingField === 'party_role' && directory) {
+    resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
+    const resolution = resolveVoicePartyCommand(command, resolutionTranscript, directory);
+    if (!resolution.ok) return clarification(pending.originalTranscript, command, 'party_role', resolution.question, 0.65);
+    Object.assign(command, resolution.command);
+  }
+
+  if (!command.amount) return clarification(pending.originalTranscript, command, 'amount', 'What is the transaction amount?', 0.55);
+  if (pending.missingField === 'date' && !command.date) return clarification(pending.originalTranscript, command, 'date', 'Please use a valid date such as 2026-09-01.', 0.5);
+  if (pending.missingField === 'method' && !command.method) return clarification(pending.originalTranscript, command, 'method', 'Please choose Cash, Bank, Card, or Mobile.', 0.7);
+  if (pending.missingField === 'party' && !(command.supplierName || command.customerName || command.partnerName)) {
+    return clarification(pending.originalTranscript, command, 'party', 'Which account or party is this for?', 0.55);
+  }
+  return interpretResolvedCommand(resolutionTranscript, command, directory, options);
+}
+
+function interpretResolvedCommand(
+  originalTranscript: string,
+  command: VoiceCommand,
+  directory: VoicePartyDirectory | undefined,
+  options: LocalTransactionOptions,
+): LocalTransactionOutcome {
+  if (directory && ['bill', 'supplier_payment', 'drawing', 'receipt', 'capital'].includes(String(command.intent))) {
+    const resolution = resolveVoicePartyCommand(command, originalTranscript, directory);
+    if (!resolution.ok) return clarification(originalTranscript, command, 'party_role', resolution.question, 0.65);
+    command = resolution.command;
+  }
+  const needsMethod = options.requirePaymentMethod !== false
+    && ['expense', 'supplier_payment', 'drawing', 'capital'].includes(String(command.intent));
+  if (needsMethod && !command.method) return clarification(originalTranscript, command, 'method', 'Was this Cash, Bank, Card, or Mobile?', 0.78);
+  return { status: 'confident', command, confidence: 0.9, source: 'local-rules' };
+}

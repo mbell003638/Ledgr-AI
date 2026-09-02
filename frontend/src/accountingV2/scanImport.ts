@@ -11,8 +11,8 @@
 import { MAX_AI_AMOUNT, MIN_AI_YEAR, MAX_AI_YEAR } from './aiActions';
 import { normalizeDateInput, isValidDateString } from '../utils/dateValidation';
 
-export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense';
-export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense'];
+export type ScanEntryType = 'sale' | 'purchase_bill' | 'receipt_in' | 'payment_out' | 'expense' | 'capital_contribution';
+export const SCAN_ENTRY_TYPES: ScanEntryType[] = ['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense', 'capital_contribution'];
 
 export type ScanPaymentMethod = 'cash' | 'bank' | 'card' | 'mobile' | 'credit';
 export function normalizeScanMethod(value: unknown): ScanPaymentMethod | null {
@@ -237,7 +237,7 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
       continue;
     }
     const resolvedMethod: ScanPaymentMethod = method || 'cash';
-    if (['receipt_in', 'payment_out', 'expense'].includes(entry.type as string) && resolvedMethod === 'credit') {
+    if (['receipt_in', 'payment_out', 'expense', 'capital_contribution'].includes(entry.type as string) && resolvedMethod === 'credit') {
       flaggedRows.push({ label, reason: 'Credit is not a payment account for this transaction type; choose cash, bank, card, or mobile' });
       continue;
     }

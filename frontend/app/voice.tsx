@@ -9,8 +9,8 @@ import { useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
-import { resolveVoicePartyCommand } from "@/src/accountingV2/voicePartyResolution";
-import { buildVoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
+import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 
 import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
@@ -34,28 +34,34 @@ export default function VoiceModal() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [validatedAction, setValidatedAction] = useState<AssistantProposalValidationResult | null>(null);
+  const [pendingClarification, setPendingClarification] = useState<LocalTransactionContinuation | null>(null);
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
+  const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
   useEffect(() => {
     const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
-    if (text) { setTranscript(text); void buildVoiceDraft(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
+    if (text) { setTranscript(text); void buildVoiceDraftRef.current(text).then((draft) => { setParsed(draft.parsed); setValidatedAction(draft.validation); setPhase('confirm'); }).catch((error: any) => { setError(error?.message || 'Could not prepare the Assistant draft.'); setPhase('error'); }); }
   }, [params.assistantText]);
 
 
-  const buildVoiceDraft = async (txt: string) => {
-    const parsedCommand = await api.parseCommand(txt);
-    const [suppliers, customers, capitalAccounts] = await Promise.all([
-      api.listSuppliers(), api.listDebtors(), api.listInvestors(),
-    ]);
-    const resolution = resolveVoicePartyCommand(parsedCommand, txt, { suppliers, customers, capitalAccounts });
-    if (!resolution.ok) throw new Error(resolution.question);
-    return buildVoiceTransactionDraft(resolution.command);
+  const buildVoiceDraft = async (txt: string, answer = "") => {
+    const result = await prepareVoiceTransactionDraft(txt, pendingClarification, answer);
+    if (result.status === "clarification") {
+      setPendingClarification(result.continuation);
+      setClarificationAnswer("");
+      throw new Error(result.question);
+    }
+    setPendingClarification(null);
+    setClarificationAnswer("");
+    return result.draft;
   };
+  buildVoiceDraftRef.current = buildVoiceDraft;
   const start = async () => {
-    setError(""); setTranscript(""); setParsed(null);
+    setError(""); setTranscript(""); setParsed(null); setPendingClarification(null); setClarificationAnswer("");
     try {
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
@@ -83,7 +89,7 @@ export default function VoiceModal() {
       if (!txt) throw new Error("Nothing was heard. Try again.");
       setTranscript(txt);
 
-      const draft = await buildVoiceDraft(txt);
+      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
       setParsed(draft.parsed);
       setValidatedAction(draft.validation);
       setPhase("confirm");
@@ -96,9 +102,10 @@ export default function VoiceModal() {
   const rebuildDraft = async () => {
     const txt = transcript.trim();
     if (!txt) return;
+    if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const draft = await buildVoiceDraft(txt);
+      const draft = await buildVoiceDraft(txt, clarificationAnswer.trim());
       setParsed(draft.parsed);
       setValidatedAction(draft.validation);
       setPhase("confirm");
@@ -171,6 +178,11 @@ export default function VoiceModal() {
         const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
         if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
         await api.drawInvestorFunds(match[0].id, { date, amount: parsed.amount, method: parsed.method || "cash", notes: voiceNote(parsed.notes || parsed.summary) });
+      } else if (parsed.intent === "capital") {
+        const members = await api.listInvestors();
+        const match = members.filter((member: any) => member.name.trim().toLowerCase() === String(parsed.partnerName || "").trim().toLowerCase());
+        if (match.length !== 1) throw new Error(`Capital Account "${parsed.partnerName}" was not found uniquely.`);
+        await api.depositInvestorCapital(match[0].id, { date, amount: parsed.amount, notes: voiceNote(parsed.notes || parsed.summary) });
       } else if (parsed.intent === "inventory") {
         await api.recordV2InventoryCount({ date, value: Number(parsed.amount), notes: voiceNote(parsed.notes || parsed.summary) });
       } else {
@@ -185,7 +197,7 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
-    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError("");
+    setPhase("idle"); setTranscript(""); setParsed(null); setValidatedAction(null); setError(""); setPendingClarification(null); setClarificationAnswer("");
   };
 
   return (
@@ -230,6 +242,7 @@ export default function VoiceModal() {
             <View style={styles.transcriptBox}>
               <Text style={styles.transcriptLabel}>Transcript</Text>
               <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={styles.transcript} />
+              {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={styles.clarificationAnswer} /> : null}
               {phase === "confirm" || phase === "error" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10 }]}><Text style={styles.actionText}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
@@ -308,6 +321,7 @@ function makeStyles(theme: any) { return StyleSheet.create({
   transcriptBox: { marginTop: 8, padding: theme.spacing.md, backgroundColor: theme.color.surfaceTertiary, borderRadius: theme.radius.md },
   transcriptLabel: { fontSize: 11, color: theme.color.muted, fontWeight: "500", textTransform: "uppercase", letterSpacing: 0.5 },
   transcript: { minHeight: 74, color: theme.color.onSurface, fontSize: 14, lineHeight: 20, marginTop: 6, padding: 10, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md, textAlignVertical: "top" },
+  clarificationAnswer: { minHeight: 44, color: theme.color.onSurface, fontSize: 14, marginTop: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: theme.color.surface, borderColor: theme.color.border, borderWidth: 1, borderRadius: theme.radius.md },
   draft: { marginTop: theme.spacing.md, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.color.brandTertiary },
   draftLabel: { fontSize: 11, color: theme.color.brandPrimary, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   draftSummary: { fontSize: 15, color: theme.color.onSurface, fontWeight: "600", marginTop: 6 },

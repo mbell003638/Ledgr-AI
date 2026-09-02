@@ -23,6 +23,7 @@ export function buildVoiceTransactionDraft(parsed: VoiceCommand): VoiceTransacti
     receipt: { type: 'create_receipt', params: { amount: parsed.amount, date: parsed.date, mode: parsed.receiptMode, customerName: parsed.customerName, method: parsed.method, notes: parsed.notes || parsed.summary } },
     supplier_payment: { type: 'create_supplier_payment', params: { supplierName: parsed.supplierName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     drawing: { type: 'create_drawing', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
+    capital: { type: 'add_capital', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     inventory: { type: 'record_inventory', params: { amount: parsed.amount, date: parsed.date, notes: parsed.notes || parsed.summary } },
   };
 

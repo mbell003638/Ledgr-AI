@@ -20,7 +20,7 @@ describe('analyzeDocumentAI schema/prompt contract', () => {
     const schema: any = ANALYZE_DOCUMENT_SCHEMA;
     expect(schema.required).toEqual(['docType', 'summary', 'entries']);
     expect(schema.properties.docType.enum).toEqual(['receipt', 'statement', 'closing_report', 'transaction_list', 'other']);
-    expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense']);
+    expect(schema.properties.entries.items.properties.type.enum).toEqual(['sale', 'purchase_bill', 'receipt_in', 'payment_out', 'expense', 'capital_contribution']);
     expect(schema.properties.entries.items.properties.method.enum).toEqual(['cash', 'bank', 'card', 'mobile', 'upi', 'credit']);
     const setup = schema.properties.setup.properties;
     for (const key of ['asOfDate', 'openingCash', 'stockValue', 'extraAssets', 'extraLiabilities', 'creditorsTotal', 'partners']) {

@@ -7,6 +7,7 @@ import * as db from '@/src/db/local';
 import * as ai from '@/src/db/ai';
 import type { AIConfig } from '@/src/db/ai';
 import { recognizeLocalOcr } from '@/src/utils/localOcr';
+import { interpretLocalDocumentText } from '@/src/accountingV2/localDocumentParser';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
@@ -55,6 +56,7 @@ const AI_TRANSCRIPTION_API_KEY_KEY = 'ai_transcription_api_key';
 const AI_BASE_URL_KEY = 'ai_base_url';
 const AI_VOICE_PROVIDER_KEY = 'ai_voice_provider';
 const AI_OCR_PROVIDER_KEY = 'ai_ocr_provider';
+const AI_INTERPRETATION_PROVIDER_KEY = 'ai_interpretation_provider';
 
 // User-preference + UI-customization AsyncStorage keys that live OUTSIDE the
 // per-book settings blob. A factory reset must wipe these too so the device is
@@ -83,7 +85,7 @@ let webSessionTranscriptionAiKey = '';
 const isWebRuntime = typeof window !== 'undefined' && typeof document !== 'undefined';
 
 export async function getAIConfig(): Promise<AIConfig> {
-  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider] = await Promise.all([
+  const [provider, secureKey, storedKey, model, visionModel, transcriptionModel, transcriptionBaseUrl, secureTranscriptionKey, baseUrl, voiceProvider, ocrProvider, interpretationProvider] = await Promise.all([
     AsyncStorage.getItem(AI_PROVIDER_KEY),
     isWebRuntime ? Promise.resolve(webSessionAiKey) : storage.secureGet(AI_API_KEY_KEY, ''),
     isWebRuntime ? Promise.resolve(null) : AsyncStorage.getItem(AI_API_KEY_KEY),
@@ -95,6 +97,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     AsyncStorage.getItem(AI_BASE_URL_KEY),
     AsyncStorage.getItem(AI_VOICE_PROVIDER_KEY),
     AsyncStorage.getItem(AI_OCR_PROVIDER_KEY),
+    AsyncStorage.getItem(AI_INTERPRETATION_PROVIDER_KEY),
   ]);
   if (isWebRuntime) await AsyncStorage.removeItem(AI_API_KEY_KEY).catch(() => {});
   const resolvedKey = isWebRuntime ? webSessionAiKey : (secureKey || storedKey || '');
@@ -115,6 +118,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     baseUrl: baseUrl ?? undefined,
     voiceProvider: voiceProvider === 'android-device' || voiceProvider === 'cloud' ? voiceProvider : 'auto',
     ocrProvider: ocrProvider === 'android-device' || ocrProvider === 'cloud' ? ocrProvider : 'auto',
+    interpretationProvider: interpretationProvider === 'android-device' || interpretationProvider === 'cloud' ? interpretationProvider : 'auto',
   };
 }
 
@@ -146,6 +150,7 @@ export async function setAIConfig(cfg: Partial<AIConfig>) {
   if (cfg.baseUrl !== undefined) ops.push(AsyncStorage.setItem(AI_BASE_URL_KEY, ai.validateAIBaseUrl(cfg.baseUrl)));
   if (cfg.voiceProvider !== undefined) ops.push(AsyncStorage.setItem(AI_VOICE_PROVIDER_KEY, cfg.voiceProvider));
   if (cfg.ocrProvider !== undefined) ops.push(AsyncStorage.setItem(AI_OCR_PROVIDER_KEY, cfg.ocrProvider));
+  if (cfg.interpretationProvider !== undefined) ops.push(AsyncStorage.setItem(AI_INTERPRETATION_PROVIDER_KEY, cfg.interpretationProvider));
   const [secureOk, transcriptionSecureOk] = await Promise.all([
     secureKeyWrite ?? Promise.resolve(true),
     transcriptionKeyWrite ?? Promise.resolve(true),
@@ -1768,7 +1773,7 @@ export const api = {
       storage.secureRemove(AI_API_KEY_KEY),
       storage.secureRemove(AI_TRANSCRIPTION_API_KEY_KEY),
       AsyncStorage.multiRemove([
-        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY,
+        AI_PROVIDER_KEY, AI_API_KEY_KEY, AI_MODEL_KEY, AI_VISION_MODEL_KEY, AI_TRANSCRIPTION_MODEL_KEY, AI_TRANSCRIPTION_BASE_URL_KEY, AI_TRANSCRIPTION_API_KEY_KEY, AI_BASE_URL_KEY, AI_VOICE_PROVIDER_KEY, AI_OCR_PROVIDER_KEY, AI_INTERPRETATION_PROVIDER_KEY,
         // Device-level user prefs + UI customizations (theme, animations, tile
         // order/usage). The user wants EVERYTHING wiped on factory reset. [reset]
         ...FACTORY_RESET_PREF_KEYS,
@@ -1784,14 +1789,39 @@ export const api = {
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },
   analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string; uri?: string }) => {
     const config = await getAIConfig();
+    const mode = config.ocrProvider || 'auto';
     const isImage = Boolean(input.uri && input.mimeType?.startsWith('image/'));
-    if (isImage && config.ocrProvider !== 'cloud') {
-      try {
-        const text = await recognizeLocalOcr(input.uri!);
-        return await ai.analyzeDocumentAI(config, { text });
-      } catch (error) {
-        if (config.ocrProvider === 'android-device') throw error;
+    const isPdf = input.mimeType === 'application/pdf';
+    let localText = String(input.text || '').trim();
+    let localFailure = '';
+
+    if (mode !== 'cloud' && isPdf && !localText) {
+      if (mode === 'android-device') {
+        throw new Error('On-device OCR cannot read a PDF directly. Import page images or paste the PDF text. Nothing was sent to a cloud provider.');
       }
+    }
+    if (mode !== 'cloud' && isImage) {
+      try {
+        localText = await recognizeLocalOcr(input.uri!);
+      } catch (error) {
+        localFailure = String((error as any)?.message || 'Android OCR could not read this image.');
+        if (mode === 'android-device') throw error;
+      }
+    }
+    if (mode !== 'cloud' && localText) {
+      const [suppliers, customers, capitalAccounts] = await Promise.all([
+        api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+      ]);
+      const local = interpretLocalDocumentText(localText, { directory: { suppliers, customers, capitalAccounts } });
+      if (local.status === 'confident') return local.document;
+      if (local.status === 'clarification' && local.document) {
+        return { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() };
+      }
+      localFailure = local.status === 'unsupported' ? local.reason : local.question;
+      if (mode === 'android-device') throw new Error(localFailure);
+    }
+    if (mode !== 'cloud' && !config.apiKey.trim()) {
+      throw new Error(`${localFailure || 'Ledgr could not safely understand this document locally.'} Edit or paste clearer text, use a page image, or configure cloud vision for complex documents.`);
     }
     return ai.analyzeDocumentAI(config, input);
   },

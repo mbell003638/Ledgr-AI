@@ -18,7 +18,7 @@ describe('V2 UI contracts', () => {
   it.each(['ask.tsx', 'voice.tsx'])('%s routes writes through the explicit V2 confirmation gate', (screen) => {
     const source = readApp(screen);
 
-    expect(source).toMatch(/validateAssistantProposal|buildVoiceTransactionDraft/);
+    expect(source).toMatch(/validateAssistantProposal|buildVoiceTransactionDraft|prepareVoiceTransactionDraft/);
     expect(source).toContain('executeAssistantProposal');
     expect(source).toMatch(/executeAssistantProposal\([\s\S]*?\{\s*confirmed:\s*true\s*\}/);
   });

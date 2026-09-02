@@ -9,6 +9,12 @@ export type VoicePartyDirectory = {
 export type VoiceCommand = Record<string, unknown> & {
   intent?: string;
   amount?: number;
+  date?: string;
+  method?: string;
+  paymentType?: 'cash' | 'credit';
+  receiptMode?: 'cash_sale' | 'against_invoice' | 'advance';
+  category?: string;
+  notes?: string;
   supplierName?: string;
   customerName?: string;
   partnerName?: string;
@@ -95,7 +101,7 @@ export function resolveVoicePartyCommand(
   transcript: string,
   directory: VoicePartyDirectory,
 ): VoicePartyResolution {
-  if (!['bill', 'supplier_payment', 'drawing', 'receipt'].includes(String(input.intent || ''))) return { ok: true, command: { ...input } };
+  if (!['bill', 'supplier_payment', 'drawing', 'receipt', 'capital'].includes(String(input.intent || ''))) return { ok: true, command: { ...input } };
 
   const name = spokenName(input);
   if (!name && input.intent === 'receipt' && input.receiptMode === 'cash_sale') return { ok: true, command: { ...input } };
@@ -114,6 +120,13 @@ export function resolveVoicePartyCommand(
   const explicitlyCapital = /\b(capital|partner|owner|drawing|withdraw(?:al|n)?)\b/i.test(transcript);
   const soundsLikePayment = /\b(pay|paid|payment|settled?)\b/i.test(transcript);
   const soundsLikePurchase = /\b(bill|invoice|bought|buy|purchase[ds]?)\b/i.test(transcript);
+
+  if (input.intent === 'capital') {
+    const capital = one(capitalAccounts);
+    return capital && (explicitlyCapital || (suppliers.length === 0 && customers.length === 0))
+      ? { ok: true, command: { ...input, intent: 'capital', partnerName: capital.name, supplierName: undefined, customerName: undefined } }
+      : roleQuestion(name, roles);
+  }
 
   if (input.intent === 'receipt') {
     const customer = one(customers);
