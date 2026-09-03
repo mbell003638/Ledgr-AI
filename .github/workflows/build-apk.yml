@@ -63,6 +63,13 @@ jobs:
         working-directory: frontend
         run: npm ci --no-audit --no-fund
 
+      - name: Fetch Needle on-device engine
+        working-directory: frontend
+        run: |
+          python -m pip install --user cactus-needle
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          node ./scripts/on-device-ai/fetch-native.mjs
+
       - name: Expo prebuild (generate android project)
         working-directory: frontend
         run: npx expo prebuild --platform android --no-install
