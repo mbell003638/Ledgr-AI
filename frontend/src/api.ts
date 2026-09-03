@@ -1799,6 +1799,10 @@ export const api = {
     const isPdf = input.mimeType === 'application/pdf';
     const hasCloudAI = Boolean(config.apiKey.trim());
 
+    const withMeta = (document: any, extra?: { notice?: string; pending?: unknown; extractedText?: string }) => ({
+      ...document,
+      __ledgrAnalysisMeta: { source: 'local', extractedText: extra?.extractedText, notice: extra?.notice, pending: extra?.pending },
+    });
     const runLocal = async (): Promise<{ document?: any; failure: string }> => {
       let localText = String(input.text || '').trim();
       let localFailure = '';
@@ -1815,12 +1819,12 @@ export const api = {
         api.listSuppliers(), api.listDebtors(), api.listInvestors(),
       ]);
       const local = interpretLocalDocumentText(localText, { directory: { suppliers, customers, capitalAccounts } });
-      if (local.status === 'confident') return { document: local.document, failure: '' };
-      if (local.status === 'clarification' && local.document && local.document.docType !== 'closing_report' && local.document.entries.length > 0 && local.document.entries.every((entry) => entry.amount > 0)) {
-        return { document: { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() }, failure: '' };
-      }
-      if (local.status === 'clarification' && local.document?.docType === 'closing_report') {
-        return { document: { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() }, failure: '' };
+      if (local.status === 'confident') return { document: withMeta(local.document, { extractedText: localText }), failure: '' };
+      if (local.status === 'clarification' && local.document) {
+        return {
+          document: withMeta(local.document, { extractedText: localText, notice: local.question, pending: local }),
+          failure: '',
+        };
       }
       return { failure: local.status === 'unsupported' ? local.reason : local.question };
     };

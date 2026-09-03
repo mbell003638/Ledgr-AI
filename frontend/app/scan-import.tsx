@@ -19,7 +19,10 @@ import {
   type ScanRow,
   type FlaggedScanRow,
 } from "@/src/accountingV2/scanImport";
+import { continueInterpretLocalDocument, type LocalDocumentOutcome } from "@/src/accountingV2/localDocumentParser";
 import { normalizeDateInput, isValidDateString } from "@/src/utils/dateValidation";
+
+type PendingDocumentClarification = Extract<LocalDocumentOutcome, { status: "clarification" }>;
 
 // Source tag prefixed onto every note/memo this screen writes (same convention
 // as [AI] on ask.tsx and [Reconcile] on reconcile.tsx).
@@ -76,6 +79,9 @@ export default function ScanImport() {
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
   const [docType, setDocType] = useState("");
+  const [analysisNotice, setAnalysisNotice] = useState("");
+  const [pendingDocumentClarification, setPendingDocumentClarification] = useState<PendingDocumentClarification | null>(null);
+  const [documentFollowUpAnswer, setDocumentFollowUpAnswer] = useState("");
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [flagged, setFlagged] = useState<FlaggedScanRow[]>([]);
   const [pasteText, setPasteText] = useState("");
@@ -100,56 +106,83 @@ export default function ScanImport() {
     return message;
   };
 
+  const presentFromRaw = async (raw: any) => {
+    const analysisMeta = raw?.__ledgrAnalysisMeta as { notice?: string; pending?: PendingDocumentClarification; extractedText?: string } | undefined;
+    const mapped = mapAnalyzedDocument(raw);
+    const config = await api.getV2BookConfig().catch(() => null);
+    const partnership = config?.style === "retail_partnership";
+    let investors: { id: string; name: string; profitSharePct: number }[] = [];
+    const [investorResult] = await Promise.allSettled([api.listInvestors()]);
+    if (investorResult.status === "fulfilled") investors = investorResult.value;
+    const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
+      const importable = true;
+      let infoReason: string | undefined;
+      if (row.kind === "partner") {
+        const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
+        if (!match && !partnership) {
+          infoReason = `Capital accounts require Equity Split and matching capital accounts before this report can be imported.`;
+        }
+      }
+      return {
+        id: index,
+        row,
+        checked: importable,
+        importable,
+        infoReason,
+        amountText: String(row.kind === "transaction" ? row.amount : row.kind === "opening_balances" ? row.openingCash : row.kind === "partner" ? row.capital : row.amount),
+        stockText: row.kind === "opening_balances" ? String(row.stockValue) : "",
+        shareText: row.kind === "partner" && Number.isFinite(row.profitSharePct) ? String(row.profitSharePct) : "",
+        dateText: row.kind === "transaction" ? row.date : row.kind === "opening_balances" ? row.asOfDate : row.date,
+        partyText: row.kind === "transaction" ? row.partyName : row.kind === "opening_balances" ? "" : row.name,
+      };
+    });
+    setDocType(mapped.docType);
+    setSummary(mapped.summary);
+    setRows(reviewRows);
+    setFlagged(mapped.flaggedRows);
+    setPartnershipMode(partnership);
+    setConfiguredInvestors(investors);
+    setPartyPreflightItems([]);
+    setPartyLookupReady(false);
+    setAnalysisNotice(analysisMeta?.notice || "");
+    setPendingDocumentClarification(analysisMeta?.pending || null);
+    setDocumentFollowUpAnswer("");
+    if (analysisMeta?.extractedText) setPasteText(analysisMeta.extractedText);
+    setPhase("review");
+  };
+
   const analyze = async (input: AnalysisInput) => {
     if (input.base64 && input.base64.length > MAX_BASE64_CHARS) {
       setError("That encoded file is too large for a direct AI upload. Try a file under 6MB, a lower-resolution scan, or paste the text instead.");
       return;
     }
     lastAnalysisInput.current = input;
-    setError(""); setPhase("busy");
+    setError(""); setAnalysisNotice(""); setPendingDocumentClarification(null); setPhase("busy");
     try {
-      const [raw, config] = await Promise.all([api.analyzeDocument(input), api.getV2BookConfig().catch(() => null)]);
-      const mapped = mapAnalyzedDocument(raw);
-      const partnership = config?.style === "retail_partnership";
-      let investors: { id: string; name: string; profitSharePct: number }[] = [];
-      const [investorResult] = await Promise.allSettled([
-        api.listInvestors(),
-      ]);
-      if (investorResult.status === "fulfilled") investors = investorResult.value;
-      const reviewRows: ReviewRow[] = mapped.validRows.map((row, index) => {
-        const importable = true;
-        let infoReason: string | undefined;
-        if (row.kind === "partner") {
-          const match = investors.find((inv) => inv.name.trim().toLowerCase() === row.name.trim().toLowerCase());
-          if (!match && !partnership) {
-            infoReason = `Capital accounts require Equity Split and matching capital accounts before this report can be imported.`;
-          }
-        }
-        return {
-          id: index,
-          row,
-          checked: importable,
-          importable,
-          infoReason,
-          amountText: String(row.kind === "transaction" ? row.amount : row.kind === "opening_balances" ? row.openingCash : row.kind === "partner" ? row.capital : row.amount),
-          stockText: row.kind === "opening_balances" ? String(row.stockValue) : "",
-          shareText: row.kind === "partner" && Number.isFinite(row.profitSharePct) ? String(row.profitSharePct) : "",
-          dateText: row.kind === "transaction" ? row.date : row.kind === "opening_balances" ? row.asOfDate : row.date,
-          partyText: row.kind === "transaction" ? row.partyName : row.kind === "opening_balances" ? "" : row.name,
-        };
-      });
-      setDocType(mapped.docType);
-      setSummary(mapped.summary);
-      setRows(reviewRows);
-      setFlagged(mapped.flaggedRows);
-      setPartnershipMode(partnership);
-      setConfiguredInvestors(investors);
-      setPartyPreflightItems([]);
-      setPartyLookupReady(false);
-      setPhase("review");
+      await presentFromRaw(await api.analyzeDocument(input));
     } catch (e: any) {
       setError(friendlyError(e));
       setPhase("pick");
+    }
+  };
+
+  const continueDocumentDraft = async () => {
+    if (!pendingDocumentClarification || !documentFollowUpAnswer.trim()) return;
+    setError(""); setPhase("busy");
+    try {
+      const result = continueInterpretLocalDocument(pendingDocumentClarification, documentFollowUpAnswer);
+      if (result.status === "unsupported") throw new Error(result.reason);
+      await presentFromRaw({
+        ...(result.document || {}),
+        __ledgrAnalysisMeta: {
+          source: "local",
+          notice: result.status === "clarification" ? result.question : undefined,
+          pending: result.status === "clarification" ? result : undefined,
+        },
+      });
+    } catch (e: any) {
+      setError(e?.message || "Could not update the local document draft.");
+      setPhase("review");
     }
   };
 
@@ -397,7 +430,7 @@ export default function ScanImport() {
   const selected = hasBalancedOpeningSet
     ? [...selectedTransactions, ...includedSetupRows]
     : rows.filter((r) => r.checked && r.importable);
-  const selectedHasProblems = selected.some((review) => !!rowProblem(review));
+  const selectedHasProblems = Boolean(pendingDocumentClarification) || selected.some((review) => !!rowProblem(review));
   const screenBusy = importing || preflighting;
 
   const partyRequests = (): MissingPartyLedger[] => {
@@ -777,6 +810,8 @@ export default function ScanImport() {
           <>
             <Card testID="scan-summary">
               <Text style={styles.section2}>AI read this as: {docType.replace(/_/g, " ")}</Text>
+              {analysisNotice ? <Text style={styles.flaggedText} testID="scan-analysis-notice">⚠ {analysisNotice} Review and correct the fields below before importing.</Text> : null}
+              {pendingDocumentClarification && phase === "review" ? <View style={{ marginTop: theme.spacing.sm }}><TextInput testID="scan-follow-up-input" accessibilityLabel="Document follow-up answer" value={documentFollowUpAnswer} onChangeText={setDocumentFollowUpAnswer} placeholder={pendingDocumentClarification.candidates?.length ? `Choose: ${pendingDocumentClarification.candidates.join(" / ")}` : "Your answer"} placeholderTextColor={theme.color.muted} style={styles.fieldInput} /><Pressable testID="btn-scan-follow-up" onPress={() => void continueDocumentDraft()} style={[styles.actionBtn, { marginTop: theme.spacing.sm }]}><Text style={styles.actionText}>Update local draft</Text></Pressable><Text style={styles.infoText}>Import remains blocked until this accounting question is resolved.</Text></View> : null}
               <Text style={styles.hint}>{summary || "No description provided."}</Text>
             </Card>
 

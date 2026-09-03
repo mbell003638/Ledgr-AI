@@ -400,3 +400,42 @@ export function interpretLocalDocumentText(text: string, options: LocalDocumentO
   if (!date) return { status: 'clarification', confidence: 0.7, source: 'local-ocr-rules', field: 'date', question: 'What transaction date is printed on this document?', document, mapped };
   return { status: 'confident', confidence: supplier || customer ? 0.91 : totals.inferred ? 0.72 : 0.84, source: 'local-ocr-rules', document, mapped };
 }
+
+/** Applies one user answer to a pending local draft without posting. */
+export function continueInterpretLocalDocument(
+  pending: Extract<LocalDocumentOutcome, { status: 'clarification' }>,
+  answer: string,
+): LocalDocumentOutcome {
+  const value = String(answer || '').replace(/\s+/g, ' ').trim();
+  if (!value || !pending.document) return pending;
+  const document: LocalAnalyzedDocument = {
+    ...pending.document,
+    entries: pending.document.entries.map((entry) => ({ ...entry })),
+    setup: pending.document.setup ? {
+      ...pending.document.setup,
+      extraAssets: [...(pending.document.setup.extraAssets || [])],
+      extraLiabilities: [...(pending.document.setup.extraLiabilities || [])],
+      partners: [...(pending.document.setup.partners || [])],
+    } : undefined,
+  };
+  if (pending.field === 'date') {
+    const date = normalizeScanDate(value) || extractDate([value]);
+    if (!date) return pending;
+    if (document.entries[0]) document.entries[0].date = date;
+    if (document.setup) document.setup.asOfDate = date;
+  } else if (pending.field === 'amount') {
+    const amount = lastAmount(value);
+    if (amount === undefined) return pending;
+    if (!document.entries[0]) document.entries.push({ type: 'expense', amount, notes: 'Amount entered after local OCR.' });
+    else document.entries[0].amount = amount;
+  } else if (pending.field === 'party') {
+    if (document.entries[0]) document.entries[0].partyName = value;
+    else if (document.setup?.partners?.length === 1) document.setup.partners[0].name = value;
+    else return pending;
+  } else return pending;
+  const mapped = mapAnalyzedDocument(document);
+  if (document.setup && !document.setup.asOfDate && !document.entries[0]?.date) {
+    return { status: 'clarification', confidence: 0.72, source: 'local-ocr-rules', field: 'date', question: pending.question, document, mapped, candidates: pending.candidates };
+  }
+  return { status: 'confident', confidence: 0.9, source: 'local-ocr-rules', document, mapped };
+}

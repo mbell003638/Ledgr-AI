@@ -12,7 +12,7 @@ import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
 import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
-import type { VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { resolveAgainstInvoiceTarget, unpaidInvoicesForCustomer, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 
 import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
@@ -157,7 +157,7 @@ export default function VoiceModal() {
           notes: voiceNote(parsedDraft.notes || parsedDraft.summary),
         });
       } else if (parsedDraft.intent === "receipt") {
-        const mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
+        let mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
         const method = parsedDraft.method || "cash";
         let debtorId: string | null = null;
         let allocations: { invoiceId: string; amountApplied: number }[] = [];
@@ -167,10 +167,10 @@ export default function VoiceModal() {
           if (match) debtorId = match.id;
           else throw new Error(`Customer "${parsedDraft.customerName}" was not found. Add the Customer first.`);
           if (mode === "against_invoice") {
-            const invs = (await api.listInvoices())
-              .filter((i: any) => i.status !== "paid" && (i.partyId === debtorId || i.debtorId === debtorId || (i.clientName && i.clientName.trim().toLowerCase() === parsedDraft.customerName.trim().toLowerCase())))
-              .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-            if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsedDraft.amount }];
+            const unpaid = unpaidInvoicesForCustomer(await api.listInvoices(), match, parsedDraft.customerName);
+            const target = resolveAgainstInvoiceTarget(parsedDraft, unpaid);
+            if ("mode" in target) mode = "advance";
+            else allocations = [{ invoiceId: target.invoiceId, amountApplied: parsedDraft.amount }];
           }
         }
         await api.createReceipt({

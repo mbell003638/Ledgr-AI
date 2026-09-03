@@ -324,7 +324,7 @@ async function applyAction(action: { type: string; params: any }): Promise<strin
         case "quote": await api.deleteQuote(String(p.id)); break;
         case "delivery_note": await api.deleteDeliveryNote(String(p.id)); break;
         case "note": await api.deleteNote(String(p.id)); break;
-        case "inventory_count": await api.deleteV2InventoryCount(String(p.id)); break;
+        case "inventory_count": throw new Error("Inventory counts are audit records. Reverse this count, then record a corrected count.");
         case "cash_entry": await api.deleteCashEntry(String(p.id)); break;
         case "capital": {
           const memberId = String(p.memberId || "");

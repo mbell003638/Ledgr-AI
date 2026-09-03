@@ -15,6 +15,27 @@ export type VoiceTransactionDraft = {
   validation: Extract<AssistantProposalValidationResult, { ok: true }>;
 };
 
+export function unpaidInvoicesForCustomer(invoices: any[], customer: { id?: string } | undefined, customerName?: string) {
+  const name = String(customerName || '').trim().toLowerCase();
+  return invoices.filter((invoice: any) => invoice.status !== 'paid' && (
+    (customer?.id && (invoice.partyId === customer.id || invoice.debtorId === customer.id))
+    || (name && String(invoice.clientName || '').trim().toLowerCase() === name)
+  )).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+}
+
+/** Never guesses among multiple unpaid invoices. */
+export function resolveAgainstInvoiceTarget(command: VoiceCommand, invoices: any[]): { invoiceId: string } | { mode: 'advance' } {
+  if (command.invoiceId) {
+    const match = invoices.find((invoice: any) => invoice.id === command.invoiceId);
+    if (!match) throw new Error('That invoice was not found or is already paid. Choose a specific unpaid invoice.');
+    return { invoiceId: match.id };
+  }
+  if (invoices.length === 0) return { mode: 'advance' };
+  if (invoices.length === 1) return { invoiceId: invoices[0].id };
+  const list = invoices.slice(0, 5).map((invoice: any) => `${invoice.invoiceNumber || invoice.id} dated ${invoice.date}`).join('; ');
+  throw new Error(`This customer has ${invoices.length} unpaid invoices. Name the invoice number or date, or record an advance. Open invoices: ${list}`);
+}
+
 /**
  * Converts a resolved voice command into the same validated proposal shape used
  * by Ask AI. Unknown speech never reaches the generic validator as `undefined`,
@@ -26,7 +47,7 @@ export function buildVoiceTransactionDraft(parsed: VoiceCommand): VoiceTransacti
     expense: { type: 'add_expense', params: { category: parsed.category || 'General', amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     bill: { type: 'add_bill', params: { supplierName: parsed.supplierName, amount: parsed.amount, date: parsed.date, paymentType: parsed.paymentType, notes: parsed.notes || parsed.summary } },
     sale: { type: 'add_sale', params: { amount: parsed.amount, date: parsed.date, paymentType: parsed.paymentType, notes: parsed.notes || parsed.summary } },
-    receipt: { type: 'create_receipt', params: { amount: parsed.amount, date: parsed.date, mode: parsed.receiptMode, customerName: parsed.customerName, method: parsed.method, notes: parsed.notes || parsed.summary } },
+    receipt: { type: 'create_receipt', params: { amount: parsed.amount, date: parsed.date, mode: parsed.receiptMode, customerName: parsed.customerName, invoiceId: parsed.invoiceId, method: parsed.method, notes: parsed.notes || parsed.summary } },
     supplier_payment: { type: 'create_supplier_payment', params: { supplierName: parsed.supplierName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     drawing: { type: 'create_drawing', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },
     capital: { type: 'add_capital', params: { partnerName: parsed.partnerName, amount: parsed.amount, date: parsed.date, method: parsed.method, notes: parsed.notes || parsed.summary } },

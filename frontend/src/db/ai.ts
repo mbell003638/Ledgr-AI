@@ -856,7 +856,7 @@ const ACTION_SPEC =
   "- update_entry: { entity, id, memberId?, changes }\n" +
   "- delete_entry: { entity, id, memberId? }\n" +
   "Supported entities: expense, sale, bill, supplier_payment, receipt, invoice, quote, customer, supplier, delivery_note, note, inventory_count, capital, drawing, cash_entry. " +
-  "Inventory counts can be deleted but must be corrected by reversing and recording a new count; do not propose update_entry for inventory_count. Customer and Supplier records may be updated but must not be deleted here. " +
+  "Do not propose update_entry or delete_entry for inventory_count; reverse the count and record a new one. Customer and Supplier records may be updated but must not be deleted here. " +
   "For capital actions include memberId from capitalAccounts. Deleting a posted accounting entry means a safe reversal, not erasing audit history. " +
   "For 'paid X to NAME': If NAME is in capitalAccounts or a partner, propose create_drawing. If NAME is a known supplier, propose create_supplier_payment. Otherwise ask whether it is a supplier payment, partner withdrawal, expense, or something else. " +
   "For 'received X from NAME': If NAME is in capitalAccounts or a partner, propose add_capital. If NAME is a known customer, propose create_receipt. Otherwise ask whether it is a customer receipt, partner capital deposit, cash sale, or something else. " +

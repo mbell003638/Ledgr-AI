@@ -10,7 +10,7 @@ import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
 import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
-import type { VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { resolveAgainstInvoiceTarget, unpaidInvoicesForCustomer, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
@@ -194,7 +194,7 @@ export default function VoiceFab() {
         } else if (parsed.intent === "sale") {
           await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, ...locationFields });
         } else if (parsed.intent === "receipt") {
-          const mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
+          let mode = parsed.receiptMode || (parsed.customerName ? "against_invoice" : "cash_sale");
           const method = parsed.method || "cash";
           if (!parsed.customerName || mode === "cash_sale") {
             await api.createSale({ date, amount: parsed.amount, currency, notes: parsed.notes || parsed.summary, method, ...locationFields });
@@ -206,10 +206,10 @@ export default function VoiceFab() {
             if (match) debtorId = match.id;
             else throw new Error(`Customer "${parsed.customerName}" was not found. Add the Customer first.`);
             if (mode === "against_invoice") {
-              const invs = (await api.listInvoices())
-                .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsed.customerName.toLowerCase()))
-                .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-              if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsed.amount }];
+              const unpaid = unpaidInvoicesForCustomer(await api.listInvoices(), match, parsed.customerName);
+              const target = resolveAgainstInvoiceTarget(parsed, unpaid);
+              if ("mode" in target) mode = "advance";
+              else allocations = [{ invoiceId: target.invoiceId, amountApplied: parsed.amount }];
             }
             await api.createReceipt({
               mode, date, amount: parsed.amount, method,

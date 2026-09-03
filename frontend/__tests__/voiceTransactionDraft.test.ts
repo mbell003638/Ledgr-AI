@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildVoiceTransactionDraft, VOICE_TRANSACTION_GUIDANCE } from '../src/accountingV2/voiceTransactionDraft';
+import { buildVoiceTransactionDraft, resolveAgainstInvoiceTarget, VOICE_TRANSACTION_GUIDANCE } from '../src/accountingV2/voiceTransactionDraft';
 
 describe('voice transaction draft recovery', () => {
   it('turns non-transaction speech into editable guidance, not an internal validator error', () => {
@@ -16,6 +16,19 @@ describe('voice transaction draft recovery', () => {
     expect(draft.validation.ok).toBe(true);
     expect(draft.validation.action.type).toBe('add_expense');
     expect(draft.validation.action.params.amount).toBe(100);
+  });
+
+  it('does not guess among multiple unpaid invoices', () => {
+    const invoices = [
+      { id: 'inv-old', date: '2026-01-01', invoiceNumber: 'INV-1' },
+      { id: 'inv-new', date: '2026-02-01', invoiceNumber: 'INV-2' },
+    ];
+    expect(() => resolveAgainstInvoiceTarget({ intent: 'receipt', receiptMode: 'against_invoice', customerName: 'Ali', amount: 50, summary: 'received 50 from Ali' }, invoices))
+      .toThrow(/2 unpaid invoices/i);
+    expect(resolveAgainstInvoiceTarget({ intent: 'receipt', receiptMode: 'against_invoice', customerName: 'Ali', amount: 50, summary: 'received 50 from Ali' }, [invoices[1]]))
+      .toEqual({ invoiceId: 'inv-new' });
+    expect(resolveAgainstInvoiceTarget({ intent: 'receipt', receiptMode: 'against_invoice', customerName: 'Ali', amount: 50, summary: 'received 50 from Ali' }, []))
+      .toEqual({ mode: 'advance' });
   });
 
   it('routes the Ask AI microphone to the same transaction assistant', () => {

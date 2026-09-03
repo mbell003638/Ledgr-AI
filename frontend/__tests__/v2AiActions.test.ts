@@ -132,6 +132,10 @@ describe('V2 AI/voice action validation', () => {
       ok: false,
       errors: ['inventory counts must be reversed and re-recorded'],
     });
+    expect(validateAssistantProposal({ type: 'delete_entry', params: { entity: 'inventory_count', id: 'count-1' } }, 'ai')).toEqual({
+      ok: false,
+      errors: ['inventory counts must be reversed and re-recorded'],
+    });
     expect(validateAssistantProposal({ type: 'delete_entry', params: { entity: 'capital', id: 'capital-1' } }, 'ai')).toEqual({
       ok: false,
       errors: ['memberId is required for a capital entry'],

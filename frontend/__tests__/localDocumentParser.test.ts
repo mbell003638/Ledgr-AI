@@ -1,4 +1,4 @@
-import { interpretLocalDocumentText } from '../src/accountingV2/localDocumentParser';
+import { continueInterpretLocalDocument, interpretLocalDocumentText } from '../src/accountingV2/localDocumentParser';
 import { buildBalancedOpeningSet } from '../src/accountingV2/scanImport';
 
 const PARTNER_CLOSING_REPORT = [
@@ -143,5 +143,15 @@ describe('local document parser', () => {
     expect(result.document?.entries).toEqual([]);
     expect((result.document?.setup?.extraAssets || []).length).toBeGreaterThanOrEqual(2);
     expect(result.document?.setup?.creditorsTotal).toBe(36215.42);
+  });
+
+  it('applies a statement date follow-up to a dateless closing report', () => {
+    const pending = interpretLocalDocumentText(PARTNER_CLOSING_REPORT);
+    expect(pending.status).toBe('clarification');
+    if (pending.status !== 'clarification') return;
+    const continued = continueInterpretLocalDocument(pending, '2026-08-10');
+    expect(continued.status).toBe('confident');
+    if (continued.status !== 'confident') return;
+    expect(continued.document.setup?.asOfDate).toBe('2026-08-10');
   });
 });
