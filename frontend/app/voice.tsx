@@ -42,7 +42,7 @@ export default function VoiceModal() {
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
-  const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
+  const buildVoiceDraftRef = useRef<(text: string, answer?: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 

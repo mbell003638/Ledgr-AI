@@ -14,5 +14,6 @@ module.exports = {
     '^@/(.*)$': path.join(__dirname, '$1'),
     '^expo-auth-session$': path.join(__dirname, '__tests__/mocks/expo-auth-session.ts'),
     '^expo-web-browser$': path.join(__dirname, '__tests__/mocks/expo-web-browser.ts'),
+    '^expo-file-system/legacy$': path.join(__dirname, '__tests__/mocks/expo-file-system-legacy.ts'),
   },
 };

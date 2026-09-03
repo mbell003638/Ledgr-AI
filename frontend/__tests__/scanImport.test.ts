@@ -443,7 +443,7 @@ describe('scan-import screen UI contract', () => {
     expect(source).toMatch(/Needs review — excluded/);
     expect(source).toContain('editable={r.checked && !screenBusy && phase !== "done"}');
     expect(source).toContain('hasBalancedOpeningSet && edited?.checked && edited.row.kind !== "transaction"');
-    expect(source).toContain('const selectedHasProblems = selected.some((review) => !!rowProblem(review))');
+    expect(source).toContain('const selectedHasProblems = Boolean(pendingDocumentClarification) || selected.some((review) => !!rowProblem(review))');
     expect(source).toMatch(/disabled=\{screenBusy \|\| selected\.length === 0 \|\| selectedHasProblems \|\| !!balancedOpeningProblem\}/);
   });
 

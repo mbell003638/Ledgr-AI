@@ -36,7 +36,7 @@ export default function VoiceFab() {
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const deviceSession = useRef<DeviceSpeechSession | null>(null);
-  const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
+  const buildVoiceDraftRef = useRef<(text: string, answer?: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => {
     let active = true;
