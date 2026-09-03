@@ -25,6 +25,8 @@ describe('Android native AI integration', () => {
     expect(speechModule).toContain('EXTRA_PREFER_OFFLINE, true');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrTtsModule.kt')).toContain('TextToSpeech');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrOnDeviceLlmModule.kt')).toContain('needle2.cact');
+    expect(read('modules/ledgr-native-ai/android/src/main/cpp/needle_jni.cpp')).toContain('needle_complete');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/NeedleJni.kt')).toContain('loadLibrary("needle_jni")');
   });
 
   it('parses Assistant navigation and draft URLs into review-only intents', () => {
