@@ -12,13 +12,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Bundled Needle 2 + optional Gemma downloads.
- * Inference uses libcactus_engine.so when the native build vendors it next to needle2.cact.
- * TTS and downloads work even when the engine .so is not present.
+ * Bundled Needle 2 (libneedle.a + needle2.cact) plus optional Gemma file downloads.
+ * Gemma inference is a later pack; Needle tool-calling is the on-device default.
  */
 class LedgrOnDeviceLlmModule : Module() {
-  @Volatile private var cactusHandle: Long = 0
   @Volatile private var engineLoaded = false
+  @Volatile private var lastToolsJson = ""
 
   private val context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
@@ -41,15 +40,14 @@ class LedgrOnDeviceLlmModule : Module() {
     }
 
     AsyncFunction("runNeedle") { transcript: String, toolsJson: String ->
-      ensureEngine()
-      complete(needleModelFile().absolutePath, transcript, toolsJson, null, null)
+      ensureNeedle(toolsJson)
+      NeedleJni.complete(transcript, 128)
     }
 
     AsyncFunction("runOptional") { modelId: String, prompt: String, imageUri: String?, audioUri: String? ->
-      ensureEngine()
       val file = optionalFile(modelId)
       if (!file.exists()) throw IllegalStateException("Download this on-device model in Advanced Settings first.")
-      complete(file.absolutePath, prompt, null, imageUri, audioUri)
+      throw IllegalStateException("Gemma packs are stored on the phone, but on-device Gemma inference is not wired in this native build yet. Needle handles commands; cloud or a later APK runs Gemma.")
     }
 
     AsyncFunction("listOptional") {
@@ -87,71 +85,53 @@ class LedgrOnDeviceLlmModule : Module() {
     }
 
     OnDestroy {
-      destroyEngine()
+      if (engineLoaded) {
+        try { NeedleJni.reset() } catch (_: Throwable) {}
+      }
+      engineLoaded = false
     }
   }
 
   private fun needleReady(): Boolean {
-    return engineLoaded && needleModelFile().exists()
+    return engineLoaded || bundledNeedleBytes() != null
   }
 
   private fun missingEngineReason(): String {
-    return if (!File(context.applicationInfo.nativeLibraryDir, "libcactus_engine.so").exists()) {
-      "Needle needs libcactus_engine.so in the native APK (run scripts/on-device-ai/fetch-native.mjs)."
-    } else if (!needleModelFile().exists()) {
-      "Needle weights are missing. Bundle needle2.cact in the native assets."
+    return if (bundledNeedleBytes() == null) {
+      "Needle weights are missing. Run frontend/scripts/on-device-ai/fetch-native.mjs then rebuild the Android APK."
     } else {
-      "The on-device engine is not ready."
+      "Needle is in the project, but this JS bundle is not a native APK. Run npx expo run:android or EAS."
     }
   }
 
-  private fun ensureEngine() {
-    if (engineLoaded) return
-    try {
-      System.loadLibrary("cactus_engine")
-      engineLoaded = true
-    } catch (_: UnsatisfiedLinkError) {
-      engineLoaded = false
-      throw IllegalStateException(missingEngineReason())
-    }
-    copyBundledNeedle()
-  }
-
-  private fun copyBundledNeedle() {
-    val dest = needleModelFile()
-    if (dest.exists() && dest.length() > 0) return
-    dest.parentFile?.mkdirs()
-    try {
-      context.assets.open("needle2.cact").use { input ->
-        FileOutputStream(dest).use { output -> input.copyTo(output) }
+  private fun ensureNeedle(toolsJson: String) {
+    if (!engineLoaded) {
+      val cact = bundledNeedleBytes() ?: throw IllegalStateException(missingEngineReason())
+      try {
+        if (NeedleJni.load(cact) != 0) throw IllegalStateException("Needle could not load needle2.cact.")
+      } catch (error: UnsatisfiedLinkError) {
+        throw IllegalStateException("Needle native library is missing. Rebuild the Android APK after fetch-native.mjs.", error)
       }
-    } catch (_: Exception) {
-      // Asset may be omitted from JS-only builds.
+      engineLoaded = true
+      lastToolsJson = ""
+    }
+    if (toolsJson != lastToolsJson) {
+      if (NeedleJni.init("You convert shop bookkeeping speech into one Ledgr tool call. Never invent IDs. Return JSON only.", toolsJson) != 0) {
+        throw IllegalStateException("Needle could not load the Ledgr tool list.")
+      }
+      lastToolsJson = toolsJson
     }
   }
 
-  private fun complete(modelPath: String, prompt: String, toolsJson: String?, imageUri: String?, audioUri: String?): String {
-    if (!engineLoaded) throw IllegalStateException(missingEngineReason())
-    val messages = """[{"role":"user","content":${jsonString(prompt)}}]"""
-    return nativeComplete(modelPath, messages, toolsJson, imageUri, audioUri)
-  }
-
-  /**
-   * JNI symbols match Cactus `Java_com_cactus_CactusJNI_*` when libcactus_engine.so is vendored.
-   * Until that library is linked, this stays a Kotlin-only stub so the Android compile still passes.
-   */
-  private fun nativeComplete(modelPath: String, messagesJson: String, toolsJson: String?, imageUri: String?, audioUri: String?): String {
-    throw IllegalStateException(
-      "Needle/Gemma inference requires vendored libcactus_engine.so. Model path $modelPath is staged; rebuild the native APK after fetch-native.mjs."
-    )
-  }
-
-  private fun destroyEngine() {
-    cactusHandle = 0
+  private fun bundledNeedleBytes(): ByteArray? {
+    return try {
+      context.assets.open("needle2.cact").use { it.readBytes() }.takeIf { it.isNotEmpty() }
+    } catch (_: Exception) {
+      null
+    }
   }
 
   private fun modelsDir(): File = File(context.filesDir, "on-device-models").apply { mkdirs() }
-  private fun needleModelFile(): File = File(modelsDir(), "needle2.cact")
   private fun optionalDir(): File = File(modelsDir(), "optional").apply { mkdirs() }
   private fun optionalFile(id: String): File {
     val spec = OPTIONAL_MODELS.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Unknown model")
@@ -192,10 +172,6 @@ class LedgrOnDeviceLlmModule : Module() {
     }
     if (dest.exists()) dest.delete()
     if (!tmp.renameTo(dest)) throw IllegalStateException("Could not save the downloaded model.")
-  }
-
-  private fun jsonString(value: String): String {
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
   }
 
   companion object {
