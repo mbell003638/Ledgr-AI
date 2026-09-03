@@ -16,6 +16,8 @@ import { buildVoiceTransactionDraft, resolveAgainstInvoiceTarget, resolveVoiceCo
 import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
 import { continueVoiceTransaction, interpretVoiceTransaction, type PendingVoiceClarification, type VoiceInterpretationResult } from "@/src/accountingV2/voiceInterpretationRouter";
+import { interpretNeedleVoiceCommand } from "@/src/utils/onDeviceLlm";
+import { speakOnDevice } from "@/src/utils/deviceTts";
 
 import { localTodayIso } from "@/src/utils/dateValidation";
 
@@ -44,6 +46,12 @@ export default function VoiceModal() {
   const buildVoiceDraftRef = useRef<(text: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
 
   useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
+
+  useEffect(() => {
+    if (phase !== "confirm") return;
+    const preview = validatedAction && validatedAction.ok ? validatedAction.action.confirmation.preview : "Draft ready for confirmation.";
+    void api.getSpeakAnswers().then((enabled) => { if (enabled) return speakOnDevice(preview); }).catch(() => undefined);
+  }, [phase, validatedAction]);
 
   useEffect(() => {
     const text = typeof params.assistantText === 'string' ? params.assistantText.trim() : '';
@@ -94,6 +102,7 @@ export default function VoiceModal() {
       mode: cfg.interpretationMode || "auto",
       hasCloudAI: Boolean(cfg.apiKey),
       parseCloud: api.parseCommand,
+      parseNeedle: (text) => interpretNeedleVoiceCommand(text),
       parserOptions: { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false },
       entryHelpOrder: cfg.entryHelpOrder,
     });
