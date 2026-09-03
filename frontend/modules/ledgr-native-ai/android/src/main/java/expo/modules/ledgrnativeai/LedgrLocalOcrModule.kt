@@ -30,7 +30,7 @@ class LedgrLocalOcrModule : Module() {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
           .process(image)
           .addOnSuccessListener { result ->
-            val text = result.text.trim()
+            val text = formattedOcrText(result)
             if (text.isEmpty()) promise.reject("ERR_NO_TEXT", "Local OCR did not detect readable text.", null)
             else promise.resolve(text)
           }
@@ -76,7 +76,7 @@ class LedgrLocalOcrModule : Module() {
           client.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
               bitmap.recycle()
-              val text = result.text.trim()
+              val text = formattedOcrText(result)
               if (text.isNotEmpty()) texts.add(text)
               next(index + 1)
             }
@@ -92,5 +92,42 @@ class LedgrLocalOcrModule : Module() {
         promise.reject("ERR_LOCAL_OCR_INPUT", error.message ?: "Could not read the PDF.", error)
       }
     }
+  }
+
+  /**
+   * Rebuilds reading-order text so right-aligned amounts stay on the same line
+   * as their labels. ML Kit's default `result.text` dumps columns separately,
+   * which made closing reports collapse to one total.
+   */
+  private fun formattedOcrText(result: com.google.mlkit.vision.text.Text): String {
+    data class Piece(val left: Int, val top: Int, val bottom: Int, val text: String)
+    val pieces = mutableListOf<Piece>()
+    for (block in result.textBlocks) {
+      for (line in block.lines) {
+        val box = line.boundingBox ?: continue
+        val text = line.text.trim()
+        if (text.isNotEmpty()) pieces.add(Piece(box.left, box.top, box.bottom, text))
+      }
+    }
+    if (pieces.isEmpty()) return result.text.trim()
+    pieces.sortWith(compareBy({ it.top }, { it.left }))
+    val rows = mutableListOf<MutableList<Piece>>()
+    for (piece in pieces) {
+      val row = rows.lastOrNull()
+      val mid = (piece.top + piece.bottom) / 2
+      if (row != null) {
+        val rowMid = (row.minOf { it.top } + row.maxOf { it.bottom }) / 2
+        val height = max(1, max(piece.bottom - piece.top, row.maxOf { it.bottom } - row.minOf { it.top }))
+        if (kotlin.math.abs(mid - rowMid) <= height * 0.6f) {
+          row.add(piece)
+          continue
+        }
+      }
+      rows.add(mutableListOf(piece))
+    }
+    return rows.joinToString("\n") { row ->
+      row.sortBy { it.left }
+      row.joinToString(" ") { it.text }
+    }.trim()
   }
 }

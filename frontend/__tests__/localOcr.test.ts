@@ -13,4 +13,10 @@ describe('local OCR boundary', () => {
   it('rejects an empty image URI', async () => {
     await expect(recognizeLocalOcr('')).rejects.toThrow(/image is required/i);
   });
+
+  it('keeps native OCR on a bounding-box line rebuild', () => {
+    const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'modules', 'ledgr-native-ai', 'android', 'src', 'main', 'java', 'expo', 'modules', 'ledgrnativeai', 'LedgrLocalOcrModule.kt'), 'utf8');
+    expect(source).toContain('formattedOcrText');
+    expect(source).toContain('boundingBox');
+  });
 });

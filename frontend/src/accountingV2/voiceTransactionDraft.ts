@@ -15,6 +15,27 @@ export type VoiceTransactionDraft = {
   validation: Extract<AssistantProposalValidationResult, { ok: true }>;
 };
 
+export function unpaidInvoicesForCustomer(invoices: any[], customer: { id?: string } | undefined, customerName?: string) {
+  const name = String(customerName || '').trim().toLowerCase();
+  return invoices.filter((invoice: any) => invoice.status !== 'paid' && (
+    (customer?.id && (invoice.partyId === customer.id || invoice.debtorId === customer.id))
+    || (name && String(invoice.clientName || '').trim().toLowerCase() === name)
+  )).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+}
+
+/** Never guesses among multiple unpaid invoices. */
+export function resolveAgainstInvoiceTarget(command: VoiceCommand, invoices: any[]): { invoiceId: string } | { mode: 'advance' } {
+  if (command.invoiceId) {
+    const match = invoices.find((invoice: any) => invoice.id === command.invoiceId);
+    if (!match) throw new Error('That invoice was not found or is already paid. Choose a specific unpaid invoice.');
+    return { invoiceId: match.id };
+  }
+  if (invoices.length === 0) return { mode: 'advance' };
+  if (invoices.length === 1) return { invoiceId: invoices[0].id };
+  const list = invoices.slice(0, 5).map((invoice: any) => `${invoice.invoiceNumber || invoice.id} dated ${invoice.date}`).join('; ');
+  throw new Error(`This customer has ${invoices.length} unpaid invoices. Name the invoice number or date, or record an advance. Open invoices: ${list}`);
+}
+
 /** Converts a resolved voice command into a validated, review-only proposal. */
 export function buildVoiceTransactionDraft(parsed: VoiceCommand): VoiceTransactionDraft {
   if (parsed.intent === 'capital' && parsed.method && parsed.method !== 'cash') {

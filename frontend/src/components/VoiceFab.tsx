@@ -7,7 +7,7 @@ import { api, getAIConfig } from "@/src/api";
 import { effectiveVoiceProvider } from "@/src/db/ai";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { materializePendingVoiceParty, type VoicePartyCreateProposal } from "@/src/accountingV2/voicePartyResolution";
-import { buildVoiceTransactionDraft, resolveVoiceCommandsForDrafts, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
+import { buildVoiceTransactionDraft, resolveAgainstInvoiceTarget, resolveVoiceCommandsForDrafts, unpaidInvoicesForCustomer, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import { BlurView } from "expo-blur";
 import { fmt } from "@/src/theme";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence, Easing, SlideInDown } from "react-native-reanimated";
@@ -81,8 +81,9 @@ export default function VoiceFab() {
     }
     if (resolvedCommand.intent === "receipt" && resolvedCommand.receiptMode === "against_invoice" && resolvedCommand.customerName) {
       const customer = customers.find((item: any) => item.name.trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase());
-      const invoices = (await api.listInvoices()).filter((invoice: any) => invoice.status !== "paid" && (invoice.partyId === customer?.id || invoice.debtorId === customer?.id || String(invoice.clientName || "").trim().toLowerCase() === String(resolvedCommand.customerName).trim().toLowerCase())).sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
-      resolvedCommand = invoices[0] ? { ...resolvedCommand, invoiceId: invoices[0].id } : { ...resolvedCommand, receiptMode: "advance" };
+      const unpaid = unpaidInvoicesForCustomer(await api.listInvoices(), customer, resolvedCommand.customerName);
+      const target = resolveAgainstInvoiceTarget(resolvedCommand, unpaid);
+      resolvedCommand = "mode" in target ? { ...resolvedCommand, receiptMode: "advance" } : { ...resolvedCommand, invoiceId: target.invoiceId };
     }
     ready.push(buildVoiceTransactionDraft(resolvedCommand));
     }
@@ -209,7 +210,7 @@ export default function VoiceFab() {
         } else if (parsedDraft.intent === "sale") {
           await api.createSale({ date, amount: parsedDraft.amount, currency, notes: parsedDraft.notes || parsedDraft.summary });
         } else if (parsedDraft.intent === "receipt") {
-          const mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
+          let mode = parsedDraft.receiptMode || (parsedDraft.customerName ? "against_invoice" : "cash_sale");
           const method = parsedDraft.method || "cash";
           if (!parsedDraft.customerName || mode === "cash_sale") {
             await api.createSale({ date, amount: parsedDraft.amount, currency, notes: parsedDraft.notes || parsedDraft.summary, method });
@@ -221,10 +222,10 @@ export default function VoiceFab() {
             if (match) debtorId = match.id;
             else throw new Error(`Customer "${parsedDraft.customerName}" was not found. Add the Customer first.`);
             if (mode === "against_invoice") {
-              const invs = (await api.listInvoices())
-                .filter((i: any) => i.status !== "paid" && (i.clientName || "").toLowerCase().includes(parsedDraft.customerName.toLowerCase()))
-                .sort((a: any, b: any) => (a.date < b.date ? -1 : 1));
-              if (invs[0]) allocations = [{ invoiceId: invs[0].id, amountApplied: parsedDraft.amount }];
+              const unpaid = unpaidInvoicesForCustomer(await api.listInvoices(), match, parsedDraft.customerName);
+              const target = resolveAgainstInvoiceTarget(parsedDraft, unpaid);
+              if ("mode" in target) mode = "advance";
+              else allocations = [{ invoiceId: target.invoiceId, amountApplied: parsedDraft.amount }];
             }
             await api.createReceipt({
               mode, date, amount: parsedDraft.amount, method,

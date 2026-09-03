@@ -192,7 +192,7 @@ export function validateAssistantProposal(input: unknown, source: V2ActionSource
     if (!id) return { ok: false, errors: ['entry id is required'] };
     if (type === 'delete_entry' && (entity === 'customer' || entity === 'supplier')) return { ok: false, errors: ['Customer and Supplier deletion must be done from the dedicated screen'] };
     if (entity === 'capital' && !text(params.memberId)) return { ok: false, errors: ['memberId is required for a capital entry'] };
-    if (type === 'update_entry' && entity === 'inventory_count') return { ok: false, errors: ['inventory counts must be reversed and re-recorded'] };
+    if (entity === 'inventory_count') return { ok: false, errors: ['inventory counts must be reversed and re-recorded'] };
     if (type === 'delete_entry') {
       return { ok: true, action: { source, type, params: { entity, id, memberId: params.memberId }, isDestructive: true, confirmation: { required: true, preview: `Reverse / delete ${entity.replace(/_/g, ' ')} ${id}` } } };
     }
