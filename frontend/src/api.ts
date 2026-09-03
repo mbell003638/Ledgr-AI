@@ -1793,7 +1793,7 @@ export const api = {
   ocrReceipt: async (imageBase64: string, mimeType = 'image/jpeg') => { const settings = await db.getSettings(); return ai.ocrReceipt(await getAIConfig(), imageBase64, mimeType, settings.currency || 'USD'); },
   analyzeDocument: async (input: { base64?: string; mimeType?: string; text?: string; uri?: string }) => {
     const config = await getAIConfig();
-    const mode = config.ocrProvider || 'auto';
+    const mode = ai.effectiveOcrProvider(config);
     const order = config.entryHelpOrder || 'cloud-first';
     const isImage = Boolean(input.uri && input.mimeType?.startsWith('image/'));
     const isPdf = input.mimeType === 'application/pdf';
@@ -1816,7 +1816,10 @@ export const api = {
       ]);
       const local = interpretLocalDocumentText(localText, { directory: { suppliers, customers, capitalAccounts } });
       if (local.status === 'confident') return { document: local.document, failure: '' };
-      if (local.status === 'clarification' && local.document && local.document.entries.every((entry) => entry.amount > 0)) {
+      if (local.status === 'clarification' && local.document && local.document.docType !== 'closing_report' && local.document.entries.length > 0 && local.document.entries.every((entry) => entry.amount > 0)) {
+        return { document: { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() }, failure: '' };
+      }
+      if (local.status === 'clarification' && local.document?.docType === 'closing_report') {
         return { document: { ...local.document, summary: `${local.document.summary} ${local.question}`.trim() }, failure: '' };
       }
       return { failure: local.status === 'unsupported' ? local.reason : local.question };

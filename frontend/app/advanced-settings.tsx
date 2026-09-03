@@ -350,15 +350,23 @@ export default function AdvancedSettingsScreen() {
   const testAllCapabilities = async () => {
     setTesting(true); setTestResult(null);
     try {
+      if (isCustomProvider && (baseUrl.trim() || transcriptionBaseUrl.trim()) && !customHostConfirmed) {
+        setTestResult({ ok: false, msg: 'Confirm that you trust this custom AI host first.' });
+        return;
+      }
       const draft = draftAIConfig();
       await api.testKey(draft);
       const [deviceVoice, deviceOcr] = await Promise.all([getDeviceSpeechStatus(), getLocalOcrStatus()]);
       const cloud = getAICapabilities(draft);
-      const voiceReady = voiceProvider === 'android-device' ? deviceVoice.available : voiceProvider === 'cloud' ? cloud.transcription.configured : deviceVoice.available || cloud.transcription.configured;
-      const ocrReady = ocrProvider === 'android-device' ? deviceOcr.available : ocrProvider === 'cloud' ? cloud.vision.configured : deviceOcr.available || cloud.vision.configured;
-      if (!voiceReady) throw new Error('Chat passed, but no selected voice provider is available.');
-      if (!ocrReady) throw new Error('Chat passed, but no selected OCR provider is available.');
-      setTestResult({ ok: true, msg: 'Chat, voice, and OCR capabilities are ready.' });
+      const voiceMode = interpretationProvider === 'android-device' ? 'android-device' : voiceProvider;
+      const ocrMode = interpretationProvider === 'android-device' ? 'android-device' : ocrProvider;
+      const voiceReady = voiceMode === 'android-device' ? deviceVoice.available : voiceMode === 'cloud' ? cloud.transcription.configured : deviceVoice.available || cloud.transcription.configured;
+      const ocrReady = ocrMode === 'android-device' ? deviceOcr.available : ocrMode === 'cloud' ? cloud.vision.configured : deviceOcr.available || cloud.vision.configured;
+      const extras = [
+        voiceReady ? 'voice ready' : 'voice not available on this device',
+        ocrReady ? 'OCR ready' : 'OCR not available on this device',
+      ];
+      setTestResult({ ok: true, msg: `Chat connected. ${extras.join('; ')}.` });
     } catch (e: any) { setTestResult({ ok: false, msg: e?.message || 'Capability test failed.' }); }
     finally { setTesting(false); }
   };

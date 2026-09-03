@@ -80,7 +80,8 @@ function pairLabelledAmountLines(lines: string[]): string[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const next = lines[index + 1];
-    if (lastAmount(line) === undefined && next && isAmountOnlyLine(next)) {
+    const following = lines[index + 2];
+    if (lastAmount(line) === undefined && next && isAmountOnlyLine(next) && !(following && isAmountOnlyLine(following))) {
       paired.push(`${line} ${next}`);
       index += 1;
       continue;
@@ -108,6 +109,34 @@ function unpackPackedAmountLines(lines: string[]): string[] {
     unpacked.push(line);
   }
   return unpacked;
+}
+
+function isSectionHeader(line: string): boolean {
+  return /^(?:assets?|liabilities?|equity|capital|drawings?(?:\s+this\s+period)?)$/i.test(line.trim());
+}
+
+function zipLabelAmountRuns(lines: string[]): string[] {
+  const out: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (isSectionHeader(lines[index])) { out.push(lines[index]); index += 1; continue; }
+    if (lastAmount(lines[index]) === undefined) {
+      let labelsEnd = index;
+      while (labelsEnd < lines.length && lastAmount(lines[labelsEnd]) === undefined) labelsEnd += 1;
+      let amountsEnd = labelsEnd;
+      while (amountsEnd < lines.length && isAmountOnlyLine(lines[amountsEnd])) amountsEnd += 1;
+      const labelCount = labelsEnd - index;
+      const amountCount = amountsEnd - labelsEnd;
+      if (labelCount >= 2 && amountCount === labelCount) {
+        for (let offset = 0; offset < labelCount; offset += 1) out.push(`${lines[index + offset]} ${lines[labelsEnd + offset]}`);
+        index = amountsEnd;
+        continue;
+      }
+    }
+    out.push(lines[index]);
+    index += 1;
+  }
+  return out;
 }
 
 function applyVisiblePartnerSplit(partners: NonNullable<LocalAnalyzedDocument['setup']>['partners'], lines: string[]): void {
@@ -227,7 +256,8 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
     || (lines.some((line) => /^assets$/i.test(line)) && lines.some((line) => /^liabilities$/i.test(line)))
     || (/\bnet\s+profit\b/i.test(text) && /\b(?:total\s+assets|physical\s+stock|creditors?)\b/i.test(text));
   const labeled = lines.filter((line) => /\b(?:cash|stock|inventory|asset|equipment|deposit|creditors?|accounts?\s+payable|liabilit|loan|payable|capital|stake)\b/i.test(line) && lastAmount(line) !== undefined);
-  if (!balanceSignal && labeled.length < 3) return null;
+  const tokenCount = (text.match(/\b(?:cash|stock|inventory|creditors?|deposit|ending\s+stake|commission\s+payable|physical\s+stock)\b/gi) || []).length;
+  if (!balanceSignal && labeled.length < 3 && tokenCount < 4) return null;
 
   const setup: NonNullable<LocalAnalyzedDocument['setup']> = {};
   const date = extractDate(lines);
@@ -294,7 +324,7 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
 export function interpretLocalDocumentText(text: string, options: LocalDocumentOptions = {}): LocalDocumentOutcome {
   const clipped = String(text || '').trim().slice(0, 20_000);
   if (clipped.length < 8) return { status: 'unsupported', confidence: 0, source: 'local-ocr-rules', reason: 'Local OCR did not return enough readable text.' };
-  const lines = pairLabelledAmountLines(unpackPackedAmountLines(cleanLines(clipped)));
+  const lines = zipLabelAmountRuns(pairLabelledAmountLines(unpackPackedAmountLines(cleanLines(clipped))));
   const opening = parseOpeningDocument(lines, lines.join('\n'));
   if (opening) return opening;
 

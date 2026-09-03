@@ -53,7 +53,7 @@ describe('voice transcription provider routing', () => {
       expect.objectContaining({ method: 'POST' }),
     );
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: 'audio/m4a', data: 'YQ==' } });
+    expect(body.contents[0].parts[1]).toEqual({ inlineData: { mimeType: 'audio/mp4', data: 'YQ==' } });
   });
 
   it('uses the OpenAI-compatible audio transcription endpoint and separate voice model', async () => {

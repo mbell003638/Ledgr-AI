@@ -220,7 +220,7 @@ export default function ScanImport() {
   };
 
   const setupRows = rows.filter((r) => r.row.kind !== "transaction");
-  const hasBalancedOpeningSet = setupRows.length > 1;
+  const hasBalancedOpeningSet = setupRows.length > 0;
   const includedSetupRows = setupRows.filter((r) => r.checked && r.importable);
   const willImportBalancedSet = hasBalancedOpeningSet && includedSetupRows.length > 0;
 

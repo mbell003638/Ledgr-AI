@@ -7,6 +7,7 @@ import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
+import { effectiveVoiceProvider } from "@/src/db/ai";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
@@ -69,7 +70,7 @@ export default function VoiceModal() {
       if (deviceStopRef.current) { await deviceStopRef.current().catch(() => {}); deviceStopRef.current = null; }
       await cancelVoiceRecorder(recorder);
       const cfg = await getAIConfig();
-      const mode = cfg.voiceProvider || "auto";
+      const mode = effectiveVoiceProvider(cfg);
       if (mode !== "cloud") {
         const status = await getDeviceSpeechStatus();
         if (status.available) {
