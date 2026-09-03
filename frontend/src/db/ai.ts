@@ -5,6 +5,7 @@
  * Official Claude or an Anthropic-compatible proxy use the Anthropic row + base URL.
  */
 
+import * as FileSystem from 'expo-file-system/legacy';
 import { localTodayIso } from '../utils/dateValidation';
 
 export type ProviderId = 'gemini' | 'openai' | 'anthropic';
@@ -391,16 +392,11 @@ async function writeTranscriptionTempFile(
   filename: string,
 ): Promise<{ uri: string; name: string; type: string } | null> {
   try {
-    const FileSystem = require('expo-file-system/legacy') as {
-      cacheDirectory?: string | null;
-      writeAsStringAsync: (path: string, data: string, options: { encoding: string }) => Promise<void>;
-      EncodingType?: { Base64: string };
-    };
     const directory = FileSystem.cacheDirectory;
     if (!directory) return null;
     const path = `${directory}${filename}`;
     await FileSystem.writeAsStringAsync(path, audioBase64, {
-      encoding: FileSystem.EncodingType?.Base64 || 'base64',
+      encoding: FileSystem.EncodingType.Base64,
     });
     return { uri: path, name: filename, type: mimeType };
   } catch {

@@ -46,7 +46,7 @@ export default function VoiceFab() {
 
   useEffect(() => () => { deviceSession.current?.cancel(); deviceSession.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
-  const stopExistingRecorder = () => cancelVoiceRecorder(recorder);
+  const stopExistingRecorder = useCallback(() => cancelVoiceRecorder(recorder), [recorder]);
 
   const buildVoiceDraft = async (txt: string, answer = "") => {
     const result = await prepareVoiceTransactionDraft(txt, pendingClarification, answer);
@@ -90,7 +90,7 @@ export default function VoiceFab() {
       await startVoiceRecorder(recorder);
       setPhase("recording");
     } catch (e: any) { setError(friendlyVoiceError(e, "Could not start the microphone.")); setPhase("error"); }
-  }, [recorder]);
+  }, [recorder, stopExistingRecorder]);
   const startRef = useRef(start);
   useEffect(() => { startRef.current = start; }, [start]);
   useEffect(() => subscribeToVoiceAssistantRequest(() => {
