@@ -131,4 +131,27 @@ describe('local document parser', () => {
     expect(mapped.validRows.some((row) => row.kind === 'transaction')).toBe(false);
     expect(mapped.validRows.length).toBeGreaterThanOrEqual(7);
   });
+
+  it('zips a column of labels with a following column of amounts', () => {
+    const result = parseLocalDocumentText([
+      'Cash USD at Home',
+      'Physical Stock',
+      'Shop Deposit',
+      'Creditors',
+      'Commission Payable',
+      '$37,741.17',
+      '$150,527.46',
+      '$7,500.00',
+      '$36,215.42',
+      '$6,063.15',
+      'Amit Ending Stake $68,935.48',
+      'Rahim Ending Stake $86,252.62',
+    ].join('\n'));
+    expect(result.kind === 'confident' || result.kind === 'clarification').toBe(true);
+    if (result.kind === 'unsupported') return;
+    expect(result.analysis.docType).toBe('closing_report');
+    expect(result.analysis.entries).toEqual([]);
+    expect((result.analysis.setup?.extraAssets || []).length).toBeGreaterThanOrEqual(2);
+    expect(result.analysis.setup?.creditorsTotal).toBe(36215.42);
+  });
 });

@@ -13,6 +13,7 @@ import {
   mapAnalyzedDocument,
   buildBalancedOpeningSet,
   normalizeScanDate,
+  normalizeScanMethod,
   isValidScanAmount,
   AMOUNT_BOUNDS_REASON,
   DATE_BOUNDS_REASON,
@@ -241,7 +242,7 @@ export default function ScanImport() {
   };
 
   const setupRows = rows.filter((r) => r.row.kind !== "transaction");
-  const hasBalancedOpeningSet = setupRows.length > 1;
+  const hasBalancedOpeningSet = setupRows.length > 0;
   const includedSetupRows = setupRows.filter((r) => r.checked && r.importable);
   const willImportBalancedSet = hasBalancedOpeningSet && includedSetupRows.length > 0;
 
@@ -384,7 +385,7 @@ export default function ScanImport() {
         date,
         partyName: party || undefined,
         amount,
-        method: row.method,
+        method: (normalizeScanMethod(r.methodText) || row.method),
         notes,
         createMissingParty: !!partyKey && approvedPartyCreationKeys.has(partyKey),
       });

@@ -108,7 +108,8 @@ function pairLabelledAmountLines(lines: string[]): string[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const next = lines[index + 1];
-    if (!amountsOnLine(line).length && next && isAmountOnlyLine(next)) {
+    const following = lines[index + 2];
+    if (!amountsOnLine(line).length && next && isAmountOnlyLine(next) && !(following && isAmountOnlyLine(following))) {
       paired.push(`${line} ${next}`);
       index += 1;
       continue;
@@ -138,6 +139,34 @@ function unpackPackedAmountLines(lines: string[]): string[] {
   return unpacked;
 }
 
+function isSectionHeader(line: string): boolean {
+  return /^(?:assets?|liabilities?|equity|capital|drawings?(?:\s+this\s+period)?)$/i.test(line.trim());
+}
+
+function zipLabelAmountRuns(lines: string[]): string[] {
+  const out: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (isSectionHeader(lines[index])) { out.push(lines[index]); index += 1; continue; }
+    if (!amountsOnLine(lines[index]).length) {
+      let labelsEnd = index;
+      while (labelsEnd < lines.length && !amountsOnLine(lines[labelsEnd]).length) labelsEnd += 1;
+      let amountsEnd = labelsEnd;
+      while (amountsEnd < lines.length && isAmountOnlyLine(lines[amountsEnd])) amountsEnd += 1;
+      const labelCount = labelsEnd - index;
+      const amountCount = amountsEnd - labelsEnd;
+      if (labelCount >= 2 && amountCount === labelCount) {
+        for (let offset = 0; offset < labelCount; offset += 1) out.push(`${lines[index + offset]} ${lines[labelsEnd + offset]}`);
+        index = amountsEnd;
+        continue;
+      }
+    }
+    out.push(lines[index]);
+    index += 1;
+  }
+  return out;
+}
+
 function looksLikePositionReport(lines: string[]): boolean {
   const text = lines.join('\n');
   const header = POSITION_HEADER.test(text)
@@ -147,7 +176,8 @@ function looksLikePositionReport(lines: string[]): boolean {
     /\b(?:cash(?:\s+in\s+hand)?|stock|inventory|creditors?|accounts?\s+payable|partner\s+capital|capital\s+account|ending\s+stake|deposit)\b/i.test(line)
     && amountsOnLine(line).length > 0
   ).length;
-  return (header && balanceRows >= 1) || balanceRows >= 3;
+  const tokenCount = (text.match(/\b(?:cash|stock|inventory|creditors?|deposit|ending\s+stake|commission\s+payable|physical\s+stock)\b/gi) || []).length;
+  return (header && balanceRows >= 1) || balanceRows >= 3 || tokenCount >= 4;
 }
 
 function applyVisiblePartnerSplit(partners: NonNullable<LocalDocumentSetup['partners']>, lines: string[]): void {
@@ -384,7 +414,7 @@ function clarify(
 export function parseLocalDocumentText(sourceText: string, options: LocalDocumentParserOptions = {}): LocalDocumentParseResult {
   const text = sourceText.trim();
   if (!text) return { kind: 'unsupported', confidence: 'low', reason: 'Local OCR did not return readable document text.', sourceText: text };
-  const lines = pairLabelledAmountLines(unpackPackedAmountLines(linesOf(text)));
+  const lines = zipLabelAmountRuns(pairLabelledAmountLines(unpackPackedAmountLines(linesOf(text))));
   if (lines.length < 2 && text.length < 12) return { kind: 'unsupported', confidence: 'low', reason: 'Not enough readable text was found to prepare a safe draft.', sourceText: text };
 
   const dates = extractDates(lines);

@@ -19,6 +19,19 @@ export function normalizeEntryHelpOrder(value: string | null | undefined): Entry
   return value === 'device-first' ? 'device-first' : 'cloud-first';
 }
 
+/** On-device interpretation must never send speech, OCR, or transcripts to a cloud model. */
+export function isOnDeviceInterpretation(cfg: Pick<AIConfig, 'interpretationMode'>): boolean {
+  return cfg.interpretationMode === 'device-only';
+}
+
+export function effectiveOcrProvider(cfg: Pick<AIConfig, 'ocrProvider' | 'interpretationMode'>): OcrProvider {
+  return isOnDeviceInterpretation(cfg) ? 'android-device' : (cfg.ocrProvider || 'auto');
+}
+
+export function effectiveVoiceProvider(cfg: Pick<AIConfig, 'voiceProvider' | 'interpretationMode'>): VoiceProvider {
+  return isOnDeviceInterpretation(cfg) ? 'android-device' : (cfg.voiceProvider || 'auto');
+}
+
 export async function withCloudHelpTimeout<T>(work: Promise<T>, ms = CLOUD_HELP_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -398,11 +411,6 @@ async function writeTranscriptionTempFile(
   }
 }
 
-async function blobFromBase64DataUrl(audioBase64: string, mimeType: string): Promise<Blob> {
-  const response = await fetch(`data:${mimeType};base64,${audioBase64}`);
-  return response.blob();
-}
-
 async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: string, audioUri?: string): Promise<{ transcript?: string; text?: string }> {
   const voice = resolveTranscriptionConfig(cfg);
   const extension = mimeType.includes('webm') ? 'webm' : mimeType.includes('wav') ? 'wav' : 'm4a';
@@ -411,14 +419,12 @@ async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: st
   const nativeFile = audioUri
     ? { uri: audioUri, name: filename, type: mimeType }
     : await writeTranscriptionTempFile(audioBase64, mimeType, filename);
-  if (nativeFile) {
-    // React Native uploads local files through its URI FormData part. Building
-    // a Blob from Uint8Array/ArrayBuffer is unsupported on Android.
-    form.append('file', nativeFile as any);
-  } else {
-    const blob = await blobFromBase64DataUrl(audioBase64, mimeType);
-    form.append('file', blob, filename);
+  if (!nativeFile) {
+    throw new Error('Could not prepare the recording for upload. Use Android device speech, or try again.');
   }
+  // React Native uploads local files through its URI FormData part. Building
+  // a Blob from Uint8Array/ArrayBuffer is unsupported on Android.
+  form.append('file', nativeFile as any);
   form.append('model', voice.model);
   const endpoint = /\/audio\/transcriptions$/i.test(voice.baseUrl)
     ? voice.baseUrl
@@ -590,7 +596,8 @@ export async function transcribe(cfg: AIConfig, audioBase64: string, mimeType = 
     throw new Error('Anthropic does not include speech-to-text. Add a separate OpenAI-compatible voice Base URL and API key in Advanced Settings; Anthropic can remain your chat and OCR provider.');
   }
   const prompt = "Transcribe this audio verbatim. Return JSON with a 'transcript' field.";
-  const parts = [{ inlineData: { mimeType, data: audioBase64 } }];
+  const geminiMime = /m4a|mp4/i.test(mimeType) ? 'audio/mp4' : mimeType;
+  const parts = [{ inlineData: { mimeType: geminiMime, data: audioBase64 } }];
   const out = await call(cfg, prompt, parts, { type: 'object', properties: { transcript: { type: 'string' } }, required: ['transcript'] });
   return parseJson(out);
 }

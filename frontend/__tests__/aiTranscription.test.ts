@@ -19,9 +19,9 @@ describe('voice transcription provider routing', () => {
   const previousFormData = global.FormData;
   afterEach(() => {
     global.fetch = previousFetch;
+    global.FormData = previousFormData;
     jest.restoreAllMocks();
   });
-    global.FormData = previousFormData;
 
   it('uses the OpenAI-compatible audio endpoint and separate voice model', async () => {
     const fetchSpy = jest.fn().mockResolvedValue(response({ text: 'record an expense for fuel' }));

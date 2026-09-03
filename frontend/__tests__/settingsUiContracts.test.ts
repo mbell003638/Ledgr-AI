@@ -20,6 +20,9 @@ describe('settings UI contracts', () => {
     expect(advancedSettings).toContain('Test connection');
     expect(advancedSettings).not.toContain('Test Chat Connection');
     expect(advancedSettings).not.toContain('Test All');
+    expect(advancedSettings).not.toContain('no selected voice provider is available');
+    expect(advancedSettings).toContain('customHostConfirmed');
+    expect(advancedSettings).toContain('testAllCapabilities');
   });
 
   it('keeps Accounting & Workflow only in Advanced Settings', () => {

@@ -84,12 +84,7 @@ export async function analyzeDocumentLocalFirst(request: RouteRequest): Promise<
 
   const local = await runLocal();
   if ('analysis' in local) {
-    if (local.pending || !request.hasCloudAI || request.mode !== 'auto' || order !== 'device-first') return local;
-    try {
-      return { analysis: await runCloud() as Record<string, unknown>, source: 'cloud', extractedText: local.extractedText };
-    } catch {
-      return local;
-    }
+    return local;
   }
   if (request.hasCloudAI) {
     try {

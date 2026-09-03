@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
+import { effectiveVoiceProvider } from "@/src/db/ai";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { materializePendingVoiceParty, type VoicePartyCreateProposal } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft, resolveVoiceCommandsForDrafts, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
@@ -127,7 +128,7 @@ export default function VoiceFab() {
       if (deviceStopRef.current) { await deviceStopRef.current().catch(() => {}); deviceStopRef.current = null; }
       await cancelVoiceRecorder(recorder);
       const cfg = await getAIConfig();
-      const mode = cfg.voiceProvider || "auto";
+      const mode = effectiveVoiceProvider(cfg);
       if (mode !== "cloud") {
         const status = await getDeviceSpeechStatus();
         if (status.available) {

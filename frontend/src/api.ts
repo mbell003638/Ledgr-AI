@@ -1536,7 +1536,7 @@ export const api = {
     ]);
     const route = await analyzeDocumentLocalFirst({
       input,
-      mode: config.ocrProvider || 'auto',
+      mode: ai.effectiveOcrProvider(config),
       hasCloudAI: Boolean(config.apiKey),
       recognizeLocal: recognizeLocalOcr,
       analyzeCloud: (cloudInput) => {
