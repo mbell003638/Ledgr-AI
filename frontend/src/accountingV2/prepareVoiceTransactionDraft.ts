@@ -7,6 +7,7 @@ import {
 import { resolveVoicePartyCommand } from './voicePartyResolution';
 import { buildVoiceTransactionDraft, resolveVoiceCommandsForDrafts, type VoiceTransactionDraft } from './voiceTransactionDraft';
 import { DEFAULT_ENTRY_HELP_ORDER, withCloudHelpTimeout } from '../db/ai';
+import { interpretNeedleVoiceCommand } from '../utils/onDeviceLlm';
 
 export type VoiceDraftPreparation =
   | { status: 'ready'; draft: VoiceTransactionDraft; drafts: VoiceTransactionDraft[] }
@@ -98,6 +99,14 @@ export async function prepareVoiceTransactionDraft(
   }
 
   if (localReady) return localReady;
+  try {
+    const needleCommand = await interpretNeedleVoiceCommand(transcript);
+    if (needleCommand?.intent) {
+      const resolution = resolveVoicePartyCommand(needleCommand, transcript, directory);
+      if (!resolution.ok) return partyClarification(transcript, needleCommand, resolution.question);
+      return readyDraft(resolution.command);
+    }
+  } catch { /* Needle is optional until the native engine is vendored */ }
   if (localFirst.status === 'clarification') {
     return { status: 'clarification', question: localFirst.question, continuation: localFirst.continuation };
   }

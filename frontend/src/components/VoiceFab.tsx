@@ -19,6 +19,7 @@ import { VoiceOrb } from "@/src/components/VoiceOrb";
 import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { subscribeToVoiceAssistantRequest } from "@/src/utils/voiceAssistantRequest";
 import { DeviceSpeechSession, getDeviceSpeechBridge, isDeviceSpeechAvailable } from "@/src/utils/deviceSpeechRecognizer";
+import { speakOnDevice } from "@/src/utils/deviceTts";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -45,6 +46,12 @@ export default function VoiceFab() {
   }, []);
 
   useEffect(() => () => { deviceSession.current?.cancel(); deviceSession.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
+
+  useEffect(() => {
+    if (phase !== "confirm") return;
+    const preview = validatedAction && validatedAction.ok ? validatedAction.action.confirmation.preview : "Draft ready for confirmation.";
+    void api.getSpeakAnswers().then((enabled) => { if (enabled) return speakOnDevice(preview); }).catch(() => undefined);
+  }, [phase, validatedAction]);
 
   const stopExistingRecorder = useCallback(() => cancelVoiceRecorder(recorder), [recorder]);
 

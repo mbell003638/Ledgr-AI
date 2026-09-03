@@ -19,6 +19,8 @@ import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/util
 import { getAICapabilities } from "@/src/db/aiCapabilities";
 import { getDeviceSpeechStatus } from "@/src/utils/deviceSpeechRecognizer";
 import { getLocalOcrStatus } from "@/src/utils/localOcr";
+import { deleteOptionalOnDeviceModel, downloadOptionalOnDeviceModel, getOnDeviceLlmStatus, listOptionalOnDeviceModels } from "@/src/utils/onDeviceLlm";
+import type { OptionalOnDeviceModelId } from "@/src/accountingV2/onDeviceTools";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -136,6 +138,11 @@ export default function AdvancedSettingsScreen() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [speakAnswers, setSpeakAnswers] = useState(false);
+  const [needleStatus, setNeedleStatus] = useState("");
+  const [optionalModels, setOptionalModels] = useState<Awaited<ReturnType<typeof listOptionalOnDeviceModels>>>([]);
+  const [modelBusy, setModelBusy] = useState<string | null>(null);
+  const [downloadHint, setDownloadHint] = useState("");
   const params = useLocalSearchParams<{ section?: string }>();
 
   const chooseProvider = (nextProvider: ProviderId) => {
@@ -184,6 +191,14 @@ export default function AdvancedSettingsScreen() {
       setOcrProvider(cfg.ocrProvider || "auto");
       setInterpretationProvider(cfg.interpretationProvider || "auto");
       setEntryHelpOrder(cfg.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER);
+      const [speak, needle, models] = await Promise.all([
+        api.getSpeakAnswers(),
+        getOnDeviceLlmStatus().catch(() => null),
+        listOptionalOnDeviceModels().catch(() => []),
+      ]);
+      setSpeakAnswers(speak);
+      setNeedleStatus(needle?.needleAvailable ? "Needle 2 is ready on this phone." : (needle?.reason || "Needle ships in the native APK after the Cactus engine is vendored."));
+      setOptionalModels(models);
       setBaseUrl(cfg.baseUrl || "");
       setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
       setAiRememberHistory(s.aiRememberHistory === true);
@@ -779,6 +794,54 @@ export default function AdvancedSettingsScreen() {
                     {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
                   </View>
                 </View>
+              </AccordionRow>
+              <AccordionRow title="On-device models" subtitle="Needle, Gemma downloads, speak answers" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <Text style={styles.hint}>{needleStatus}</Text>
+                <View style={styles.modeRow}>
+                  <Pressable
+                    testID="speak-answers-toggle"
+                    onPress={async () => {
+                      const next = !speakAnswers;
+                      setSpeakAnswers(next);
+                      await api.setSpeakAnswers(next);
+                    }}
+                    style={[styles.modeBtn, speakAnswers && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, speakAnswers && styles.modeTextActive]}>{speakAnswers ? "Speak answers on" : "Speak answers off"}</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.hint}>Uses the phone speaker, not a downloaded voice model. Default is off.</Text>
+                {optionalModels.map((model) => (
+                  <View key={model.id} style={{ marginTop: theme.spacing.sm }}>
+                    <Text style={styles.label}>{model.label}</Text>
+                    <Text style={styles.hint}>{model.summary} {model.installed ? "Downloaded." : model.eligible ? `About ${(model.bytes / (1024 * 1024 * 1024)).toFixed(1)} GB Wi-Fi download.` : "Hidden on this phone (not enough RAM)."}</Text>
+                    {model.eligible ? (
+                      <Pressable
+                        testID={`on-device-model-${model.id}`}
+                        disabled={modelBusy != null}
+                        onPress={async () => {
+                          setModelBusy(model.id);
+                          setDownloadHint("");
+                          try {
+                            if (model.installed) await deleteOptionalOnDeviceModel(model.id as OptionalOnDeviceModelId);
+                            else await downloadOptionalOnDeviceModel(model.id as OptionalOnDeviceModelId, (received, total) => {
+                              if (total > 0) setDownloadHint(`${model.label}: ${Math.round((received / total) * 100)}%`);
+                            });
+                            setOptionalModels(await listOptionalOnDeviceModels());
+                          } catch (error: any) {
+                            setDownloadHint(error?.message || "Could not update that model.");
+                          } finally {
+                            setModelBusy(null);
+                          }
+                        }}
+                        style={[styles.addBtn, { marginTop: 6 }]}
+                      >
+                        <Text style={styles.addText}>{modelBusy === model.id ? "Working…" : model.installed ? "Delete model" : "Download"}</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ))}
+                {downloadHint ? <Text style={styles.hint}>{downloadHint}</Text> : null}
               </AccordionRow>
               <AccordionRow title="AI Data & History" subtitle={aiDataMode === 'detailed' ? 'Detailed context enabled' : 'Summary only by default'} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
