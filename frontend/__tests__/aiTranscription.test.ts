@@ -1,3 +1,9 @@
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///cache/',
+  writeAsStringAsync: jest.fn(async () => undefined),
+  EncodingType: { Base64: 'base64' },
+}));
+
 import { askBooks, isNeutralTranscript, transcribe } from '../src/db/ai';
 
 const response = (payload: unknown) => ({
@@ -51,6 +57,12 @@ describe('voice transcription provider routing', () => {
   });
 
   it('uses the OpenAI-compatible audio transcription endpoint and separate voice model', async () => {
+    class NativeFormData {
+      parts = new Map<string, unknown>();
+      append(name: string, value: unknown) { this.parts.set(name, value); }
+      get(name: string) { return this.parts.get(name); }
+    }
+    global.FormData = NativeFormData as any;
     const fetchSpy = jest.fn().mockResolvedValue(response({ text: 'record an expense for fuel' }));
     global.fetch = fetchSpy as any;
 
@@ -66,9 +78,13 @@ describe('voice transcription provider routing', () => {
       'https://example.com/v1/audio/transcriptions',
       expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer test-key' } }),
     );
-    const form = fetchSpy.mock.calls[0][1].body as FormData;
+    const form = fetchSpy.mock.calls[0][1].body as NativeFormData;
     expect(form.get('model')).toBe('whisper-1');
-    expect(form.get('file')).toBeInstanceOf(Blob);
+    expect(form.get('file')).toEqual({
+      uri: 'file:///cache/ledgr-voice.m4a',
+      name: 'ledgr-voice.m4a',
+      type: 'audio/m4a',
+    });
   });
 
   it('uses a native file URI instead of constructing an ArrayBuffer Blob', async () => {

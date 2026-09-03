@@ -110,4 +110,15 @@ describe('local document parser', () => {
     if (result.status !== 'clarification') return;
     expect(result.question).toMatch(/statement date/i);
   });
+
+  it('unpacks a packed closing-report line into many setup rows, not one total', () => {
+    const result = interpretLocalDocumentText(
+      "ASSETS Cash USD at Home $37,741.17 Cash FC in Shop $948.04 Physical Stock $150,527.46 Shop Deposit $7,500.00 House Deposit $750.00 Total Assets $197,466.67 LIABILITIES Creditors $36,215.42 Commission Payable $6,063.15 Amit Ending Stake $68,935.48 Rahim Ending Stake $86,252.62 Each Partner's Share (50/50) $13,810.50",
+    );
+    expectPartnerClosingDocument(result);
+    if (result.status === 'unsupported') return;
+    expect(result.document?.entries).toHaveLength(0);
+    expect(result.mapped?.validRows.some((row) => row.kind === 'transaction')).toBe(false);
+    expect((result.mapped?.validRows || []).length).toBeGreaterThanOrEqual(7);
+  });
 });

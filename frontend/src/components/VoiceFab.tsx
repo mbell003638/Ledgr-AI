@@ -15,7 +15,7 @@ import Animated, { SlideInDown } from "react-native-reanimated";
 import { localTodayIso } from "@/src/utils/dateValidation";
 import { isCapabilityEnabled } from "@/src/utils/capabilities";
 import { VoiceOrb } from "@/src/components/VoiceOrb";
-import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { subscribeToVoiceAssistantRequest } from "@/src/utils/voiceAssistantRequest";
 import { DeviceSpeechSession, getDeviceSpeechBridge, isDeviceSpeechAvailable } from "@/src/utils/deviceSpeechRecognizer";
 
@@ -63,6 +63,9 @@ export default function VoiceFab() {
   const start = useCallback(async () => {
     setError(""); setTranscript(""); setParsed(null); setDrafts([]); setPendingClarification(null); setClarificationAnswer("");
     try {
+      deviceSession.current?.cancel();
+      deviceSession.current = null;
+      await stopExistingRecorder();
       const config = await api.getAIConfig();
       const bridge = getDeviceSpeechBridge();
       const available = bridge ? await isDeviceSpeechAvailable(bridge) : false;
@@ -84,7 +87,7 @@ export default function VoiceFab() {
       }
       await startVoiceRecorder(recorder);
       setPhase("recording");
-    } catch (e: any) { setError(e.message || "Could not start the microphone."); setPhase("error"); }
+    } catch (e: any) { setError(friendlyVoiceError(e, "Could not start the microphone.")); setPhase("error"); }
   }, [recorder]);
   const startRef = useRef(start);
   useEffect(() => { startRef.current = start; }, [start]);
@@ -107,7 +110,7 @@ export default function VoiceFab() {
       setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
-      setError(e.message || "Voice processing failed");
+      setError(friendlyVoiceError(e, "Voice processing failed"));
       setPhase("error");
     }
   };

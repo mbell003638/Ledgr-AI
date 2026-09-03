@@ -90,6 +90,26 @@ function pairLabelledAmountLines(lines: string[]): string[] {
   return paired;
 }
 
+const PACKED_AMOUNT = /[+\-−]?[$€£₹]?\s*\d{1,3}(?:,\d{3})+(?:\.\d{2})?|[+\-−]?[$€£₹]?\s*\d+\.\d{2}|[+\-−]?[$€£₹]\s*\d+(?:\.\d{2})?/;
+
+/** ML Kit often dumps several label/amount rows onto one line. */
+function unpackPackedAmountLines(lines: string[]): string[] {
+  const unpacked: string[] = [];
+  for (const line of lines) {
+    const pair = new RegExp(
+      `([A-Za-z][A-Za-z0-9 &'./()%-]{0,80}?)\\s*(${PACKED_AMOUNT.source})(?:\\s*(?:USD|CAD|EUR|GBP|INR))?`,
+      'g',
+    );
+    const matches = [...line.matchAll(pair)];
+    if (matches.length >= 2) {
+      unpacked.push(...matches.map((match) => match[0].replace(/\s+/g, ' ').trim()));
+      continue;
+    }
+    unpacked.push(line);
+  }
+  return unpacked;
+}
+
 function applyVisiblePartnerSplit(partners: NonNullable<LocalAnalyzedDocument['setup']>['partners'], lines: string[]): void {
   if (!partners?.length || partners.some((row) => row.profitSharePct != null)) return;
   const match = lines.join(' ').match(/\((\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{1,2}))?\)/);
@@ -197,7 +217,9 @@ function labeledAmount(lines: string[], pattern: RegExp): number | undefined {
 }
 
 function lineNameBeforeAmount(line: string): string {
-  return line.replace(MONEY_TOKEN, ' ').replace(/[:|.-]+$/g, '').replace(/\s+/g, ' ').trim();
+  return line.replace(MONEY_TOKEN, ' ').replace(/[:|.-]+$/g, '')
+    .replace(/^(?:assets?|liabilities?|equity|capital|drawings?(?:\s+this\s+period)?)\s+/i, '')
+    .replace(/\s+/g, ' ').trim();
 }
 
 function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutcome | null {
@@ -272,7 +294,7 @@ function parseOpeningDocument(lines: string[], text: string): LocalDocumentOutco
 export function interpretLocalDocumentText(text: string, options: LocalDocumentOptions = {}): LocalDocumentOutcome {
   const clipped = String(text || '').trim().slice(0, 20_000);
   if (clipped.length < 8) return { status: 'unsupported', confidence: 0, source: 'local-ocr-rules', reason: 'Local OCR did not return enough readable text.' };
-  const lines = pairLabelledAmountLines(cleanLines(clipped));
+  const lines = pairLabelledAmountLines(unpackPackedAmountLines(cleanLines(clipped)));
   const opening = parseOpeningDocument(lines, lines.join('\n'));
   if (opening) return opening;
 
