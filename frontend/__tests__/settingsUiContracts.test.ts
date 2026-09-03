@@ -17,6 +17,9 @@ describe('settings UI contracts', () => {
     expect(mainSettings).not.toContain('getAIConfig');
     expect(advancedSettings).toContain('entryHelpOrder');
     expect(advancedSettings).toContain('AI first');
+    expect(advancedSettings).toContain('Test connection');
+    expect(advancedSettings).not.toContain('Test Chat Connection');
+    expect(advancedSettings).not.toContain('Test All');
   });
 
   it('keeps Accounting & Workflow only in Advanced Settings', () => {

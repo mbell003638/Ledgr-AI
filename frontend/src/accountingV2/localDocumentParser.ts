@@ -118,6 +118,26 @@ function pairLabelledAmountLines(lines: string[]): string[] {
   return paired;
 }
 
+const PACKED_AMOUNT = /[+\-−]?[$€£₹]?\s*\d{1,3}(?:,\d{3})+(?:\.\d{2})?|[+\-−]?[$€£₹]?\s*\d+\.\d{2}|[+\-−]?[$€£₹]\s*\d+(?:\.\d{2})?/;
+
+/** ML Kit often dumps several label/amount rows onto one line. */
+function unpackPackedAmountLines(lines: string[]): string[] {
+  const unpacked: string[] = [];
+  for (const line of lines) {
+    const pair = new RegExp(
+      `([A-Za-z][A-Za-z0-9 &'./()%-]{0,80}?)\\s*(${PACKED_AMOUNT.source})(?:\\s*(?:USD|CAD|EUR|GBP|INR))?`,
+      'g',
+    );
+    const matches = [...line.matchAll(pair)];
+    if (matches.length >= 2) {
+      unpacked.push(...matches.map((match) => compact(match[0])));
+      continue;
+    }
+    unpacked.push(line);
+  }
+  return unpacked;
+}
+
 function looksLikePositionReport(lines: string[]): boolean {
   const text = lines.join('\n');
   const header = POSITION_HEADER.test(text)
@@ -289,7 +309,12 @@ function resolvePartyFromDocument(lines: string[], header: string | undefined, r
 function labelledAmount(line: string): { name: string; amount: number } | undefined {
   const amounts = amountsOnLine(line);
   if (!amounts.length) return undefined;
-  const rawName = compact(line.replace(/(?:[$€£₹]\s*)?\d[\d,.]*(?:\s*(?:USD|CAD|EUR|GBP|INR))?/gi, ' ').replace(/[:=-]+$/g, ''));
+  const rawName = compact(
+    line
+      .replace(/(?:[$€£₹]\s*)?\d[\d,.]*(?:\s*(?:USD|CAD|EUR|GBP|INR))?/gi, ' ')
+      .replace(/[:=-]+$/g, '')
+      .replace(/^(?:assets?|liabilities?|equity|capital|drawings?(?:\s+this\s+period)?)\s+/i, ''),
+  );
   return rawName ? { name: rawName, amount: amounts[amounts.length - 1] } : undefined;
 }
 
@@ -359,7 +384,7 @@ function clarify(
 export function parseLocalDocumentText(sourceText: string, options: LocalDocumentParserOptions = {}): LocalDocumentParseResult {
   const text = sourceText.trim();
   if (!text) return { kind: 'unsupported', confidence: 'low', reason: 'Local OCR did not return readable document text.', sourceText: text };
-  const lines = pairLabelledAmountLines(linesOf(text));
+  const lines = pairLabelledAmountLines(unpackPackedAmountLines(linesOf(text)));
   if (lines.length < 2 && text.length < 12) return { kind: 'unsupported', confidence: 'low', reason: 'Not enough readable text was found to prepare a safe draft.', sourceText: text };
 
   const dates = extractDates(lines);

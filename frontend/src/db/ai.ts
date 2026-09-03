@@ -375,19 +375,49 @@ function resolveTranscriptionConfig(cfg: AIConfig): { baseUrl: string; apiKey: s
   return { baseUrl, apiKey, model: cfg.transcriptionModel?.trim() || 'whisper-1' };
 }
 
+async function writeTranscriptionTempFile(
+  audioBase64: string,
+  mimeType: string,
+  filename: string,
+): Promise<{ uri: string; name: string; type: string } | null> {
+  try {
+    const FileSystem = require('expo-file-system/legacy') as {
+      cacheDirectory?: string | null;
+      writeAsStringAsync: (path: string, data: string, options: { encoding: string }) => Promise<void>;
+      EncodingType?: { Base64: string };
+    };
+    const directory = FileSystem.cacheDirectory;
+    if (!directory) return null;
+    const path = `${directory}${filename}`;
+    await FileSystem.writeAsStringAsync(path, audioBase64, {
+      encoding: FileSystem.EncodingType?.Base64 || 'base64',
+    });
+    return { uri: path, name: filename, type: mimeType };
+  } catch {
+    return null;
+  }
+}
+
+async function blobFromBase64DataUrl(audioBase64: string, mimeType: string): Promise<Blob> {
+  const response = await fetch(`data:${mimeType};base64,${audioBase64}`);
+  return response.blob();
+}
+
 async function transcribeOpenAI(cfg: AIConfig, audioBase64: string, mimeType: string, audioUri?: string): Promise<{ transcript?: string; text?: string }> {
   const voice = resolveTranscriptionConfig(cfg);
   const extension = mimeType.includes('webm') ? 'webm' : mimeType.includes('wav') ? 'wav' : 'm4a';
   const form = new FormData();
   const filename = `ledgr-voice.${extension}`;
-  if (audioUri) {
+  const nativeFile = audioUri
+    ? { uri: audioUri, name: filename, type: mimeType }
+    : await writeTranscriptionTempFile(audioBase64, mimeType, filename);
+  if (nativeFile) {
     // React Native uploads local files through its URI FormData part. Building
     // a Blob from Uint8Array/ArrayBuffer is unsupported on Android.
-    form.append('file', { uri: audioUri, name: filename, type: mimeType } as any);
+    form.append('file', nativeFile as any);
   } else {
-    const binary = globalThis.atob(audioBase64);
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    form.append('file', new Blob([bytes], { type: mimeType }), filename);
+    const blob = await blobFromBase64DataUrl(audioBase64, mimeType);
+    form.append('file', blob, filename);
   }
   form.append('model', voice.model);
   const endpoint = /\/audio\/transcriptions$/i.test(voice.baseUrl)

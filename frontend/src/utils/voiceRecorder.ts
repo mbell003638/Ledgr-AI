@@ -12,6 +12,26 @@ function recorderIsRecording(recorder: AudioRecorder): boolean {
   return recorder.getStatus().isRecording || recorder.isRecording;
 }
 
+function alreadyPreparedMessage(error: unknown): boolean {
+  const record = error && typeof error === "object" ? error as { message?: unknown; cause?: { message?: unknown } } : null;
+  const text = [record?.message, record?.cause?.message, String(error ?? "")].join(" ");
+  return /already been prepared|already prepared|current session before preparing/i.test(text);
+}
+
+/** Maps Expo/Hermes recorder failures to a short, actionable message. */
+export function friendlyVoiceError(error: unknown, fallback = "Voice processing failed"): string {
+  const record = error && typeof error === "object" ? error as { message?: unknown; cause?: { message?: unknown } } : null;
+  const text = [record?.message, record?.cause?.message, String(error ?? "")].join(" ");
+  if (alreadyPreparedMessage(error) || /prepareToRecordAsync/i.test(text)) {
+    return "The microphone was still finishing the last take. Tap Try Again.";
+  }
+  if (/ArrayBuffer|ArrayBufferView|blobs from/i.test(text)) {
+    return "This phone cannot upload the recording that way. Use Android device speech, or try again.";
+  }
+  const message = typeof record?.message === "string" && record.message.trim() ? record.message : fallback;
+  return message;
+}
+
 function runExclusive<T>(recorder: AudioRecorder, operation: () => Promise<T>): Promise<T> {
   const key = recorder as object;
   const previous = recorderTails.get(key) || Promise.resolve();
@@ -42,7 +62,8 @@ export function startVoiceRecorder(recorder: AudioRecorder): Promise<void> {
       try {
         await recorder.prepareToRecordAsync();
       } catch (error: any) {
-        if (!/already been prepared/i.test(String(error?.message || error))) throw error;
+        if (!alreadyPreparedMessage(error)) throw error;
+        try { await recorder.stop(); } catch { /* already idle; skip a second prepare */ }
       }
     }
     if (!recorderIsRecording(recorder)) recorder.record();

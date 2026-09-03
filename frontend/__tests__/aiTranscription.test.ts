@@ -1,3 +1,9 @@
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///cache/',
+  writeAsStringAsync: jest.fn(async () => undefined),
+  EncodingType: { Base64: 'base64' },
+}));
+
 import { transcribe } from '../src/db/ai';
 
 const response = (payload: unknown) => ({
@@ -34,6 +40,35 @@ describe('voice transcription provider routing', () => {
       expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer chat-key' } }),
     );
   });
+  it('writes a temp file instead of constructing an ArrayBuffer Blob when no URI is given', async () => {
+    class NativeFormData {
+      parts = new Map<string, unknown>();
+      append(name: string, value: unknown) { this.parts.set(name, value); }
+      get(name: string) { return this.parts.get(name); }
+    }
+    global.FormData = NativeFormData as any;
+    const blobSpy = jest.fn();
+    (global as any).Blob = blobSpy;
+    const fetchSpy = jest.fn().mockResolvedValue(response({ text: 'paid supplier 100 today' }));
+    global.fetch = fetchSpy as any;
+
+    await expect(transcribe({
+      provider: 'openai',
+      apiKey: 'chat-key',
+      model: 'chat-model',
+      transcriptionModel: 'whisper-1',
+      baseUrl: 'https://example.com/v1',
+    }, 'YQ==', 'audio/m4a')).resolves.toEqual({ transcript: 'paid supplier 100 today' });
+
+    const form = fetchSpy.mock.calls[0][1].body as NativeFormData;
+    expect(form.get('file')).toEqual({
+      uri: 'file:///cache/ledgr-voice.m4a',
+      name: 'ledgr-voice.m4a',
+      type: 'audio/m4a',
+    });
+    expect(blobSpy).not.toHaveBeenCalled();
+  });
+
   it('uses a native file URI instead of constructing an ArrayBuffer Blob', async () => {
     class NativeFormData {
       parts = new Map<string, unknown>();

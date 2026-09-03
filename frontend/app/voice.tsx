@@ -12,7 +12,7 @@ import { executeAssistantProposal, type AssistantProposalValidationResult } from
 import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
 import { buildVoiceTransactionDraft, resolveVoiceCommandsForDrafts, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 
-import { captureVoiceRecording, cancelVoiceRecorder, startVoiceRecorder } from "@/src/utils/voiceRecorder";
+import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { getDeviceSpeechStatus, startDeviceSpeechRecognition } from "@/src/utils/deviceSpeechRecognizer";
 import { continueVoiceTransaction, interpretVoiceTransaction, type PendingVoiceClarification, type VoiceInterpretationResult } from "@/src/accountingV2/voiceInterpretationRouter";
 
@@ -116,6 +116,8 @@ export default function VoiceModal() {
   const start = async () => {
     setError(""); setTranscript(""); setParsed(null); setDrafts([]); setPendingClarification(null); setFollowUpAnswer("");
     try {
+      if (deviceStopRef.current) { await deviceStopRef.current().catch(() => {}); deviceStopRef.current = null; }
+      await cancelVoiceRecorder(recorder);
       const cfg = await getAIConfig();
       const mode = cfg.voiceProvider || "auto";
       if (mode !== "cloud") {
@@ -130,7 +132,7 @@ export default function VoiceModal() {
       }
       await startVoiceRecorder(recorder);
       setPhase("recording");
-    } catch (e: any) { setError(e.message); setPhase("error"); }
+    } catch (e: any) { setError(friendlyVoiceError(e, "Could not start the microphone.")); setPhase("error"); }
   };
 
   const stopAndProcess = async () => {
@@ -148,7 +150,7 @@ export default function VoiceModal() {
       setValidatedAction(ready[0]?.validation || null);
       setPhase("confirm");
     } catch (e: any) {
-      setError(e.message || "Voice processing failed");
+      setError(friendlyVoiceError(e, "Voice processing failed"));
       setPhase("error");
     }
   };
@@ -258,6 +260,8 @@ export default function VoiceModal() {
   };
 
   const reset = () => {
+    void deviceStopRef.current?.(); deviceStopRef.current = null;
+    void cancelVoiceRecorder(recorder);
     setPhase("idle"); setTranscript(""); setParsed(null); setDrafts([]); setValidatedAction(null); setError(""); setPendingClarification(null); setFollowUpAnswer("");
   };
 

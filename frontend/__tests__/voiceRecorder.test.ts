@@ -69,6 +69,16 @@ describe('voice recorder lifecycle', () => {
     expect(recorder.record).toHaveBeenCalledTimes(1);
   });
 
+  it('recovers from Expo nested prepare rejection text', async () => {
+    const recorder = makeRecorder({ isRecording: false, canRecord: false });
+    const error: any = new Error("Call to function 'AudioRecorder.prepareToRecordAsync' has been rejected.");
+    error.cause = { message: 'AudioRecorder has already been prepared. Stop or release the current session before preparing again.' };
+    recorder.prepareToRecordAsync.mockRejectedValueOnce(error);
+    await expect(startVoiceRecorder(recorder)).resolves.toBeUndefined();
+    expect(recorder.stop).toHaveBeenCalled();
+    expect(recorder.record).toHaveBeenCalledTimes(1);
+  });
+
   it('does not record when microphone permission is denied', async () => {
     (AudioModule.requestRecordingPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false });
     const recorder = makeRecorder({ isRecording: false, canRecord: false });
