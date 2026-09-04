@@ -1,4 +1,5 @@
 import { parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
+import { continueLocalTransaction } from '../src/accountingV2/localTransactionParser';
 import { V2AppService } from '../src/accountingV2/appService';
 
 const supplier = { id: 'supplier-amit', name: 'Amit' };
@@ -141,3 +142,44 @@ describe('authoritative Capital Account name protection', () => {
     await expect(service.assertPartyNameAvailable('Rahul Supplies', 'book-1')).resolves.toBeUndefined();
   });
 });
+
+describe('continueLocalTransaction capital account clarification', () => {
+  it('resolves party_role clarification to drawing when capital account exists', () => {
+    const continuation = {
+      kind: 'clarification' as const,
+      confidence: 'medium' as const,
+      field: 'party' as const,
+      transcript: 'Paid 100 to Amit',
+      question: 'Is Amit a Customer, Supplier, or Capital Account?',
+      command: { intent: 'supplier_payment', amount: 100, supplierName: 'Amit' },
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      directory: { suppliers: [supplier], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    });
+    expect(result).toMatchObject({
+      kind: 'confident',
+      command: { intent: 'drawing', partnerName: 'Amit', amount: 100 },
+    });
+  });
+
+  it('rejects creating new Capital Account when none matches', () => {
+    const continuation = {
+      kind: 'clarification' as const,
+      confidence: 'medium' as const,
+      field: 'party' as const,
+      transcript: 'Paid 100 to NonExistent',
+      question: 'Is NonExistent a Customer, Supplier, or Capital Account?',
+      command: { intent: 'supplier_payment', amount: 100, supplierName: 'NonExistent' },
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      directory: { suppliers: [], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    });
+    expect(result).toMatchObject({
+      kind: 'clarification',
+      question: expect.stringMatching(/Capital Accounts must be added from Accounts/i),
+    });
+  });
+});
+

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput, Keyboard, Platform, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
@@ -35,6 +35,22 @@ export default function VoiceFab() {
   const [bookCurrency, setBookCurrency] = useState("USD");
   const deviceStopRef = useRef<(() => Promise<void>) | null>(null);
   const transcriptRef = useRef("");
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardHeight(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const pulseScale = useSharedValue(1);
 
@@ -112,8 +128,14 @@ export default function VoiceFab() {
     if (!pendingClarification || !answer.trim()) return;
     setError(""); setPhase("processing");
     try {
-      const settings = await api.getSettings();
-      const interpretation = continueVoiceTransaction(pendingClarification, answer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false });
+      const [settings, suppliers, customers, capitalAccounts] = await Promise.all([
+        api.getSettings(), api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+      ]);
+      const interpretation = continueVoiceTransaction(pendingClarification, answer, {
+        defaultCurrency: settings.currency || "USD",
+        requirePaymentMethod: false,
+        directory: { suppliers, customers, capitalAccounts },
+      });
       if (interpretation.kind !== "command") {
         if (interpretation.kind === "clarification") setPendingClarification(interpretation);
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
@@ -299,7 +321,22 @@ export default function VoiceFab() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
           </Pressable>
 
-          <Animated.View entering={SlideInDown.duration(300).springify()} style={[styles.popupContainer, { backgroundColor: theme.color.surface }]}>
+          <Animated.View
+            entering={SlideInDown.duration(300).springify()}
+            style={[
+              styles.popupContainer,
+              {
+                backgroundColor: theme.color.surface,
+                paddingBottom: keyboardHeight > 0 ? keyboardHeight + 24 : 48,
+                maxHeight: keyboardHeight > 0 ? "85%" : undefined,
+              },
+            ]}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ flexGrow: 0 }}
+            >
             {/* Header / Dismiss */}
             <View style={styles.popupHeader}>
               <Text style={[styles.popupTitle, { color: theme.color.onSurface }]}>Voice Assistant</Text>
@@ -394,6 +431,7 @@ export default function VoiceFab() {
                 </Pressable>
               </View>
             ) : null}
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>

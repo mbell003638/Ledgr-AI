@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -104,8 +104,14 @@ export default function VoiceModal() {
     if (!pendingClarification || !followUpAnswer.trim()) return;
     setError(""); setPhase("processing");
     try {
-      const settings = await api.getSettings();
-      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false });
+      const [settings, suppliers, customers, capitalAccounts] = await Promise.all([
+        api.getSettings(), api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+      ]);
+      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, {
+        defaultCurrency: settings.currency || "USD",
+        requirePaymentMethod: false,
+        directory: { suppliers, customers, capitalAccounts },
+      });
       if (interpretation.kind !== "command") {
         if (interpretation.kind === "clarification") setPendingClarification(interpretation);
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);
@@ -274,7 +280,8 @@ export default function VoiceModal() {
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 160 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Card>
           <Text style={styles.title}>Say a transaction</Text>
           <Text style={styles.hint}>
@@ -359,6 +366,7 @@ export default function VoiceModal() {
         </Card>
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
