@@ -1,5 +1,5 @@
 import { parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
-import { continueLocalTransaction } from '../src/accountingV2/localTransactionParser';
+import { continueLocalTransaction, parseLocalTransaction } from '../src/accountingV2/localTransactionParser';
 import { V2AppService } from '../src/accountingV2/appService';
 
 const supplier = { id: 'supplier-amit', name: 'Amit' };
@@ -179,6 +179,63 @@ describe('continueLocalTransaction capital account clarification', () => {
     expect(result).toMatchObject({
       kind: 'clarification',
       question: expect.stringMatching(/Capital Accounts must be added from Accounts/i),
+    });
+  });
+});
+
+describe('spoken capital account drawing and withdrawal parsing', () => {
+  it('parses "Paid $100 to amit withdrawal from Capital account" directly as drawing for Amit', () => {
+    const parsedOutgoing = parseSimpleOutgoingPayment('Paid $100 to amit withdrawal from Capital account');
+    expect(parsedOutgoing).toMatchObject({
+      intent: 'drawing',
+      partnerName: 'amit',
+      amount: 100,
+    });
+
+    const resolved = resolveVoicePartyCommand(parsedOutgoing!, 'Paid $100 to amit withdrawal from Capital account', {
+      suppliers: [],
+      customers: [],
+      capitalAccounts: [{ id: '1', name: 'Amit' }],
+    });
+    expect(resolved).toMatchObject({
+      ok: true,
+      command: {
+        intent: 'drawing',
+        partnerName: 'Amit',
+        amount: 100,
+      },
+    });
+  });
+
+  it('parses "Paid $100 cash to amit withdrawal from Capital account" with payment method', () => {
+    const parsed = parseLocalTransaction('Paid $100 cash to amit withdrawal from Capital account');
+    expect(parsed).toMatchObject({
+      kind: 'confident',
+      command: {
+        intent: 'drawing',
+        partnerName: 'amit',
+        amount: 100,
+        method: 'cash',
+      },
+    });
+  });
+
+  it('cleans trailing role noise from candidate name in continueLocalTransaction', () => {
+    const continuation = {
+      kind: 'clarification' as const,
+      confidence: 'medium' as const,
+      field: 'party' as const,
+      transcript: 'Paid 100 to amit withdrawal from Capital account',
+      question: 'Is amit a Customer, Supplier, or Capital Account?',
+      command: { intent: 'supplier_payment', amount: 100, supplierName: 'amit withdrawal from Capital account' },
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      directory: { suppliers: [], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    });
+    expect(result).toMatchObject({
+      kind: 'confident',
+      command: { intent: 'drawing', partnerName: 'Amit', amount: 100 },
     });
   });
 });

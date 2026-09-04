@@ -112,6 +112,7 @@ export default function VoiceFab() {
     setPendingClarification(null);
     setFollowUpAnswer("");
     setCreateProposal(null);
+    setTranscript(txt);
     const [cfg, settings] = await Promise.all([getAIConfig(), api.getSettings()]);
     setBookCurrency(settings.currency || "USD");
     const interpretation = await interpretVoiceTransaction({
@@ -131,7 +132,11 @@ export default function VoiceFab() {
       const [settings, suppliers, customers, capitalAccounts] = await Promise.all([
         api.getSettings(), api.listSuppliers(), api.listDebtors(), api.listInvestors(),
       ]);
-      const interpretation = continueVoiceTransaction(pendingClarification, answer, {
+      const currentPending = {
+        ...pendingClarification,
+        transcript: transcript.trim() || pendingClarification.transcript,
+      };
+      const interpretation = continueVoiceTransaction(currentPending, answer, {
         defaultCurrency: settings.currency || "USD",
         requirePaymentMethod: false,
         directory: { suppliers, customers, capitalAccounts },
@@ -191,6 +196,9 @@ export default function VoiceFab() {
     const txt = transcript.trim();
     if (!txt) return;
     setError(""); setPhase("processing");
+    setPendingClarification(null);
+    setFollowUpAnswer("");
+    setCreateProposal(null);
     try {
       const ready = await buildVoiceDraft(txt);
       setDrafts(ready);
