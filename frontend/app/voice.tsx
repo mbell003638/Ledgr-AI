@@ -96,6 +96,7 @@ export default function VoiceModal() {
   const buildVoiceDraft = async (txt: string) => {
     setPendingClarification(null);
     setFollowUpAnswer("");
+    setTranscript(txt);
     const [cfg, settings] = await Promise.all([getAIConfig(), api.getSettings()]);
     const interpretation = await interpretVoiceTransaction({
       transcript: txt,
@@ -116,7 +117,11 @@ export default function VoiceModal() {
       const [settings, suppliers, customers, capitalAccounts] = await Promise.all([
         api.getSettings(), api.listSuppliers(), api.listDebtors(), api.listInvestors(),
       ]);
-      const interpretation = continueVoiceTransaction(pendingClarification, followUpAnswer, {
+      const currentPending = {
+        ...pendingClarification,
+        transcript: transcript.trim() || pendingClarification.transcript,
+      };
+      const interpretation = continueVoiceTransaction(currentPending, followUpAnswer, {
         defaultCurrency: settings.currency || "USD",
         requirePaymentMethod: false,
         directory: { suppliers, customers, capitalAccounts },
@@ -176,6 +181,8 @@ export default function VoiceModal() {
     const txt = transcript.trim();
     if (!txt) return;
     setError(""); setPhase("processing");
+    setPendingClarification(null);
+    setFollowUpAnswer("");
     try {
       const ready = await buildVoiceDraft(txt);
       setDrafts(ready);
@@ -324,7 +331,7 @@ export default function VoiceModal() {
             <View style={styles.transcriptBox}>
               <Text style={styles.transcriptLabel}>Transcript</Text>
               <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={styles.transcript} />
-              {phase === "confirm" || phase === "error" ? <Pressable accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10 }]}><Text style={styles.actionText}>Update draft</Text></Pressable> : null}
+              {phase === "confirm" || phase === "error" ? <Pressable accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10, backgroundColor: theme.color.brandPrimary }]}><Text style={[styles.actionText, { color: "#000" }]}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
 
@@ -369,7 +376,7 @@ export default function VoiceModal() {
           {error ? (
             <View style={styles.errorBox}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="alert-circle" size={18} color={theme.color.error} /><Text style={styles.errorText} testID="voice-error">{error}</Text></View>
-              {pendingClarification ? <><TextInput testID="voice-follow-up-input" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcript, { backgroundColor: theme.color.surface, borderRadius: theme.radius.sm, padding: theme.spacing.sm }]} /><Pressable testID="btn-voice-follow-up" accessibilityRole="button" onPress={() => void continueDraft()} style={[styles.actionBtn, { marginTop: 8 }]}><Text style={styles.actionText}>Continue draft</Text></Pressable></> : null}
+              {pendingClarification ? <><TextInput testID="voice-follow-up-input" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcript, { backgroundColor: theme.color.surface, borderRadius: theme.radius.sm, padding: theme.spacing.sm }]} /><Pressable testID="btn-voice-follow-up" accessibilityRole="button" onPress={() => void continueDraft()} style={[styles.actionBtn, { marginTop: 8, backgroundColor: theme.color.brandPrimary }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
             </View>
           ) : null}
         </Card>

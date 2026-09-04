@@ -38,9 +38,11 @@ const MONTHS: Record<string, number> = {
 
 const cleanText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const cleanName = (value: string) => cleanText(value)
-  .replace(/^(?:the\s+)?(?:supplier|vendor|customer|client|capital\s+account|partner|owner)\s+/i, '')
+  .replace(/^(?:the\s+)?(?:supplier|vendor|customer|client|capital\s+account|partner|owner)(?:\s+|$)/i, '')
   .replace(/\s+(?:today|yesterday|tomorrow)$/i, '')
   .replace(/\s+(?:by|via|using|from)\s+(?:cash|bank(?:\s+transfer)?|card|mobile(?:\s+money)?|upi|cheque|check)$/i, '')
+  .replace(/\s+(?:as\s+(?:a\s+)?)?(?:capital\s+)?(?:withdrawal|drawing|deposit|contribution)\b[\s\S]*$/i, '')
+  .replace(/\s+(?:from|to|for|in|as|of)\s+(?:a\s+)?capital\s+account\b[\s\S]*$/i, '')
   .replace(/\s+(?:as|for)\s+(?:a\s+)?(?:supplier\s+payment|capital\s+(?:contribution|withdrawal)|drawing)$/i, '')
   .replace(/[.,!?;:]+$/g, '')
   .trim();
@@ -113,6 +115,7 @@ function partyAfter(text: string, marker: 'to' | 'from'): string | undefined {
     .replace(METHODS, '')
     .replace(/^(?:supplier|vendor|customer|client|capital\s+account|partner|owner)\s+/i, '')
     .replace(/\b(?:on|by|via|using)\s*$/i, ''));
+  if (!party || /^(?:capital\s+account|supplier|vendor|customer|client)$/i.test(party)) return undefined;
   return sanitizeSpokenPartyName(party) || undefined;
 }
 
@@ -160,7 +163,7 @@ export function parseLocalTransaction(
   const outgoingParty = partyAfter(transcript, 'to');
   const incomingParty = partyAfter(transcript, 'from');
   const explicitCapitalIn = /\b(?:invested|invest|contributed|contribute)\b|\b(?:added|add|deposit(?:ed)?)\b[\s\S]*\bcapital\b|\bcapital\s+(?:contribution|deposit|injection)\b/i.test(transcript);
-  const explicitDrawing = /\b(?:withdrew|withdraw|drawing|drew)\b[\s\S]*\b(?:capital|owner|partner)?\b|\bcapital\s+withdrawal\b/i.test(transcript);
+  const explicitDrawing = /\b(?:withdrew|withdraw(?:al|n)?|drawing|drew)\b[\s\S]*\b(?:capital|owner|partner)?\b|\bcapital\s+withdrawal\b/i.test(transcript);
   const supplierNamed = transcript.match(/\b(?:pay|paid|paying|settled?)\s+(?:the\s+)?(?:supplier|vendor)\s+([A-Za-z][A-Za-z0-9 .'-]{0,159}?)(?=\s+(?:[$€£₹]?\s*\d|by\b|via\b|using\b|today\b|yesterday\b|on\b)|$)/i)?.[1];
   const supplierPayment = /\b(?:pay|paid|paying|settled?|send|sent|transferred?|gave)\b/i.test(transcript) && Boolean(outgoingParty || supplierNamed);
   const receipt = /\b(?:received?|collected?|customer\s+payment)\b/i.test(transcript);
@@ -171,11 +174,11 @@ export function parseLocalTransaction(
 
   if (explicitCapitalIn) {
     const leadingInvestor = transcript.match(/^([A-Za-z][A-Za-z0-9 .'-]{0,159}?)\s+(?:invested|invests|contributed|contributes)\b/i)?.[1];
-    const partnerName = partyAfter(transcript, 'from') || partyAfter(transcript, 'to') || (leadingInvestor ? cleanName(leadingInvestor) : undefined);
+    const partnerName = incomingParty || outgoingParty || (leadingInvestor ? cleanName(leadingInvestor) : undefined);
     command = { intent: 'capital', amount, partnerName: partnerName || undefined, summary: `Add ${amount || '?'} capital${partnerName ? ` for ${partnerName}` : ''}` };
   } else if (explicitDrawing) {
     const leadingOwner = transcript.match(/^([A-Za-z][A-Za-z0-9 .'-]{0,159}?)\s+(?:withdrew|withdraws|drew)\b/i)?.[1];
-    const partnerName = partyAfter(transcript, 'from') || outgoingParty || (leadingOwner ? cleanName(leadingOwner) : undefined);
+    const partnerName = outgoingParty || incomingParty || (leadingOwner ? cleanName(leadingOwner) : undefined);
     command = { intent: 'drawing', amount, partnerName, summary: `Withdraw ${amount || '?'}${partnerName ? ` from ${partnerName} Capital Account` : ' from a Capital Account'}` };
   } else if (bill) {
     const supplierName = incomingParty || outgoingParty || transcript.match(/\b(?:supplier|vendor)\s+([A-Za-z][\w .'-]{0,159})/i)?.[1];
@@ -251,7 +254,7 @@ export function continueLocalTransaction(
     else if (/\b(?:cash|paid)\b/i.test(value)) command.paymentType = 'cash';
   } else if (pending.field === 'party') {
     const role = parseVoicePartyCreateRole(value, suggestedVoicePartyCreateRole(String(command.intent)));
-    const existingPartyName = voiceCommandPartyName(command);
+    const existingPartyName = cleanName(voiceCommandPartyName(command));
     const cleanedAnswerName = cleanName(value.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing|withdraw(?:al|n)?|as\s+a)\b/gi, '').trim());
     const candidateNames = [cleanedAnswerName, existingPartyName].filter(Boolean);
     const directory = options.directory;
