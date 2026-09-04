@@ -220,6 +220,64 @@ describe('spoken capital account drawing and withdrawal parsing', () => {
     });
   });
 
+  it('keeps an ordinary deposit payment a Supplier Payment instead of partner capital', () => {
+    expect(parseSimpleOutgoingPayment('Paid 500 to Acme Realty by bank deposit')).toMatchObject({
+      intent: 'supplier_payment',
+      supplierName: 'Acme Realty',
+      method: 'bank',
+    });
+    expect(parseSimpleOutgoingPayment('Paid $500 to Acme Realty as security deposit')).toMatchObject({
+      intent: 'supplier_payment',
+    });
+  });
+
+  it('still reads explicit capital wording as a contribution or drawing', () => {
+    expect(parseSimpleOutgoingPayment('Paid 500 to Amit as capital contribution')).toMatchObject({
+      intent: 'capital', partnerName: 'Amit', amount: 500,
+    });
+    expect(parseSimpleOutgoingPayment('Paid 500 to Amit for capital withdrawal')).toMatchObject({
+      intent: 'drawing', partnerName: 'Amit', amount: 500,
+    });
+    expect(parseSimpleOutgoingPayment('Paid 500 to Amit as a drawing')).toMatchObject({
+      intent: 'drawing', partnerName: 'Amit', amount: 500,
+    });
+  });
+
+  it('does not turn a named Supplier answer into a Capital Account drawing', () => {
+    const pending = parseLocalTransaction('Bought goods on credit for 500', { requirePaymentMethod: false });
+    expect(pending).toMatchObject({ kind: 'clarification', field: 'party' });
+    if (pending.kind !== 'clarification') return;
+
+    // "Sharma Traders" prefix-matches a "Sharma" Capital Account, but the user
+    // answered a Supplier question with a Supplier name.
+    expect(continueLocalTransaction(pending, 'Sharma Traders', {
+      directory: { suppliers: [{ id: 's1', name: 'Sharma Traders' }], customers: [], capitalAccounts: [{ id: 'c1', name: 'Sharma' }] },
+      requirePaymentMethod: false,
+    })).toMatchObject({ kind: 'confident', command: { intent: 'bill', supplierName: 'Sharma Traders' } });
+
+    // A name held by both records keeps the role the question asked about.
+    expect(continueLocalTransaction(pending, 'Amit', {
+      directory: { suppliers: [supplier], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    })).toMatchObject({ kind: 'confident', command: { intent: 'bill', supplierName: 'Amit' } });
+
+    // Naming the role explicitly still reaches the Capital Account.
+    expect(continueLocalTransaction(pending, 'Capital Account Sharma', {
+      directory: { suppliers: [{ id: 's1', name: 'Sharma Traders' }], customers: [], capitalAccounts: [{ id: 'c1', name: 'Sharma' }] },
+      requirePaymentMethod: false,
+    })).toMatchObject({ kind: 'confident', command: { intent: 'drawing', partnerName: 'Sharma' } });
+  });
+
+  it('resolves a drawing party question against the Capital Account directory', () => {
+    const pending = parseLocalTransaction('Withdrew 500 cash', { requirePaymentMethod: false });
+    expect(pending).toMatchObject({ kind: 'clarification', field: 'party' });
+    if (pending.kind !== 'clarification') return;
+    expect(continueLocalTransaction(pending, 'Amit', {
+      directory: { suppliers: [], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    })).toMatchObject({ kind: 'confident', command: { intent: 'drawing', partnerName: 'Amit', amount: 500 } });
+  });
+
   it('cleans trailing role noise from candidate name in continueLocalTransaction', () => {
     const continuation = {
       kind: 'clarification' as const,
