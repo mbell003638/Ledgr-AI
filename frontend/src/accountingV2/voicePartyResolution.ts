@@ -41,6 +41,34 @@ const prefixOrWordMatch = (rows: NamedAccount[], targetName: string) => {
 const one = (rows: NamedAccount[]) => rows.length === 1 ? rows[0] : null;
 
 /**
+ * Trailing capital-account role phrases that speech leaves attached to a party
+ * name, such as "Amit withdrawal from capital account" or "Amit as a drawing".
+ * Each pattern needs an explicit capital/drawing cue, so ordinary business
+ * wording like "as security deposit" or "by bank deposit" keeps its name.
+ */
+const ROLE_QUALIFIER_TAILS: RegExp[] = [
+  /\s+(?:(?:as|for)\s+(?:a\s+)?)?capital\s+(?:withdrawal|drawing|deposit|contribution)\b[\s\S]*$/i,
+  /\s+(?:as|for)\s+(?:a\s+)?(?:withdrawal|drawing|contribution)\b[\s\S]*$/i,
+  /\s+(?:withdrawal|withdrawn|withdraw|drawing)\s+(?:from|out\s+of|of)\b[\s\S]*$/i,
+  /\s+(?:withdrawal|drawing)$/i,
+  /\s+(?:from|to|for|in|as|of)\s+(?:a\s+|the\s+|his\s+|her\s+|their\s+)?capital\s+account\b[\s\S]*$/i,
+];
+
+/** Removes trailing capital-account role phrases from a spoken party name. */
+export function stripRoleQualifiers(value: string): string {
+  return ROLE_QUALIFIER_TAILS.reduce((text, pattern) => text.replace(pattern, ''), String(value || '')).trim();
+}
+
+/**
+ * A spoken sentence only means a Capital Account movement when it names one.
+ * "Deposit" and "contribution" on their own are ordinary business words, so
+ * they need a capital cue before they can retype a payment as capital.
+ */
+export const CAPITAL_CUE = /\bcapital\b|\bpartner(?:'s|s')?\b|\bowner(?:'s|s')?\b|\bdrawings?\b/i;
+export const CAPITAL_IN_PHRASE = /\b(?:invested|invest|contributed|contribute)\b|\b(?:added|add|deposit(?:ed)?)\b[\s\S]*\bcapital\b|\bcapital\s+(?:contribution|deposit|injection)\b/i;
+export const CAPITAL_OUT_PHRASE = /\b(?:withdrawal|withdrawals|withdrawn|withdraws|withdrew|withdraw|drawings?|drew)\b/i;
+
+/**
  * Parse the common "paid AMOUNT ... to NAME" shape locally. This deliberately
  * handles only a narrow, high-confidence form: broader language still goes to
  * the configured AI provider. Keeping party resolution local means summary
@@ -60,12 +88,10 @@ export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | n
   const amount = Number(amountMatch[1].replace(/,/g, ''));
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
-  const name = sanitizeSpokenPartyName(match[2]
+  const name = sanitizeSpokenPartyName(stripRoleQualifiers(match[2]
     .replace(/\s+(?:via|using|by|from)\s+(?:cash|bank(?:\s+transfer)?|card|mobile|upi)\b[\s\S]*$/i, '')
     .replace(/\s+(?:as|for)\s+(?:a\s+)?(?:supplier\s+payment|capital\s+(?:account|withdrawal)|drawing)\b[\s\S]*$/i, '')
-    .replace(/\s+(?:as\s+(?:a\s+)?)?(?:capital\s+)?(?:withdrawal|drawing|deposit|contribution)\b[\s\S]*$/i, '')
-    .replace(/\s+(?:from|to|for|in|as|of)\s+(?:a\s+)?capital\s+account\b[\s\S]*$/i, '')
-    .replace(/^\s*(?:supplier|vendor|capital\s+account)\s+/i, ''));
+    .replace(/^\s*(?:supplier|vendor|capital\s+account)\s+/i, '')));
   if (!name || name.length > 160) return null;
 
   const method = /\bupi\b/i.test(transcript) ? 'upi'
@@ -75,8 +101,11 @@ export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | n
     : /\bcash\b/i.test(transcript) ? 'cash'
     : undefined;
 
-  const isDrawing = /\b(?:withdrawal|drawing|withdraw|drew)\b/i.test(transcript);
-  const isCapitalIn = /\b(?:invest|invested|deposit|contribution|contributed)\b/i.test(transcript);
+  // Money coming in only becomes partner capital when the sentence says so.
+  // Plain "security deposit" or "bank deposit" wording used to be reposted as a
+  // capital contribution, which put the payment in the wrong account.
+  const isDrawing = CAPITAL_OUT_PHRASE.test(transcript);
+  const isCapitalIn = CAPITAL_IN_PHRASE.test(transcript);
 
   if (isDrawing) {
     return {
