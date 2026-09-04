@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
@@ -16,6 +16,7 @@ import {
   isValidScanAmount,
   AMOUNT_BOUNDS_REASON,
   DATE_BOUNDS_REASON,
+  consumePendingScanInput,
   type ScanRow,
   type FlaggedScanRow,
 } from "@/src/accountingV2/scanImport";
@@ -165,6 +166,24 @@ export default function ScanImport() {
       setPhase("pick");
     }
   };
+
+  const params = useLocalSearchParams<{ imageUri?: string; uri?: string }>();
+  const autoStarted = React.useRef(false);
+
+  React.useEffect(() => {
+    if (autoStarted.current) return;
+    const pending = consumePendingScanInput();
+    if (pending) {
+      autoStarted.current = true;
+      void analyze(pending);
+      return;
+    }
+    const targetUri = params.imageUri || params.uri;
+    if (targetUri) {
+      autoStarted.current = true;
+      void analyze({ uri: targetUri, mimeType: "image/jpeg" });
+    }
+  }, [params.imageUri, params.uri]);
 
   const continueDocumentDraft = async () => {
     if (!pendingDocumentClarification || !documentFollowUpAnswer.trim()) return;
