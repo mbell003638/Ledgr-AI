@@ -145,8 +145,14 @@ export default function VoiceFab() {
     if (!pendingClarification || !answer.trim()) return;
     setError(""); setPhase("processing");
     try {
-      const settings = await api.getSettings();
-      const interpretation = continueVoiceTransaction(pendingClarification, answer, { defaultCurrency: settings.currency || "USD", requirePaymentMethod: false });
+      const [settings, suppliers, customers, capitalAccounts] = await Promise.all([
+        api.getSettings(), api.listSuppliers(), api.listDebtors(), api.listInvestors(),
+      ]);
+      const interpretation = continueVoiceTransaction(pendingClarification, answer, {
+        defaultCurrency: settings.currency || "USD",
+        requirePaymentMethod: false,
+        directory: { suppliers, customers, capitalAccounts },
+      });
       if (interpretation.kind !== "command") {
         if (interpretation.kind === "clarification") setPendingClarification(interpretation);
         throw new Error(interpretation.kind === "clarification" ? interpretation.question : interpretation.reason);

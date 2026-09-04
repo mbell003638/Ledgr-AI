@@ -7,6 +7,7 @@ import {
   suggestedVoicePartyCreateRole,
   voiceCommandPartyName,
   type VoiceCommand,
+  type VoicePartyDirectory,
 } from './voicePartyResolution';
 
 export type LocalParseConfidence = 'high' | 'medium' | 'low';
@@ -22,6 +23,7 @@ export type LocalTransactionParserOptions = {
   defaultCurrency?: string;
   /** When true, money movements without an explicit payment method ask one question. */
   requirePaymentMethod?: boolean;
+  directory?: VoicePartyDirectory;
 };
 
 const MONEY = /(?:[$€£₹]\s*)?(\d[\d,]*(?:\.\d{1,2})?)\s*(?:[$€£₹]|\b(?:USD|CAD|EUR|GBP|INR)\b)?/i;
@@ -249,10 +251,32 @@ export function continueLocalTransaction(
     else if (/\b(?:cash|paid)\b/i.test(value)) command.paymentType = 'cash';
   } else if (pending.field === 'party') {
     const role = parseVoicePartyCreateRole(value, suggestedVoicePartyCreateRole(String(command.intent)));
-    if (role === 'capital') {
+    const existingPartyName = voiceCommandPartyName(command);
+    const cleanedAnswerName = cleanName(value.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing|withdraw(?:al|n)?|as\s+a)\b/gi, '').trim());
+    const candidateNames = [cleanedAnswerName, existingPartyName].filter(Boolean);
+    const directory = options.directory;
+    const matchedCapital = directory?.capitalAccounts?.find((acc) => {
+      const accNorm = acc.name.trim().toLowerCase();
+      return candidateNames.some((cName) => {
+        const cNorm = cName.trim().toLowerCase();
+        return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
+      });
+    }) || (candidateNames.length === 0 && directory?.capitalAccounts?.length === 1 && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(value)) ? directory.capitalAccounts[0] : null);
+
+    if (matchedCapital && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(value) || !role)) {
+      const isContribution = command.intent === 'capital' || command.intent === 'receipt'
+        || /\b(?:invest|deposit|contribution|contributed)\b/i.test(pending.transcript);
+      command.intent = isContribution ? 'capital' : 'drawing';
+      command.partnerName = matchedCapital.name;
+      delete command.supplierName;
+      delete command.customerName;
+      delete command.pendingPartyCreate;
+      command.summary = command.intent === 'drawing'
+        ? `Withdraw ${command.amount || '?'} from ${matchedCapital.name} Capital Account`
+        : `Add ${command.amount || '?'} capital for ${matchedCapital.name}`;
+    } else if (role === 'capital') {
       return clarify(command, pending.transcript, 'party', 'Capital Accounts must be added from Accounts so opening capital and profit share stay correct.');
-    }
-    if (role === 'supplier' || role === 'customer') {
+    } else if (role === 'supplier' || role === 'customer') {
       const name = voiceCommandPartyName(command);
       if (!name) return clarify(command, pending.transcript, 'party', 'Which name should I create?');
       Object.assign(command, commandWithCreatedParty(command, name, role));

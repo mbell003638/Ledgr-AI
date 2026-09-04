@@ -30,6 +30,14 @@ export type VoicePartyResolution =
 
 const normalized = (value: unknown) => String(value || '').trim().toLocaleLowerCase();
 const exact = (rows: NamedAccount[], name: string) => rows.filter((row) => normalized(row.name) === normalized(name));
+const prefixOrWordMatch = (rows: NamedAccount[], targetName: string) => {
+  const normTarget = normalized(targetName);
+  if (normTarget.length < 2) return [];
+  return rows.filter((row) => {
+    const rowNorm = normalized(row.name);
+    return rowNorm === normTarget || rowNorm.startsWith(normTarget + ' ') || normTarget.startsWith(rowNorm + ' ');
+  });
+};
 const one = (rows: NamedAccount[]) => rows.length === 1 ? rows[0] : null;
 
 /**
@@ -265,7 +273,7 @@ export function resolveVoicePartyCommand(
   }
 
   if (explicitlyCapital || input.intent === 'drawing') {
-    const capital = one(capitalAccounts);
+    const capital = one(capitalAccounts) || (capitalAccounts.length === 0 ? one(prefixOrWordMatch(directory.capitalAccounts, name)) : null);
     return capital
       ? { ok: true, command: { ...input, intent: 'drawing', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Withdraw ${Number(input.amount || 0)} from ${capital.name} Capital Account` } }
       : roleQuestion(name, roles, 'drawing', directory);
@@ -275,7 +283,7 @@ export function resolveVoicePartyCommand(
   if (supplier && customers.length === 0 && capitalAccounts.length === 0) {
     return { ok: true, command: { ...input, intent: 'supplier_payment', supplierName: supplier.name, customerName: undefined, partnerName: undefined } };
   }
-  const capital = one(capitalAccounts);
+  const capital = one(capitalAccounts) || (capitalAccounts.length === 0 && suppliers.length === 0 && customers.length === 0 ? one(prefixOrWordMatch(directory.capitalAccounts, name)) : null);
   if (capital && suppliers.length === 0 && customers.length === 0) {
     return { ok: true, command: { ...input, intent: 'drawing', partnerName: capital.name, supplierName: undefined, customerName: undefined, summary: `Withdraw ${Number(input.amount || 0)} from ${capital.name} Capital Account` } };
   }
