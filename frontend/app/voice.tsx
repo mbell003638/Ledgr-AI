@@ -52,8 +52,10 @@ export default function VoiceModal() {
   }, [params.assistantText]);
 
 
-  const buildVoiceDraft = async (txt: string, answer = "") => {
-    const result = await prepareVoiceTransactionDraft(txt, pendingClarification, answer);
+  const buildVoiceDraft = async (txt: string, answer = "", useContinuation = true) => {
+    setTranscript(txt);
+    const continuationToUse = (useContinuation && answer.trim()) ? pendingClarification : null;
+    const result = await prepareVoiceTransactionDraft(txt, continuationToUse, answer);
     if (result.status === "clarification") {
       setPendingClarification(result.continuation);
       setClarificationAnswer("");
@@ -109,10 +111,13 @@ export default function VoiceModal() {
   const rebuildDraft = async () => {
     const txt = transcript.trim();
     if (!txt) return;
-    if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      const hasAnswer = Boolean(clarificationAnswer.trim());
+      if (!hasAnswer) {
+        setPendingClarification(null);
+      }
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim(), hasAnswer);
       setDrafts(ready);
       setParsed(ready[0]?.parsed || null);
       setValidatedAction(ready[0]?.validation || null);
@@ -260,7 +265,7 @@ export default function VoiceModal() {
               <Text style={styles.transcriptLabel}>Transcript</Text>
               <TextInput accessibilityLabel="Editable voice transcript" testID="voice-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={styles.transcript} />
               {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={styles.clarificationAnswer} /> : null}
-              {phase === "confirm" || phase === "error" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10 }]}><Text style={styles.actionText}>Update draft</Text></Pressable> : null}
+              {phase === "confirm" || phase === "error" ? <Pressable testID="btn-rebuild-voice-draft" accessibilityRole="button" accessibilityLabel="Update draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { marginTop: 10, backgroundColor: theme.color.brandPrimary }]}><Text style={[styles.actionText, { color: "#000" }]}>Update draft</Text></Pressable> : null}
             </View>
           ) : null}
 

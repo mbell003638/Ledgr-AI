@@ -54,7 +54,11 @@ export async function prepareVoiceTransactionDraft(
   const hasCloudAI = Boolean(config.apiKey.trim());
 
   if (continuation) {
-    const local = continueLocalTransaction(continuation, clarificationAnswer || transcript, directory, { requirePaymentMethod: false });
+    const continuationWithTranscript = transcript ? {
+      ...continuation,
+      originalTranscript: transcript,
+    } : continuation;
+    const local = continueLocalTransaction(continuationWithTranscript, clarificationAnswer || '', directory, { requirePaymentMethod: false });
     if (local.status === 'confident') return readyDraft(local.command);
     if (local.status === 'clarification') {
       return { status: 'clarification', question: local.question, continuation: local.continuation };

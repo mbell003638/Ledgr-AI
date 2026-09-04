@@ -64,8 +64,10 @@ export default function VoiceFab() {
 
   const stopExistingRecorder = useCallback(() => cancelVoiceRecorder(recorder), [recorder]);
 
-  const buildVoiceDraft = async (txt: string, answer = "") => {
-    const result = await prepareVoiceTransactionDraft(txt, pendingClarification, answer);
+  const buildVoiceDraft = async (txt: string, answer = "", useContinuation = true) => {
+    setTranscript(txt);
+    const continuationToUse = (useContinuation && answer.trim()) ? pendingClarification : null;
+    const result = await prepareVoiceTransactionDraft(txt, continuationToUse, answer);
     if (result.status === "clarification") {
       setPendingClarification(result.continuation);
       setClarificationAnswer("");
@@ -157,10 +159,13 @@ export default function VoiceFab() {
   const rebuildDraft = async () => {
     const txt = transcript.trim();
     if (!txt) { setError("Enter or dictate a transaction before rebuilding the draft."); return; }
-    if (pendingClarification && !clarificationAnswer.trim()) { setError("Answer the clarification question before updating the draft."); return; }
     setError(""); setPhase("processing");
     try {
-      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim());
+      const hasAnswer = Boolean(clarificationAnswer.trim());
+      if (!hasAnswer) {
+        setPendingClarification(null);
+      }
+      const ready = await buildVoiceDraft(txt, clarificationAnswer.trim(), hasAnswer);
       setDrafts(ready);
       setParsed(ready[0]?.parsed || null);
       setValidatedAction(ready[0]?.validation || null);

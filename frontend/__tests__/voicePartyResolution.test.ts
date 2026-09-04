@@ -174,3 +174,55 @@ describe('continueLocalTransaction capital account clarification', () => {
     });
   });
 });
+
+describe('spoken capital account drawing and withdrawal parsing', () => {
+  it('parses "Paid $100 to amit withdrawal from Capital account" directly as drawing for Amit', () => {
+    const parsedOutgoing = parseSimpleOutgoingPayment('Paid $100 to amit withdrawal from Capital account');
+    expect(parsedOutgoing).toMatchObject({
+      intent: 'drawing',
+      partnerName: 'amit',
+      amount: 100,
+    });
+
+    const resolved = resolveVoicePartyCommand(parsedOutgoing!, 'Paid $100 to amit withdrawal from Capital account', {
+      suppliers: [],
+      customers: [],
+      capitalAccounts: [{ id: '1', name: 'Amit' }],
+    });
+    expect(resolved).toMatchObject({
+      ok: true,
+      command: {
+        intent: 'drawing',
+        partnerName: 'Amit',
+        amount: 100,
+      },
+    });
+  });
+
+  it('parses "Paid $100 cash to amit withdrawal from Capital account" with payment method', () => {
+    const parsed = parseSimpleOutgoingPayment('Paid $100 cash to amit withdrawal from Capital account');
+    expect(parsed).toMatchObject({
+      intent: 'drawing',
+      partnerName: 'amit',
+      amount: 100,
+      method: 'cash',
+    });
+  });
+
+  it('cleans trailing role noise from candidate name in continueLocalTransaction', () => {
+    const continuation = {
+      originalTranscript: 'Paid 100 to amit withdrawal from Capital account',
+      missingField: 'party_role' as const,
+      partial: { intent: 'supplier_payment', amount: 100, supplierName: 'amit withdrawal from Capital account' },
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      suppliers: [],
+      customers: [],
+      capitalAccounts: [capital],
+    }, { requirePaymentMethod: false });
+    expect(result).toMatchObject({
+      status: 'confident',
+      command: { intent: 'drawing', partnerName: 'Amit', amount: 100 },
+    });
+  });
+});

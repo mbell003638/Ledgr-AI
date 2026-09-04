@@ -81,6 +81,8 @@ function tidyName(value: string): string {
     .replace(MONEY, ' ')
     .replace(/\b(?:today|yesterday|now|on\s+credit|credit|cash|bank(?:\s+transfer)?|card|mobile|upi)\b/gi, ' ')
     .replace(/\b(?:supplier|vendor|customer|client|owner|partner|capital\s+account)\b/gi, ' ')
+    .replace(/\s+(?:(?:as|for)\s+(?:a\s+)?)?(?:capital\s+)?(?:withdrawal|drawing|deposit|contribution)\b[\s\S]*$/i, ' ')
+    .replace(/\s+(?:from|to|for|in|as|of)\s+(?:a\s+)?capital\s+account\b[\s\S]*$/i, ' ')
     .replace(/\b(?:by|via|using|as|for)\b[\s\S]*$/i, ' ')
     .replace(/[.,!?;:]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -113,10 +115,11 @@ function parseCommand(transcript: string, options: LocalTransactionOptions): Voi
     return { ...common, intent: 'capital', ...(partnerName ? { partnerName } : {}), summary: `Capital contribution${common.amount ? ` of ${common.amount}` : ''}${partnerName ? ` from ${partnerName}` : ''}` };
   }
 
-  if (/\b(?:withdrew|withdraw|drawing|personal\s+(?:use|withdrawal)|took\s+(?:out|cash))\b/i.test(text)) {
+  if (/\b(?:withdrew|withdraw(?:al|n)?|drawing|personal\s+(?:use|withdrawal)|took\s+(?:out|cash))\b/i.test(text)) {
     const leading = text.match(/^([\p{L}][\p{L}\p{M}' .-]{0,100}?)\s+(?:withdrew|withdraws?)\b/iu)?.[1];
+    const to = text.match(/\bto\s+([\s\S]+)$/i)?.[1];
     const from = text.match(/\bfrom\s+([\s\S]+)$/i)?.[1];
-    const partnerName = tidyName(leading || from || '');
+    const partnerName = tidyName(to || leading || from || '');
     return { ...common, intent: 'drawing', ...(partnerName ? { partnerName } : {}), summary: `Capital withdrawal${common.amount ? ` of ${common.amount}` : ''}${partnerName ? ` for ${partnerName}` : ''}` };
   }
 
@@ -268,7 +271,7 @@ export function continueLocalTransaction(
   }
   if (pending.missingField === 'party_role') {
     const role = parseVoicePartyCreateRole(answer, suggestedVoicePartyCreateRole(String(command.intent)));
-    const existingPartyName = voiceCommandPartyName(command);
+    const existingPartyName = tidyName(voiceCommandPartyName(command));
     const cleanedAnswerName = tidyName(answer.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing|withdraw(?:al|n)?|as\s+a)\b/gi, '').trim());
     const candidateNames = [cleanedAnswerName, existingPartyName].filter(Boolean);
     const matchedCapital = directory?.capitalAccounts?.find((acc) => {
