@@ -39,7 +39,6 @@ export default function VoiceFab() {
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const deviceSession = useRef<DeviceSpeechSession | null>(null);
   const buildVoiceDraftRef = useRef<(text: string, answer?: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
-
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);

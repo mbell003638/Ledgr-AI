@@ -224,8 +224,8 @@ export default function VoiceModal() {
         <Text style={styles.headerTitle}>AI Voice Assistant</Text>
         <View style={{ width: 26 }} />
       </View>
-      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 160 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Card>
           <Text style={styles.title}>Say a transaction</Text>
           <Text style={styles.hint}>

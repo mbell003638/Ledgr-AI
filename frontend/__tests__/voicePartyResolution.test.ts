@@ -1,4 +1,5 @@
 import { parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
+import { continueLocalTransaction } from '../src/accountingV2/localTransactionParser';
 import { V2AppService } from '../src/accountingV2/appService';
 
 const supplier = { id: 'supplier-amit', name: 'Amit' };
@@ -139,5 +140,37 @@ describe('authoritative Capital Account name protection', () => {
   it('allows a distinct party name', async () => {
     const service = new V2AppService({ all: jest.fn(async () => [{ name: 'Amit' }]) } as any);
     await expect(service.assertPartyNameAvailable('Rahul Supplies', 'book-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('continueLocalTransaction capital account clarification', () => {
+  it('resolves party_role clarification to drawing when capital account exists', () => {
+    const continuation = {
+      originalTranscript: 'Paid 100 to Amit',
+      partial: { intent: 'supplier_payment', amount: 100, supplierName: 'Amit' },
+      missingField: 'party_role' as const,
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      suppliers: [supplier], customers: [], capitalAccounts: [capital],
+    }, { requirePaymentMethod: false });
+    expect(result).toMatchObject({
+      status: 'confident',
+      command: { intent: 'drawing', partnerName: 'Amit', amount: 100 },
+    });
+  });
+
+  it('rejects creating new Capital Account when none matches', () => {
+    const continuation = {
+      originalTranscript: 'Paid 100 to NonExistent',
+      partial: { intent: 'supplier_payment', amount: 100, supplierName: 'NonExistent' },
+      missingField: 'party_role' as const,
+    };
+    const result = continueLocalTransaction(continuation, 'Capital Account', {
+      suppliers: [], customers: [], capitalAccounts: [capital],
+    }, { requirePaymentMethod: false });
+    expect(result).toMatchObject({
+      status: 'clarification',
+      question: expect.stringMatching(/Capital Accounts must be added from Accounts/i),
+    });
   });
 });
