@@ -332,3 +332,17 @@ export function mapAnalyzedDocument(input: unknown): MappedDocument {
 
   return { docType, summary, validRows, flaggedRows };
 }
+
+export type PendingScanInput = { base64?: string; mimeType?: string; text?: string; uri?: string };
+let pendingScanInput: PendingScanInput | null = null;
+
+export function setPendingScanInput(input: PendingScanInput | null): void {
+  pendingScanInput = input;
+}
+
+export function consumePendingScanInput(): PendingScanInput | null {
+  const current = pendingScanInput;
+  pendingScanInput = null;
+  return current;
+}
+

@@ -8,7 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons";
 import { Href, useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useTheme } from "@/src/context/ThemeContext";
-import { api } from "@/src/api";
+import { api, getAIConfig } from "@/src/api";
 import { getCurrencySymbol } from "@/src/utils/currency";
 import { executeAssistantProposal, validateAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { localTodayIso } from "@/src/utils/dateValidation";
@@ -19,7 +19,7 @@ import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistor
 import { isExplicitBookMutationRequest } from "@/src/db/ai";
 import { speakOnDevice } from "@/src/utils/deviceTts";
 import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
-
+import { mapAnalyzedDocument, setPendingScanInput } from "@/src/accountingV2/scanImport";
 type Msg = { role: "user" | "assistant"; text: string };
 type PendingClarification =
   | { kind: "party"; originalRequest: string; question: string; command: VoiceCommand }
@@ -652,6 +652,81 @@ export default function AskBooks() {
     }
   };
 
+  const handleImagePicked = async (asset: { uri?: string; base64?: string | null }, sourceLabel: "Camera" | "Library") => {
+    try {
+      if (!asset?.base64 && !asset?.uri) {
+        throw new Error(sourceLabel === "Camera" ? "The camera did not return readable image data. Try taking the photo again." : "The selected file did not contain readable image data. Try a JPEG or PNG image.");
+      }
+      setLoading(true);
+      const config = await getAIConfig();
+
+      if (config.apiKey && asset.base64) {
+        const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
+        const prompt = buildReceiptPrompt(ocr);
+        await send(prompt);
+        return;
+      }
+
+      const input = { uri: asset.uri, base64: asset.base64 || undefined, mimeType: "image/jpeg" };
+      let analysis: any;
+      try {
+        analysis = await api.analyzeDocument(input);
+      } catch {
+        setPendingScanInput(input);
+        router.push({ pathname: "/scan-import", params: { imageUri: asset.uri } } as any);
+        return;
+      }
+
+      const mapped = mapAnalyzedDocument(analysis);
+      const hasClarification = Boolean(analysis?.__ledgrAnalysisMeta?.pending);
+      const hasFlagged = Boolean(mapped.flaggedRows && mapped.flaggedRows.length > 0);
+      const validRows = mapped.validRows || [];
+
+      if (hasClarification || hasFlagged || validRows.length !== 1 || validRows[0].kind !== "transaction") {
+        setPendingScanInput(input);
+        router.push({ pathname: "/scan-import", params: { imageUri: asset.uri } } as any);
+        return;
+      }
+
+      const row = validRows[0];
+      const actionType = row.entryType === "purchase_bill" ? "add_bill" : "add_expense";
+      const partyName = row.partyName?.trim() || "";
+      const rawAction = {
+        type: actionType,
+        params: {
+          category: "General",
+          amount: row.amount,
+          date: row.date || localTodayIso(),
+          method: row.method || "cash",
+          notes: tagNote(partyName ? `Receipt from ${partyName}` : "Scanned receipt"),
+          ...(actionType === "add_bill" && partyName ? { supplierName: partyName } : {}),
+        },
+      };
+
+      const proposal = validateAssistantProposal(rawAction, "ai");
+      if (!proposal.ok) {
+        setPendingScanInput(input);
+        router.push({ pathname: "/scan-import", params: { imageUri: asset.uri } } as any);
+        return;
+      }
+
+      setPendingProposal(proposal);
+      setPendingClarification(null);
+      const today = localTodayIso();
+      const dateText = row.date && row.date !== today ? ` on ${row.date}` : "";
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: `[Receipt] ${partyName ? partyName + " " : ""}$${row.amount}${dateText}` },
+        { role: "assistant", text: `I read your receipt locally using on-device OCR and prepared this ${actionType === "add_bill" ? "purchase" : "expense"} for your confirmation.` },
+      ]);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (e: any) {
+      Alert.alert(`${sourceLabel} Error`, e.message || `Failed to process ${sourceLabel.toLowerCase()} image`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.headerBar}>
@@ -743,15 +818,8 @@ export default function AskBooks() {
                   const perm = await ImagePicker.requestCameraPermissionsAsync();
                   if (!perm.granted) return;
                   const res = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.5, mediaTypes: ImagePicker.MediaTypeOptions.Images });
-                  if (res.canceled) return;
-                  const asset = res.assets[0];
-                  if (!asset?.base64) throw new Error("The camera did not return readable image data. Try taking the photo again.");
-                  setLoading(true);
-                  // Expo ImagePicker documents base64 output as JPEG data. Use
-                  // the matching MIME type even when the source asset was HEIC.
-                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
-                  const prompt = buildReceiptPrompt(ocr);
-                  send(prompt);
+                  if (res.canceled || !res.assets?.[0]) return;
+                  await handleImagePicked(res.assets[0], "Camera");
                 } catch (e: any) {
                   Alert.alert("Camera Error", e.message || "Failed to open camera");
                   setLoading(false);
@@ -775,13 +843,8 @@ export default function AskBooks() {
                     mediaTypes: ImagePicker.MediaTypeOptions.Images,
                     preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
                   });
-                  if (res.canceled) return;
-                  const asset = res.assets[0];
-                  if (!asset?.base64) throw new Error("The selected file did not contain readable image data. Try a JPEG or PNG image.");
-                  setLoading(true);
-                  const ocr = await api.ocrReceipt(asset.base64, "image/jpeg");
-                  const prompt = buildReceiptPrompt(ocr);
-                  send(prompt);
+                  if (res.canceled || !res.assets?.[0]) return;
+                  await handleImagePicked(res.assets[0], "Library");
                 } catch (e: any) {
                   Alert.alert("Library Error", e.message || "Failed to open library");
                   setLoading(false);

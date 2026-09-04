@@ -8,6 +8,8 @@ import {
   isValidScanAmount,
   AMOUNT_BOUNDS_REASON,
   DATE_BOUNDS_REASON,
+  consumePendingScanInput,
+  setPendingScanInput,
   type ScanOpeningRow,
   type ScanRow,
 } from '../src/accountingV2/scanImport';
@@ -456,3 +458,31 @@ describe('scan-import screen UI contract', () => {
     expect(quick).toContain('navigate("/scan-import")');
   });
 });
+
+describe('Ask AI local receipt scanning and Scan & Import routing', () => {
+  it('manages pending scan input cleanly across navigation', () => {
+    expect(consumePendingScanInput()).toBeNull();
+    const input = { uri: 'file:///receipt.jpg', base64: 'abc123', mimeType: 'image/jpeg' };
+    setPendingScanInput(input);
+    expect(consumePendingScanInput()).toEqual(input);
+    expect(consumePendingScanInput()).toBeNull();
+  });
+
+  it('verifies ask.tsx adopts local document analyzer and routes multi-row/review documents to /scan-import', () => {
+    const askSrc = fs.readFileSync(path.join(root, 'app', 'ask.tsx'), 'utf8');
+    expect(askSrc).toContain('setPendingScanInput');
+    expect(askSrc).toContain('mapAnalyzedDocument');
+    expect(askSrc).toContain('api.analyzeDocument');
+    expect(askSrc).toContain('pathname: "/scan-import"');
+    expect(askSrc).toContain('validateAssistantProposal(rawAction, "ai")');
+    expect(askSrc).toContain('I read your receipt locally using on-device OCR');
+  });
+
+  it('verifies scan-import.tsx consumes pendingScanInput or imageUri param on mount', () => {
+    const scanSrc = fs.readFileSync(path.join(root, 'app', 'scan-import.tsx'), 'utf8');
+    expect(scanSrc).toContain('consumePendingScanInput');
+    expect(scanSrc).toContain('useLocalSearchParams');
+    expect(scanSrc).toMatch(/consumePendingScanInput\(\)|params\.imageUri/);
+  });
+});
+
