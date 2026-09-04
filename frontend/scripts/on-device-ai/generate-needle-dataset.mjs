@@ -9,7 +9,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const tools = JSON.parse(fs.readFileSync(path.join(root, 'ledgr-tools.json'), 'utf8'));
+const toolsFull = JSON.parse(fs.readFileSync(path.join(root, 'ledgr-tools.json'), 'utf8'));
+const tools = toolsFull.map((tool) => ({ name: tool.name }));
 
 const amounts = [12, 20, 35, 50, 80, 100, 150, 200, 400, 750, 1200, 2500, 5000, 15000];
 const methods = ['cash', 'bank', 'card', 'mobile'];
