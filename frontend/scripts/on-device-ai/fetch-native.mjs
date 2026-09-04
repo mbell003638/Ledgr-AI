@@ -20,8 +20,8 @@ function runNeedle(args) {
 }
 
 runNeedle(['download', 'android-arm64', '--out', staging]);
-runNeedle(['download', 'Cactus-Compute/needle2', '--out', staging]);
 
+const tuned = path.join(path.dirname(fileURLToPath(import.meta.url)), 'needle2-ledgr.cact');
 const arm = path.join(staging, 'android-arm64');
 const assets = path.join(androidMain, 'assets');
 const jni = path.join(androidMain, 'jniLibsStatic', 'arm64-v8a');
@@ -29,8 +29,15 @@ const include = path.join(androidMain, 'cpp', 'include');
 fs.mkdirSync(assets, { recursive: true });
 fs.mkdirSync(jni, { recursive: true });
 fs.mkdirSync(include, { recursive: true });
-fs.copyFileSync(path.join(staging, 'needle2.cact'), path.join(assets, 'needle2.cact'));
+if (fs.existsSync(tuned)) {
+  fs.copyFileSync(tuned, path.join(assets, 'needle2.cact'));
+  console.log('Using Ledgr-tuned needle2-ledgr.cact');
+} else {
+  runNeedle(['download', 'Cactus-Compute/needle2', '--out', staging]);
+  fs.copyFileSync(path.join(staging, 'needle2.cact'), path.join(assets, 'needle2.cact'));
+  console.log('Using public Needle 2 weights (no local fine-tune file).');
+}
 fs.copyFileSync(path.join(arm, 'libneedle.a'), path.join(jni, 'libneedle.a'));
 fs.copyFileSync(path.join(arm, 'needle.h'), path.join(include, 'needle.h'));
 console.log('Copied needle2.cact, libneedle.a, and needle.h into the Android module.');
-console.log('Next: npx expo run:android   (or EAS). JS reload is not enough.');
+console.log('Next: bake the APK from GitHub (Build Ledgr AI Android) or npx expo run:android.');

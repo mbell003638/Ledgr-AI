@@ -28,8 +28,9 @@ function run(command, args, extraEnv = {}) {
   delete env.OPENAI_API_KEY;
   delete env.GEMINI_API_KEY;
   env.NEEDLE_TELEMETRY = '0';
+  env.PYTHONUNBUFFERED = '1';
   console.log(`\n> ${command} ${args.join(' ')}`);
-  const result = spawnSync(command, args, { stdio: 'inherit', shell: true, env, cwd: root });
+  const result = spawnSync(command, args, { stdio: 'inherit', env, cwd: root, windowsHide: true });
   if (result.status !== 0) {
     throw new Error(`${command} ${args[0] || ''} failed with exit ${result.status}`);
   }
@@ -37,9 +38,9 @@ function run(command, args, extraEnv = {}) {
 
 function needleCmd() {
   if (process.env.NEEDLE) return { cmd: process.env.NEEDLE, prefix: [] };
-  const probe = spawnSync('needle', ['--help'], { encoding: 'utf8', shell: true });
-  if (probe.status === 0) return { cmd: 'needle', prefix: [] };
-  return { cmd: 'python', prefix: ['-m', 'needle'] };
+  const probe = spawnSync('needle', ['--help'], { encoding: 'utf8' });
+  if (!probe.error && probe.status === 0) return { cmd: 'needle', prefix: [] };
+  return { cmd: process.env.PYTHON || 'python', prefix: ['-m', 'needle'] };
 }
 
 console.log('Ledgr Needle fine-tune (local only, no training API credits).');
@@ -54,12 +55,13 @@ run(cmd, [
   '--generate', '0',
   '--epochs', process.env.NEEDLE_EPOCHS || '3',
   '--batch-size', process.env.NEEDLE_BATCH || '8',
+  '--max-len', process.env.NEEDLE_MAX_LEN || '256',
   '--val-split', '0.1',
   '--out', lora,
 ]);
 
 const checkpoint = process.env.NEEDLE_CHECKPOINT || 'checkpoints/needle2.pkl';
-run(cmd, [...prefix, 'build', checkpoint, '--lora', lora, '--out', cact, '--bits', '2']);
+run(cmd, [...prefix, 'build', checkpoint, '--lora', lora, '--out', cact]);
 
 fs.mkdirSync(path.dirname(asset), { recursive: true });
 fs.copyFileSync(cact, asset);
