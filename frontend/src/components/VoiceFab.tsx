@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
@@ -37,6 +37,22 @@ export default function VoiceFab() {
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const deviceSession = useRef<DeviceSpeechSession | null>(null);
   const buildVoiceDraftRef = useRef<(text: string, answer?: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardHeight(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -280,7 +296,23 @@ export default function VoiceFab() {
       </Pressable>
 
             {phase !== "idle" && (
-        <Animated.View entering={SlideInDown.duration(260).springify()} style={[styles.voiceDock, { backgroundColor: theme.color.surfaceSecondary, borderColor: theme.color.border }]}>
+        <Animated.View
+          entering={SlideInDown.duration(260).springify()}
+          style={[
+            styles.voiceDock,
+            {
+              backgroundColor: theme.color.surfaceSecondary,
+              borderColor: theme.color.border,
+              bottom: keyboardHeight > 0 ? keyboardHeight + 12 : 92,
+              maxHeight: keyboardHeight > 0 ? 320 : undefined,
+            },
+          ]}
+        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 0 }}
+          >
           <View style={styles.dockHeader}>
             <Text style={[styles.dockTitle, { color: theme.color.onSurface }]}>Voice transaction</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Close voice transaction" onPress={reset} hitSlop={8}>
@@ -325,6 +357,7 @@ export default function VoiceFab() {
               <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>
             </View>
           )}
+          </ScrollView>
         </Animated.View>
       )}
 

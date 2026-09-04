@@ -241,17 +241,59 @@ export function continueLocalTransaction(
   }
   if (pending.missingField === 'method') command.method = parseMethod(answer);
   if (pending.missingField === 'party') {
-    const name = tidyName(answer);
-    if (command.intent === 'capital' || command.intent === 'drawing') command.partnerName = name;
-    else if (command.intent === 'receipt') command.customerName = name;
-    else command.supplierName = name;
+    const name = tidyName(answer.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing)\b/gi, '').trim()) || tidyName(answer);
+    const mentionsCapital = /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer);
+    const matchedCapital = directory?.capitalAccounts?.find((acc) => {
+      const accNorm = acc.name.trim().toLowerCase();
+      const cNorm = name.trim().toLowerCase();
+      return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
+    }) || (directory?.capitalAccounts?.length === 1 && mentionsCapital ? directory.capitalAccounts[0] : null);
+
+    if (matchedCapital && (mentionsCapital || command.intent === 'capital' || command.intent === 'drawing' || (!command.supplierName && !command.customerName))) {
+      command.intent = (command.intent === 'capital' || command.intent === 'receipt' || /\b(?:invest|deposit|contribution)\b/i.test(pending.originalTranscript)) ? 'capital' : 'drawing';
+      command.partnerName = matchedCapital.name;
+      delete command.supplierName;
+      delete command.customerName;
+      delete command.pendingPartyCreate;
+      command.summary = command.intent === 'drawing'
+        ? `Withdraw ${command.amount || '?'} from ${matchedCapital.name} Capital Account`
+        : `Add ${command.amount || '?'} capital for ${matchedCapital.name}`;
+    } else if (command.intent === 'capital' || command.intent === 'drawing') {
+      command.partnerName = name;
+    } else if (command.intent === 'receipt') {
+      command.customerName = name;
+    } else {
+      command.supplierName = name;
+    }
   }
   if (pending.missingField === 'party_role') {
     const role = parseVoicePartyCreateRole(answer, suggestedVoicePartyCreateRole(String(command.intent)));
-    if (role === 'capital') {
+    const existingPartyName = voiceCommandPartyName(command);
+    const cleanedAnswerName = tidyName(answer.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing|withdraw(?:al|n)?|as\s+a)\b/gi, '').trim());
+    const candidateNames = [cleanedAnswerName, existingPartyName].filter(Boolean);
+    const matchedCapital = directory?.capitalAccounts?.find((acc) => {
+      const accNorm = acc.name.trim().toLowerCase();
+      return candidateNames.some((cName) => {
+        const cNorm = cName.trim().toLowerCase();
+        return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
+      });
+    }) || (candidateNames.length === 0 && directory?.capitalAccounts?.length === 1 && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer)) ? directory.capitalAccounts[0] : null);
+
+    if (matchedCapital && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer) || !role)) {
+      const isContribution = command.intent === 'capital' || command.intent === 'receipt'
+        || /\b(?:invest|deposit|contribution|contributed)\b/i.test(pending.originalTranscript);
+      command.intent = isContribution ? 'capital' : 'drawing';
+      command.partnerName = matchedCapital.name;
+      delete command.supplierName;
+      delete command.customerName;
+      delete command.pendingPartyCreate;
+      command.summary = command.intent === 'drawing'
+        ? `Withdraw ${command.amount || '?'} from ${matchedCapital.name} Capital Account`
+        : `Add ${command.amount || '?'} capital for ${matchedCapital.name}`;
+      resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
+    } else if (role === 'capital') {
       return clarification(pending.originalTranscript, command, 'party_role', 'Capital Accounts must be added from Accounts so opening capital and profit share stay correct.', 0.65);
-    }
-    if ((role === 'supplier' || role === 'customer') && voiceCommandPartyName(command)) {
+    } else if ((role === 'supplier' || role === 'customer') && voiceCommandPartyName(command)) {
       Object.assign(command, commandWithCreatedParty(command, voiceCommandPartyName(command), role));
       resolutionTranscript = `${pending.originalTranscript} ${answer}`.trim();
     } else if (directory) {
