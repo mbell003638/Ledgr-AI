@@ -38,4 +38,8 @@ if (needleLib.exists()) {
 
 dependencies {
   implementation 'com.google.mlkit:text-recognition:16.0.1'
+  // Runs the downloaded .task model packs. Published on Google's Maven, not
+  // Maven Central. LiteRT-LM, which reads .litertlm, has no Android artifact,
+  // so .task is the only container we can load without vendoring a C++ runtime.
+  implementation 'com.google.mediapipe:tasks-genai:0.10.35'
 }

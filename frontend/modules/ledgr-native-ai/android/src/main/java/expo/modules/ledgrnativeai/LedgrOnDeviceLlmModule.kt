@@ -6,6 +6,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.PowerManager
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -17,8 +19,10 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Bundled Needle 2 (libneedle.a + needle2.cact) plus optional Gemma file downloads.
- * Gemma inference is a later pack; Needle tool-calling is the on-device default.
+ * Bundled Needle 2 (libneedle.a + needle2.cact) for tool calling, plus optional
+ * downloadable model packs run through MediaPipe. Needle stays the default for
+ * transactions -- its decoding is grammar-constrained, so it is the reliable one
+ * for structured output; the packs answer open questions.
  */
 class LedgrOnDeviceLlmModule : Module() {
   @Volatile private var engineLoaded = false
@@ -45,6 +49,11 @@ class LedgrOnDeviceLlmModule : Module() {
 
   private val activeDownloads = ConcurrentHashMap<String, ActiveDownload>()
 
+  /** Guards load/generate/close so two calls cannot hold two multi-GB engines. */
+  private val engineLock = Any()
+  @Volatile private var loadedPack: LlmInference? = null
+  @Volatile private var loadedPackId: String? = null
+
   private val context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
@@ -70,10 +79,10 @@ class LedgrOnDeviceLlmModule : Module() {
       NeedleJni.complete(transcript, 128)
     }
 
-    AsyncFunction("runOptional") { modelId: String, _prompt: String, _imageUri: String?, _audioUri: String? ->
+    AsyncFunction("runOptional") { modelId: String, prompt: String, _imageUri: String?, _audioUri: String? ->
       val file = optionalFile(modelId)
       if (!file.exists()) throw IllegalStateException("Download this on-device model in Advanced Settings first.")
-      gemmaNotWired()
+      runPack(modelId, prompt)
     }
 
     AsyncFunction("listOptional") {
@@ -95,7 +104,7 @@ class LedgrOnDeviceLlmModule : Module() {
     AsyncFunction("downloadOptional") { modelId: String, url: String, filename: String, sha256: String? ->
       val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId } ?: throw IllegalArgumentException("Unknown model: $modelId")
       if (url.isBlank()) {
-        throw IllegalStateException("This Gemma pack has no download URL. Convert it with cactus download and copy ${spec.filename} onto the phone.")
+        throw IllegalStateException("This model pack has no download URL configured.")
       }
       val ram = advertisedRamBytes()
       if (ram > 0 && ram < spec.minRamBytes) {
@@ -130,6 +139,7 @@ class LedgrOnDeviceLlmModule : Module() {
 
     AsyncFunction("deleteOptional") { modelId: String ->
       cancelDownload(modelId)
+      synchronized(engineLock) { if (loadedPackId == modelId) closeLoadedPack() }
       val targetFile = optionalFile(modelId)
       val tmpFile = File(optionalDir(), "${targetFile.name}.part")
       if (targetFile.exists()) targetFile.delete()
@@ -138,6 +148,7 @@ class LedgrOnDeviceLlmModule : Module() {
     }
 
     OnDestroy {
+      synchronized(engineLock) { closeLoadedPack() }
       activeDownloads.values.forEach { it.cancel() }
       activeDownloads.clear()
       if (engineLoaded) {
@@ -148,12 +159,55 @@ class LedgrOnDeviceLlmModule : Module() {
   }
 
   /**
-   * Gemma inference is not in this native build yet. Declared as String rather
-   * than letting the throw infer Nothing: AsyncFunction reifies its return type,
-   * and Kotlin cannot reify Nothing.
+   * Runs a downloaded pack through MediaPipe's LLM inference.
+   *
+   * Only one engine is held at a time: these models are 1.5-3 GB and a second
+   * live engine is the quickest way to be killed for memory. Switching packs
+   * closes the previous one first.
+   *
+   * Loading can fail for memory even when the RAM check passed, because
+   * eligibility is a static estimate and the engine expands weights while it
+   * builds. That surfaces as OutOfMemoryError rather than an exception, so it is
+   * caught explicitly and reported as something the user can act on.
    */
-  private fun gemmaNotWired(): String {
-    throw IllegalStateException("Gemma packs are stored on the phone, but on-device Gemma inference is not wired in this native build yet. Needle handles commands; cloud or a later APK runs Gemma.")
+  private fun runPack(modelId: String, prompt: String): String {
+    val file = optionalFile(modelId)
+    synchronized(engineLock) {
+      if (loadedPackId != modelId) {
+        closeLoadedPack()
+        val options = LlmInferenceOptions.builder()
+          .setModelPath(file.absolutePath)
+          .setMaxTokens(MAX_PACK_TOKENS)
+          .build()
+        loadedPack = try {
+          LlmInference.createFromOptions(context, options)
+        } catch (error: OutOfMemoryError) {
+          throw IllegalStateException(
+            "This phone ran out of memory loading $modelId. Close other apps and try again, or use a smaller pack.",
+            error,
+          )
+        } catch (error: Throwable) {
+          throw IllegalStateException(
+            "Could not load $modelId. The pack may be incomplete -- delete and download it again. (${error.message})",
+            error,
+          )
+        }
+        loadedPackId = modelId
+      }
+      val engine = loadedPack ?: throw IllegalStateException("The on-device model pack is not loaded.")
+      return try {
+        engine.generateResponse(prompt).orEmpty().trim()
+      } catch (error: OutOfMemoryError) {
+        closeLoadedPack()
+        throw IllegalStateException("This phone ran out of memory answering with $modelId. Try a shorter question or a smaller pack.", error)
+      }
+    }
+  }
+
+  private fun closeLoadedPack() {
+    try { loadedPack?.close() } catch (_: Throwable) {}
+    loadedPack = null
+    loadedPackId = null
   }
 
   private fun needleReady(): Boolean {
@@ -323,7 +377,7 @@ class LedgrOnDeviceLlmModule : Module() {
         total = connection.contentLengthLong.let { if (it > 0) it else 0L }
         if (tmp.exists()) tmp.delete()
       } else {
-        throw IllegalStateException("Download failed ($responseCode). Convert the Gemma pack with cactus download and copy it onto the phone.")
+        throw IllegalStateException("Download failed ($responseCode). Check the connection and try again.")
       }
 
       // Initial progress notification
@@ -387,6 +441,8 @@ class LedgrOnDeviceLlmModule : Module() {
   }
 
   companion object {
+    private const val MAX_PACK_TOKENS = 512
+
     private data class OptionalSpec(
       val id: String,
       val filename: String,
