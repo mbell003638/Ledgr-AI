@@ -3,7 +3,9 @@
   "android": {
     "modules": [
       "expo.modules.ledgrnativeai.LedgrSpeechRecognizerModule",
-      "expo.modules.ledgrnativeai.LedgrLocalOcrModule"
+      "expo.modules.ledgrnativeai.LedgrLocalOcrModule",
+      "expo.modules.ledgrnativeai.LedgrOnDeviceLlmModule",
+      "expo.modules.ledgrnativeai.LedgrTtsModule"
     ]
   }
 }

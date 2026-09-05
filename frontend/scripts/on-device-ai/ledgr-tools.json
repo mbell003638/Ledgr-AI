@@ -1,0 +1,18 @@
+[
+  {"name":"add_expense","parameters":{"category":"string","amount":"number","date":"string","method":"string","notes":"string"}},
+  {"name":"log_personal_expense","parameters":{"category":"string","amount":"number","date":"string","method":"string","notes":"string"}},
+  {"name":"add_sale","parameters":{"amount":"number","date":"string","paymentType":"string","notes":"string"}},
+  {"name":"add_bill","parameters":{"supplierName":"string","amount":"number","date":"string","paymentType":"string","notes":"string"}},
+  {"name":"create_supplier_payment","parameters":{"supplierName":"string","amount":"number","date":"string","method":"string","notes":"string"}},
+  {"name":"add_debtor","parameters":{"name":"string","phone":"string","notes":"string"}},
+  {"name":"add_supplier","parameters":{"name":"string","phone":"string","notes":"string"}},
+  {"name":"add_debtor_payment","parameters":{"name":"string","amount":"number","date":"string","method":"string"}},
+  {"name":"create_invoice","parameters":{"clientName":"string","amount":"number","date":"string","notes":"string"}},
+  {"name":"create_receipt","parameters":{"amount":"number","mode":"string","customerName":"string","invoiceId":"string","date":"string","method":"string"}},
+  {"name":"create_quote","parameters":{"clientName":"string","amount":"number","date":"string","notes":"string"}},
+  {"name":"create_drawing","parameters":{"partnerName":"string","amount":"number","date":"string","notes":"string"}},
+  {"name":"add_capital","parameters":{"partnerName":"string","amount":"number","date":"string","notes":"string"}},
+  {"name":"record_inventory","parameters":{"amount":"number","date":"string","notes":"string"}},
+  {"name":"update_entry","parameters":{"entity":"string","id":"string","changes":"object"}},
+  {"name":"delete_entry","parameters":{"entity":"string","id":"string"}}
+]

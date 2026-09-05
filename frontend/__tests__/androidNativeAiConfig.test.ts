@@ -11,6 +11,8 @@ describe('Android native AI integration', () => {
     expect(config.android.modules).toEqual(expect.arrayContaining([
       'expo.modules.ledgrnativeai.LedgrSpeechRecognizerModule',
       'expo.modules.ledgrnativeai.LedgrLocalOcrModule',
+      'expo.modules.ledgrnativeai.LedgrOnDeviceLlmModule',
+      'expo.modules.ledgrnativeai.LedgrTtsModule',
     ]));
     expect(read('modules/ledgr-native-ai/android/build.gradle')).toContain("com.google.mlkit:text-recognition");
     const speechModule = read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrSpeechRecognizerModule.kt');
@@ -21,6 +23,10 @@ describe('Android native AI integration', () => {
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('TextRecognition.getClient');
     expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrLocalOcrModule.kt')).toContain('recognizePdf');
     expect(speechModule).toContain('EXTRA_PREFER_OFFLINE, true');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrTtsModule.kt')).toContain('TextToSpeech');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrOnDeviceLlmModule.kt')).toContain('needle2.cact');
+    expect(read('modules/ledgr-native-ai/android/src/main/cpp/needle_jni.cpp')).toContain('needle_complete');
+    expect(read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/NeedleJni.kt')).toContain('loadLibrary("needle_jni")');
   });
 
   it('parses Assistant navigation and draft URLs into review-only intents', () => {

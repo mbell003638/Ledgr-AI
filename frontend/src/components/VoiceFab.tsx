@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard, ScrollView, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
@@ -19,6 +20,7 @@ import { VoiceOrb } from "@/src/components/VoiceOrb";
 import { captureVoiceRecording, cancelVoiceRecorder, friendlyVoiceError, startVoiceRecorder } from "@/src/utils/voiceRecorder";
 import { subscribeToVoiceAssistantRequest } from "@/src/utils/voiceAssistantRequest";
 import { DeviceSpeechSession, getDeviceSpeechBridge, isDeviceSpeechAvailable } from "@/src/utils/deviceSpeechRecognizer";
+import { speakOnDevice } from "@/src/utils/deviceTts";
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
@@ -42,22 +44,36 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const deviceSession = useRef<DeviceSpeechSession | null>(null);
   const buildVoiceDraftRef = useRef<(text: string, answer?: string) => Promise<any>>(async () => { throw new Error("Voice interpretation is not ready."); });
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener(
+    const applyFrame = (e?: { endCoordinates?: { height?: number } }) => {
+      const height = Math.max(0, e?.endCoordinates?.height ?? 0);
+      setKeyboardHeight(height);
+    };
+    const shown = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      (e) => setKeyboardHeight(e.endCoordinates.height)
+      applyFrame
     );
-    const hideSub = Keyboard.addListener(
+    const hidden = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
       () => setKeyboardHeight(0)
     );
+    const changed = Platform.OS === "android"
+      ? Keyboard.addListener("keyboardDidChangeFrame", applyFrame)
+      : { remove() {} };
     return () => {
-      showSub.remove();
-      hideSub.remove();
+      shown.remove();
+      hidden.remove();
+      changed.remove();
     };
   }, []);
+
+  const defaultBottom = Math.max(92, 64 + Math.max(insets.bottom, 16) + 8);
+  const dockBottom = keyboardHeight > 0 ? keyboardHeight + 10 : defaultBottom;
+  const maxDockHeight = Math.max(220, windowHeight - dockBottom - Math.max(insets.top, 24) - 16);
 
   useEffect(() => {
     let active = true;
@@ -66,6 +82,12 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
   }, []);
 
   useEffect(() => () => { deviceSession.current?.cancel(); deviceSession.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
+
+  useEffect(() => {
+    if (phase !== "confirm") return;
+    const preview = validatedAction && validatedAction.ok ? validatedAction.action.confirmation.preview : "Draft ready for confirmation.";
+    void api.getSpeakAnswers().then((enabled) => { if (enabled) return speakOnDevice(preview); }).catch(() => undefined);
+  }, [phase, validatedAction]);
 
   const stopExistingRecorder = useCallback(() => cancelVoiceRecorder(recorder), [recorder]);
 
@@ -315,60 +337,61 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
             {
               backgroundColor: theme.color.surfaceSecondary,
               borderColor: theme.color.border,
-              bottom: keyboardHeight > 0 ? keyboardHeight + 12 : 92,
-              maxHeight: keyboardHeight > 0 ? 320 : undefined,
+              bottom: dockBottom,
+              maxHeight: maxDockHeight,
             },
           ]}
         >
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ flexGrow: 0 }}
-          >
           <View style={styles.dockHeader}>
             <Text style={[styles.dockTitle, { color: theme.color.onSurface }]}>Voice transaction</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Close voice transaction" onPress={reset} hitSlop={8}>
               <Ionicons name="close" size={20} color={theme.color.muted} />
             </Pressable>
           </View>
-          {phase === "recording" || phase === "processing" ? (
-            <View style={styles.listeningDock}>
-              <VoiceOrb phase={phase === "recording" ? "recording" : "processing"} theme={theme} compact />
-              <View style={styles.listeningCopy}>
-                <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>{phase === "recording" ? "Listening…" : "Transcribing…"}</Text>
-                <Text style={[styles.dockHint, { color: theme.color.muted }]}>{phase === "recording" ? "Tap stop when you are done" : "Turning your words into a draft"}</Text>
+          <ScrollView
+            style={styles.dockScroll}
+            contentContainerStyle={styles.dockScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {phase === "recording" || phase === "processing" ? (
+              <View style={styles.listeningDock}>
+                <VoiceOrb phase={phase === "recording" ? "recording" : "processing"} theme={theme} compact />
+                <View style={styles.listeningCopy}>
+                  <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>{phase === "recording" ? "Listening…" : "Transcribing…"}</Text>
+                  <Text style={[styles.dockHint, { color: theme.color.muted }]}>{phase === "recording" ? "Tap stop when you are done" : "Turning your words into a draft"}</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={phase === "recording" ? "Stop recording" : "Cancel transcription"} onPress={phase === "recording" ? stopAndProcess : reset} style={[styles.stopButton, { borderColor: phase === "recording" ? theme.color.error : theme.color.border }]}>
+                  <Ionicons name={phase === "recording" ? "stop" : "close"} size={18} color={phase === "recording" ? theme.color.error : theme.color.muted} />
+                </Pressable>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel={phase === "recording" ? "Stop recording" : "Cancel transcription"} onPress={phase === "recording" ? stopAndProcess : reset} style={[styles.stopButton, { borderColor: phase === "recording" ? theme.color.error : theme.color.border }]}>
-                <Ionicons name={phase === "recording" ? "stop" : "close"} size={18} color={phase === "recording" ? theme.color.error : theme.color.muted} />
-              </Pressable>
-            </View>
-          ) : phase === "confirm" && parsed ? (
-            <View style={styles.reviewDock}>
-              {transcript ? <TextInput accessibilityLabel="Editable homepage voice transcript" testID="voice-fab-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
-              {transcript ? <Pressable testID="voice-fab-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
-              {(drafts.length ? drafts : [{ parsed }]).map((draft, index) => (
-                <Text key={`${draft.parsed.intent}-${draft.parsed.amount}-${index}`} numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface, marginTop: index ? 6 : 0 }]}>
-                  {drafts.length > 1 ? `${index + 1}. ` : ""}{draft.parsed.summary}
-                </Text>
-              ))}
-              <View style={styles.btnRow}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}><Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text></Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>{saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}</Pressable>
+            ) : phase === "confirm" && parsed ? (
+              <View style={styles.reviewDock}>
+                {transcript ? <TextInput accessibilityLabel="Editable homepage voice transcript" testID="voice-fab-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
+                {transcript ? <Pressable testID="voice-fab-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
+                {(drafts.length ? drafts : [{ parsed }]).map((draft, index) => (
+                  <Text key={`${draft.parsed.intent}-${draft.parsed.amount}-${index}`} numberOfLines={2} style={[styles.draftSummary, { color: theme.color.onSurface, marginTop: index ? 6 : 0 }]}>
+                    {drafts.length > 1 ? `${index + 1}. ` : ""}{draft.parsed.summary}
+                  </Text>
+                ))}
+                <View style={styles.btnRow}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Cancel voice entry" onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}><Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Save voice entry" onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>{saving ? <ActivityIndicator color={theme.color.onBrandPrimary} /> : <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}</Pressable>
+                </View>
               </View>
-            </View>
-          ) : (
-            <View style={styles.errorDock}>
-              <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
-              <View style={styles.errorCopy}>
-                {transcript ? <TextInput accessibilityLabel="Editable failed voice transcript" testID="voice-fab-error-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
-                <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
-                {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-fab-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.answerInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
-                {transcript ? <Pressable testID="voice-fab-error-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
-                {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
+            ) : (
+              <View style={styles.errorDock}>
+                <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
+                <View style={styles.errorCopy}>
+                  {transcript ? <TextInput accessibilityLabel="Editable failed voice transcript" testID="voice-fab-error-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
+                  <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+                  {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-fab-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.answerInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
+                  {transcript ? <Pressable testID="voice-fab-error-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
+                  {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.retryButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.retryText, { color: theme.color.brandPrimary }]}>Retry</Text></Pressable>
-            </View>
-          )}
+            )}
           </ScrollView>
         </Animated.View>
       )}
@@ -406,6 +429,13 @@ const styles = StyleSheet.create({
       ? { boxShadow: "0 5px 20px rgba(0,0,0,0.16)" }
       : { shadowColor: "#000", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 14 }),
     zIndex: 120,
+  },
+  dockScroll: {
+    flexShrink: 1,
+  },
+  dockScrollContent: {
+    flexGrow: 0,
+    paddingBottom: 4,
   },
   dockHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   dockTitle: { fontSize: 12, fontWeight: "700", letterSpacing: 0.2 },

@@ -19,6 +19,7 @@ import { isValidDateString, normalizeDateInput, localTodayIso } from "@/src/util
 import { getAICapabilities } from "@/src/db/aiCapabilities";
 import { getDeviceSpeechStatus } from "@/src/utils/deviceSpeechRecognizer";
 import { getLocalOcrStatus } from "@/src/utils/localOcr";
+import { getOnDeviceLlmStatus } from "@/src/utils/onDeviceLlm";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -136,6 +137,8 @@ export default function AdvancedSettingsScreen() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [speakAnswers, setSpeakAnswers] = useState(false);
+  const [needleStatus, setNeedleStatus] = useState("");
   const params = useLocalSearchParams<{ section?: string }>();
 
   const chooseProvider = (nextProvider: ProviderId) => {
@@ -184,6 +187,12 @@ export default function AdvancedSettingsScreen() {
       setOcrProvider(cfg.ocrProvider || "auto");
       setInterpretationProvider(cfg.interpretationProvider || "auto");
       setEntryHelpOrder(cfg.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER);
+      const [speak, needle] = await Promise.all([
+        api.getSpeakAnswers().catch(() => false),
+        getOnDeviceLlmStatus().catch(() => null),
+      ]);
+      setSpeakAnswers(Boolean(speak));
+      setNeedleStatus(needle?.needleAvailable ? "Needle 2 is ready on this phone." : (needle?.reason || "Needle ships baked in the native APK."));
       setBaseUrl(cfg.baseUrl || "");
       setAiDataMode(s.aiDataMode === 'detailed' ? 'detailed' : 'summary');
       setAiRememberHistory(s.aiRememberHistory === true);
@@ -779,6 +788,23 @@ export default function AdvancedSettingsScreen() {
                     {testResult && <Text style={{ fontSize: 13, fontWeight: "600", color: testResult.ok ? theme.color.brandPrimary : theme.color.error, flexShrink: 1 }}>{testResult.msg}</Text>}
                   </View>
                 </View>
+              </AccordionRow>
+              <AccordionRow title="On-device models" subtitle="Needle 2, speak answers" theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
+                <Text style={styles.hint}>{needleStatus || "Needle 2 is ready on this phone."}</Text>
+                <View style={styles.modeRow}>
+                  <Pressable
+                    testID="speak-answers-toggle"
+                    onPress={async () => {
+                      const next = !speakAnswers;
+                      setSpeakAnswers(next);
+                      await api.setSpeakAnswers(next);
+                    }}
+                    style={[styles.modeBtn, speakAnswers && styles.modeBtnActive]}
+                  >
+                    <Text style={[styles.modeText, speakAnswers && styles.modeTextActive]}>{speakAnswers ? "Speak answers on" : "Speak answers off"}</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.hint}>Uses the phone speaker, not a downloaded voice model. Default is off.</Text>
               </AccordionRow>
               <AccordionRow title="AI Data & History" subtitle={aiDataMode === 'detailed' ? 'Detailed context enabled' : 'Summary only by default'} isLast theme={theme} expandedKey={expandedKey} setExpandedKey={setExpandedKey}>
                 <View>
