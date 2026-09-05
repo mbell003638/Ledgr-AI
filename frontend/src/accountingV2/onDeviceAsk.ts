@@ -1,7 +1,7 @@
 import { isExplicitBookMutationRequest, isOnDeviceInterpretation } from '../db/ai';
 import {
+  bestOnDevicePack,
   interpretNeedleAskAction,
-  listOptionalOnDeviceModels,
   runOptionalOnDeviceModel,
 } from '../utils/onDeviceLlm';
 import { OPTIONAL_ON_DEVICE_MODELS } from './onDeviceTools';
@@ -35,7 +35,7 @@ export async function askBooksOnDevice(
     }
   }
 
-  const installed = (await listOptionalOnDeviceModels()).find((model) => model.installed);
+  const installed = await bestOnDevicePack(['text']);
   if (installed) {
     const prompt = [
       'You are Ledgr on-device. Answer from the snapshot only. Return JSON {answer, action|null}.',

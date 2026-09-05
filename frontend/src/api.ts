@@ -9,7 +9,7 @@ import type { AIConfig } from '@/src/db/ai';
 import { recognizeLocalOcr } from '@/src/utils/localOcr';
 import { analyzeDocumentLocalFirst } from '@/src/accountingV2/documentInterpretationRouter';
 import { askBooksOnDevice } from '@/src/accountingV2/onDeviceAsk';
-import { listOptionalOnDeviceModels, runOptionalOnDeviceModel } from '@/src/utils/onDeviceLlm';
+import { getPreferredOnDevicePack, listOptionalOnDeviceModels, runOptionalOnDeviceModel, setPreferredOnDevicePack } from '@/src/utils/onDeviceLlm';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
 import { V2BookConfigRepository, type V2BookConfigUpdate } from '@/src/accountingV2/bookConfigRepository';
@@ -1580,6 +1580,14 @@ export const api = {
     if (enabled) await AsyncStorage.setItem(SPEAK_ANSWERS_KEY, '1');
     else await AsyncStorage.removeItem(SPEAK_ANSWERS_KEY);
   },
+
+  /**
+   * Which downloaded pack to use, or null for Auto (the best installed pack the
+   * phone can run). Stored by onDeviceLlm, which owns the key; api.ts only
+   * re-exposes it so settings screens have one place to look.
+   */
+  getPreferredOnDeviceModel: getPreferredOnDevicePack,
+  setPreferredOnDeviceModel: setPreferredOnDevicePack,
 
   // Expenses
   listExpenses: async () => (await v2SourceDocuments(['expense'])).map((row: any) => ({ ...row, category: row.category || 'Expense' })),

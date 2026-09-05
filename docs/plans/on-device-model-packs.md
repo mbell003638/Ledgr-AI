@@ -191,7 +191,7 @@ grep -q "listOptionalOnDeviceModels()).find((model) => model.installed)" src/acc
 grep -q "rank:" src/accountingV2/onDeviceTools.ts && echo "T3 DONE" || echo "T3 TODO"
 
 # T4 pinned-model setting
-grep -rq "preferredOnDeviceModel" src/ && echo "T4 DONE" || echo "T4 TODO"
+grep -rq "PreferredOnDevicePack" src/utils/onDeviceLlm.ts && echo "T4 DONE" || echo "T4 TODO"
 
 # T5 tests exist
 ls __tests__/onDeviceModelSelection.test.ts >/dev/null 2>&1 && echo "T5 DONE" || echo "T5 TODO"
@@ -199,14 +199,29 @@ ls __tests__/onDeviceModelSelection.test.ts >/dev/null 2>&1 && echo "T5 DONE" ||
 
 ### 4.1 Ledger — update in the same commit as the work
 
-| Task | Description | Status | Commit |
-|---|---|---|---|
-| T1 | Multi-slot storage (stop wiping other packs) | TODO | |
-| T2 | Rank-based selection replaces first-in-array | TODO | |
-| T3 | `rank` + `capabilities` fields in the catalogue | TODO | |
-| T4 | Auto / pinned model setting | TODO | |
-| T5 | Selection tests | TODO | |
-| — | *Phase 2 (§7), Phase 3 (§8), Phase 4 (§9)* | not started | |
+| Task | Owner | Description | Status | Branch |
+|---|---|---|---|---|
+| T1 | Agent B | Multi-slot storage (stop wiping other packs) | **TODO** | `packs/kotlin-download` |
+| T2 | Agent A | Rank-based selection replaces first-in-array | **DONE** | `packs/js-selection` |
+| T3 | Agent A | `rank` + `capabilities` fields in the catalogue | **DONE** | `packs/js-selection` |
+| T4 | Agent A | Auto / pinned model setting | **DONE** | `packs/js-selection` |
+| T5 | Agent A | Selection tests (12 cases) | **DONE** | `packs/js-selection` |
+| — | — | *Phase 2 (§7), Phase 3 (§8), Phase 4 (§9)* | not started | |
+
+**Agent A's half of Phase 1 is complete** on `packs/js-selection`, gates green:
+`tsc` clean, `lint:ci` clean, 107 suites / 744 tests (baseline was 106 / 732; the
+12 new tests are `__tests__/onDeviceModelSelection.test.ts`).
+
+Notes for whoever picks this up:
+
+- The pinned-model setting lives in `src/utils/onDeviceLlm.ts`, **not** `api.ts`.
+  `api.ts` already imports `onDeviceLlm`, so owning the key there and importing back
+  would have been a circular import; `api.getPreferredOnDeviceModel` now delegates.
+- `selectOnDevicePack(packs, needs, preferredId)` is pure and synchronous — test
+  selection logic against it directly. `bestOnDevicePack(needs)` is the async wrapper
+  that reads the setting and the installed list.
+- Only `['text']` is requested today. When Phase 3 wires vision, pass `['vision']`
+  from the scan path and selection will already route correctly.
 
 ---
 
