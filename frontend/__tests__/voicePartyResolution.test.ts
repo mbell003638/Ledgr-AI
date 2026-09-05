@@ -1,4 +1,4 @@
-import { parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
+import { normalizeSpokenPaymentVerb, parseSimpleOutgoingPayment, resolveVoicePartyCommand } from '../src/accountingV2/voicePartyResolution';
 import { continueLocalTransaction, parseLocalTransaction } from '../src/accountingV2/localTransactionParser';
 import { V2AppService } from '../src/accountingV2/appService';
 
@@ -276,6 +276,38 @@ describe('spoken capital account drawing and withdrawal parsing', () => {
       directory: { suppliers: [], customers: [], capitalAccounts: [capital] },
       requirePaymentMethod: false,
     })).toMatchObject({ kind: 'confident', command: { intent: 'drawing', partnerName: 'Amit', amount: 500 } });
+  });
+
+  it('parses a payment when speech recognition heard "play" instead of "paid"', () => {
+    const options = {
+      directory: { suppliers: [], customers: [], capitalAccounts: [capital] },
+      requirePaymentMethod: false,
+    };
+    const misheard = parseLocalTransaction('Play $100 to Amit against capital account cash', options);
+    const correct = parseLocalTransaction('Paid $100 to Amit against capital account cash', options);
+    // The misheard verb must reach exactly the same reading as the correct one,
+    // rather than failing with "could not identify a supported transaction type".
+    expect(misheard.kind).toBe('confident');
+    expect(misheard).toEqual(correct);
+  });
+
+  it('accepts the other misheard forms of a spoken payment verb', () => {
+    for (const spoken of ['Played 100 to Amit cash', 'Pled 100 to Amit cash']) {
+      expect(parseLocalTransaction(spoken, {
+        directory: { suppliers: [supplier], customers: [], capitalAccounts: [] },
+        requirePaymentMethod: false,
+      })).toMatchObject({
+        kind: 'confident',
+        command: { intent: 'supplier_payment', supplierName: 'Amit', amount: 100 },
+      });
+    }
+  });
+
+  it('leaves ordinary uses of "play" alone when no amount follows', () => {
+    expect(normalizeSpokenPaymentVerb('Play the audio recording')).toBe('Play the audio recording');
+    expect(normalizeSpokenPaymentVerb('We play cricket every Sunday')).toBe('We play cricket every Sunday');
+    expect(normalizeSpokenPaymentVerb('Play $100 to Amit')).toBe('Paid $100 to Amit');
+    expect(normalizeSpokenPaymentVerb('played 100 to Amit')).toBe('paid 100 to Amit');
   });
 
   it('cleans trailing role noise from candidate name in continueLocalTransaction', () => {
