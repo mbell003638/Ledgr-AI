@@ -4,6 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { decodeLedgrSyncQrInvite } from '@/src/sync/qrEnrollment';
+import QRCodeGen from 'qrcode';
+import { SvgXml } from 'react-native-svg';
+import { generateSyncPassphrase } from '@/src/sync/e2ee';
+import { parseWifiP2pQr, type WifiP2pSession } from '@/src/sync/wifiP2pSync';
 import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
 import { HostingModeCard } from '@/src/components/HostingModeCard';
@@ -14,6 +18,8 @@ import { advanceSyncEpoch, enrollSyncDevice, listSyncDevices, revokeSyncDevice, 
 
 type ConnectionPath = 'join' | 'admin';
 
+type SyncModeTab = 'cloud' | 'wifi' | 'self_hosted';
+
 export default function SyncSettingsScreen() {
   const theme = useTheme(); const styles = useMemo(() => makeStyles(theme), [theme]);
   const { compactPhone } = useResponsiveDevice();
@@ -22,6 +28,9 @@ export default function SyncSettingsScreen() {
   const [oidcIssuer, setOidcIssuer] = useState(''); const [oidcClientId, setOidcClientId] = useState(''); const [oidcScopes, setOidcScopes] = useState('openid profile offline_access');
   const [status, setStatus] = useState<any>(null); const [devices, setDevices] = useState<SyncDevice[]>([]);
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const scrollRef = useRef<ScrollView>(null);
+  const [activeTab, setActiveTab] = useState<SyncModeTab>('cloud');
+  const [cloudEmail, setCloudEmail] = useState(''); const [cloudPassphrase, setCloudPassphrase] = useState(''); const [cloudConnected, setCloudConnected] = useState(false);
+  const [wifiSession, setWifiSession] = useState<WifiP2pSession | null>(null); const [wifiQrUri, setWifiQrUri] = useState<string | null>(null); const [wifiQrSvg, setWifiQrSvg] = useState(''); const [wifiPasteCode, setWifiPasteCode] = useState('');
   const [oneTimeCode, setOneTimeCode] = useState(''); const [deviceName, setDeviceName] = useState('');
   const [inviteRole, setInviteRole] = useState(''); const [inviteLocationCount, setInviteLocationCount] = useState(0);
   const [connectionPath, setConnectionPath] = useState<ConnectionPath>('join'); const [advancedOpen, setAdvancedOpen] = useState(false); const [recoveryOpen, setRecoveryOpen] = useState(false); const [workflowsOpen, setWorkflowsOpen] = useState(false); const [systemOpen, setSystemOpen] = useState(false);
@@ -87,11 +96,106 @@ export default function SyncSettingsScreen() {
   const enable = async () => { setBusy(true); try { await api.enableSync(); setMessage('Sync enabled. Local writes remain offline-first.'); await load(); } catch (error: any) { setMessage(error?.message || 'Could not enable sync.'); } finally { setBusy(false); } };
   const revoke = (device: SyncDevice) => Alert.alert('Revoke device?', device.current ? 'This device will stop syncing and must be explicitly re-enrolled.' : `Device ${device.deviceId.slice(0, 12)}… will no longer access this Business Account.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Revoke', style: 'destructive', onPress: async () => { const db = activeSqlRunner(); if (!db) return; setBusy(true); try { await revokeSyncDevice(db, activeBookId(), device.deviceId); setMessage('Device revoked.'); await load(); } catch (error: any) { setMessage(error?.message || 'Could not revoke device.'); } finally { setBusy(false); } } }]);
   const inputStyle = styles.input;
+
+  // Cloud drive: the passphrase is the whole security model, so it is generated
+  // rather than typed by default, and never leaves the device.
+  const saveCloudSync = async () => {
+    setBusy(true); setMessage('');
+    try {
+      if (cloudPassphrase.trim().length < 8) throw new Error('Choose a passphrase of at least 8 characters, or generate one.');
+      await api.saveCloudSyncConfig({ provider: 'google_drive', accountEmail: cloudEmail.trim() || undefined, passphrase: cloudPassphrase.trim(), autoSyncEnabled: true });
+      setCloudConnected(true);
+      setMessage('Cloud sync is set up. Enter the same passphrase on your other phone to join this book.');
+    } catch (error: any) { setMessage(error?.message || 'Could not save cloud sync.'); } finally { setBusy(false); }
+  };
+
+  const adoptCloudKey = async () => {
+    setBusy(true); setMessage('');
+    try {
+      const key = await api.adoptCloudSyncKey(cloudPassphrase.trim());
+      setMessage(key ? 'Passphrase accepted. This phone can now read the synced book.' : 'That passphrase does not match the data in the account.');
+      setCloudConnected(Boolean(key));
+    } catch (error: any) { setMessage(error?.message || 'Could not join with that passphrase.'); } finally { setBusy(false); }
+  };
+
+  const newCloudPassphrase = () => Alert.alert(
+    'Generate a new passphrase?',
+    'Only phones holding this passphrase can read the book. Anything already uploaded under a different passphrase stays unreadable.',
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Generate', onPress: () => setCloudPassphrase(generateSyncPassphrase()) }],
+  );
+
+  // Wi-Fi pairing needs no internet at all, which is the point: it is the only
+  // transport that works in a market or warehouse with no connection.
+  const startWifiSession = async () => {
+    setBusy(true); setMessage('');
+    try {
+      const created = await api.createWifiP2pSession();
+      setWifiSession(created.session); setWifiQrUri(created.qrCodeUri);
+      setMessage('Show this code to the other phone. It expires in 15 minutes.');
+    } catch (error: any) { setMessage(error?.message || 'Could not start Wi-Fi pairing.'); } finally { setBusy(false); }
+  };
+
+  const joinWifiSession = () => {
+    try {
+      const session = parseWifiP2pQr(wifiPasteCode.trim());
+      setWifiSession(session);
+      setMessage(`Paired with ${session.hostIp}. Keep both phones on this network while they exchange data.`);
+    } catch (error: any) { setMessage(error?.message || 'That is not a valid pairing code.'); }
+  };
+
+  useEffect(() => {
+    if (!wifiQrUri) { setWifiQrSvg(''); return; }
+    let active = true;
+    QRCodeGen.toString(wifiQrUri, { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } })
+      .then((svg: string) => { if (active) setWifiQrSvg(svg); })
+      .catch(() => { if (active) setWifiQrSvg(''); });
+    return () => { active = false; };
+  }, [wifiQrUri]);
+
   return <SafeAreaView style={styles.container} edges={['top']}>
     <ScreenHeader compact={compactPhone} title="Self-hosted Sync" subtitle="Optional. Your data stays local first." leftAction={<Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable>} />
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}>
     <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
       <HostingModeCard compact />
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>How this phone syncs</Text>
+        <Text style={styles.hint}>Cloud keeps an encrypted copy off the phone. Nearby Wi-Fi needs no internet at all. Your own server adds roles and an audit trail.</Text>
+        <Pressable testID="sync-tab-cloud" accessibilityRole="button" accessibilityLabel="Sync with Google Drive" onPress={() => setActiveTab('cloud')} style={[styles.choice, activeTab === 'cloud' && styles.choiceSelected]}><Ionicons name="cloud-outline" size={22} color={activeTab === 'cloud' ? theme.color.brandPrimary : theme.color.muted} /><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>Google Drive</Text><Text style={styles.hint}>Encrypted before it leaves this phone.</Text></View></Pressable>
+        <Pressable testID="sync-tab-wifi" accessibilityRole="button" accessibilityLabel="Sync over nearby Wi-Fi" onPress={() => setActiveTab('wifi')} style={[styles.choice, activeTab === 'wifi' && styles.choiceSelected]}><Ionicons name="wifi-outline" size={22} color={activeTab === 'wifi' ? theme.color.brandPrimary : theme.color.muted} /><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>Nearby Wi-Fi</Text><Text style={styles.hint}>Works with no internet at all.</Text></View></Pressable>
+        <Pressable testID="sync-tab-self-hosted" accessibilityRole="button" accessibilityLabel="Sync with your own server" onPress={() => setActiveTab('self_hosted')} style={[styles.choice, activeTab === 'self_hosted' && styles.choiceSelected]}><Ionicons name="server-outline" size={22} color={activeTab === 'self_hosted' ? theme.color.brandPrimary : theme.color.muted} /><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>Your own server</Text><Text style={styles.hint}>Roles, audit trail, on-premises control.</Text></View></Pressable>
+      </View>
+
+      {activeTab === 'cloud' ? <View style={styles.card} testID="sync-cloud-panel">
+        <Text style={styles.sectionTitle}>Sync through your own Google Drive</Text>
+        <Text style={styles.hint}>Your book is encrypted on this phone and uploaded to a private folder only this app can see. Google stores scrambled data it cannot read.</Text>
+        <Text style={styles.label}>Google account (optional label)</Text>
+        <TextInput accessibilityLabel="Google account" value={cloudEmail} onChangeText={setCloudEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@gmail.com" placeholderTextColor={theme.color.muted} style={inputStyle} />
+        <Text style={styles.label}>Passphrase</Text>
+        <TextInput testID="cloud-passphrase" accessibilityLabel="Sync passphrase" value={cloudPassphrase} onChangeText={setCloudPassphrase} autoCapitalize="none" autoCorrect={false} placeholder="Generate or enter your passphrase" placeholderTextColor={theme.color.muted} style={inputStyle} />
+        <Text style={styles.hint}>Write this down. It is the only thing that unlocks the backup, and nobody can recover it for you.</Text>
+        <Pressable testID="cloud-generate-passphrase" accessibilityRole="button" accessibilityLabel="Generate a strong passphrase" onPress={newCloudPassphrase} style={styles.secondary}><Text style={styles.secondaryText}>Generate a strong passphrase</Text></Pressable>
+        <Pressable testID="cloud-save" accessibilityRole="button" accessibilityLabel="Turn on cloud sync" disabled={busy} onPress={saveCloudSync} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Working...' : cloudConnected ? 'Update cloud sync' : 'Turn on cloud sync'}</Text></Pressable>
+        <Pressable testID="cloud-join" accessibilityRole="button" accessibilityLabel="Join with the passphrase" disabled={busy} onPress={adoptCloudKey} style={[styles.secondary, busy && styles.disabled]}><Text style={styles.secondaryText}>This is my second phone - join with the passphrase</Text></Pressable>
+      </View> : null}
+
+      {activeTab === 'wifi' ? <View style={styles.card} testID="sync-wifi-panel">
+        <Text style={styles.sectionTitle}>Sync over the same Wi-Fi</Text>
+        <Text style={styles.hint}>Works with no internet, so it suits a market stall or a warehouse. Both phones stay on the same network and nothing is stored off them.</Text>
+        {wifiQrUri ? <View style={styles.recoveryBox}>
+          <Text style={styles.packageTitle}>Show this to the other phone</Text>
+          {wifiQrSvg ? <SvgXml xml={wifiQrSvg} width={200} height={200} /> : null}
+          <Text style={styles.packageHint}>Expires in 15 minutes and pairs one phone.</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close pairing code" onPress={() => { setWifiQrUri(null); setWifiSession(null); }} style={styles.secondary}><Text style={styles.secondaryText}>Close code</Text></Pressable>
+        </View> : <Pressable testID="wifi-create-session" accessibilityRole="button" accessibilityLabel="Show pairing code" disabled={busy} onPress={startWifiSession} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Working...' : 'Show pairing code'}</Text></Pressable>}
+        <Text style={styles.label}>Or paste the code from the other phone</Text>
+        <TextInput testID="wifi-paste-code" accessibilityLabel="Wi-Fi pairing code" value={wifiPasteCode} onChangeText={setWifiPasteCode} autoCapitalize="none" autoCorrect={false} placeholder="ledgr://wifi-p2p?..." placeholderTextColor={theme.color.muted} style={inputStyle} />
+        <Pressable testID="wifi-join-session" accessibilityRole="button" accessibilityLabel="Pair with this code" disabled={!wifiPasteCode.trim()} onPress={joinWifiSession} style={[styles.secondary, !wifiPasteCode.trim() && styles.disabled]}><Text style={styles.secondaryText}>Pair with this code</Text></Pressable>
+        {wifiSession ? <Text style={styles.hint}>Paired with {wifiSession.hostIp}:{wifiSession.port}.</Text> : null}
+      </View> : null}
+
+      {activeTab === 'self_hosted' ? <>
+
       <View style={styles.intro}><Text style={styles.eyebrow}>Simple setup</Text><Text style={styles.heroTitle}>Use your own server only when you need more than one device.</Text><Text style={styles.hint}>Ledgr still saves every sale, expense, payment, and stock change on this device first. Nothing here creates a Ledgr cloud account.</Text><Pressable accessibilityRole="button" accessibilityLabel="Read the simple Private sync guide" testID="open-private-sync-guide" onPress={() => router.push('/private-sync-guide' as any)} style={styles.guideLink}><Text style={styles.disclosureText}>Read the simple guide first</Text><Ionicons name="arrow-forward" size={16} color={theme.color.brandPrimary} /></Pressable></View>
       <Pressable accessibilityRole="button" accessibilityLabel="Open guided self-host setup" testID="download-self-host-package" onPress={() => router.push('/private-sync-guide' as any)} style={styles.packageCard}><View style={styles.packageCopy}><Text style={styles.packageTitle}>Download Self-host Package</Text><Text style={styles.hint}>Windows, macOS, Linux, and Docker bundle</Text><Text style={styles.packageHint}>Open the guide first. It shows the right one-click installer for your computer, VPS, or NAS.</Text></View><View style={styles.packageAction}><Ionicons name="download-outline" size={22} color={theme.color.brandPrimary} /><Ionicons name="arrow-forward-outline" size={17} color={theme.color.muted} /></View></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Open self-host setup guide" testID="open-self-host-setup-guide" onPress={() => router.push('/private-sync-guide' as any)} style={styles.packageGuide}><Text style={styles.disclosureText}>Choose your computer, VPS, or NAS setup</Text><Ionicons name="arrow-forward" size={16} color={theme.color.brandPrimary} /></Pressable>
@@ -106,6 +210,7 @@ export default function SyncSettingsScreen() {
       </View> : null}</View>
       {message ? <Text style={styles.message}>{message}</Text> : null}
       <View style={{ height: 38 }} />
+      </> : null}
     </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
