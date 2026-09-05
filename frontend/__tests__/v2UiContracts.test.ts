@@ -352,6 +352,19 @@ describe('V2 UI contracts', () => {
     expect(voiceFab).toContain('backgroundColor: theme.color.brandPrimary');
     expect(voiceFab).toContain('color={theme.color.onBrandPrimary}');
   });
+
+  it('VoiceFab lifts modal content above keyboard when typing in draft clarification', () => {
+    const voiceFab = readSource('src/components/VoiceFab.tsx');
+    expect(voiceFab).toContain('keyboardDidShow');
+    expect(voiceFab).toContain('keyboardDidHide');
+    expect(voiceFab).toContain('keyboardDidChangeFrame');
+    expect(voiceFab).toContain('paddingBottom: popupBottomPadding');
+    expect(voiceFab).toContain('maxHeight: maxPopupHeight');
+    expect(voiceFab).toContain('<ScrollView');
+    expect(voiceFab).toContain('keyboardShouldPersistTaps="handled"');
+    expect(voiceFab).toContain('testID="voice-fab-clarification-answer"');
+    expect(voiceFab).toContain('onSubmitEditing={Keyboard.dismiss}');
+  });
   it.each(['customer/[id].tsx', 'supplier/[id].tsx'])('%s renders and edits debit / credit notes', (screen) => {
     const source = readApp(screen);
     expect(source).toContain(`${screen.startsWith('customer') ? 'r' : 't'}.kind === "credit_note"`);

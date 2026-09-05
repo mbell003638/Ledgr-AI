@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput, Keyboard, Platform, ScrollView, useWindowDimensions, type KeyboardEvent } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useAnimations, useTheme } from "@/src/context/ThemeContext";
@@ -39,6 +40,29 @@ export default function VoiceFab() {
   const transcriptRef = useRef("");
 
   const pulseScale = useSharedValue(1);
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const handleShow = (e: KeyboardEvent) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    };
+    const handleHide = () => {
+      setKeyboardHeight(0);
+    };
+    const showSub = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", handleShow);
+    const hideSub = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", handleHide);
+    const frameSub = Keyboard.addListener("keyboardDidChangeFrame", handleShow);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      frameSub.remove();
+    };
+  }, []);
+
+  const popupBottomPadding = keyboardHeight > 0 ? keyboardHeight + 8 : Math.max(insets.bottom, 16);
+  const maxPopupHeight = Math.max(240, windowHeight - (keyboardHeight > 0 ? keyboardHeight : insets.bottom) - insets.top - 24);
 
   useEffect(() => () => { void deviceStopRef.current?.(); deviceStopRef.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
@@ -302,107 +326,114 @@ export default function VoiceFab() {
       </Pressable>
 
       <Modal transparent visible={isModalOpen} animationType="fade" onRequestClose={reset}>
-        <View style={styles.overlayContainer}>
+        <View style={[styles.overlayContainer, { paddingBottom: popupBottomPadding }]}>
           <Pressable style={styles.overlayPressable} onPress={reset}>
             <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
           </Pressable>
 
-          <Animated.View entering={SlideInDown.duration(300).springify()} style={[styles.popupContainer, { backgroundColor: theme.color.surface }]}>
+          <Animated.View entering={SlideInDown.duration(300).springify()} style={[styles.popupContainer, { backgroundColor: theme.color.surface, maxHeight: maxPopupHeight }]}>
             {/* Header / Dismiss */}
             <View style={styles.popupHeader}>
               <Text style={[styles.popupTitle, { color: theme.color.onSurface }]}>Voice Assistant</Text>
-              <Pressable onPress={reset} style={({pressed}) => [pressed && {opacity: 0.5}]}>
+              <Pressable onPress={reset} accessibilityRole="button" accessibilityLabel="Dismiss voice assistant" style={({pressed}) => [pressed && {opacity: 0.5}]}>
                 <Ionicons name="close-circle" size={28} color={theme.color.muted} />
               </Pressable>
             </View>
 
-            {phase === "recording" || phase === "processing" ? (
-              <View style={styles.recordingBox}>
-                <Text style={[styles.hintText, { color: theme.color.muted }]}>
-                  “Paid 100 to Amit and 50 to Rahim”
-                </Text>
-                <Animated.View style={animatedMicStyle}>
-                  <Pressable 
-                    onPress={phase === "recording" ? stopAndProcess : undefined} 
-                    style={[styles.bigMicBtn, { backgroundColor: phase === "recording" ? theme.color.error : theme.color.surfaceTertiary }]}
-                  >
-                    {phase === "processing" ? (
-                       <ActivityIndicator color={theme.color.onSurface} size="large" />
-                    ) : (
-                       <Ionicons name="stop" size={44} color="#fff" />
-                    )}
-                  </Pressable>
-                </Animated.View>
-                <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>
-                  {phase === "recording" ? "Listening... Tap to stop" : "Transcribing AI..."}
-                </Text>
-              </View>
-            ) : phase === "confirm" && (drafts.length || parsed) ? (
-              <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
-                {transcript ? (
-                  <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <TextInput accessibilityLabel="Editable homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={{ fontStyle: "italic", color: theme.color.onSurface }} />
-                    <Pressable accessibilityRole="button" accessibilityLabel="Update homepage voice draft" onPress={() => void rebuildDraft()}><Text style={{ color: theme.color.brandPrimary, fontWeight: "700", marginTop: 8 }}>Update draft</Text></Pressable>
-                  </View>
-                ) : null}
-
-                {(drafts.length ? drafts : [{ parsed, validation: validatedAction }]).map((draft, index, list) => {
-                  const row = draft.parsed;
-                  return (
-                    <View key={`${row.intent}-${row.amount}-${index}`} style={{ marginTop: index ? 12 : 0 }}>
-                      <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Draft {list.length > 1 ? `${index + 1} of ${list.length} · ` : ""}{String(row.intent || "").replace("_", " ")}</Text>
-                      <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{row.summary}</Text>
-                      <View style={styles.draftGrid}>
-                        {row.pendingPartyCreate ? <Text style={{ color: theme.color.brandPrimary, marginBottom: 8 }}>Will create {row.pendingPartyCreate.role === "customer" ? "Customer" : "Supplier"} “{row.pendingPartyCreate.name}” on save.</Text> : null}
-                        {row.amount != null && <DKV k="Amount" v={fmt(row.amount, bookCurrency)} theme={theme} />}
-                        {row.date && <DKV k="Date" v={row.date} theme={theme} />}
-                        {row.supplierName && <DKV k="Supplier" v={row.supplierName} theme={theme} />}
-                        {row.customerName && <DKV k="Customer" v={row.customerName} theme={theme} />}
-                        {row.partnerName && <DKV k="Capital Account" v={row.partnerName} theme={theme} />}
-                        {row.paymentType && <DKV k="Type" v={row.paymentType} theme={theme} />}
-                        {row.receiptMode && <DKV k="Receipt type" v={row.receiptMode === "against_invoice" ? "Against invoice" : row.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
-                        {row.method && <DKV k="Payment method" v={row.method === "upi" ? "mobile / UPI" : row.method} theme={theme} />}
-                      </View>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={styles.popupScroll}
+              contentContainerStyle={styles.popupScrollContent}
+            >
+              {phase === "recording" || phase === "processing" ? (
+                <View style={styles.recordingBox}>
+                  <Text style={[styles.hintText, { color: theme.color.muted }]}>
+                    “Paid 100 to Amit and 50 to Rahim”
+                  </Text>
+                  <Animated.View style={animatedMicStyle}>
+                    <Pressable 
+                      onPress={phase === "recording" ? stopAndProcess : undefined} 
+                      style={[styles.bigMicBtn, { backgroundColor: phase === "recording" ? theme.color.error : theme.color.surfaceTertiary }]}
+                    >
+                      {phase === "processing" ? (
+                         <ActivityIndicator color={theme.color.onSurface} size="large" />
+                      ) : (
+                         <Ionicons name="stop" size={44} color="#fff" />
+                      )}
+                    </Pressable>
+                  </Animated.View>
+                  <Text style={[styles.statusLabel, { color: theme.color.brandPrimary }]}>
+                    {phase === "recording" ? "Listening... Tap to stop" : "Transcribing AI..."}
+                  </Text>
+                </View>
+              ) : phase === "confirm" && (drafts.length || parsed) ? (
+                <View style={[styles.draftBox, { backgroundColor: theme.color.surfaceSecondary }]}>
+                  {transcript ? (
+                    <View style={[styles.transcriptBubble, { backgroundColor: theme.color.surfaceTertiary }]}>
+                      <TextInput accessibilityLabel="Editable homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={{ fontStyle: "italic", color: theme.color.onSurface }} />
+                      <Pressable accessibilityRole="button" accessibilityLabel="Update homepage voice draft" onPress={() => void rebuildDraft()}><Text style={{ color: theme.color.brandPrimary, fontWeight: "700", marginTop: 8 }}>Update draft</Text></Pressable>
                     </View>
-                  );
-                })}
+                  ) : null}
 
-                <View style={styles.btnRow}>
-                  <Pressable onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
-                    <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                    {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}
+                  {(drafts.length ? drafts : [{ parsed, validation: validatedAction }]).map((draft, index, list) => {
+                    const row = draft.parsed;
+                    return (
+                      <View key={`${row.intent}-${row.amount}-${index}`} style={{ marginTop: index ? 12 : 0 }}>
+                        <Text style={[styles.draftLabel, { color: theme.color.brandPrimary }]}>Draft {list.length > 1 ? `${index + 1} of ${list.length} · ` : ""}{String(row.intent || "").replace("_", " ")}</Text>
+                        <Text style={[styles.draftSummary, { color: theme.color.onSurface }]}>{row.summary}</Text>
+                        <View style={styles.draftGrid}>
+                          {row.pendingPartyCreate ? <Text style={{ color: theme.color.brandPrimary, marginBottom: 8 }}>Will create {row.pendingPartyCreate.role === "customer" ? "Customer" : "Supplier"} “{row.pendingPartyCreate.name}” on save.</Text> : null}
+                          {row.amount != null && <DKV k="Amount" v={fmt(row.amount, bookCurrency)} theme={theme} />}
+                          {row.date && <DKV k="Date" v={row.date} theme={theme} />}
+                          {row.supplierName && <DKV k="Supplier" v={row.supplierName} theme={theme} />}
+                          {row.customerName && <DKV k="Customer" v={row.customerName} theme={theme} />}
+                          {row.partnerName && <DKV k="Capital Account" v={row.partnerName} theme={theme} />}
+                          {row.paymentType && <DKV k="Type" v={row.paymentType} theme={theme} />}
+                          {row.receiptMode && <DKV k="Receipt type" v={row.receiptMode === "against_invoice" ? "Against invoice" : row.receiptMode === "advance" ? "Customer advance" : "Cash sale"} theme={theme} />}
+                          {row.method && <DKV k="Payment method" v={row.method === "upi" ? "mobile / UPI" : row.method} theme={theme} />}
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  <View style={styles.btnRow}>
+                    <Pressable onPress={reset} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                      <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Cancel</Text>
+                    </Pressable>
+                    <Pressable onPress={confirmSave} disabled={saving} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                      {saving ? <ActivityIndicator color="#000" /> : <Text style={[styles.actionText, { color: '#000' }]}>{drafts.length > 1 ? `Save ${drafts.length}` : "Save"}</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              ) : phase === "error" ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="alert-circle" size={32} color={theme.color.error} />
+                  {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
+                  <Text style={styles.errorText}>{error}</Text>
+                  {createProposal ? (
+                    <View style={{ width: "100%", marginTop: 12, gap: 8 }}>
+                      {(createProposal.suggestions || []).map((name) => (
+                        <Pressable key={name} accessibilityRole="button" onPress={() => { setFollowUpAnswer(name); void continueDraft(name); }} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                          <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Use existing “{name}”</Text>
+                        </Pressable>
+                      ))}
+                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("supplier")} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                        <Text style={[styles.actionText, { color: "#000" }]}>Create Supplier{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                      </Pressable>
+                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("customer")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                        <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Create Customer{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                      </Pressable>
+                    </View>
+                  ) : pendingClarification ? <><TextInput testID="voice-fab-clarification-answer" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
+                  {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
+                  <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
+                    <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
                   </Pressable>
                 </View>
-              </View>
-            ) : phase === "error" ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={32} color={theme.color.error} />
-                {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
-                <Text style={styles.errorText}>{error}</Text>
-                {createProposal ? (
-                  <View style={{ width: "100%", marginTop: 12, gap: 8 }}>
-                    {(createProposal.suggestions || []).map((name) => (
-                      <Pressable key={name} accessibilityRole="button" onPress={() => { setFollowUpAnswer(name); void continueDraft(name); }} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
-                        <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Use existing “{name}”</Text>
-                      </Pressable>
-                    ))}
-                    <Pressable accessibilityRole="button" onPress={() => void continueDraft("supplier")} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                      <Text style={[styles.actionText, { color: "#000" }]}>Create Supplier{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" onPress={() => void continueDraft("customer")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
-                      <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Create Customer{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
-                    </Pressable>
-                  </View>
-                ) : pendingClarification ? <><TextInput accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
-                {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
-                <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
-                  <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
-                </Pressable>
-              </View>
-            ) : null}
+              ) : null}
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>
@@ -448,7 +479,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 500,
     padding: 24,
-    paddingBottom: 48,
+    paddingBottom: 24,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     shadowColor: "#000",
@@ -456,6 +487,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 24,
     elevation: 24,
+  },
+  popupScroll: {
+    flexShrink: 1,
+  },
+  popupScrollContent: {
+    flexGrow: 0,
+    paddingBottom: 4,
   },
   popupHeader: {
     flexDirection: "row",
