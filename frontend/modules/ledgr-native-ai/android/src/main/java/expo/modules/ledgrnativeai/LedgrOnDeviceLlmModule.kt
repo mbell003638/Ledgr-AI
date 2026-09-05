@@ -51,7 +51,7 @@ class LedgrOnDeviceLlmModule : Module() {
     }
 
     AsyncFunction("listOptional") {
-      val ram = totalRamBytes()
+      val ram = advertisedRamBytes()
       OPTIONAL_MODELS.map { spec ->
         val file = optionalFile(spec.id)
         mapOf(
@@ -68,7 +68,7 @@ class LedgrOnDeviceLlmModule : Module() {
       if (url.isBlank()) {
         throw IllegalStateException("This Gemma pack has no download URL. Convert it with cactus download and copy ${spec.filename} onto the phone.")
       }
-      val ram = totalRamBytes()
+      val ram = advertisedRamBytes()
       if (ram > 0 && ram < spec.minRamBytes) {
         throw IllegalStateException("This phone does not have enough RAM for ${spec.id}.")
       }
@@ -152,6 +152,23 @@ class LedgrOnDeviceLlmModule : Module() {
     val info = ActivityManager.MemoryInfo()
     manager.getMemoryInfo(info)
     return if (Build.VERSION.SDK_INT >= 16) info.totalMem else 0L
+  }
+
+  /**
+   * Android reports less memory than the phone is sold with, because the kernel
+   * and firmware reserve some before userspace ever sees it: a 12 GB phone
+   * commonly reports around 11.2 GB. Comparing that raw figure against a 12 GB
+   * requirement hid packs from phones that meet the spec, so round up to the
+   * nearest size phones are actually sold in before deciding eligibility.
+   */
+  private fun advertisedRamBytes(): Long {
+    val reported = totalRamBytes()
+    if (reported <= 0L) return 0L
+    val gib = 1024L * 1024L * 1024L
+    for (tier in longArrayOf(2, 3, 4, 6, 8, 12, 16, 24, 32)) {
+      if (reported <= tier * gib) return tier * gib
+    }
+    return reported
   }
 
   private fun downloadTo(url: String, dest: File, id: String) {

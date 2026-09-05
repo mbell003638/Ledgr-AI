@@ -2,6 +2,7 @@
 import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
   OPTIONAL_ON_DEVICE_MODELS,
+  advertisedRamBytes,
   ledgrOnDeviceToolsJson,
   toolCallToAskAction,
   toolCallToVoiceCommand,
@@ -110,7 +111,7 @@ export async function listOptionalOnDeviceModels(): Promise<(typeof OPTIONAL_ON_
   const module = nativeModule();
   const nativeList = module?.listOptional ? await module.listOptional() : [];
   const byId = new Map(nativeList.map((row) => [row.id, row]));
-  const ram = (await getOnDeviceLlmStatus()).totalRamBytes;
+  const ram = advertisedRamBytes((await getOnDeviceLlmStatus()).totalRamBytes);
   return OPTIONAL_ON_DEVICE_MODELS.map((model) => {
     const native = byId.get(model.id);
     return {
