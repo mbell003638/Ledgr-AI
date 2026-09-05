@@ -56,7 +56,7 @@ export async function askBooksOnDevice(
 
   if (!isOnDeviceInterpretation(cfg)) return null;
   if (mutation) {
-    return { answer: 'I could not map that to a Ledgr action on this phone. Add the amount and party, or download Gemma 3 1B in Advanced Settings.', action: null };
+    return { answer: 'I could not map that to a Ledgr action on this phone. Add the amount and party, or download an on-device model pack in Advanced Settings.', action: null };
   }
   const visionHint = OPTIONAL_ON_DEVICE_MODELS.find((row) => row.vision)?.label;
   return {
