@@ -20,6 +20,10 @@ const ALLOWED_ANDROID_PERMISSIONS = [
   "CAMERA",
   "RECORD_AUDIO",
   "INTERNET",
+  // Holds a partial wake lock while a multi-gigabyte on-device model pack
+  // downloads, so the transfer is not killed when the screen turns off. Normal
+  // permission: no runtime prompt and nothing to declare in Data Safety.
+  "WAKE_LOCK",
 ];
 const REQUIRED_BLOCKED_PERMISSIONS = [
   "READ_EXTERNAL_STORAGE",

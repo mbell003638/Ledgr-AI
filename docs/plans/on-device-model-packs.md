@@ -4,8 +4,9 @@
 developer who has never seen this repository or the conversation that produced this
 plan, everything you need is here. Do not assume any prior context.
 
-- **Status:** Phase 1 not started. See §4 to confirm this yourself rather than
-  trusting this line.
+- **Status:** Phase 1 complete and merged. Phase 2 partly done (resume, checksum,
+  Wi-Fi guard, wake lock, cancel landed early; manifest still to do). See §4 to
+  confirm this yourself rather than trusting this line.
 - **Applies to branches:** `codex-sol-on-device-ai` and `Manus-on-device-ai`.
 - **Last updated:** 2026-09-05.
 
@@ -199,18 +200,52 @@ ls __tests__/onDeviceModelSelection.test.ts >/dev/null 2>&1 && echo "T5 DONE" ||
 
 ### 4.1 Ledger — update in the same commit as the work
 
-| Task | Owner | Description | Status | Branch |
+| Task | Owner | Description | Status | Commit |
 |---|---|---|---|---|
-| T1 | Agent B | Multi-slot storage (stop wiping other packs) | **TODO** | `packs/kotlin-download` |
-| T2 | Agent A | Rank-based selection replaces first-in-array | **DONE** | `packs/js-selection` |
-| T3 | Agent A | `rank` + `capabilities` fields in the catalogue | **DONE** | `packs/js-selection` |
-| T4 | Agent A | Auto / pinned model setting | **DONE** | `packs/js-selection` |
-| T5 | Agent A | Selection tests (12 cases) | **DONE** | `packs/js-selection` |
+| T1 | Agent B | Multi-slot storage (stop wiping other packs) | **DONE** | `b141858` |
+| T2 | Agent A | Rank-based selection replaces first-in-array | **DONE** | `3a593e2` |
+| T3 | Agent A | `rank` + `capabilities` fields in the catalogue | **DONE** | `3a593e2` |
+| T4 | Agent A | Auto / pinned model setting | **DONE** | `3a593e2` |
+| T5 | Agent A | Selection tests (12 cases) | **DONE** | `3a593e2` |
 | — | — | *Phase 2 (§7), Phase 3 (§8), Phase 4 (§9)* | not started | |
 
-**Agent A's half of Phase 1 is complete** on `packs/js-selection`, gates green:
-`tsc` clean, `lint:ci` clean, 107 suites / 744 tests (baseline was 106 / 732; the
-12 new tests are `__tests__/onDeviceModelSelection.test.ts`).
+**Phase 1 is complete and merged** into `codex-sol-on-device-ai`. Both halves landed
+with zero conflicts, which is what §12.1's file ownership was for. Agent B also
+delivered several §7 items early (resume, checksum, Wi-Fi guard, wake lock, cancel),
+so Phase 2 is partly done — what remains there is the manifest, and WorkManager if
+downloads need to survive process death rather than only screen-off.
+
+### 4.2 Audit of `b141858` (Agent B), and the follow-ups it produced
+
+Verified independently, not taken on trust: contract clean (`git diff -- frontend/src/`
+empty), gates re-run in Agent B's worktree (106/732, `tsc` clean), and every §12.4
+behaviour item confirmed by reading the diff. The resume logic is correct in the case
+most implementations get wrong — a `200` response to a `Range` request deletes the
+stale `.part` and restarts from zero rather than appending and silently corrupting.
+
+Three findings, all now fixed:
+
+1. **`WAKE_LOCK` was missing (would have broken every download).** `withWakeLock`
+   calls `acquire()`, which needs `android.permission.WAKE_LOCK`; `app.json` declared
+   only CAMERA/RECORD_AUDIO/INTERNET and no dependency contributes it. `acquire()`
+   sits before the `try`, so the `SecurityException` propagates and the download body
+   never runs. Added to `app.json`. *(`ACCESS_NETWORK_STATE`, needed by the Wi-Fi
+   guard, does arrive via `expo-image`'s manifest.)*
+   **This file was in neither agent's lane — a gap in §12.1, not Agent B's error.**
+2. **`downloadOptional` gained a fourth parameter**, against §12.2. Functionally safe:
+   Expo 54 computes required arguments as total minus *trailing nullable* ones, so the
+   existing three-argument call still validates and `sha256` arrives null. The TS type
+   now declares it, so the contract and the code agree again.
+3. **`cancelDownload` was unreachable from JS** — the native method existed but no TS
+   declaration or wrapper did. Added `cancelOptionalOnDeviceModelDownload`.
+
+**Still outstanding:** the Kotlin had never been compiled at handback (§12.4 asks for
+an Android build; `tsc`/`lint`/`jest` touch no Kotlin, so their passing proves nothing
+about it). Static review found no problem, but only a build settles it.
+
+**Recorded drift risk:** `OPTIONAL_MODELS` in Kotlin now carries `estimatedBytes` and
+`expectedSha256` that also live in the JS catalogue — two sources of truth. Phase 2's
+manifest should collapse them so sizes and hashes are declared once.
 
 Notes for whoever picks this up:
 
