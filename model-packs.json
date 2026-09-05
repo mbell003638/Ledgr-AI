@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "_comment": "On-device model packs offered by Ledgr AI. Served to the app at raw.githubusercontent.com/mbell003638/Ledgr-AI/main/model-packs.json. Editing this file adds, removes, or repoints a pack without shipping a new APK. Rules: downloadUrl must be https; filename must be a bare name with no path separators; capabilities drive routing, so never claim vision a pack does not have; minAppVersion hides a pack from older builds that cannot run it.",
+  "packs": [
+    {
+      "id": "qwen25-0-5b",
+      "label": "Qwen 2.5 0.5B",
+      "summary": "Smallest pack. Short answers about your books on modest phones.",
+      "bytes": 546660344,
+      "minRamBytes": 4294967296,
+      "rank": 10,
+      "capabilities": ["text", "tools"],
+      "filename": "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+      "downloadUrl": "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"
+    },
+    {
+      "id": "qwen25-1-5b",
+      "label": "Qwen 2.5 1.5B",
+      "summary": "Better explanations of your books. Text only — scanning stays on-device via OCR.",
+      "bytes": 1567364648,
+      "minRamBytes": 6442450944,
+      "rank": 20,
+      "capabilities": ["text", "tools"],
+      "filename": "Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task",
+      "downloadUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task"
+    },
+    {
+      "id": "phi4-mini",
+      "label": "Phi-4 mini",
+      "summary": "Highest quality answers. Large download, flagship phones only.",
+      "bytes": 3944280650,
+      "minRamBytes": 12884901888,
+      "rank": 30,
+      "capabilities": ["text", "tools"],
+      "filename": "phi4_q8_ekv1280.task",
+      "downloadUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/phi4_q8_ekv1280.task"
+    }
+  ]
+}
