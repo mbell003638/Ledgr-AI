@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
-  OPTIONAL_ON_DEVICE_MODELS,
   advertisedRamBytes,
   ledgrOnDeviceToolsJson,
   toolCallToAskAction,
@@ -9,9 +8,14 @@ import {
   type LedgrOnDeviceToolCall,
   type LedgrOnDeviceToolName,
   type OnDevicePackCapability,
-  type OptionalOnDeviceModelId,
 } from '../accountingV2/onDeviceTools';
 import type { VoiceCommand } from '../accountingV2/voicePartyResolution';
+import {
+  DEFAULT_PACK_MANIFEST_URL,
+  bundledPacks,
+  parsePackManifest,
+  type OnDevicePack,
+} from '../accountingV2/onDevicePackManifest';
 
 function nativeRuntime(): { NativeModules: Record<string, unknown>; Platform: { OS: string } } {
   try { return require('react-native'); } catch { return { NativeModules: {}, Platform: { OS: 'unknown' } }; }
@@ -26,7 +30,7 @@ export type OnDeviceLlmStatus = {
 };
 
 export type OptionalModelStatus = {
-  id: OptionalOnDeviceModelId;
+  id: string;
   installed: boolean;
   eligible: boolean;
   bytesOnDisk?: number;
@@ -38,12 +42,12 @@ type NativeOnDeviceLlm = {
   isAvailable?: () => Promise<boolean> | boolean;
   getStatus?: () => Promise<OnDeviceLlmStatus> | OnDeviceLlmStatus;
   runNeedle?: (transcript: string, toolsJson: string) => Promise<string> | string;
-  runOptional?: (modelId: string, prompt: string, imageUri?: string, audioUri?: string) => Promise<string> | string;
-  listOptional?: () => Promise<OptionalModelStatus[]> | OptionalModelStatus[];
-  /** sha256 is optional: Expo omits trailing nullable args, so older builds taking three still work. */
-  downloadOptional?: (modelId: string, url: string, filename: string, sha256?: string | null) => Promise<boolean> | boolean;
+  runOptional?: (modelId: string, filename: string, prompt: string, imageUri?: string, audioUri?: string) => Promise<string> | string;
+  /** Packs are described by JS so a manifest can add one without a new APK. */
+  listOptional?: (packsJson: string) => Promise<OptionalModelStatus[]> | OptionalModelStatus[];
+  downloadOptional?: (modelId: string, url: string, filename: string, sha256?: string | null, expectedBytes?: number, minRamBytes?: number) => Promise<boolean> | boolean;
   cancelDownload?: (modelId: string) => Promise<boolean> | boolean;
-  deleteOptional?: (modelId: string) => Promise<boolean> | boolean;
+  deleteOptional?: (modelId: string, filename: string) => Promise<boolean> | boolean;
   addListener?: (event: string, listener: (payload: any) => void) => { remove: () => void };
 };
 
@@ -112,12 +116,61 @@ export async function interpretNeedleAskAction(transcript: string, partyHints: s
   return call ? toolCallToAskAction(call) : null;
 }
 
-export async function listOptionalOnDeviceModels(): Promise<(typeof OPTIONAL_ON_DEVICE_MODELS[number] & OptionalModelStatus)[]> {
+const PACK_MANIFEST_URL_KEY = 'ledgr_pack_manifest_url';
+const PACK_MANIFEST_CACHE_KEY = 'ledgr_pack_manifest_cache';
+
+export async function getPackManifestUrl(): Promise<string> {
+  try { return (await asyncStorage()?.getItem(PACK_MANIFEST_URL_KEY)) || DEFAULT_PACK_MANIFEST_URL; }
+  catch { return DEFAULT_PACK_MANIFEST_URL; }
+}
+
+export async function setPackManifestUrl(url: string | null): Promise<void> {
+  const storage = asyncStorage();
+  if (!storage) return;
+  if (url && url.trim()) await storage.setItem(PACK_MANIFEST_URL_KEY, url.trim());
+  else await storage.removeItem(PACK_MANIFEST_URL_KEY);
+}
+
+/**
+ * The packs on offer. A manifest lets a URL be corrected or a pack added
+ * without shipping a new APK, but it is never required: a fetch that fails
+ * falls back to the last good copy, and then to what shipped in this build, so
+ * losing the network never takes the feature away.
+ */
+export async function resolveOnDevicePacks(options: { refresh?: boolean } = {}): Promise<OnDevicePack[]> {
+  const storage = asyncStorage();
+  if (options.refresh) {
+    try {
+      const response = await fetch(await getPackManifestUrl(), { headers: { accept: 'application/json' } });
+      if (response.ok) {
+        const packs = parsePackManifest(await response.json());
+        if (packs.length) {
+          try { await storage?.setItem(PACK_MANIFEST_CACHE_KEY, JSON.stringify(packs)); } catch { /* cache is optional */ }
+          return packs;
+        }
+      }
+    } catch { /* fall through to cache */ }
+  }
+  try {
+    const cached = await storage?.getItem(PACK_MANIFEST_CACHE_KEY);
+    if (cached) {
+      const packs = JSON.parse(cached) as OnDevicePack[];
+      if (Array.isArray(packs) && packs.length) return packs;
+    }
+  } catch { /* fall through to bundled */ }
+  return bundledPacks();
+}
+
+export async function listOptionalOnDeviceModels(): Promise<InstalledOnDevicePack[]> {
   const module = nativeModule();
-  const nativeList = module?.listOptional ? await module.listOptional() : [];
+  const packs = await resolveOnDevicePacks();
+  const descriptors = JSON.stringify(packs.map((pack) => ({
+    id: pack.id, filename: pack.filename, minRamBytes: pack.minRamBytes,
+  })));
+  const nativeList = module?.listOptional ? await module.listOptional(descriptors) : [];
   const byId = new Map(nativeList.map((row) => [row.id, row]));
   const ram = advertisedRamBytes((await getOnDeviceLlmStatus()).totalRamBytes);
-  return OPTIONAL_ON_DEVICE_MODELS.map((model) => {
+  return packs.map((model) => {
     const native = byId.get(model.id);
     return {
       ...model,
@@ -128,7 +181,7 @@ export async function listOptionalOnDeviceModels(): Promise<(typeof OPTIONAL_ON_
   });
 }
 
-export type InstalledOnDevicePack = typeof OPTIONAL_ON_DEVICE_MODELS[number] & OptionalModelStatus;
+export type InstalledOnDevicePack = OnDevicePack & OptionalModelStatus;
 
 /**
  * Picks the pack to answer with. Previously this took the first installed entry
@@ -191,10 +244,10 @@ export async function bestOnDevicePack(
 }
 
 export async function downloadOptionalOnDeviceModel(
-  id: OptionalOnDeviceModelId,
+  id: string,
   onProgress?: (received: number, total: number) => void,
 ): Promise<void> {
-  const model = OPTIONAL_ON_DEVICE_MODELS.find((row) => row.id === id);
+  const model = (await resolveOnDevicePacks()).find((row) => row.id === id);
   if (!model) throw new Error('Unknown on-device model.');
   const module = nativeModule();
   if (!module?.downloadOptional) throw new Error('Model download requires an Android native build.');
@@ -206,7 +259,7 @@ export async function downloadOptionalOnDeviceModel(
     });
   }
   try {
-    await module.downloadOptional(id, model.downloadUrl, model.filename);
+    await module.downloadOptional(id, model.downloadUrl, model.filename, model.sha256 ?? null, model.bytes, model.minRamBytes);
   } finally {
     subscription?.remove();
   }
@@ -216,25 +269,29 @@ export async function downloadOptionalOnDeviceModel(
  * Stops an in-flight download and discards its partial file. Safe to call when
  * nothing is downloading, so a UI cancel button needs no guard of its own.
  */
-export async function cancelOptionalOnDeviceModelDownload(id: OptionalOnDeviceModelId): Promise<void> {
+export async function cancelOptionalOnDeviceModelDownload(id: string): Promise<void> {
   const module = nativeModule();
   if (!module?.cancelDownload) return;
   try { await module.cancelDownload(id); } catch { /* already finished or never started */ }
 }
 
-export async function deleteOptionalOnDeviceModel(id: OptionalOnDeviceModelId): Promise<void> {
+export async function deleteOptionalOnDeviceModel(id: string): Promise<void> {
   const module = nativeModule();
   if (!module?.deleteOptional) throw new Error('Deleting a model requires an Android native build.');
-  await module.deleteOptional(id);
+  const model = (await resolveOnDevicePacks()).find((row) => row.id === id);
+  if (!model) throw new Error('Unknown on-device model.');
+  await module.deleteOptional(id, model.filename);
 }
 
 export async function runOptionalOnDeviceModel(input: {
-  id: OptionalOnDeviceModelId;
+  id: string;
   prompt: string;
   imageUri?: string;
   audioUri?: string;
 }): Promise<string> {
   const module = nativeModule();
   if (!module?.runOptional) throw new Error('The optional on-device model is not loaded.');
-  return String(await module.runOptional(input.id, input.prompt, input.imageUri, input.audioUri) || '').trim();
+  const model = (await resolveOnDevicePacks()).find((row) => row.id === input.id);
+  if (!model) throw new Error('Unknown on-device model.');
+  return String(await module.runOptional(input.id, model.filename, input.prompt, input.imageUri, input.audioUri) || '').trim();
 }

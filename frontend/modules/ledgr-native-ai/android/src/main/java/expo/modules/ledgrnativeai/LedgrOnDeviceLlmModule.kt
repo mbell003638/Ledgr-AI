@@ -17,6 +17,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONArray
 
 /**
  * Bundled Needle 2 (libneedle.a + needle2.cact) for tool calling, plus optional
@@ -79,56 +80,56 @@ class LedgrOnDeviceLlmModule : Module() {
       NeedleJni.complete(transcript, 128)
     }
 
-    AsyncFunction("runOptional") { modelId: String, prompt: String, _imageUri: String?, _audioUri: String? ->
-      val file = optionalFile(modelId)
+    AsyncFunction("runOptional") { modelId: String, filename: String, prompt: String, _imageUri: String?, _audioUri: String? ->
+      val file = optionalFile(filename)
       if (!file.exists()) throw IllegalStateException("Download this on-device model in Advanced Settings first.")
-      runPack(modelId, prompt)
+      runPack(modelId, file, prompt)
     }
 
-    AsyncFunction("listOptional") {
+    AsyncFunction("listOptional") { packsJson: String ->
       val ram = advertisedRamBytes()
-      OPTIONAL_MODELS.map { spec ->
-        val file = optionalFile(spec.id)
-        val tmp = File(optionalDir(), "${spec.filename}.part")
-        val partialBytes = if (tmp.exists()) tmp.length() else 0L
+      parsePacks(packsJson).map { pack ->
+        val file = optionalFile(pack.filename)
+        val tmp = File(optionalDir(), "${'$'}{file.name}.part")
         mapOf(
-          "id" to spec.id,
+          "id" to pack.id,
           "installed" to file.exists(),
-          "eligible" to (ram <= 0L || ram >= spec.minRamBytes),
+          "eligible" to (ram <= 0L || pack.minRamBytes <= 0L || ram >= pack.minRamBytes),
           "bytesOnDisk" to if (file.exists()) file.length() else 0L,
-          "partialBytes" to partialBytes,
+          "partialBytes" to if (tmp.exists()) tmp.length() else 0L,
         )
       }
     }
 
-    AsyncFunction("downloadOptional") { modelId: String, url: String, filename: String, sha256: String? ->
-      val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId } ?: throw IllegalArgumentException("Unknown model: $modelId")
-      if (url.isBlank()) {
-        throw IllegalStateException("This model pack has no download URL configured.")
-      }
+    AsyncFunction("downloadOptional") { modelId: String, url: String, filename: String, sha256: String?, expectedBytes: Double?, minRamBytes: Double? ->
+      if (url.isBlank()) throw IllegalStateException("This model pack has no download URL configured.")
+      val dest = optionalFile(filename)
+      val needRam = (minRamBytes ?: 0.0).toLong()
       val ram = advertisedRamBytes()
-      if (ram > 0 && ram < spec.minRamBytes) {
-        throw IllegalStateException("This phone does not have enough RAM for ${spec.id}.")
+      if (needRam > 0 && ram > 0 && ram < needRam) {
+        throw IllegalStateException("This phone does not have enough RAM for ${'$'}modelId.")
       }
 
-      // Check Wi-Fi / unmetered network guard
       checkWifiOrUnmetered()
 
-      // T1 Free-space guard: requires roughly 2x estimated bytes plus 200MB headroom
-      val usableSpace = optionalDir().usableSpace
-      val requiredSpace = (spec.estimatedBytes * 2) + (200L * 1024L * 1024L)
-      if (usableSpace < requiredSpace) {
-        val freeMb = usableSpace / (1024L * 1024L)
-        val reqMb = requiredSpace / (1024L * 1024L)
-        val shortMb = (requiredSpace - usableSpace) / (1024L * 1024L)
-        throw IllegalStateException(
-          "Not enough storage to download ${spec.id}. Requires at least ${reqMb}MB free (${shortMb}MB shortfall, phone has ${freeMb}MB usable)."
-        )
+      // The .part file and the finished file exist together for a moment, and the
+      // runtime's weight cache needs roughly another copy again, so budget twice
+      // the download plus headroom rather than just its size.
+      val expected = (expectedBytes ?: 0.0).toLong()
+      if (expected > 0) {
+        val usableSpace = optionalDir().usableSpace
+        val requiredSpace = (expected * 2) + (200L * 1024L * 1024L)
+        if (usableSpace < requiredSpace) {
+          val freeMb = usableSpace / (1024L * 1024L)
+          val reqMb = requiredSpace / (1024L * 1024L)
+          val shortMb = (requiredSpace - usableSpace) / (1024L * 1024L)
+          throw IllegalStateException(
+            "Not enough storage to download ${'$'}modelId. Requires at least ${'$'}{reqMb}MB free (${'$'}{shortMb}MB shortfall, phone has ${'$'}{freeMb}MB usable)."
+          )
+        }
       }
 
-      withWakeLock("download-$modelId") {
-        downloadTo(url, optionalFile(modelId), modelId, sha256 ?: spec.expectedSha256)
-      }
+      withWakeLock("download-${'$'}modelId") { downloadTo(url, dest, modelId, sha256) }
       true
     }
 
@@ -137,11 +138,11 @@ class LedgrOnDeviceLlmModule : Module() {
       true
     }
 
-    AsyncFunction("deleteOptional") { modelId: String ->
+    AsyncFunction("deleteOptional") { modelId: String, filename: String ->
       cancelDownload(modelId)
       synchronized(engineLock) { if (loadedPackId == modelId) closeLoadedPack() }
-      val targetFile = optionalFile(modelId)
-      val tmpFile = File(optionalDir(), "${targetFile.name}.part")
+      val targetFile = optionalFile(filename)
+      val tmpFile = File(optionalDir(), "${'$'}{targetFile.name}.part")
       if (targetFile.exists()) targetFile.delete()
       if (tmpFile.exists()) tmpFile.delete()
       true
@@ -170,8 +171,7 @@ class LedgrOnDeviceLlmModule : Module() {
    * builds. That surfaces as OutOfMemoryError rather than an exception, so it is
    * caught explicitly and reported as something the user can act on.
    */
-  private fun runPack(modelId: String, prompt: String): String {
-    val file = optionalFile(modelId)
+  private fun runPack(modelId: String, file: File, prompt: String): String {
     synchronized(engineLock) {
       if (loadedPackId != modelId) {
         closeLoadedPack()
@@ -251,21 +251,44 @@ class LedgrOnDeviceLlmModule : Module() {
 
   private fun modelsDir(): File = File(context.filesDir, "on-device-models").apply { mkdirs() }
   private fun optionalDir(): File = File(modelsDir(), "optional").apply { mkdirs() }
-  private fun optionalFile(id: String): File {
-    val spec = OPTIONAL_MODELS.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Unknown model: $id")
-    return File(optionalDir(), spec.filename)
+  /**
+   * Resolves a pack file inside the models directory.
+   *
+   * The name now arrives from a remote manifest rather than a compiled-in list,
+   * so it is reduced to a bare filename first: anything with a path separator or
+   * a parent reference could otherwise be used to write outside filesDir.
+   */
+  private fun optionalFile(filename: String): File {
+    return File(optionalDir(), safePackFilename(filename))
+  }
+
+  private fun safePackFilename(filename: String): String {
+    val bare = filename.substringAfterLast('/').substringAfterLast('\').trim()
+    val cleaned = bare.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") {
+      throw IllegalArgumentException("That model pack has an unusable filename.")
+    }
+    return cleaned
+  }
+
+  private data class PackRef(val id: String, val filename: String, val minRamBytes: Long)
+
+  /** Packs are described by JS so a manifest can add one without a new APK. */
+  private fun parsePacks(json: String): List<PackRef> {
+    val array = try { JSONArray(json) } catch (_: Exception) { return emptyList() }
+    val packs = mutableListOf<PackRef>()
+    for (i in 0 until array.length()) {
+      val row = array.optJSONObject(i) ?: continue
+      val id = row.optString("id").trim()
+      val filename = row.optString("filename").trim()
+      if (id.isEmpty() || filename.isEmpty()) continue
+      packs.add(PackRef(id, filename, row.optLong("minRamBytes", 0L)))
+    }
+    return packs
   }
 
   private fun cancelDownload(modelId: String) {
-    val download = activeDownloads.remove(modelId)
-    download?.cancel()
-    try {
-      val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId }
-      if (spec != null) {
-        val tmp = File(optionalDir(), "${spec.filename}.part")
-        if (tmp.exists()) tmp.delete()
-      }
-    } catch (_: Throwable) {}
+    activeDownloads.remove(modelId)?.cancel()
   }
 
   private fun checkWifiOrUnmetered() {
@@ -442,33 +465,5 @@ class LedgrOnDeviceLlmModule : Module() {
 
   companion object {
     private const val MAX_PACK_TOKENS = 512
-
-    private data class OptionalSpec(
-      val id: String,
-      val filename: String,
-      val minRamBytes: Long,
-      val estimatedBytes: Long,
-      val expectedSha256: String? = null
-    )
-    private val OPTIONAL_MODELS = listOf(
-      OptionalSpec(
-        id = "qwen25-0-5b",
-        filename = "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-        minRamBytes = 4L * 1024 * 1024 * 1024,
-        estimatedBytes = 546_660_344L
-      ),
-      OptionalSpec(
-        id = "qwen25-1-5b",
-        filename = "Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task",
-        minRamBytes = 6L * 1024 * 1024 * 1024,
-        estimatedBytes = 1_567_364_648L
-      ),
-      OptionalSpec(
-        id = "phi4-mini",
-        filename = "phi4_q8_ekv1280.task",
-        minRamBytes = 12L * 1024 * 1024 * 1024,
-        estimatedBytes = 3_944_280_650L
-      ),
-    )
   }
 }
