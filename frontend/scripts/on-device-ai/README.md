@@ -24,6 +24,8 @@ node ./scripts/on-device-ai/finetune-needle.mjs
 
 That writes `needle2-ledgr.cact` and copies it to `modules/ledgr-native-ai/android/src/main/assets/needle2.cact`. Then bake the APK from GitHub as usual.
 
+Training writes `needle-ledgr-train-ckpt.pkl` every 25 steps. If the PC dies, run the same command and it continues from the last checkpoint. Compile still happens once per launch. Delete that `.pkl` (or set `NEEDLE_RESET_CKPT=1`) to start over.
+
 CPU fine-tune can take a while. GPU is faster if JAX sees one, but no paid API is used either way.
 
 **You (phone / EAS):** `npx expo run:android` or an EAS Android build. Metro Fast Reload cannot compile JNI.
