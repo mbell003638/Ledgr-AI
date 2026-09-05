@@ -5,6 +5,7 @@ import {
   CAPITAL_IN_PHRASE,
   CAPITAL_OUT_PHRASE,
   commandWithCreatedParty,
+  normalizeSpokenPaymentVerb,
   parseVoicePartyCreateRole,
   sanitizeSpokenPartyName,
   stripRoleQualifiers,
@@ -154,7 +155,7 @@ export function parseLocalTransaction(
   rawTranscript: string,
   options: LocalTransactionParserOptions = {},
 ): LocalTransactionParseResult {
-  const transcript = cleanText(rawTranscript);
+  const transcript = normalizeSpokenPaymentVerb(cleanText(rawTranscript));
   if (!transcript) return { kind: 'unsupported', confidence: 'low', reason: 'No transaction was provided.', transcript };
 
   const amount = parseAmount(transcript);
