@@ -30,7 +30,7 @@ export type LedgrOnDeviceToolCall = {
   confidence?: number;
 };
 
-export type OptionalOnDeviceModelId = 'qwen25-1-5b' | 'gemma-4-e2b' | 'gemma-4-e4b';
+export type OptionalOnDeviceModelId = 'qwen25-0-5b' | 'qwen25-1-5b' | 'phi4-mini';
 
 /**
  * What a pack can be asked to do. Selection never routes a task to a pack that
@@ -58,43 +58,43 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
   downloadUrl: string;
 }[] = [
   {
+    id: 'qwen25-0-5b',
+    label: 'Qwen 2.5 0.5B',
+    summary: 'Smallest pack. Short answers about your books on modest phones.',
+    bytes: 546_660_344,
+    minRamBytes: 4 * 1024 * 1024 * 1024,
+    vision: false,
+    audio: false,
+    rank: 10,
+    capabilities: ['text', 'tools'],
+    filename: 'Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
+    downloadUrl: 'https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
+  },
+  {
     id: 'qwen25-1-5b',
     label: 'Qwen 2.5 1.5B',
-    summary: 'On-device Ask AI and tool calls. Text only — no scan.',
+    summary: 'Better explanations of your books. Text only — scanning stays on-device via OCR.',
     bytes: 1_567_364_648,
     minRamBytes: 6 * 1024 * 1024 * 1024,
     vision: false,
     audio: false,
-    rank: 10,
+    rank: 20,
     capabilities: ['text', 'tools'],
     filename: 'Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
     downloadUrl: 'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
   },
   {
-    id: 'gemma-4-e2b',
-    label: 'Gemma 4 E2B',
-    summary: 'Scan, Ask AI, and tools on high-end phones.',
-    bytes: 2_003_697_664,
-    minRamBytes: 8 * 1024 * 1024 * 1024,
-    vision: true,
-    audio: false,
-    rank: 20,
-    capabilities: ['text', 'tools', 'vision'],
-    filename: 'gemma-4-E2B-it-web.task',
-    downloadUrl: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task',
-  },
-  {
-    id: 'gemma-4-e4b',
-    label: 'Gemma 4 E4B',
-    summary: 'Same as E2B with higher quality. Flagship 12GB phones.',
-    bytes: 2_964_324_352,
+    id: 'phi4-mini',
+    label: 'Phi-4 mini',
+    summary: 'Highest quality answers. Large download, flagship phones only.',
+    bytes: 3_944_280_650,
     minRamBytes: 12 * 1024 * 1024 * 1024,
-    vision: true,
+    vision: false,
     audio: false,
     rank: 30,
-    capabilities: ['text', 'tools', 'vision'],
-    filename: 'gemma-4-E4B-it-web.task',
-    downloadUrl: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.task',
+    capabilities: ['text', 'tools'],
+    filename: 'phi4_q8_ekv1280.task',
+    downloadUrl: 'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/phi4_q8_ekv1280.task',
   },
 ];
 

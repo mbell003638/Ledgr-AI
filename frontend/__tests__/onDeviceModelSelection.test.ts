@@ -11,11 +11,11 @@ function pack(id: string, over: Partial<InstalledOnDevicePack> = {}): InstalledO
 describe('on-device pack selection', () => {
   it('prefers the higher-ranked pack instead of the first one listed', () => {
     // The bug this replaces: selection took the first installed entry in array
-    // order, so a phone holding both used the smaller pack --
+    // order, so a phone holding both answered with the smaller, weaker pack
     // purely because it is listed first.
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e2b')];
-    expect(packs[0].id).toBe('qwen25-1-5b');
-    expect(selectOnDevicePack(packs)?.id).toBe('gemma-4-e2b');
+    const packs = [pack('qwen25-0-5b'), pack('qwen25-1-5b')];
+    expect(packs[0].id).toBe('qwen25-0-5b');
+    expect(selectOnDevicePack(packs)?.id).toBe('qwen25-1-5b');
   });
 
   it('never hands a vision task to a text-only pack', () => {
@@ -25,32 +25,40 @@ describe('on-device pack selection', () => {
   });
 
   it('picks the highest-ranked pack that has the needed capability', () => {
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e2b'), pack('gemma-4-e4b')];
-    expect(selectOnDevicePack(packs, ['vision'])?.id).toBe('gemma-4-e4b');
+    const packs = [pack('qwen25-0-5b'), pack('qwen25-1-5b'), pack('phi4-mini')];
+    expect(selectOnDevicePack(packs, ['tools'])?.id).toBe('phi4-mini');
+  });
+
+  it('has no pack claiming vision, so scans stay on local OCR', () => {
+    // Only bundles MediaPipe can load are shipped, and none carry a vision
+    // tower. Declaring vision here would route photos to a model that cannot
+    // read them; ML Kit OCR handles receipts instead.
+    const packs = OPTIONAL_ON_DEVICE_MODELS.map((spec) => pack(spec.id));
+    expect(selectOnDevicePack(packs, ['vision'])).toBeNull();
   });
 
   it('honours a pinned pack over a higher-ranked one', () => {
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e4b')];
+    const packs = [pack('qwen25-1-5b'), pack('phi4-mini')];
     expect(selectOnDevicePack(packs, ['text'], 'qwen25-1-5b')?.id).toBe('qwen25-1-5b');
   });
 
   it('falls back to Auto when the pinned pack is not installed', () => {
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e4b', { installed: false })];
-    expect(selectOnDevicePack(packs, ['text'], 'gemma-4-e4b')?.id).toBe('qwen25-1-5b');
+    const packs = [pack('qwen25-1-5b'), pack('phi4-mini', { installed: false })];
+    expect(selectOnDevicePack(packs, ['text'], 'phi4-mini')?.id).toBe('qwen25-1-5b');
   });
 
   it('falls back to Auto when the pinned pack cannot run on this phone', () => {
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e4b', { eligible: false })];
-    expect(selectOnDevicePack(packs, ['text'], 'gemma-4-e4b')?.id).toBe('qwen25-1-5b');
+    const packs = [pack('qwen25-1-5b'), pack('phi4-mini', { eligible: false })];
+    expect(selectOnDevicePack(packs, ['text'], 'phi4-mini')?.id).toBe('qwen25-1-5b');
   });
 
   it('never selects a pack the phone cannot run, even when installed', () => {
-    const packs = [pack('gemma-4-e4b', { eligible: false })];
+    const packs = [pack('phi4-mini', { eligible: false })];
     expect(selectOnDevicePack(packs)).toBeNull();
   });
 
   it('never selects a pack that is eligible but not installed', () => {
-    const packs = [pack('gemma-4-e4b', { installed: false })];
+    const packs = [pack('phi4-mini', { installed: false })];
     expect(selectOnDevicePack(packs)).toBeNull();
   });
 
@@ -59,7 +67,7 @@ describe('on-device pack selection', () => {
   });
 
   it('does not mutate the caller list while ranking', () => {
-    const packs = [pack('qwen25-1-5b'), pack('gemma-4-e4b')];
+    const packs = [pack('qwen25-1-5b'), pack('phi4-mini')];
     const before = packs.map((row) => row.id);
     selectOnDevicePack(packs);
     expect(packs.map((row) => row.id)).toEqual(before);

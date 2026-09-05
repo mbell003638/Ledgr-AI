@@ -335,40 +335,59 @@ Google Maven's `com.google.ai.edge.litert` group index publishes `litert`,
 Android would mean building it from source with the NDK and writing JNI bindings.
 Note both are on **Google Maven, not Maven Central** — `tasks-genai` 404s there.
 
-**The gate turned out to be a Gemma 3 problem, not a Gemma problem.** Gemma 3
-carries the restrictive `gemma` licence and is `gated: auto` (a plain download
-returns 401). **Gemma 4 is Apache 2.0 and ungated.** Verified:
+**A `.task` extension is not enough — the container must be a MediaPipe bundle.**
+Checked by reading the first bytes over HTTP Range, no full download needed:
 
-| Pack | File | Size | Licence |
-|---|---|---|---|
-| `qwen25-1-5b` | `Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task` | 1,567,364,648 | apache-2.0 |
-| `gemma-4-e2b` | `gemma-4-E2B-it-web.task` | 2,003,697,664 | apache-2.0 |
-| `gemma-4-e4b` | `gemma-4-E4B-it-web.task` | 2,964,324,352 | apache-2.0 |
+| File | Magic | What it is |
+|---|---|---|
+| `gemma-4-E2B-it-web.task` | `TFL3` | bare TFLite flatbuffer |
+| `gemma-4-E4B-it-web.task` | `TFL3` | bare TFLite flatbuffer |
+| `Qwen2.5-1.5B-...q8_ekv1280.task` | `PK` at offset 4 | **MediaPipe bundle** |
+| `gemma-4-E2B-it.litertlm` | `LITERTLM` | LiteRT-LM container |
 
-All `gated: false`, all HTTP 200 with no token, all under
-`https://huggingface.co/litert-community/`. **So no self-hosting, no token, no
-account, and no licence terms to redistribute.** Seven other ungated `.task`
-models exist (Phi-4-mini, DeepSeek-R1-Distill-Qwen-1.5B, SmolLM, TinyLlama…) if a
-repo ever disappears.
+A MediaPipe bundle is a zip carrying the TFLite model **plus tokenizer and
+metadata**. The Gemma `-web` files are the model alone, so
+`LlmInference.createFromOptions` cannot load them -- the `-web` suffix means
+web/WASM, not Android. They also carry no vision tower, so the `vision`
+capability the catalogue first declared for them was wrong twice over.
 
-The catalogue now points at these, in both `onDeviceTools.ts` and the Kotlin
-`OPTIONAL_MODELS` — they must stay in step, because `optionalFile()` resolves the
-on-disk path from the **Kotlin** copy, not from the filename JS passes.
-`__tests__/onDeviceModelSelection.test.ts` pins the shape so a dead URL cannot
-creep back.
+**The gate, separately, turned out to be a Gemma 3 problem rather than a Gemma
+problem** -- Gemma 3 is `gated: auto` under the restrictive `gemma` licence and
+401s without a token, while Gemma 4 is Apache 2.0 and ungated. Moot here, since
+neither Gemma 4 build is loadable.
 
-**Two cautions carried into Phase 3, both unverified:**
+All six other ungated `.task` models were probed and every one is a genuine
+MediaPipe bundle. The catalogue ships three of them as a size ladder:
 
-- The Qwen model card reports that on a **Pixel 8a (8 GB)** the GPU backend ran out
-  of memory *during engine creation*, and the CPU path needed roughly another
-  file-size of free disk for the XNNPACK weight cache; it recommends **12 GB+
-  Android** for GPU. Agent B's `2 × size + 200 MB` free-space guard happens to be
-  exactly right for that cache. Keep `minRamBytes` conservative.
-- The Gemma 4 files are the **`-web`** builds. Whether that bundle loads under
-  MediaPipe on Android, and whether it exposes the vision tower, is the first thing
-  to test on device. `capabilities` currently declares `vision` for both Gemma
-  packs on the strength of the underlying models being multimodal; if the bundle
-  does not expose it, that is a one-line catalogue correction.
+| Pack | File | Size | Min RAM | Licence |
+|---|---|---|---|---|
+| `qwen25-0-5b` | `Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task` | 546,660,344 | 4 GB | apache-2.0 |
+| `qwen25-1-5b` | `Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task` | 1,567,364,648 | 6 GB | apache-2.0 |
+| `phi4-mini` | `phi4_q8_ekv1280.task` | 3,944,280,650 | 12 GB | mit |
+
+All ungated, HTTP 200 with no token, under `huggingface.co/litert-community/`.
+**No hosting, no token, no account, no licence terms to redistribute.** Spares if
+a repo disappears: DeepSeek-R1-Distill-Qwen-1.5B, TinyLlama-1.1B, SmolLM-135M.
+
+**No pack declares `vision`, because none has it.** Declaring it would route
+receipt photos to a model that cannot read them; ML Kit OCR keeps that job and
+already works on-device. A test asserts this so it cannot regress.
+
+Both catalogues must stay in step -- `optionalFile()` resolves the on-disk path
+from the **Kotlin** copy, not the filename JS passes, so drift would save a
+download under a name nothing looks for.
+
+**Caution carried into Phase 3.** The Qwen model card reports that on a
+**Pixel 8a (8 GB)** the GPU backend ran out of memory *during engine creation*,
+and the CPU path needed roughly another file-size of free disk for the XNNPACK
+weight cache; it recommends **12 GB+ Android** for GPU. Agent B's
+`2 × size + 200 MB` free-space guard happens to be exactly right for that cache.
+Keep `minRamBytes` conservative.
+
+**Still device-only.** Format inspection proves these are the right kind of file;
+it cannot prove MediaPipe runs them on real hardware. Three things need a phone:
+`createFromOptions` succeeding, whether a 1.5 GB model fits in memory, and answer
+quality at q8 on CPU.
 
 ### D4. MediaPipe as the runtime
 
