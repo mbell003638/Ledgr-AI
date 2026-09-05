@@ -21,7 +21,8 @@ describe('271412 UI/UX remediation contracts', () => {
     const ask = readApp('ask.tsx');
     const orb = readSource('components/VoiceOrb.tsx');
     expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
-    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).toContain('onPress={() => requestVoiceAssistant()}');
+    expect(ask).toContain('<VoiceFab showFab={false} />');
     expect(ask).not.toContain('voiceInputWrapper');
     expect(orb).toContain('backgroundColor: accent');
     expect(orb).toContain('waveCompact');

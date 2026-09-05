@@ -20,6 +20,8 @@ import { isExplicitBookMutationRequest } from "@/src/db/ai";
 import { speakOnDevice } from "@/src/utils/deviceTts";
 import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 import { mapAnalyzedDocument, setPendingScanInput } from "@/src/accountingV2/scanImport";
+import { requestVoiceAssistant } from "@/src/utils/voiceAssistantRequest";
+import VoiceFab from "@/src/components/VoiceFab";
 type Msg = { role: "user" | "assistant"; text: string };
 type PendingClarification =
   | { kind: "party"; originalRequest: string; question: string; command: VoiceCommand }
@@ -889,7 +891,7 @@ export default function AskBooks() {
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : (
-              <Pressable accessibilityRole="button" accessibilityLabel="Open voice transaction assistant" style={[styles.micBtn, { backgroundColor: theme.color.brandPrimary }]} onPress={() => router.push("/voice" as Href)}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open voice transaction assistant" style={[styles.micBtn, { backgroundColor: theme.color.brandPrimary }]} onPress={() => requestVoiceAssistant()}>
                 <Ionicons name="mic" size={22} color={theme.color.onBrandPrimary} />
               </Pressable>
             )}
@@ -897,6 +899,7 @@ export default function AskBooks() {
           </View>
         </View>
       </KeyboardAvoidingView>
+      <VoiceFab showFab={false} />
     </SafeAreaView>
   );
 }

@@ -8,7 +8,8 @@ describe('271269 UI/UX remediation contracts', () => {
   it('keeps Ask AI chat and voice transaction entry as separate, explicit workflows', () => {
     const source = readApp('ask.tsx');
     expect(source).toContain('accessibilityLabel="Open voice transaction assistant"');
-    expect(source).toContain('router.push("/voice" as Href)');
+    expect(source).toContain('onPress={() => requestVoiceAssistant()}');
+    expect(source).toContain('<VoiceFab showFab={false} />');
     expect(source).not.toContain('testID="ask-voice-inline"');
     expect(source).not.toContain('Adding it to this chat');
   });

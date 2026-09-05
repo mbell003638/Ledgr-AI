@@ -34,7 +34,8 @@ describe('voice transaction draft recovery', () => {
   it('routes the Ask AI microphone to the same transaction assistant', () => {
     const ask = fs.readFileSync(path.join(__dirname, '..', 'app', 'ask.tsx'), 'utf8');
     expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
-    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).toContain('onPress={() => requestVoiceAssistant()}');
+    expect(ask).toContain('<VoiceFab showFab={false} />');
     expect(ask).not.toContain('Adding it to this chat');
   });
 });

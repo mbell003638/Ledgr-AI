@@ -18,7 +18,8 @@ describe('271344 UI/UX remediation contracts', () => {
     const ask = readApp('ask.tsx');
     const orb = readSource('components/VoiceOrb.tsx');
     expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
-    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).toContain('onPress={() => requestVoiceAssistant()}');
+    expect(ask).toContain('<VoiceFab showFab={false} />');
     expect(ask).not.toContain('Adding it to this chat');
     expect(ask).not.toContain('useAudioRecorder');
     expect(ask).toContain('testID="ask-attachment-actions"');
