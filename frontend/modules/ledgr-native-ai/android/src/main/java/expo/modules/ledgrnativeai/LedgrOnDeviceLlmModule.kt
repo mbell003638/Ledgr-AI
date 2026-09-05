@@ -90,7 +90,7 @@ class LedgrOnDeviceLlmModule : Module() {
       val ram = advertisedRamBytes()
       parsePacks(packsJson).map { pack ->
         val file = optionalFile(pack.filename)
-        val tmp = File(optionalDir(), "${'$'}{file.name}.part")
+        val tmp = File(optionalDir(), "${file.name}.part")
         mapOf(
           "id" to pack.id,
           "installed" to file.exists(),
@@ -107,7 +107,7 @@ class LedgrOnDeviceLlmModule : Module() {
       val needRam = (minRamBytes ?: 0.0).toLong()
       val ram = advertisedRamBytes()
       if (needRam > 0 && ram > 0 && ram < needRam) {
-        throw IllegalStateException("This phone does not have enough RAM for ${'$'}modelId.")
+        throw IllegalStateException("This phone does not have enough RAM for $modelId.")
       }
 
       checkWifiOrUnmetered()
@@ -124,12 +124,12 @@ class LedgrOnDeviceLlmModule : Module() {
           val reqMb = requiredSpace / (1024L * 1024L)
           val shortMb = (requiredSpace - usableSpace) / (1024L * 1024L)
           throw IllegalStateException(
-            "Not enough storage to download ${'$'}modelId. Requires at least ${'$'}{reqMb}MB free (${'$'}{shortMb}MB shortfall, phone has ${'$'}{freeMb}MB usable)."
+            "Not enough storage to download $modelId. Requires at least ${reqMb}MB free (${shortMb}MB shortfall, phone has ${freeMb}MB usable)."
           )
         }
       }
 
-      withWakeLock("download-${'$'}modelId") { downloadTo(url, dest, modelId, sha256) }
+      withWakeLock("download-$modelId") { downloadTo(url, dest, modelId, sha256) }
       true
     }
 
@@ -142,7 +142,7 @@ class LedgrOnDeviceLlmModule : Module() {
       cancelDownload(modelId)
       synchronized(engineLock) { if (loadedPackId == modelId) closeLoadedPack() }
       val targetFile = optionalFile(filename)
-      val tmpFile = File(optionalDir(), "${'$'}{targetFile.name}.part")
+      val tmpFile = File(optionalDir(), "${targetFile.name}.part")
       if (targetFile.exists()) targetFile.delete()
       if (tmpFile.exists()) tmpFile.delete()
       true
@@ -263,7 +263,7 @@ class LedgrOnDeviceLlmModule : Module() {
   }
 
   private fun safePackFilename(filename: String): String {
-    val bare = filename.substringAfterLast('/').substringAfterLast('\').trim()
+    val bare = filename.substringAfterLast('/').substringAfterLast('\\').trim()
     val cleaned = bare.replace(Regex("[^A-Za-z0-9._-]"), "_")
     if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") {
       throw IllegalArgumentException("That model pack has an unusable filename.")
