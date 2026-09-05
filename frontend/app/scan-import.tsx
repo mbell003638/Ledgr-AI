@@ -183,6 +183,9 @@ export default function ScanImport() {
       autoStarted.current = true;
       void analyze({ uri: targetUri, mimeType: "image/jpeg" });
     }
+    // Runs once on the handoff from Ask AI; analyze is rebuilt every render and
+    // must not restart the scan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.imageUri, params.uri]);
 
   const continueDocumentDraft = async () => {

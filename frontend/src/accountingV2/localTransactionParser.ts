@@ -1,10 +1,14 @@
 import { isValidDateString, localTodayIso, normalizeDateInput } from '../utils/dateValidation';
 import { splitSpokenTransactions } from './spokenTransactions';
 import {
+  CAPITAL_CUE,
+  CAPITAL_IN_PHRASE,
+  CAPITAL_OUT_PHRASE,
   commandWithCreatedParty,
   parseVoicePartyCreateRole,
   resolveVoicePartyCommand,
   sanitizeSpokenPartyName,
+  stripRoleQualifiers,
   suggestedVoicePartyCreateRole,
   voiceCommandPartyName,
   type VoiceCommand,
@@ -77,16 +81,46 @@ function parseMethod(transcript: string): VoiceCommand['method'] {
 }
 
 function tidyName(value: string): string {
-  return sanitizeSpokenPartyName(value
+  return stripRoleQualifiers(sanitizeSpokenPartyName(stripRoleQualifiers(value)
     .replace(MONEY, ' ')
     .replace(/\b(?:today|yesterday|now|on\s+credit|credit|cash|bank(?:\s+transfer)?|card|mobile|upi)\b/gi, ' ')
     .replace(/\b(?:supplier|vendor|customer|client|owner|partner|capital\s+account)\b/gi, ' ')
-    .replace(/\s+(?:(?:as|for)\s+(?:a\s+)?)?(?:capital\s+)?(?:withdrawal|drawing|deposit|contribution)\b[\s\S]*$/i, ' ')
-    .replace(/\s+(?:from|to|for|in|as|of)\s+(?:a\s+)?capital\s+account\b[\s\S]*$/i, ' ')
     .replace(/\b(?:by|via|using|as|for)\b[\s\S]*$/i, ' ')
     .replace(/[.,!?;:]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim());
+    .trim()));
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** True when a party answer plainly names an existing Supplier or Customer. */
+function namesExistingParty(name: string, directory?: VoicePartyDirectory): boolean {
+  if (!name.trim()) return false;
+  return [...(directory?.suppliers || []), ...(directory?.customers || [])].some((row) => sameName(row.name, name));
+}
+
+/**
+ * Finds the Capital Account a party answer refers to, but only once something
+ * actually points at one. Without the gate a plain Supplier name could
+ * prefix-match a Capital Account and silently repost the draft as a drawing.
+ * An exact name always wins; a looser prefix match counts only when it is the
+ * single possibility.
+ */
+function matchCapitalAccount(
+  candidateNames: string[],
+  capitalIntended: boolean,
+  directory?: VoicePartyDirectory,
+) {
+  if (!capitalIntended) return null;
+  const accounts = directory?.capitalAccounts || [];
+  const matches = accounts.filter((acc) => candidateNames.some((cName) => {
+    const accNorm = acc.name.trim().toLowerCase();
+    const cNorm = cName.trim().toLowerCase();
+    return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
+  }));
+  return matches.find((acc) => candidateNames.some((cName) => sameName(acc.name, cName)))
+    || (matches.length === 1 ? matches[0] : null)
+    || (candidateNames.length === 0 && accounts.length === 1 ? accounts[0] : null);
 }
 
 function commonCommand(transcript: string, options: LocalTransactionOptions): Pick<VoiceCommand, 'amount' | 'date' | 'method' | 'notes'> & { invalidDate?: boolean } {
@@ -245,15 +279,18 @@ export function continueLocalTransaction(
   if (pending.missingField === 'method') command.method = parseMethod(answer);
   if (pending.missingField === 'party') {
     const name = tidyName(answer.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing)\b/gi, '').trim()) || tidyName(answer);
-    const mentionsCapital = /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer);
-    const matchedCapital = directory?.capitalAccounts?.find((acc) => {
-      const accNorm = acc.name.trim().toLowerCase();
-      const cNorm = name.trim().toLowerCase();
-      return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
-    }) || (directory?.capitalAccounts?.length === 1 && mentionsCapital ? directory.capitalAccounts[0] : null);
+    const mentionsCapital = CAPITAL_CUE.test(answer) || /\binvestor\b/i.test(answer);
+    const capitalIntended = mentionsCapital
+      || (!namesExistingParty(name, directory) && (
+        command.intent === 'capital'
+        || command.intent === 'drawing'
+        || CAPITAL_OUT_PHRASE.test(pending.originalTranscript)
+        || CAPITAL_IN_PHRASE.test(pending.originalTranscript)
+      ));
+    const matchedCapital = matchCapitalAccount([name].filter(Boolean), capitalIntended, directory);
 
-    if (matchedCapital && (mentionsCapital || command.intent === 'capital' || command.intent === 'drawing' || (!command.supplierName && !command.customerName))) {
-      command.intent = (command.intent === 'capital' || command.intent === 'receipt' || /\b(?:invest|deposit|contribution)\b/i.test(pending.originalTranscript)) ? 'capital' : 'drawing';
+    if (matchedCapital) {
+      command.intent = (command.intent === 'capital' || command.intent === 'receipt' || CAPITAL_IN_PHRASE.test(pending.originalTranscript)) ? 'capital' : 'drawing';
       command.partnerName = matchedCapital.name;
       delete command.supplierName;
       delete command.customerName;
@@ -274,17 +311,22 @@ export function continueLocalTransaction(
     const existingPartyName = tidyName(voiceCommandPartyName(command));
     const cleanedAnswerName = tidyName(answer.replace(/\b(?:capital(?:\s+account)?|partner|owner|investor|drawing|withdraw(?:al|n)?|as\s+a)\b/gi, '').trim());
     const candidateNames = [cleanedAnswerName, existingPartyName].filter(Boolean);
-    const matchedCapital = directory?.capitalAccounts?.find((acc) => {
-      const accNorm = acc.name.trim().toLowerCase();
-      return candidateNames.some((cName) => {
-        const cNorm = cName.trim().toLowerCase();
-        return accNorm === cNorm || accNorm.startsWith(cNorm + ' ') || cNorm.startsWith(accNorm + ' ');
-      });
-    }) || (candidateNames.length === 0 && directory?.capitalAccounts?.length === 1 && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer)) ? directory.capitalAccounts[0] : null);
+    // Only reach for a Capital Account when the answer, the draft, or the
+    // original sentence actually points at one, and never when the answer names
+    // an existing Supplier or Customer outright.
+    const capitalIntended = role === 'capital'
+      || (!namesExistingParty(cleanedAnswerName, directory) && (
+        command.intent === 'capital'
+        || command.intent === 'drawing'
+        || CAPITAL_CUE.test(answer) || /\binvestor\b/i.test(answer)
+        || CAPITAL_OUT_PHRASE.test(pending.originalTranscript)
+        || CAPITAL_IN_PHRASE.test(pending.originalTranscript)
+      ));
+    const matchedCapital = matchCapitalAccount(candidateNames, capitalIntended, directory);
 
-    if (matchedCapital && (role === 'capital' || /\b(?:capital|partner|owner|investor|drawing)\b/i.test(answer) || !role)) {
+    if (matchedCapital) {
       const isContribution = command.intent === 'capital' || command.intent === 'receipt'
-        || /\b(?:invest|deposit|contribution|contributed)\b/i.test(pending.originalTranscript);
+        || CAPITAL_IN_PHRASE.test(pending.originalTranscript);
       command.intent = isContribution ? 'capital' : 'drawing';
       command.partnerName = matchedCapital.name;
       delete command.supplierName;
