@@ -24,8 +24,8 @@ export function deriveHostingMode(status: HostingStatusInput): HostingModeState 
   if (status.mode === 'cloud_drive') {
     return {
       mode: 'cloud_drive',
-      label: 'Cloud Drive Sync (E2EE)',
-      summary: 'Syncing encrypted deltas via Google Drive / iCloud.',
+      label: 'Google Drive Sync (E2EE)',
+      summary: 'Syncing encrypted deltas via private Google Drive app folder.',
       tone: 'healthy',
       detail: status.lastSyncAt ? `Last cloud sync: ${status.lastSyncAt}` : 'Encrypted cloud sync active.',
     };

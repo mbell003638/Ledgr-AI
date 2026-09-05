@@ -500,8 +500,8 @@ export default function SyncSettingsScreen() {
           {/* Top Segmented Tab Switcher */}
           <View style={styles.tabBar}>
             <Pressable onPress={() => setActiveTab('cloud')} style={[styles.tabItem, activeTab === 'cloud' && styles.tabItemActive]}>
-              <Ionicons name="cloud-outline" size={16} color={activeTab === 'cloud' ? theme.color.brandPrimary : theme.color.muted} />
-              <Text style={[styles.tabText, activeTab === 'cloud' && styles.tabTextActive]}>Cloud Drive</Text>
+              <Ionicons name="logo-google" size={16} color={activeTab === 'cloud' ? theme.color.brandPrimary : theme.color.muted} />
+              <Text style={[styles.tabText, activeTab === 'cloud' && styles.tabTextActive]}>Google Drive</Text>
             </Pressable>
             <Pressable onPress={() => setActiveTab('wifi')} style={[styles.tabItem, activeTab === 'wifi' && styles.tabItemActive]}>
               <Ionicons name="wifi-outline" size={16} color={activeTab === 'wifi' ? theme.color.brandPrimary : theme.color.muted} />
@@ -513,19 +513,19 @@ export default function SyncSettingsScreen() {
             </Pressable>
           </View>
 
-          {/* TAB 1: CLOUD DRIVE SYNC (E2EE) */}
+          {/* TAB 1: GOOGLE DRIVE SYNC (E2EE) */}
           {activeTab === 'cloud' && (
             <View style={styles.card}>
               <View style={styles.badgeRow}>
                 <Ionicons name="shield-checkmark" size={18} color={theme.color.brandPrimary} />
                 <Text style={styles.badgeText}>AES-256-GCM Zero-Knowledge Encryption</Text>
               </View>
-              <Text style={styles.title}>Personal Cloud Sync</Text>
+              <Text style={styles.title}>Google Drive Sync & Backup</Text>
               <Text style={styles.hint}>
-                Sync across your phones and tablets using your Google Drive or iCloud account. Your accounting numbers are fully encrypted on your device before uploading. No cloud provider or server can read your ledger.
+                Sync seamlessly across your devices and keep an automatic encrypted backup in your private Google Drive app folder. All ledger numbers are end-to-end encrypted on this phone before uploading. Google cannot read your financial records.
               </Text>
 
-              <Text style={styles.label}>Connected Account</Text>
+              <Text style={styles.label}>Google Account</Text>
               <TextInput
                 value={cloudEmail}
                 onChangeText={setCloudEmail}
@@ -555,7 +555,7 @@ export default function SyncSettingsScreen() {
               </Text>
 
               <Pressable disabled={busy || !cloudPassphrase.trim()} onPress={handleSaveCloudConfig} style={[styles.primary, (busy || !cloudPassphrase.trim()) && styles.disabled]}>
-                <Text style={styles.primaryText}>{busy ? 'Saving...' : cloudConnected ? 'Save & Sync Cloud Drive' : 'Connect Cloud Drive'}</Text>
+                <Text style={styles.primaryText}>{busy ? 'Saving...' : cloudConnected ? 'Save & Sync Google Drive' : 'Connect Google Drive'}</Text>
               </Pressable>
             </View>
           )}
