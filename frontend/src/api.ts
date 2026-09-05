@@ -9,6 +9,8 @@ import type { AIConfig } from '@/src/db/ai';
 import { recognizeLocalOcr } from '@/src/utils/localOcr';
 import { analyzeDocumentLocalFirst } from '@/src/accountingV2/documentInterpretationRouter';
 import { askBooksOnDevice } from '@/src/accountingV2/onDeviceAsk';
+import { adoptRemoteKey, getCloudConfig, getStorageClient, saveCloudConfig, type CloudDriveConfig } from '@/src/sync/cloudDriveProvider';
+import { createWifiP2pSession, packWifiTransfer, type WifiP2pTransferPackage } from '@/src/sync/wifiP2pSync';
 import { getPreferredOnDevicePack, listOptionalOnDeviceModels, runOptionalOnDeviceModel, setPreferredOnDevicePack } from '@/src/utils/onDeviceLlm';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
@@ -31,7 +33,7 @@ import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecovery
 import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
 import { installServerSnapshot, publishServerSnapshot, verifyProjectionCheckpoint } from '@/src/sync/recovery';
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
-import type { SyncOperation } from '@/src/sync/protocol';
+import { hashPayload, type SyncOperation, type SyncSnapshot } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
 import {
   listBooks as beListBooks,
@@ -851,6 +853,43 @@ export const api = {
     await disableSync(runner, beActiveBookId());
     bumpDataVersion();
   },
+
+  // Multi-device sync transports. These sit beside the self-hosted server
+  // rather than replacing it: cloud drive for a shop owner who cannot run a
+  // server, Wi-Fi pairing for somewhere with no internet at all.
+  getCloudSyncConfig: async (bookId = beActiveBookId()) => getCloudConfig(bookId),
+  saveCloudSyncConfig: async (config: CloudDriveConfig, bookId = beActiveBookId()) => saveCloudConfig(bookId, config),
+  adoptCloudSyncKey: async (passphrase: string, bookId = beActiveBookId()) => {
+    const config = await getCloudConfig(bookId);
+    if (!config) throw new Error('Set up cloud sync on this device first.');
+    return adoptRemoteKey(bookId, passphrase, getStorageClient(config));
+  },
+  createWifiP2pSession: (bookId = beActiveBookId(), hostIp?: string, port?: number) => createWifiP2pSession(bookId, hostIp, port),
+  exportWifiP2pPackage: async (key: Uint8Array, bookId = beActiveBookId()) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const projection = await exportBookProjection(runner, bookId);
+    const snapshot: SyncSnapshot = {
+      snapshotId: 'snap_' + Date.now(),
+      bookId,
+      bookEpoch: 'epoch_1',
+      throughSequence: 0,
+      schemaVersion: BOOK_PROJECTION_SCHEMA_VERSION,
+      payload: projection,
+      payloadHash: hashPayload(projection),
+      checkpointHash: await hashBookProjection(runner, bookId),
+      aggregateRevisions: {},
+      createdAt: new Date().toISOString(),
+    };
+    return packWifiTransfer(snapshot, [], key);
+  },
+  installWifiP2pPackage: async (pkg: WifiP2pTransferPackage) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await installBookProjection(runner, pkg.snapshot.payload as any, pkg.snapshot);
+    bumpDataVersion();
+  },
+
   getSyncStatus: async () => {
     const runner = activeSqlRunner();
     if (!runner) return { enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 };

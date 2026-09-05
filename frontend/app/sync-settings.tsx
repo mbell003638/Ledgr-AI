@@ -11,9 +11,13 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { activeBookId, activeSqlRunner } from '@/src/db/backend';
 import { advanceSyncEpoch, createSyncEnrollmentCode, enrollSyncDevice, listSyncDevices, redeemSyncEnrollmentCode, revokeSyncDevice, type SyncDevice, type SyncEnrollmentCode } from '@/src/sync/recovery';
 import { createSyncSetupQr, parseSyncSetupQr } from '@/src/sync/setupQr';
+import { generateSyncPassphrase } from '@/src/sync/e2ee';
+import { parseWifiP2pQr, type WifiP2pSession } from '@/src/sync/wifiP2pSync';
 import { SETTINGS_SCREEN_CARD_GAP, SETTINGS_SCREEN_CONTENT_TOP, SETTINGS_SCREEN_HEADER_BOTTOM } from '@/src/utils/settingsScreenLayout';
 
 const INVITE_ROLES: SyncEnrollmentCode['role'][] = ['viewer', 'accountant', 'editor', 'admin'];
+
+type SyncModeTab = 'cloud' | 'wifi' | 'self_hosted';
 
 export default function SyncSettingsScreen() {
   const theme = useTheme(); const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -22,6 +26,9 @@ export default function SyncSettingsScreen() {
   const [status, setStatus] = useState<any>(null); const [devices, setDevices] = useState<SyncDevice[]>([]); const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false); const [scanLocked, setScanLocked] = useState(false); const [inviteRole, setInviteRole] = useState<SyncEnrollmentCode['role']>('viewer'); const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]); const [inviteQrValue, setInviteQrValue] = useState<string | null>(null); const [pendingEnrollmentCode, setPendingEnrollmentCode] = useState<string | null>(null); const [pendingEnrollmentBookId, setPendingEnrollmentBookId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<SyncModeTab>('cloud');
+  const [cloudEmail, setCloudEmail] = useState(''); const [cloudPassphrase, setCloudPassphrase] = useState(''); const [cloudConnected, setCloudConnected] = useState(false);
+  const [wifiSession, setWifiSession] = useState<WifiP2pSession | null>(null); const [wifiQrUri, setWifiQrUri] = useState<string | null>(null); const [wifiScanning, setWifiScanning] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const [, requestCameraPermission] = useCameraPermissions();
   const load = useCallback(async () => {
@@ -124,10 +131,106 @@ export default function SyncSettingsScreen() {
       setScanLocked(false); setMessage(error?.message || 'That QR code is not a valid Ledgr setup code.');
     }
   };
+
+  // Cloud drive: the passphrase is the whole security model, so it is generated
+  // rather than typed by default, and never leaves the device.
+  const saveCloudSync = async () => {
+    setBusy(true); setMessage('');
+    try {
+      if (cloudPassphrase.trim().length < 8) throw new Error('Choose a passphrase of at least 8 characters, or generate one.');
+      await api.saveCloudSyncConfig({ provider: 'google_drive', accountEmail: cloudEmail.trim() || undefined, passphrase: cloudPassphrase.trim(), autoSyncEnabled: true });
+      setCloudConnected(true);
+      setMessage('Cloud sync is set up. Enter the same passphrase on your other phone to join this book.');
+    } catch (error: any) { setMessage(error?.message || 'Could not save cloud sync.'); } finally { setBusy(false); }
+  };
+
+  const adoptCloudKey = async () => {
+    setBusy(true); setMessage('');
+    try {
+      const key = await api.adoptCloudSyncKey(cloudPassphrase.trim());
+      setMessage(key ? 'Passphrase accepted. This phone can now read the synced book.' : 'That passphrase does not match the data in the account.');
+      setCloudConnected(Boolean(key));
+    } catch (error: any) { setMessage(error?.message || 'Could not join with that passphrase.'); } finally { setBusy(false); }
+  };
+
+  const newCloudPassphrase = () => Alert.alert(
+    'Generate a new passphrase?',
+    'Only phones holding this passphrase can read the book. Anything already uploaded under a different passphrase stays unreadable.',
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Generate', onPress: () => setCloudPassphrase(generateSyncPassphrase()) }],
+  );
+
+  // Wi-Fi pairing needs no internet at all, which is the point: it is the only
+  // transport that works in a market or warehouse with no connection.
+  const startWifiSession = async () => {
+    setBusy(true); setMessage('');
+    try {
+      const created = await api.createWifiP2pSession();
+      setWifiSession(created.session); setWifiQrUri(created.qrCodeUri);
+      setMessage('Show this code to the other phone. It expires in 15 minutes.');
+    } catch (error: any) { setMessage(error?.message || 'Could not start Wi-Fi pairing.'); } finally { setBusy(false); }
+  };
+
+  const onWifiScanned = async (result: BarcodeScanningResult) => {
+    if (scanLocked) return;
+    setScanLocked(true); setWifiScanning(false);
+    try {
+      const session = parseWifiP2pQr(result.data);
+      setWifiSession(session);
+      setMessage(`Paired with ${session.hostIp}. Both phones must stay on this network while they exchange data.`);
+    } catch (error: any) { setMessage(error?.message || 'That is not a valid pairing code.'); } finally { setScanLocked(false); }
+  };
+
+  const openWifiScanner = async () => {
+    const permission = await requestCameraPermission();
+    if (!permission?.granted) { setMessage('Camera access is needed to scan a pairing code.'); return; }
+    setWifiScanning(true);
+  };
+
   return <SafeAreaView style={styles.container} edges={['top']}>
     <View style={[styles.header, { paddingBottom: SETTINGS_SCREEN_HEADER_BOTTOM }]}><Pressable onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={theme.color.onSurface} /></Pressable><ScreenHeader embedded title="Self-hosted Sync" subtitle="Optional offline-first collaboration" titleStyle={styles.headerTitle} /></View>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView ref={scrollRef} contentContainerStyle={[styles.scroll, { paddingTop: SETTINGS_SCREEN_CONTENT_TOP, gap: SETTINGS_SCREEN_CARD_GAP }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <View style={styles.card}>
+        <Text style={styles.title}>How this phone syncs</Text>
+        <Text style={styles.hint}>Pick whichever suits you. Cloud keeps an encrypted copy off the phone, Wi-Fi needs no internet at all, and a self-hosted server gives roles and an audit trail.</Text>
+        <View style={styles.chipRow}>
+          <Pressable testID="sync-tab-cloud" onPress={() => setActiveTab('cloud')} style={[styles.chip, activeTab === 'cloud' && styles.chipSelected]}><Text style={styles.chipText}>Google Drive</Text></Pressable>
+          <Pressable testID="sync-tab-wifi" onPress={() => setActiveTab('wifi')} style={[styles.chip, activeTab === 'wifi' && styles.chipSelected]}><Text style={styles.chipText}>Nearby Wi-Fi</Text></Pressable>
+          <Pressable testID="sync-tab-self-hosted" onPress={() => setActiveTab('self_hosted')} style={[styles.chip, activeTab === 'self_hosted' && styles.chipSelected]}><Text style={styles.chipText}>Own server</Text></Pressable>
+        </View>
+      </View>
+
+      {activeTab === 'cloud' ? <View style={styles.card} testID="sync-cloud-panel">
+        <Text style={styles.title}>Sync through your own Google Drive</Text>
+        <Text style={styles.hint}>Your book is encrypted on this phone before it is uploaded, into a private folder only this app can see. Google stores scrambled data and cannot read your books.</Text>
+        <Text style={styles.label}>Google account (optional label)</Text>
+        <TextInput value={cloudEmail} onChangeText={setCloudEmail} autoCapitalize="none" keyboardType="email-address" placeholder="you@gmail.com" placeholderTextColor={theme.color.muted} style={styles.input} />
+        <Text style={styles.label}>Passphrase</Text>
+        <TextInput testID="cloud-passphrase" value={cloudPassphrase} onChangeText={setCloudPassphrase} autoCapitalize="none" autoCorrect={false} placeholder="Generate or enter your passphrase" placeholderTextColor={theme.color.muted} style={styles.input} />
+        <Text style={styles.hint}>Write this down. It is the only thing that can unlock the backup, and nobody can recover it for you.</Text>
+        <Pressable testID="cloud-generate-passphrase" onPress={newCloudPassphrase} style={styles.secondary}><Text style={styles.secondaryText}>Generate a strong passphrase</Text></Pressable>
+        <Pressable testID="cloud-save" disabled={busy} onPress={saveCloudSync} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Working…' : cloudConnected ? 'Update cloud sync' : 'Turn on cloud sync'}</Text></Pressable>
+        <Pressable testID="cloud-join" disabled={busy} onPress={adoptCloudKey} style={[styles.secondary, busy && styles.disabled]}><Text style={styles.secondaryText}>This is my second phone — join with the passphrase</Text></Pressable>
+      </View> : null}
+
+      {activeTab === 'wifi' ? <View style={styles.card} testID="sync-wifi-panel">
+        <Text style={styles.title}>Sync over the same Wi-Fi</Text>
+        <Text style={styles.hint}>Works with no internet, so it suits a market stall or a warehouse. Both phones must be on the same network, and nothing is stored off the phones.</Text>
+        {wifiQrUri ? <View style={styles.invitePanel}>
+          <Text style={styles.packageTitle}>Scan this on the other phone</Text>
+          <View style={styles.qrSurface}><QRCode value={wifiQrUri} size={200} backgroundColor="#ffffff" color="#000000" /></View>
+          <Text style={styles.packageHint}>Expires in 15 minutes and pairs one phone.</Text>
+          <Pressable onPress={() => { setWifiQrUri(null); setWifiSession(null); }} style={styles.secondary}><Text style={styles.secondaryText}>Close code</Text></Pressable>
+        </View> : <Pressable testID="wifi-create-session" disabled={busy} onPress={startWifiSession} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Working…' : 'Show pairing code'}</Text></Pressable>}
+        <Pressable testID="wifi-scan-session" onPress={openWifiScanner} style={styles.secondary}><Text style={styles.secondaryText}>Scan a pairing code instead</Text></Pressable>
+        {wifiSession ? <Text style={styles.hint}>Paired with {wifiSession.hostIp}:{wifiSession.port}.</Text> : null}
+        {wifiScanning ? <View style={styles.invitePanel}>
+          <CameraView style={styles.scanner} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={onWifiScanned} />
+          <Pressable onPress={() => setWifiScanning(false)} style={styles.secondary}><Text style={styles.secondaryText}>Cancel scan</Text></Pressable>
+        </View> : null}
+      </View> : null}
+
+      {activeTab === 'self_hosted' ? <>
       <View style={styles.card}><Text style={styles.title}>Your device stays local first</Text><Text style={styles.hint}>Writes commit locally immediately. Enrollment obtains the Business Account epoch from your server; recovery never merges raw SQLite files.</Text>
         <Pressable testID="download-self-host-package" onPress={openSelfHostPackage} style={styles.packageButton}><Ionicons name="download-outline" size={20} color={theme.color.brandPrimary} /><View style={styles.packageCopy}><Text style={styles.packageTitle}>Download Self-host Package</Text><Text style={styles.packageHint}>Windows, macOS, Linux, and Docker bundle</Text></View><Ionicons name="open-outline" size={18} color={theme.color.muted} /></Pressable>
         {status?.configured ? <View style={styles.invitePanel}>
@@ -154,6 +257,7 @@ export default function SyncSettingsScreen() {
         {message ? <Text style={styles.message}>{message}</Text> : null}
       </View>
       {status?.configured ? <View style={styles.card}><Text style={styles.title}>Enrolled devices</Text><Text style={styles.hint}>Revocation and enrollment expiry are enforced by the server. Revoking this device also clears its local credentials.</Text>{devices.length ? devices.map((device) => <View key={device.deviceId} style={styles.device}><View style={{ flex: 1 }}><Text style={styles.deviceTitle}>{device.current ? 'This device' : `Device ${device.deviceId.slice(0, 12)}…`}</Text><Text style={styles.hint}>{device.revokedAt ? 'Revoked' : device.lastSeenAt ? `Last seen ${new Date(device.lastSeenAt).toLocaleString()}` : 'Enrolled'}{device.expiresAt && !device.revokedAt ? ` · expires ${new Date(device.expiresAt).toLocaleDateString()}` : ''}</Text></View>{!device.revokedAt ? <Pressable disabled={busy} onPress={() => revoke(device)} style={styles.revoke}><Text style={styles.revokeText}>Revoke</Text></Pressable> : null}</View>) : <Text style={styles.hint}>Device list is unavailable or empty.</Text>}</View> : null}
+      </> : null}
     </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
