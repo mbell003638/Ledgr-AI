@@ -30,6 +30,8 @@ export type OptionalModelStatus = {
   installed: boolean;
   eligible: boolean;
   bytesOnDisk?: number;
+  /** Bytes already fetched into the .part file, for resuming. Absent on older native builds. */
+  partialBytes?: number;
 };
 
 type NativeOnDeviceLlm = {
@@ -38,7 +40,9 @@ type NativeOnDeviceLlm = {
   runNeedle?: (transcript: string, toolsJson: string) => Promise<string> | string;
   runOptional?: (modelId: string, prompt: string, imageUri?: string, audioUri?: string) => Promise<string> | string;
   listOptional?: () => Promise<OptionalModelStatus[]> | OptionalModelStatus[];
-  downloadOptional?: (modelId: string, url: string, filename: string) => Promise<boolean> | boolean;
+  /** sha256 is optional: Expo omits trailing nullable args, so older builds taking three still work. */
+  downloadOptional?: (modelId: string, url: string, filename: string, sha256?: string | null) => Promise<boolean> | boolean;
+  cancelDownload?: (modelId: string) => Promise<boolean> | boolean;
   deleteOptional?: (modelId: string) => Promise<boolean> | boolean;
   addListener?: (event: string, listener: (payload: any) => void) => { remove: () => void };
 };
@@ -206,6 +210,16 @@ export async function downloadOptionalOnDeviceModel(
   } finally {
     subscription?.remove();
   }
+}
+
+/**
+ * Stops an in-flight download and discards its partial file. Safe to call when
+ * nothing is downloading, so a UI cancel button needs no guard of its own.
+ */
+export async function cancelOptionalOnDeviceModelDownload(id: OptionalOnDeviceModelId): Promise<void> {
+  const module = nativeModule();
+  if (!module?.cancelDownload) return;
+  try { await module.cancelDownload(id); } catch { /* already finished or never started */ }
 }
 
 export async function deleteOptionalOnDeviceModel(id: OptionalOnDeviceModelId): Promise<void> {

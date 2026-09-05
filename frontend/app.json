@@ -30,7 +30,8 @@
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
-        "INTERNET"
+        "INTERNET",
+        "WAKE_LOCK"
       ],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
