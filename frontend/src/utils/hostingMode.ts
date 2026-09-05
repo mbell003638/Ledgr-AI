@@ -7,14 +7,14 @@ export type HostingMode = 'local_only' | 'private_sync' | 'cloud_drive' | 'local
 export const HOSTING_MODE_LABELS: Record<HostingMode, string> = {
   local_only: 'Local-only mode',
   private_sync: 'Private sync',
-  cloud_drive: 'Cloud Drive Sync (E2EE)',
+  cloud_drive: 'Google Drive Sync (E2EE)',
   local_wifi: 'Nearby Wi-Fi Sync (P2P)',
 };
 
 export const HOSTING_MODE_DESCRIPTIONS: Record<HostingMode, string> = {
   local_only: 'Ledgr works on this device without a server or internet connection. Use an encrypted backup to move or recover this business book.',
   private_sync: 'Ledgr still works offline, while your own private sync server coordinates approved changes across enrolled devices.',
-  cloud_drive: 'Encrypted delta sync via Google Drive or iCloud with zero-knowledge keys.',
+  cloud_drive: 'Encrypted delta sync and offsite backup via Google Drive with zero-knowledge keys.',
   local_wifi: 'Instant peer-to-peer sync between devices on the same local network using QR codes.',
 };
 
@@ -128,8 +128,8 @@ export function deriveHostingMode(status: HostingStatusInput): {
   if (status.mode === 'cloud_drive') {
     return {
       mode: 'cloud_drive',
-      label: 'Cloud Drive Sync (E2EE)',
-      summary: 'Syncing encrypted deltas via Google Drive / iCloud.',
+      label: 'Google Drive Sync (E2EE)',
+      summary: 'Syncing encrypted deltas via private Google Drive app folder.',
       tone: 'healthy',
       detail: status.lastSyncAt ? `Last cloud sync: ${status.lastSyncAt}` : 'Encrypted cloud sync active.',
     };
