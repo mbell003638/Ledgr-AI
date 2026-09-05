@@ -396,22 +396,22 @@ class LedgrOnDeviceLlmModule : Module() {
     )
     private val OPTIONAL_MODELS = listOf(
       OptionalSpec(
-        id = "gemma-3-1b",
-        filename = "gemma-3-1b-it.cact",
-        minRamBytes = (5.5 * 1024 * 1024 * 1024).toLong(),
-        estimatedBytes = 750L * 1024L * 1024L
+        id = "qwen25-1-5b",
+        filename = "Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task",
+        minRamBytes = 6L * 1024 * 1024 * 1024,
+        estimatedBytes = 1_567_364_648L
       ),
       OptionalSpec(
         id = "gemma-4-e2b",
-        filename = "gemma-4-e2b-it.cact",
-        minRamBytes = (7.5 * 1024 * 1024 * 1024).toLong(),
-        estimatedBytes = 2400L * 1024L * 1024L
+        filename = "gemma-4-E2B-it-web.task",
+        minRamBytes = 8L * 1024 * 1024 * 1024,
+        estimatedBytes = 2_003_697_664L
       ),
       OptionalSpec(
         id = "gemma-4-e4b",
-        filename = "gemma-4-e4b-it.cact",
-        minRamBytes = 11L * 1024 * 1024 * 1024,
-        estimatedBytes = 3800L * 1024L * 1024L
+        filename = "gemma-4-E4B-it-web.task",
+        minRamBytes = 12L * 1024 * 1024 * 1024,
+        estimatedBytes = 2_964_324_352L
       ),
     )
   }

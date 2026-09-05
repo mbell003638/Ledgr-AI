@@ -319,6 +319,57 @@ files. Keep the repo **public** — a gated repo needs an auth token, which must
 ship inside an app. Gemma's licence permits redistribution but requires its Terms of
 Use to travel with the weights; include them in the repo.
 
+### D3b. Container format: `.task`, and no hosting is needed after all
+
+Settled 2026-09-06 by checking Google Maven and the model cards directly. **One
+engine cannot read both formats, and only one is usable on Android:**
+
+| Format | Runtime | Android availability |
+|---|---|---|
+| **`.task`** | MediaPipe `com.google.mediapipe:tasks-genai:0.10.35` | **on Google Maven — a Gradle line** |
+| `.litertlm` | LiteRT-LM ≥ 0.15 | **no artifact published** |
+
+Google Maven's `com.google.ai.edge.litert` group index publishes `litert`,
+`litert-api`, `litert-gpu`, `litert-metadata` and `litert-support` — but no
+`litert-lm`. That runtime is a C++ project and CLI today, so using `.litertlm` on
+Android would mean building it from source with the NDK and writing JNI bindings.
+Note both are on **Google Maven, not Maven Central** — `tasks-genai` 404s there.
+
+**The gate turned out to be a Gemma 3 problem, not a Gemma problem.** Gemma 3
+carries the restrictive `gemma` licence and is `gated: auto` (a plain download
+returns 401). **Gemma 4 is Apache 2.0 and ungated.** Verified:
+
+| Pack | File | Size | Licence |
+|---|---|---|---|
+| `qwen25-1-5b` | `Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task` | 1,567,364,648 | apache-2.0 |
+| `gemma-4-e2b` | `gemma-4-E2B-it-web.task` | 2,003,697,664 | apache-2.0 |
+| `gemma-4-e4b` | `gemma-4-E4B-it-web.task` | 2,964,324,352 | apache-2.0 |
+
+All `gated: false`, all HTTP 200 with no token, all under
+`https://huggingface.co/litert-community/`. **So no self-hosting, no token, no
+account, and no licence terms to redistribute.** Seven other ungated `.task`
+models exist (Phi-4-mini, DeepSeek-R1-Distill-Qwen-1.5B, SmolLM, TinyLlama…) if a
+repo ever disappears.
+
+The catalogue now points at these, in both `onDeviceTools.ts` and the Kotlin
+`OPTIONAL_MODELS` — they must stay in step, because `optionalFile()` resolves the
+on-disk path from the **Kotlin** copy, not from the filename JS passes.
+`__tests__/onDeviceModelSelection.test.ts` pins the shape so a dead URL cannot
+creep back.
+
+**Two cautions carried into Phase 3, both unverified:**
+
+- The Qwen model card reports that on a **Pixel 8a (8 GB)** the GPU backend ran out
+  of memory *during engine creation*, and the CPU path needed roughly another
+  file-size of free disk for the XNNPACK weight cache; it recommends **12 GB+
+  Android** for GPU. Agent B's `2 × size + 200 MB` free-space guard happens to be
+  exactly right for that cache. Keep `minRamBytes` conservative.
+- The Gemma 4 files are the **`-web`** builds. Whether that bundle loads under
+  MediaPipe on Android, and whether it exposes the vision tower, is the first thing
+  to test on device. `capabilities` currently declares `vision` for both Gemma
+  packs on the strength of the underlying models being multimodal; if the bundle
+  does not expose it, that is a one-line catalogue correction.
+
 ### D4. MediaPipe as the runtime
 
 `com.google.mediapipe:tasks-genai` is Google's official Gemma-on-Android API and
