@@ -2,7 +2,10 @@ package expo.modules.ledgrnativeai
 
 import android.app.ActivityManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.PowerManager
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -10,6 +13,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Bundled Needle 2 (libneedle.a + needle2.cact) plus optional Gemma file downloads.
@@ -18,6 +23,27 @@ import java.net.URL
 class LedgrOnDeviceLlmModule : Module() {
   @Volatile private var engineLoaded = false
   @Volatile private var lastToolsJson = ""
+
+  private class ActiveDownload(
+    val modelId: String,
+    val tmpFile: File,
+    @Volatile var connection: HttpURLConnection? = null,
+    @Volatile var isCancelled: Boolean = false
+  ) {
+    fun cancel() {
+      isCancelled = true
+      try {
+        connection?.disconnect()
+      } catch (_: Throwable) {}
+      try {
+        if (tmpFile.exists()) {
+          tmpFile.delete()
+        }
+      } catch (_: Throwable) {}
+    }
+  }
+
+  private val activeDownloads = ConcurrentHashMap<String, ActiveDownload>()
 
   private val context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
@@ -54,17 +80,20 @@ class LedgrOnDeviceLlmModule : Module() {
       val ram = advertisedRamBytes()
       OPTIONAL_MODELS.map { spec ->
         val file = optionalFile(spec.id)
+        val tmp = File(optionalDir(), "${spec.filename}.part")
+        val partialBytes = if (tmp.exists()) tmp.length() else 0L
         mapOf(
           "id" to spec.id,
           "installed" to file.exists(),
           "eligible" to (ram <= 0L || ram >= spec.minRamBytes),
           "bytesOnDisk" to if (file.exists()) file.length() else 0L,
+          "partialBytes" to partialBytes,
         )
       }
     }
 
-    AsyncFunction("downloadOptional") { modelId: String, url: String, filename: String ->
-      val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId } ?: throw IllegalArgumentException("Unknown model")
+    AsyncFunction("downloadOptional") { modelId: String, url: String, filename: String, sha256: String? ->
+      val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId } ?: throw IllegalArgumentException("Unknown model: $modelId")
       if (url.isBlank()) {
         throw IllegalStateException("This Gemma pack has no download URL. Convert it with cactus download and copy ${spec.filename} onto the phone.")
       }
@@ -72,19 +101,45 @@ class LedgrOnDeviceLlmModule : Module() {
       if (ram > 0 && ram < spec.minRamBytes) {
         throw IllegalStateException("This phone does not have enough RAM for ${spec.id}.")
       }
-      optionalDir().listFiles()?.forEach { child ->
-        if (child.isFile && child.name != filename) child.delete()
+
+      // Check Wi-Fi / unmetered network guard
+      checkWifiOrUnmetered()
+
+      // T1 Free-space guard: requires roughly 2x estimated bytes plus 200MB headroom
+      val usableSpace = optionalDir().usableSpace
+      val requiredSpace = (spec.estimatedBytes * 2) + (200L * 1024L * 1024L)
+      if (usableSpace < requiredSpace) {
+        val freeMb = usableSpace / (1024L * 1024L)
+        val reqMb = requiredSpace / (1024L * 1024L)
+        val shortMb = (requiredSpace - usableSpace) / (1024L * 1024L)
+        throw IllegalStateException(
+          "Not enough storage to download ${spec.id}. Requires at least ${reqMb}MB free (${shortMb}MB shortfall, phone has ${freeMb}MB usable)."
+        )
       }
-      downloadTo(url, optionalFile(modelId), modelId)
+
+      withWakeLock("download-$modelId") {
+        downloadTo(url, optionalFile(modelId), modelId, sha256 ?: spec.expectedSha256)
+      }
+      true
+    }
+
+    AsyncFunction("cancelDownload") { modelId: String ->
+      cancelDownload(modelId)
       true
     }
 
     AsyncFunction("deleteOptional") { modelId: String ->
-      optionalFile(modelId).delete()
+      cancelDownload(modelId)
+      val targetFile = optionalFile(modelId)
+      val tmpFile = File(optionalDir(), "${targetFile.name}.part")
+      if (targetFile.exists()) targetFile.delete()
+      if (tmpFile.exists()) tmpFile.delete()
       true
     }
 
     OnDestroy {
+      activeDownloads.values.forEach { it.cancel() }
+      activeDownloads.clear()
       if (engineLoaded) {
         try { NeedleJni.reset() } catch (_: Throwable) {}
       }
@@ -143,8 +198,61 @@ class LedgrOnDeviceLlmModule : Module() {
   private fun modelsDir(): File = File(context.filesDir, "on-device-models").apply { mkdirs() }
   private fun optionalDir(): File = File(modelsDir(), "optional").apply { mkdirs() }
   private fun optionalFile(id: String): File {
-    val spec = OPTIONAL_MODELS.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Unknown model")
+    val spec = OPTIONAL_MODELS.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Unknown model: $id")
     return File(optionalDir(), spec.filename)
+  }
+
+  private fun cancelDownload(modelId: String) {
+    val download = activeDownloads.remove(modelId)
+    download?.cancel()
+    try {
+      val spec = OPTIONAL_MODELS.firstOrNull { it.id == modelId }
+      if (spec != null) {
+        val tmp = File(optionalDir(), "${spec.filename}.part")
+        if (tmp.exists()) tmp.delete()
+      }
+    } catch (_: Throwable) {}
+  }
+
+  private fun checkWifiOrUnmetered() {
+    val connManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+      ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      val network = connManager.activeNetwork
+      val caps = connManager.getNetworkCapabilities(network)
+      val isUnmetered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
+      val isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
+                   caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+      if (!isWifi && !isUnmetered) {
+        throw IllegalStateException("Wi-Fi connection required for model pack downloads. Switch to Wi-Fi to download.")
+      }
+    } else {
+      @Suppress("DEPRECATION")
+      val activeInfo = connManager.activeNetworkInfo
+      @Suppress("DEPRECATION")
+      val isWifi = activeInfo?.type == ConnectivityManager.TYPE_WIFI ||
+                   activeInfo?.type == ConnectivityManager.TYPE_ETHERNET
+      if (activeInfo != null && !isWifi) {
+        throw IllegalStateException("Wi-Fi connection required for model pack downloads. Switch to Wi-Fi to download.")
+      }
+    }
+  }
+
+  private fun <T> withWakeLock(tag: String, block: () -> T): T {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    val wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LedgrAI:$tag")?.apply {
+      setReferenceCounted(false)
+      acquire(60 * 60 * 1000L) // 60 minutes max
+    }
+    return try {
+      block()
+    } finally {
+      try {
+        if (wakeLock?.isHeld == true) {
+          wakeLock.release()
+        }
+      } catch (_: Throwable) {}
+    }
   }
 
   private fun totalRamBytes(): Long {
@@ -171,41 +279,140 @@ class LedgrOnDeviceLlmModule : Module() {
     return reported
   }
 
-  private fun downloadTo(url: String, dest: File, id: String) {
+  private fun downloadTo(url: String, dest: File, id: String, expectedSha256: String?) {
     dest.parentFile?.mkdirs()
     val tmp = File(dest.parentFile, dest.name + ".part")
-    val connection = URL(url).openConnection() as HttpURLConnection
-    connection.instanceFollowRedirects = true
-    connection.connectTimeout = 15000
-    connection.readTimeout = 30000
-    connection.connect()
-    if (connection.responseCode !in 200..299) {
-      throw IllegalStateException("Download failed (${connection.responseCode}). Convert the Gemma pack with cactus download and copy it onto the phone.")
-    }
-    val total = connection.contentLengthLong.let { if (it > 0) it else 0L }
-    connection.inputStream.use { input ->
-      FileOutputStream(tmp).use { output ->
-        val buffer = ByteArray(1024 * 64)
-        var received = 0L
-        while (true) {
-          val read = input.read(buffer)
-          if (read <= 0) break
-          output.write(buffer, 0, read)
-          received += read
-          sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+    val downloadTask = ActiveDownload(id, tmp)
+    activeDownloads[id] = downloadTask
+
+    try {
+      val existingBytes = if (tmp.exists()) tmp.length() else 0L
+      val connection = URL(url).openConnection() as HttpURLConnection
+      downloadTask.connection = connection
+      connection.instanceFollowRedirects = true
+      connection.connectTimeout = 15000
+      connection.readTimeout = 30000
+
+      var isResuming = false
+      if (existingBytes > 0L) {
+        connection.setRequestProperty("Range", "bytes=$existingBytes-")
+        isResuming = true
+      }
+
+      connection.connect()
+      if (downloadTask.isCancelled) {
+        if (tmp.exists()) tmp.delete()
+        throw IllegalStateException("Download of $id was cancelled.")
+      }
+
+      val responseCode = connection.responseCode
+      val appendMode: Boolean
+      var received: Long
+      val total: Long
+
+      if (isResuming && responseCode == 206) {
+        // 206 Partial Content: HTTP Range was honored
+        appendMode = true
+        received = existingBytes
+        val cl = connection.contentLengthLong
+        total = if (cl > 0L) existingBytes + cl else 0L
+      } else if (responseCode in 200..299) {
+        // 200 OK: Range was ignored or not requested, restart from offset 0
+        appendMode = false
+        received = 0L
+        total = connection.contentLengthLong.let { if (it > 0) it else 0L }
+        if (tmp.exists()) tmp.delete()
+      } else {
+        throw IllegalStateException("Download failed ($responseCode). Convert the Gemma pack with cactus download and copy it onto the phone.")
+      }
+
+      // Initial progress notification
+      sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+
+      connection.inputStream.use { input ->
+        FileOutputStream(tmp, appendMode).use { output ->
+          val buffer = ByteArray(1024 * 64)
+          while (true) {
+            if (downloadTask.isCancelled) {
+              if (tmp.exists()) tmp.delete()
+              throw IllegalStateException("Download of $id was cancelled.")
+            }
+            val read = input.read(buffer)
+            if (read <= 0) break
+            output.write(buffer, 0, read)
+            received += read
+            sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+          }
         }
       }
+
+      if (downloadTask.isCancelled) {
+        if (tmp.exists()) tmp.delete()
+        throw IllegalStateException("Download of $id was cancelled.")
+      }
+
+      // Checksum verification before renaming:
+      if (!expectedSha256.isNullOrBlank()) {
+        val digest = MessageDigest.getInstance("SHA-256")
+        tmp.inputStream().use { input ->
+          val buffer = ByteArray(1024 * 64)
+          while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+          }
+        }
+        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actualHash.equals(expectedSha256.trim(), ignoreCase = true)) {
+          if (tmp.exists()) tmp.delete()
+          throw IllegalStateException(
+            "Checksum verification failed for $id. Expected $expectedSha256, got $actualHash. Corrupt download deleted."
+          )
+        }
+      }
+
+      // Atomic rename: .part -> final file
+      if (dest.exists()) dest.delete()
+      if (!tmp.renameTo(dest)) {
+        try {
+          tmp.copyTo(dest, overwrite = true)
+          tmp.delete()
+        } catch (e: Exception) {
+          throw IllegalStateException("Could not save the downloaded model: ${e.message}")
+        }
+      }
+    } finally {
+      activeDownloads.remove(id)
     }
-    if (dest.exists()) dest.delete()
-    if (!tmp.renameTo(dest)) throw IllegalStateException("Could not save the downloaded model.")
   }
 
   companion object {
-    private data class OptionalSpec(val id: String, val filename: String, val minRamBytes: Long)
+    private data class OptionalSpec(
+      val id: String,
+      val filename: String,
+      val minRamBytes: Long,
+      val estimatedBytes: Long,
+      val expectedSha256: String? = null
+    )
     private val OPTIONAL_MODELS = listOf(
-      OptionalSpec("gemma-3-1b", "gemma-3-1b-it.cact", (5.5 * 1024 * 1024 * 1024).toLong()),
-      OptionalSpec("gemma-4-e2b", "gemma-4-e2b-it.cact", (7.5 * 1024 * 1024 * 1024).toLong()),
-      OptionalSpec("gemma-4-e4b", "gemma-4-e4b-it.cact", (11L * 1024 * 1024 * 1024)),
+      OptionalSpec(
+        id = "gemma-3-1b",
+        filename = "gemma-3-1b-it.cact",
+        minRamBytes = (5.5 * 1024 * 1024 * 1024).toLong(),
+        estimatedBytes = 750L * 1024L * 1024L
+      ),
+      OptionalSpec(
+        id = "gemma-4-e2b",
+        filename = "gemma-4-e2b-it.cact",
+        minRamBytes = (7.5 * 1024 * 1024 * 1024).toLong(),
+        estimatedBytes = 2400L * 1024L * 1024L
+      ),
+      OptionalSpec(
+        id = "gemma-4-e4b",
+        filename = "gemma-4-e4b-it.cact",
+        minRamBytes = 11L * 1024 * 1024 * 1024,
+        estimatedBytes = 3800L * 1024L * 1024L
+      ),
     )
   }
 }
