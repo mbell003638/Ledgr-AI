@@ -9,7 +9,7 @@ import {
 import type { VoiceCommand } from './voicePartyResolution';
 
 export type VoiceInterpretationResult =
-  | { kind: 'command'; command: VoiceCommand; commands: VoiceCommand[]; transcript: string; source: 'local' | 'cloud' }
+  | { kind: 'command'; command: VoiceCommand; commands: VoiceCommand[]; transcript: string; source: 'local' | 'cloud' | 'needle' }
   | Extract<LocalTransactionParseResult, { kind: 'clarification' | 'unsupported' }>;
 
 export type PendingVoiceClarification = Extract<LocalTransactionParseResult, { kind: 'clarification' }>;
@@ -19,6 +19,7 @@ type InterpretationRequest = {
   mode: InterpretationMode;
   hasCloudAI: boolean;
   parseCloud: (text: string) => Promise<VoiceCommand>;
+  parseNeedle?: (text: string) => Promise<VoiceCommand | null>;
   parserOptions?: LocalTransactionParserOptions;
   entryHelpOrder?: EntryHelpOrder;
 };
@@ -29,9 +30,20 @@ type InterpretationRequest = {
  * tries AI with a timeout then on-device parsing; device-first stays local
  * unless the parser cannot understand the sentence.
  */
-function asCommandResult(command: VoiceCommand, transcript: string, source: 'local' | 'cloud', commands?: VoiceCommand[]): VoiceInterpretationResult {
+function asCommandResult(command: VoiceCommand, transcript: string, source: 'local' | 'cloud' | 'needle', commands?: VoiceCommand[]): VoiceInterpretationResult {
   const list = commands?.length ? commands : [command];
   return { kind: 'command', command: list[0], commands: list, transcript, source };
+}
+
+async function parseNeedleCommand(request: InterpretationRequest): Promise<VoiceInterpretationResult | null> {
+  if (!request.parseNeedle) return null;
+  try {
+    const command = await request.parseNeedle(request.transcript);
+    if (!command?.intent) return null;
+    return asCommandResult(command, request.transcript, 'needle');
+  } catch {
+    return null;
+  }
 }
 
 export async function interpretVoiceTransaction(request: InterpretationRequest): Promise<VoiceInterpretationResult> {
@@ -44,6 +56,15 @@ export async function interpretVoiceTransaction(request: InterpretationRequest):
   // Cloud parseCommand is a single-intent schema, so keep split local drafts.
   if (local.kind === 'confident' && localCommands.length > 1) {
     return asCommandResult(local.command, local.transcript, 'local', localCommands);
+  }
+
+  if (local.kind === 'confident') {
+    if (request.mode === 'device-only' || order === 'device-first' || !request.hasCloudAI) {
+      return asCommandResult(local.command, local.transcript, 'local', localCommands);
+    }
+  } else {
+    const needle = await parseNeedleCommand(request);
+    if (needle) return needle;
   }
 
   if (request.mode === 'device-only') {

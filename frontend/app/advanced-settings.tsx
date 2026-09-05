@@ -18,6 +18,7 @@ import { SETTINGS_SCREEN_HEADER_BOTTOM } from "@/src/utils/settingsScreenLayout"
 import { getAICapabilities } from "@/src/db/aiCapabilities";
 import { getDeviceSpeechStatus } from "@/src/utils/deviceSpeechRecognizer";
 import { getLocalOcrStatus } from "@/src/utils/localOcr";
+import { getOnDeviceLlmStatus } from "@/src/utils/onDeviceLlm";
 
 const AccordionRow = ({ title, subtitle, isLast, expandedKey, setExpandedKey, children, theme }: any) => {
   const isExpanded = expandedKey === title;
@@ -104,6 +105,8 @@ export default function AdvancedSettingsScreen() {
   const [hostingState, setHostingState] = useState(() => deriveHostingMode({ enabled: false, configured: false, pending: 0, retryable: 0, conflicts: 0 }));
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [speakAnswers, setSpeakAnswers] = useState(false);
+  const [needleStatus, setNeedleStatus] = useState("");
 
   const chooseProvider = (nextProvider: ProviderId) => {
     const meta = PROVIDERS.find((item) => item.id === nextProvider)!;
@@ -151,6 +154,12 @@ export default function AdvancedSettingsScreen() {
       setOcrProvider(cfg.ocrProvider || "auto");
       setInterpretationMode(cfg.interpretationMode || "auto");
       setEntryHelpOrder(cfg.entryHelpOrder || DEFAULT_ENTRY_HELP_ORDER);
+      const [speak, needle] = await Promise.all([
+        api.getSpeakAnswers().catch(() => false),
+        getOnDeviceLlmStatus().catch(() => null),
+      ]);
+      setSpeakAnswers(Boolean(speak));
+      setNeedleStatus(needle?.needleAvailable ? "Needle 2 is ready on this phone." : (needle?.reason || "Needle ships baked in the native APK."));
       setBaseUrl(cfg.baseUrl || "");
       const providerMeta = PROVIDERS.find((item) => item.id === cfg.provider);
       const chatBaseUrl = cfg.baseUrl?.trim() || '';
@@ -653,6 +662,22 @@ export default function AdvancedSettingsScreen() {
                     <Pressable testID="interpretation-cloud" onPress={() => setInterpretationMode('cloud')} style={[styles.modeBtn, interpretationMode === 'cloud' && styles.modeBtnActive]}><Text style={[styles.modeText, interpretationMode === 'cloud' && styles.modeTextActive]}>Cloud AI</Text></Pressable>
                   </View>
                   <Text style={styles.hint}>On-device only keeps speech, OCR, and parsing on this phone. Automatic can fall back to your AI provider. Every result stays a reviewable draft.</Text>
+                  <Text style={[styles.label, { marginTop: theme.spacing.md }]}>On-device voice engine</Text>
+                  <Text style={styles.hint}>{needleStatus || "Needle 2 is ready on this phone."}</Text>
+                  <View style={styles.modeRow}>
+                    <Pressable
+                      testID="speak-answers-toggle"
+                      onPress={async () => {
+                        const next = !speakAnswers;
+                        setSpeakAnswers(next);
+                        await api.setSpeakAnswers(next);
+                      }}
+                      style={[styles.modeBtn, speakAnswers && styles.modeBtnActive]}
+                    >
+                      <Text style={[styles.modeText, speakAnswers && styles.modeTextActive]}>{speakAnswers ? "Speak answers on" : "Speak answers off"}</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.hint}>Uses the phone speaker, not an external voice model. Default is off.</Text>
                   {interpretationMode === "auto" ? (
                     <>
                       <Text style={[styles.label, { marginTop: theme.spacing.md }]}>Automatic order</Text>

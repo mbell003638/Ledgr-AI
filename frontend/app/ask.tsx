@@ -17,6 +17,7 @@ import { confirmAction, showAlert } from "@/src/utils/alerts";
 import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistory";
 
 import { getProviderMeta, isExplicitBookMutationRequest } from "@/src/db/ai";
+import { speakOnDevice } from "@/src/utils/deviceTts";
 import { scopeAiSnapshot } from "@/src/utils/aiContextScope";
 import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 import { mapAnalyzedDocument, setPendingScanInput } from "@/src/accountingV2/scanImport";
@@ -567,7 +568,10 @@ export default function AskBooks() {
         } else {
           setPendingProposal(proposal);
           setPendingClarification(null);
-          if (answer) setMessages((m) => [...m, { role: "assistant", text: answer }]);
+          if (answer) {
+            setMessages((m) => [...m, { role: "assistant", text: answer }]);
+            void api.getSpeakAnswers().then((enabled) => { if (enabled) return speakOnDevice(answer); }).catch(() => undefined);
+          }
         }
       } else if (answer) {
         if (isExplicitBookMutationRequest(originalRequest) && /\?\s*$/.test(answer.trim())) {
@@ -576,6 +580,7 @@ export default function AskBooks() {
           setPendingClarification(null);
         }
         setMessages((m) => [...m, { role: "assistant", text: answer }]);
+        void api.getSpeakAnswers().then((enabled) => { if (enabled) return speakOnDevice(answer); }).catch(() => undefined);
       }
     } catch (e: any) {
       if (clarification) setPendingClarification(clarification);

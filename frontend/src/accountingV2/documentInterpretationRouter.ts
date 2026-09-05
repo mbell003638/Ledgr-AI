@@ -5,7 +5,7 @@ import { parseLocalDocumentText, type LocalDocumentParserOptions, type LocalDocu
 export type DocumentAnalysisInput = { base64?: string; mimeType?: string; text?: string; uri?: string };
 export type DocumentAnalysisRoute = {
   analysis: Record<string, unknown>;
-  source: 'local' | 'cloud';
+  source: 'local' | 'cloud' | 'on-device-llm';
   extractedText?: string;
   notice?: string;
   pending?: Extract<LocalDocumentParseResult, { kind: 'clarification' }>;
@@ -17,6 +17,7 @@ type RouteRequest = {
   hasCloudAI: boolean;
   recognizeLocal: (uri: string) => Promise<string>;
   analyzeCloud: (input: DocumentAnalysisInput) => Promise<unknown>;
+  analyzeOnDevice?: (input: DocumentAnalysisInput) => Promise<unknown>;
   parserOptions?: LocalDocumentParserOptions;
   entryHelpOrder?: EntryHelpOrder;
 };
@@ -66,6 +67,15 @@ export async function analyzeDocumentLocalFirst(request: RouteRequest): Promise<
   if (request.mode === 'android-device') {
     const local = await runLocal();
     if ('analysis' in local) return local;
+    if (request.analyzeOnDevice) {
+      try {
+        return {
+          analysis: await request.analyzeOnDevice(request.input) as Record<string, unknown>,
+          source: 'on-device-llm',
+          notice: 'On-device Gemma prepared this draft because local OCR did not find enough ledger lines.',
+        };
+      } catch { /* keep the local failure */ }
+    }
     throw new Error(local.failure || 'The document needs more information before Ledgr can prepare a draft.');
   }
 
