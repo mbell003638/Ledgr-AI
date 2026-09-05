@@ -70,6 +70,21 @@ export function stripRoleQualifiers(value: string): string {
  * "Deposit" and "contribution" on their own are ordinary business words, so
  * they need a capital cue before they can retype a payment as capital.
  */
+/**
+ * Speech recognition mishears the opening "paid" of a spoken transaction as
+ * "play"/"played"/"pled", which used to fail the whole parse with "could not
+ * identify a supported transaction type" even though the rest of the sentence
+ * was understood. Only rewrites when an amount follows within a few
+ * characters, so ordinary uses of "play" are left alone.
+ */
+const MISHEARD_PAID = /\b(?:play|played|plays|playing|pled)\b(?=[^\d\n]{0,12}\d)/gi;
+
+export function normalizeSpokenPaymentVerb(transcript: string): string {
+  return String(transcript || '').replace(MISHEARD_PAID, (word) => (
+    word[0] === word[0].toUpperCase() ? 'Paid' : 'paid'
+  ));
+}
+
 export const CAPITAL_CUE = /\bcapital\b|\bpartner(?:'s|s')?\b|\bowner(?:'s|s')?\b|\bdrawings?\b/i;
 export const CAPITAL_IN_PHRASE = /\b(?:invested|invest|contributed|contribute)\b|\b(?:added|add|deposit(?:ed)?)\b[\s\S]*\bcapital\b|\bcapital\s+(?:contribution|deposit|injection)\b/i;
 export const CAPITAL_OUT_PHRASE = /\b(?:withdrawal|withdrawals|withdrawn|withdraws|withdrew|withdraw|drawings?|drew)\b/i;
@@ -81,7 +96,8 @@ export const CAPITAL_OUT_PHRASE = /\b(?:withdrawal|withdrawals|withdrawn|withdra
  * mode does not have to disclose account names just to identify an exact
  * Supplier or Capital Account.
  */
-export function parseSimpleOutgoingPayment(transcript: string): VoiceCommand | null {
+export function parseSimpleOutgoingPayment(rawTranscript: string): VoiceCommand | null {
+  const transcript = normalizeSpokenPaymentVerb(rawTranscript);
   const match = transcript.match(/\b(?:pay|paid|paying|send|sent|gave|transfer|transferred)\b([\s\S]*?)\bto\b\s+([\s\S]+)$/i);
   if (!match) return null;
 

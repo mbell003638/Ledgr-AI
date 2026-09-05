@@ -5,6 +5,7 @@ import {
   CAPITAL_IN_PHRASE,
   CAPITAL_OUT_PHRASE,
   commandWithCreatedParty,
+  normalizeSpokenPaymentVerb,
   parseVoicePartyCreateRole,
   resolveVoicePartyCommand,
   sanitizeSpokenPartyName,
@@ -136,7 +137,7 @@ function commonCommand(transcript: string, options: LocalTransactionOptions): Pi
 }
 
 function parseCommand(transcript: string, options: LocalTransactionOptions): VoiceCommand | null {
-  const text = transcript.trim();
+  const text = normalizeSpokenPaymentVerb(transcript.trim());
   if (!text || text.length > 1_000) return null;
   const common = commonCommand(text, options);
 
