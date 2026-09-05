@@ -6,7 +6,15 @@ import { sha256 } from '@noble/hashes/sha256';
 import { storage } from '../utils/storage';
 
 export const E2EE_VERSION = 1;
-const PBKDF2_ITERATIONS = 100_000;
+/**
+ * Chosen for a phone, not a server: this runs in JS via Hermes, where the work
+ * costs roughly ten times what it does on a desktop. 600k measured about two
+ * seconds in node, so it would have made setup look hung on a mid-range
+ * handset. The count travels with the salt so it can be raised later without
+ * orphaning books already encrypted at the old value, and the default
+ * passphrase is 24 random characters, which matters far more than iterations.
+ */
+export const PBKDF2_ITERATIONS = 210_000;
 const KEY_LENGTH_BYTES = 32;
 const NONCE_LENGTH_BYTES = 12;
 const SALT_LENGTH_BYTES = 16;
@@ -17,9 +25,11 @@ export type EncryptedEnvelope = {
   nonce: string; // Base64
   ciphertext: string; // Base64 (includes 16-byte Poly1305/GCM tag appended by noble)
   salt?: string; // Base64
+  /** Iterations the key was derived with, so the count can change safely. */
+  iterations?: number;
 };
 
-function uint8ToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
@@ -31,7 +41,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return Buffer.from(binary, 'binary').toString('base64');
 }
 
-function base64ToUint8(base64: string): Uint8Array {
+export function base64ToBytes(base64: string): Uint8Array {
   if (typeof atob === 'function') {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -46,23 +56,28 @@ function base64ToUint8(base64: string): Uint8Array {
 export function generateSyncPassphrase(): string {
   // Generate 24-character high-entropy alphanumeric secret
   const raw = randomBytes(18);
-  return uint8ToBase64(raw).replace(/[/+=]/g, 'X').slice(0, 24);
+  return bytesToBase64(raw).replace(/[/+=]/g, 'X').slice(0, 24);
 }
 
-export function deriveKeyFromPassphrase(passphrase: string, saltBytes?: Uint8Array): { key: Uint8Array; salt: Uint8Array } {
+export function deriveKeyFromPassphrase(
+  passphrase: string,
+  saltBytes?: Uint8Array,
+  iterations: number = PBKDF2_ITERATIONS,
+): { key: Uint8Array; salt: Uint8Array; iterations: number } {
   const cleanPass = passphrase.trim();
   if (cleanPass.length < 8) {
     throw new Error('Sync passphrase must be at least 8 characters long');
   }
   const salt = saltBytes || randomBytes(SALT_LENGTH_BYTES);
+  const rounds = Number.isSafeInteger(iterations) && iterations > 0 ? iterations : PBKDF2_ITERATIONS;
   const key = pbkdf2(sha256, utf8ToBytes(cleanPass), salt, {
-    c: PBKDF2_ITERATIONS,
+    c: rounds,
     dkLen: KEY_LENGTH_BYTES,
   });
-  return { key, salt };
+  return { key, salt, iterations: rounds };
 }
 
-export function encryptPayload(payload: unknown, key: Uint8Array, saltBytes?: Uint8Array): EncryptedEnvelope {
+export function encryptPayload(payload: unknown, key: Uint8Array, saltBytes?: Uint8Array, iterations?: number): EncryptedEnvelope {
   if (key.length !== KEY_LENGTH_BYTES) {
     throw new Error(`Invalid key length: expected ${KEY_LENGTH_BYTES} bytes, got ${key.length}`);
   }
@@ -75,9 +90,9 @@ export function encryptPayload(payload: unknown, key: Uint8Array, saltBytes?: Ui
 
   return {
     version: E2EE_VERSION,
-    nonce: uint8ToBase64(nonce),
-    ciphertext: uint8ToBase64(ciphertextBytes),
-    ...(saltBytes ? { salt: uint8ToBase64(saltBytes) } : {}),
+    nonce: bytesToBase64(nonce),
+    ciphertext: bytesToBase64(ciphertextBytes),
+    ...(saltBytes ? { salt: bytesToBase64(saltBytes), iterations: iterations || PBKDF2_ITERATIONS } : {}),
   };
 }
 
@@ -88,8 +103,8 @@ export function decryptPayload<T = unknown>(envelope: EncryptedEnvelope, key: Ui
   if (key.length !== KEY_LENGTH_BYTES) {
     throw new Error(`Invalid key length: expected ${KEY_LENGTH_BYTES} bytes, got ${key.length}`);
   }
-  const nonce = base64ToUint8(envelope.nonce);
-  const ciphertextBytes = base64ToUint8(envelope.ciphertext);
+  const nonce = base64ToBytes(envelope.nonce);
+  const ciphertextBytes = base64ToBytes(envelope.ciphertext);
 
   const cipher = gcm(key, nonce);
   const decryptedBytes = cipher.decrypt(ciphertextBytes);
@@ -98,14 +113,14 @@ export function decryptPayload<T = unknown>(envelope: EncryptedEnvelope, key: Ui
 }
 
 export async function storeBookE2EEKey(bookId: string, key: Uint8Array): Promise<void> {
-  const b64 = uint8ToBase64(key);
+  const b64 = bytesToBase64(key);
   await storage.secureSet(`${SYNC_E2EE_KEY_STORAGE_PREFIX}${bookId}`, b64);
 }
 
 export async function getBookE2EEKey(bookId: string): Promise<Uint8Array | null> {
   const b64 = await storage.secureGet<string | null>(`${SYNC_E2EE_KEY_STORAGE_PREFIX}${bookId}`, null);
   if (!b64) return null;
-  return base64ToUint8(b64);
+  return base64ToBytes(b64);
 }
 
 export async function clearBookE2EEKey(bookId: string): Promise<void> {
