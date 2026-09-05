@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import QRCode from 'react-native-qrcode-svg';
+import QRCode from 'qrcode';
+import { SvgXml } from 'react-native-svg';
 import { api } from '@/src/api';
 import { ScreenHeader } from '@/src/components/UI';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -34,6 +35,7 @@ export default function SyncSettingsScreen() {
   // Wi-Fi P2P State
   const [wifiSession, setWifiSession] = useState<WifiP2pSession | null>(null);
   const [wifiQrUri, setWifiQrUri] = useState<string | null>(null);
+  const [wifiQrSvg, setWifiQrSvg] = useState('');
   const [wifiScanning, setWifiScanning] = useState(false);
 
   // Self-Hosted State (Existing)
@@ -99,6 +101,29 @@ export default function SyncSettingsScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!wifiQrUri) {
+      setWifiQrSvg('');
+      return;
+    }
+    let active = true;
+    QRCode.toString(wifiQrUri, {
+      type: 'svg',
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+      .then((svg) => {
+        if (active) setWifiQrSvg(svg);
+      })
+      .catch(() => {
+        if (active) setWifiQrSvg('');
+      });
+    return () => {
+      active = false;
+    };
+  }, [wifiQrUri]);
 
   // Cloud Drive handlers
   const handleSaveCloudConfig = async () => {
@@ -586,7 +611,7 @@ export default function SyncSettingsScreen() {
                     {wifiSession?.sessionId ? <Text style={styles.mono}>Session: {wifiSession.sessionId}</Text> : null}
                     <Text style={styles.qrHint}>Expires in 15 minutes. Data is transferred directly over Wi-Fi with end-to-end encryption.</Text>
                     <View style={styles.qrSurface}>
-                      <QRCode value={wifiQrUri} size={220} backgroundColor="#ffffff" color="#000000" />
+                      {wifiQrSvg ? <SvgXml xml={wifiQrSvg} width={220} height={220} /> : <ActivityIndicator color={theme.color.brandPrimary} />}
                     </View>
                     <Pressable onPress={() => setWifiQrUri(null)} style={styles.closeQr}>
                       <Text style={styles.closeScannerText}>Done / Close QR</Text>
