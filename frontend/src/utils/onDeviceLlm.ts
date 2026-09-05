@@ -8,6 +8,7 @@ import {
   toolCallToVoiceCommand,
   type LedgrOnDeviceToolCall,
   type LedgrOnDeviceToolName,
+  type OnDevicePackCapability,
   type OptionalOnDeviceModelId,
 } from '../accountingV2/onDeviceTools';
 import type { VoiceCommand } from '../accountingV2/voicePartyResolution';
@@ -121,6 +122,68 @@ export async function listOptionalOnDeviceModels(): Promise<(typeof OPTIONAL_ON_
       bytesOnDisk: native?.bytesOnDisk,
     };
   });
+}
+
+export type InstalledOnDevicePack = typeof OPTIONAL_ON_DEVICE_MODELS[number] & OptionalModelStatus;
+
+/**
+ * Picks the pack to answer with. Previously this took the first installed entry
+ * in array order, so a phone holding both Gemma 3 1B and 4 E2B silently used
+ * 3 1B -- the weaker one -- because it happened to be listed first.
+ *
+ * Ranking replaces array order, and a pack is only considered when it declares
+ * every capability the task needs, so an image is never handed to a text-only
+ * pack. A pinned pack wins outright, but falls back to Auto when it is not
+ * installed or the phone cannot run it, rather than leaving Ask unavailable.
+ */
+export function selectOnDevicePack(
+  packs: InstalledOnDevicePack[],
+  needs: OnDevicePackCapability[] = ['text'],
+  preferredId?: string | null,
+): InstalledOnDevicePack | null {
+  const usable = packs.filter((pack) => (
+    pack.installed
+    && pack.eligible
+    && needs.every((capability) => pack.capabilities.includes(capability))
+  ));
+  if (preferredId) {
+    const pinned = usable.find((pack) => pack.id === preferredId);
+    if (pinned) return pinned;
+  }
+  return usable.slice().sort((a, b) => b.rank - a.rank)[0] || null;
+}
+
+/**
+ * Which pack the user pinned, or null for Auto. Lives here rather than in
+ * api.ts because api.ts already imports this module, and the reverse import
+ * would be circular.
+ */
+export const PREFERRED_ON_DEVICE_MODEL_KEY = 'ledgr_preferred_on_device_model';
+
+function asyncStorage(): { getItem: (k: string) => Promise<string | null>; setItem: (k: string, v: string) => Promise<void>; removeItem: (k: string) => Promise<void> } | null {
+  try { return require('@react-native-async-storage/async-storage').default; } catch { return null; }
+}
+
+export async function getPreferredOnDevicePack(): Promise<string | null> {
+  try { return (await asyncStorage()?.getItem(PREFERRED_ON_DEVICE_MODEL_KEY)) || null; } catch { return null; }
+}
+
+export async function setPreferredOnDevicePack(id: string | null): Promise<void> {
+  const storage = asyncStorage();
+  if (!storage) return;
+  if (id) await storage.setItem(PREFERRED_ON_DEVICE_MODEL_KEY, id);
+  else await storage.removeItem(PREFERRED_ON_DEVICE_MODEL_KEY);
+}
+
+/** The pack Ask should use for a task, honouring the pinned-model setting. */
+export async function bestOnDevicePack(
+  needs: OnDevicePackCapability[] = ['text'],
+): Promise<InstalledOnDevicePack | null> {
+  const [packs, preferred] = await Promise.all([
+    listOptionalOnDeviceModels(),
+    getPreferredOnDevicePack(),
+  ]);
+  return selectOnDevicePack(packs, needs, preferred);
 }
 
 export async function downloadOptionalOnDeviceModel(

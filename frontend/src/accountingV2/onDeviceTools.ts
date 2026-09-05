@@ -32,6 +32,13 @@ export type LedgrOnDeviceToolCall = {
 
 export type OptionalOnDeviceModelId = 'gemma-3-1b' | 'gemma-4-e2b' | 'gemma-4-e4b';
 
+/**
+ * What a pack can be asked to do. Selection never routes a task to a pack that
+ * does not declare the capability it needs, so a text-only pack is never handed
+ * an image.
+ */
+export type OnDevicePackCapability = 'text' | 'tools' | 'vision' | 'audio';
+
 export const OPTIONAL_ON_DEVICE_MODELS: {
   id: OptionalOnDeviceModelId;
   label: string;
@@ -40,6 +47,13 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
   minRamBytes: number;
   vision: boolean;
   audio: boolean;
+  /**
+   * Higher wins when several packs are installed. Gaps are deliberate so a pack
+   * can be slotted between two others later without renumbering. Becomes
+   * manifest-supplied in phase 2.
+   */
+  rank: number;
+  capabilities: OnDevicePackCapability[];
   filename: string;
   downloadUrl: string;
 }[] = [
@@ -51,6 +65,8 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
     minRamBytes: Math.round(5.5 * 1024 * 1024 * 1024),
     vision: false,
     audio: false,
+    rank: 10,
+    capabilities: ['text', 'tools'],
     filename: 'gemma-3-1b-it.cact',
     downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-3-1b-it/resolve/main/gemma-3-1b-it.cact',
   },
@@ -62,6 +78,8 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
     minRamBytes: Math.round(7.5 * 1024 * 1024 * 1024),
     vision: true,
     audio: true,
+    rank: 20,
+    capabilities: ['text', 'tools', 'vision', 'audio'],
     filename: 'gemma-4-e2b-it.cact',
     downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-4-e2b-it/resolve/main/gemma-4-e2b-it.cact',
   },
@@ -73,6 +91,8 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
     minRamBytes: 11 * 1024 * 1024 * 1024,
     vision: true,
     audio: true,
+    rank: 30,
+    capabilities: ['text', 'tools', 'vision', 'audio'],
     filename: 'gemma-4-e4b-it.cact',
     downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-4-e4b-it/resolve/main/gemma-4-e4b-it.cact',
   },
