@@ -78,6 +78,23 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
   },
 ];
 
+/**
+ * Android reports less memory than the phone is sold with, because the kernel
+ * and firmware reserve some before userspace ever sees it: a 12 GB phone
+ * commonly reports around 11.2 GB. Comparing that raw figure against a 12 GB
+ * requirement hid packs from phones that meet the spec, so round up to the
+ * nearest size phones are actually sold in before deciding eligibility.
+ * Mirrors advertisedRamBytes() in LedgrOnDeviceLlmModule.kt.
+ */
+export function advertisedRamBytes(reported?: number | null): number | null {
+  if (reported == null || reported <= 0) return null;
+  const gib = 1024 ** 3;
+  for (const tier of [2, 3, 4, 6, 8, 12, 16, 24, 32]) {
+    if (reported <= tier * gib) return tier * gib;
+  }
+  return reported;
+}
+
 export const NEEDLE_ASSET_FILENAME = 'needle2.cact';
 
 export function ledgrOnDeviceToolsJson(partyHints: string[] = []): string {
