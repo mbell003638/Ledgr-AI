@@ -22,7 +22,12 @@ import { DeviceSpeechSession, getDeviceSpeechBridge, isDeviceSpeechAvailable } f
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "error";
 
-export default function VoiceFab() {
+/**
+ * `showFab={false}` mounts the voice dock without its floating button, for
+ * screens that already have their own microphone control (the Ask AI input
+ * bar) but want the same in-place dock instead of a full-screen detour.
+ */
+export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {}) {
   const theme = useTheme();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -285,20 +290,22 @@ export default function VoiceFab() {
 
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Voice assistant"
-        accessibilityHint="Record a transaction by voice"
-        testID="voice-fab"
-        onPress={start}
-        style={({ pressed }) => [
-          styles.fab,
-          { backgroundColor: theme.color.brandPrimary },
-          pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
-        ]}
-      >
-        <Ionicons name="mic" size={26} color={theme.color.onBrandPrimary} />
-      </Pressable>
+      {showFab ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Voice assistant"
+          accessibilityHint="Record a transaction by voice"
+          testID="voice-fab"
+          onPress={start}
+          style={({ pressed }) => [
+            styles.fab,
+            { backgroundColor: theme.color.brandPrimary },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+          ]}
+        >
+          <Ionicons name="mic" size={26} color={theme.color.onBrandPrimary} />
+        </Pressable>
+      ) : null}
 
             {phase !== "idle" && (
         <Animated.View

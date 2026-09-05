@@ -716,7 +716,8 @@ describe('V2 UI contracts', () => {
     const ask = readApp('ask.tsx');
     expect(ask).toContain('backgroundColor: theme.color.brandPrimary');
     expect(ask).toContain('accessibilityLabel="Open voice transaction assistant"');
-    expect(ask).toContain('router.push("/voice" as Href)');
+    expect(ask).toContain('onPress={() => requestVoiceAssistant()}');
+    expect(ask).toContain('<VoiceFab showFab={false} />');
     expect(ask).not.toContain('Adding it to this chat');
     expect(ask).not.toContain('useAudioRecorder');
     expect(ask).toContain('Nothing changes until you tap Apply.');
