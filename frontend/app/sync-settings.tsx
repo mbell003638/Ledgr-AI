@@ -36,6 +36,7 @@ export default function SyncSettingsScreen() {
   const [wifiSession, setWifiSession] = useState<WifiP2pSession | null>(null);
   const [wifiQrUri, setWifiQrUri] = useState<string | null>(null);
   const [wifiQrSvg, setWifiQrSvg] = useState('');
+  const [inviteQrSvg, setInviteQrSvg] = useState('');
   const [wifiScanning, setWifiScanning] = useState(false);
 
   // Self-Hosted State (Existing)
@@ -124,6 +125,32 @@ export default function SyncSettingsScreen() {
       active = false;
     };
   }, [wifiQrUri]);
+
+  // The invitation QR is rendered through qrcode + react-native-svg like the
+  // Wi-Fi one above. It previously stayed on react-native-qrcode-svg, which is
+  // no longer a dependency, so this panel crashed when it opened.
+  useEffect(() => {
+    if (!inviteQrValue) {
+      setInviteQrSvg('');
+      return;
+    }
+    let active = true;
+    QRCode.toString(inviteQrValue, {
+      type: 'svg',
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+      .then((svg) => {
+        if (active) setInviteQrSvg(svg);
+      })
+      .catch(() => {
+        if (active) setInviteQrSvg('');
+      });
+    return () => {
+      active = false;
+    };
+  }, [inviteQrValue]);
 
   // Cloud Drive handlers
   const handleSaveCloudConfig = async () => {
@@ -709,7 +736,7 @@ export default function SyncSettingsScreen() {
                     <Text style={styles.qrTitle}>Scan this invitation on the joining phone</Text>
                     <Text style={styles.qrHint}>This QR contains connection details and a one-time invitation code only. It does not contain an access token or password.</Text>
                     <View style={styles.qrSurface}>
-                      <QRCode value={inviteQrValue} size={220} backgroundColor="#ffffff" color="#000000" />
+                      {inviteQrSvg ? <SvgXml xml={inviteQrSvg} width={220} height={220} /> : <ActivityIndicator color={theme.color.brandPrimary} />}
                     </View>
                     <Pressable onPress={() => setInviteQrValue(null)} style={styles.closeQr}>
                       <Text style={styles.closeScannerText}>Close QR</Text>

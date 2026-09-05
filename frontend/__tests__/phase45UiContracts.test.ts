@@ -43,7 +43,10 @@ describe('phase 4-5 UI safety contracts', () => {
     expect(syncSettings).toContain('createSyncEnrollmentCode');
     expect(syncSettings).toContain('redeemSyncEnrollmentCode');
     expect(syncSettings).toContain('createSyncSetupQr');
-    expect(syncSettings).toContain('react-native-qrcode-svg');
+    // The QR is rendered with the qrcode + react-native-svg pair the app
+    // already ships, rather than pulling in react-native-qrcode-svg.
+    expect(syncSettings).toContain("from 'qrcode'");
+    expect(syncSettings).toContain("from 'react-native-svg'");
   });
 
   it('provides an in-app self-host setup guide with platform downloads and pairing handoff', () => {
