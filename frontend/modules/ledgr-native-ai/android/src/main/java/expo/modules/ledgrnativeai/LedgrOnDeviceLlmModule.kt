@@ -44,10 +44,10 @@ class LedgrOnDeviceLlmModule : Module() {
       NeedleJni.complete(transcript, 128)
     }
 
-    AsyncFunction("runOptional") { modelId: String, prompt: String, imageUri: String?, audioUri: String? ->
+    AsyncFunction("runOptional") { modelId: String, _prompt: String, _imageUri: String?, _audioUri: String? ->
       val file = optionalFile(modelId)
       if (!file.exists()) throw IllegalStateException("Download this on-device model in Advanced Settings first.")
-      throw IllegalStateException("Gemma packs are stored on the phone, but on-device Gemma inference is not wired in this native build yet. Needle handles commands; cloud or a later APK runs Gemma.")
+      gemmaNotWired()
     }
 
     AsyncFunction("listOptional") {
@@ -90,6 +90,15 @@ class LedgrOnDeviceLlmModule : Module() {
       }
       engineLoaded = false
     }
+  }
+
+  /**
+   * Gemma inference is not in this native build yet. Declared as String rather
+   * than letting the throw infer Nothing: AsyncFunction reifies its return type,
+   * and Kotlin cannot reify Nothing.
+   */
+  private fun gemmaNotWired(): String {
+    throw IllegalStateException("Gemma packs are stored on the phone, but on-device Gemma inference is not wired in this native build yet. Needle handles commands; cloud or a later APK runs Gemma.")
   }
 
   private fun needleReady(): Boolean {
