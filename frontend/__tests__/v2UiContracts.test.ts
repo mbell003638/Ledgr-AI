@@ -673,6 +673,14 @@ describe('V2 UI contracts', () => {
     expect(source).toMatch(/endCoordinates|keyboardHeight/);
   });
 
+  it('VoiceFab lifts dock above keyboard when typing in draft clarification', () => {
+    const fab = readSource('src/components/VoiceFab.tsx');
+    expect(fab).toContain('keyboardDidShow');
+    expect(fab).toMatch(/endCoordinates|keyboardHeight/);
+    expect(fab).toContain('dockBottom');
+    expect(fab).toContain('maxDockHeight');
+  });
+
   it('remaining operational entry points preserve capability and location context', () => {
     const voice = readSource('src/components/VoiceFab.tsx');
     const voiceOrb = readSource('src/components/VoiceOrb.tsx');
