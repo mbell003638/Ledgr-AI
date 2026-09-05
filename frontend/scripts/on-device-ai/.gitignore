@@ -1,2 +1,6 @@
 needle-ledgr-lora.pkl
+needle-ledgr-train-ckpt.pkl
+needle-ledgr-train-ckpt.pkl.json
+needle-ledgr-train-ckpt.pkl.tmp
+needle-ledgr.jsonl
 checkpoints/
