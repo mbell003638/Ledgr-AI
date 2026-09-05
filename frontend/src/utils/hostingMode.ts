@@ -1,8 +1,9 @@
-export type HostingMode = 'local_only' | 'private_sync';
+export type HostingMode = 'local_only' | 'private_sync' | 'cloud_drive' | 'local_wifi';
 
 export type HostingStatusInput = {
   enabled: boolean;
   configured: boolean;
+  mode?: HostingMode;
   pending: number;
   retryable: number;
   conflicts: number;
@@ -20,6 +21,24 @@ export type HostingModeState = {
 };
 
 export function deriveHostingMode(status: HostingStatusInput): HostingModeState {
+  if (status.mode === 'cloud_drive') {
+    return {
+      mode: 'cloud_drive',
+      label: 'Cloud Drive Sync (E2EE)',
+      summary: 'Syncing encrypted deltas via Google Drive / iCloud.',
+      tone: 'healthy',
+      detail: status.lastSyncAt ? `Last cloud sync: ${status.lastSyncAt}` : 'Encrypted cloud sync active.',
+    };
+  }
+  if (status.mode === 'local_wifi') {
+    return {
+      mode: 'local_wifi',
+      label: 'Nearby Wi-Fi Sync (P2P)',
+      summary: 'Direct device-to-device synchronization over local Wi-Fi.',
+      tone: 'healthy',
+      detail: 'Instant offline sync ready for QR pairing.',
+    };
+  }
   if (status.recoveryRequired) {
     return {
       mode: status.configured ? 'private_sync' : 'local_only',

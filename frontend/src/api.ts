@@ -31,8 +31,10 @@ import { configureSync, disableSync, enableSync, getSyncStatus, markSyncRecovery
 import { listOpenSyncConflicts, listSyncCorrectionAccounts, resolveSyncConflict as resolveSyncConflictDecision, type ConflictResolutionType } from '@/src/sync/conflicts';
 import { installServerSnapshot, publishServerSnapshot, verifyProjectionCheckpoint } from '@/src/sync/recovery';
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
-import type { SyncOperation } from '@/src/sync/protocol';
+import { hashPayload, type SyncSnapshot, type SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
+import { getCloudConfig, saveCloudConfig, type CloudDriveConfig } from '@/src/sync/cloudDriveProvider';
+import { createWifiP2pSession, packWifiTransfer, type WifiP2pTransferPackage } from '@/src/sync/wifiP2pSync';
 import {
   listBooks as beListBooks,
   activeBookId as beActiveBookId,
@@ -930,6 +932,38 @@ export const api = {
     });
     bumpDataVersion();
   },
+
+  // Multi-Device Sync: Cloud Drive E2EE & Local Wi-Fi P2P
+  getCloudSyncConfig: async (bookId = beActiveBookId()) => getCloudConfig(bookId),
+  saveCloudSyncConfig: async (config: CloudDriveConfig, bookId = beActiveBookId()) => saveCloudConfig(bookId, config),
+  createWifiP2pSession: (bookId = beActiveBookId(), hostIp?: string, port?: number) => {
+    return createWifiP2pSession(bookId, hostIp, port);
+  },
+  exportWifiP2pPackage: async (key: Uint8Array, bookId = beActiveBookId()) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    const projection = await exportBookProjection(runner, bookId);
+    const snapshot: SyncSnapshot = {
+      snapshotId: 'snap_' + Date.now(),
+      bookId,
+      bookEpoch: 'epoch_1',
+      throughSequence: 0,
+      schemaVersion: BOOK_PROJECTION_SCHEMA_VERSION,
+      payload: projection,
+      payloadHash: hashPayload(projection),
+      checkpointHash: await hashBookProjection(runner, bookId),
+      aggregateRevisions: {},
+      createdAt: new Date().toISOString(),
+    };
+    return packWifiTransfer(snapshot, [], key);
+  },
+  installWifiP2pPackage: async (pkg: WifiP2pTransferPackage) => {
+    const runner = activeSqlRunner();
+    if (!runner) throw new Error('Sync requires SQLite storage');
+    await installBookProjection(runner, pkg.snapshot.payload as any, pkg.snapshot);
+    bumpDataVersion();
+  },
+
   testKey: async (config?: AIConfig) => ai.testKey(config || await getAIConfig()),
 
   // Books (separate isolated accounts, e.g. Shop vs Technician)
