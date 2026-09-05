@@ -58,11 +58,10 @@ export async function askBooksOnDevice(
   if (mutation) {
     return { answer: 'I could not map that to a Ledgr action on this phone. Add the amount and party, or download an on-device model pack in Advanced Settings.', action: null };
   }
-  const visionHint = OPTIONAL_ON_DEVICE_MODELS.find((row) => row.vision)?.label;
   return {
     answer: installed
       ? 'I could not answer from the on-device model. Try a shorter question about cash, profit, or a named party.'
-      : `On-device Ask can record simple entries with Needle. Download ${visionHint || 'Gemma 4 E2B'} in Advanced Settings for explanations, or use Reports.`,
+      : `On-device Ask can record simple entries with Needle. Download ${OPTIONAL_ON_DEVICE_MODELS[0]?.label || 'a model pack'} in Advanced Settings for explanations, or use Reports.`,
     action: null,
   };
 }
