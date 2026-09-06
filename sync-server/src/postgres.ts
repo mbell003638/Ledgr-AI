@@ -19,8 +19,14 @@ export class PostgresBookAuthorizer implements Authorizer {
   async authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", deviceId?: string): Promise<void> {
     const global = principal.scopes.has("sync:*");
     const bookClaim = principal.books.has("*") || principal.books.has(bookId);
-    const claimAllowed = global || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
-    if (!claimAllowed) {
+    const scopeAllowed = global || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
+    if (!scopeAllowed) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
+    // A token claim records what the identity provider believed when it issued
+    // the token; sync_memberships records what this server grants right now.
+    // The claim is an additional gate, never a substitute, so a member demoted
+    // to viewer cannot keep pushing on a token that still lists the book.
+    // sync:* stays a deliberate server-operator escape hatch.
+    if (!global) {
       const rows = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id = $1 AND subject = $2", [bookId, principal.subject])).rows;
       const role = rows[0]?.role;
       if (!role || (action === "push" && (role === "viewer" || role === "auditor"))) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);

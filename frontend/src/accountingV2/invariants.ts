@@ -24,7 +24,14 @@ export type InvariantCheck = {
 };
 
 function getCents(value: number | undefined, centsValue: number | undefined): number {
-  if (centsValue !== undefined && Number.isFinite(centsValue)) {
+  if (centsValue !== undefined) {
+    // A present-but-non-finite cents field means the amount was computed wrongly
+    // upstream (a division by zero, say). Falling through to the float field ran
+    // it through num(), which maps NaN to 0, so the fault was reported as a
+    // legitimate zero-amount line instead of being surfaced.
+    if (!Number.isFinite(centsValue)) {
+      throw new InvariantError('BALANCED_JOURNAL', `journal line amount is not a finite number: ${centsValue}`);
+    }
     return Math.round(centsValue);
   }
   return toCents(round2(num(value)));

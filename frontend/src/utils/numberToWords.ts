@@ -43,6 +43,14 @@ const SCALES: { value: number; name: string }[] = [
 
 function convertChunk(n: number): string {
   if (n === 0) return '';
+  // Above the largest scale the caller passes a quotient rather than a 0-999
+  // chunk, and once that reached 1000 the hundreds lookup indexed past the end
+  // of ONES and rendered the literal "undefined Hundred" onto an invoice.
+  if (n >= 1000) {
+    const thousands = Math.floor(n / 1000);
+    const rest = n % 1000;
+    return rest !== 0 ? `${convertChunk(thousands)} Thousand ${convertChunk(rest)}` : `${convertChunk(thousands)} Thousand`;
+  }
   if (n < 20) return ONES[n];
   if (n < 100) {
     const tens = TENS[Math.floor(n / 10)];

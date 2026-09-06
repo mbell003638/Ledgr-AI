@@ -54,8 +54,14 @@ export function similarityScore(a: string, b: string): number {
 
   // Substring match bonus
   if (s1.includes(s2) || s2.includes(s1)) {
-    const ratio = Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length);
-    return Math.max(0.8, ratio);
+    // Containment used to score 0.8 no matter how little of the name matched, so
+    // "cash" cleared the 0.65 threshold against "Cash & Carry Wholesalers" and
+    // posted to the wrong party's ledger with no prompt. Mirror the length guard
+    // the prefix path already applies; below that, fall back to the raw ratio.
+    const shorter = Math.min(s1.length, s2.length);
+    const longer = Math.max(s1.length, s2.length);
+    const ratio = shorter / longer;
+    return longer - shorter <= 4 ? Math.max(0.8, ratio) : ratio;
   }
 
   const dist = levenshteinDistance(s1, s2);

@@ -43,13 +43,20 @@ const rateLimiter = new FixedWindowRateLimiter(
   integerEnv("RATE_LIMIT_WINDOW_MS", 60_000, 1_000, 3_600_000),
 );
 
+// The arbitrator used to be gated on NODE_ENV while the `production` flag
+// reported to clients was gated on configuration, so a deployment with a
+// database and OIDC but NODE_ENV unset advertised accounting arbitration it
+// was not running, and NoopAccountingArbitrator accepted unbalanced journals
+// into the canonical log. One condition drives both.
+const productionReady = Boolean(databaseUrl && authenticator);
+
 const server = createServer(store, {
   authenticator,
   authorizer,
-  arbitrator: isProduction ? new DefaultAccountingArbitrator(undefined, { requireState: true }) : undefined,
+  arbitrator: productionReady ? new DefaultAccountingArbitrator(undefined, { requireState: true }) : undefined,
   recoveryStore: store,
   deviceAdministration: authorizer,
-  production: Boolean(databaseUrl && authenticator),
+  production: productionReady,
   corsOrigin: corsOrigin ?? "*",
   operationsToken,
   metrics,
