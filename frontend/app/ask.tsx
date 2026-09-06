@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   View, Text, StyleSheet, TextInput, Pressable, FlatList,
   ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Keyboard,
@@ -19,7 +19,7 @@ import { askHistoryStorageKey, normalizeAskHistory } from "@/src/utils/askHistor
 import { getProviderMeta, isExplicitBookMutationRequest } from "@/src/db/ai";
 import { speakOnDevice } from "@/src/utils/deviceTts";
 import { scopeAiSnapshot } from "@/src/utils/aiContextScope";
-import { materializePendingVoiceParty, parseSimpleOutgoingPayment, resolveVoicePartyCommand, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
+import { commandWithCreatedParty, materializePendingVoiceParty, parseSimpleOutgoingPayment, parseVoicePartyCreateRole, resolveVoicePartyCommand, suggestedVoicePartyCreateRole, voiceCommandPartyName, type VoiceCommand } from "@/src/accountingV2/voicePartyResolution";
 import { mapAnalyzedDocument, setPendingScanInput } from "@/src/accountingV2/scanImport";
 type Msg = { role: "user" | "assistant"; text: string };
 type PendingClarification =
@@ -316,6 +316,13 @@ export default function AskBooks() {
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  // The send button read `input` out of the render closure, so a keystroke that
+  // had not yet flushed through setState was lost: Android's IME commits the
+  // final word on blur, which happens when the button is pressed, so
+  // "I confirm the draft" was sent as "I confirm the".
+  const inputRef = useRef("");
+  const updateInput = useCallback((value: string) => { inputRef.current = value; setInput(value); }, []);
+  const clearInput = useCallback(() => { inputRef.current = ""; clearInput(); }, []);
   const [loading, setLoading] = useState(false);
   const [applyingProposal, setApplyingProposal] = useState(false);
   const applyingProposalRef = useRef(false);
@@ -382,7 +389,7 @@ export default function AskBooks() {
           setMessages([]);
           setPendingClarification(null);
           setPendingProposal(null);
-          setInput("");
+          clearInput();
           Keyboard.dismiss();
         } catch (e: any) {
           showAlert("Could Not Clear History", e?.message || "Please try again.");
@@ -476,13 +483,13 @@ export default function AskBooks() {
     if (!q || loading || applyingProposal) return;
 
     if (pendingProposal && /^(yes\b|y$|i confirm\b|confirm\b|apply\b|proceed\b|ok(?:ay)?\b|please (?:apply|record|enter|save)\b)/i.test(q)) {
-      setInput("");
+      clearInput();
       setMessages((m) => [...m, { role: "user", text: q }]);
       await applyPendingProposal();
       return;
     }
     if (pendingProposal && /^(no\b|n$|cancel\b|stop\b|discard\b|never ?mind\b)/i.test(q)) {
-      setInput("");
+      clearInput();
       cancelPendingProposal(true);
       return;
     }
@@ -511,7 +518,7 @@ export default function AskBooks() {
     }
     if (priorProposal) setPendingProposal(null);
     if (clarification) setPendingClarification(null);
-    setInput("");
+    clearInput();
     setMessages((m) => [...m, { role: "user", text: q }]);
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -522,11 +529,27 @@ export default function AskBooks() {
           api.listDebtors(),
           api.listInvestors(),
         ]);
-        const resolution = resolveVoicePartyCommand(
-          localPaymentCommand,
-          clarification?.kind === "party" ? `${clarification.originalRequest}\nUser clarification: ${q}` : q,
-          { suppliers, customers, capitalAccounts },
-        );
+        // The question offers "Create a Supplier (recommended) or a Customer",
+        // but resolveVoicePartyCommand reacts only to those literal words, so
+        // "Yes" or "create it" fell through and re-asked the same question
+        // forever. parseVoicePartyCreateRole reads an affirmative as "take the
+        // recommendation"; answer the pending clarification with it.
+        let answeredCommand: VoiceCommand | null = null;
+        if (clarification?.kind === "party") {
+          const suggested = suggestedVoicePartyCreateRole(String(clarification.command.intent || ""));
+          const role = parseVoicePartyCreateRole(q, suggested);
+          const partyName = voiceCommandPartyName(clarification.command);
+          if ((role === "supplier" || role === "customer") && partyName) {
+            answeredCommand = commandWithCreatedParty(clarification.command, partyName, role);
+          }
+        }
+        const resolution = answeredCommand
+          ? { ok: true as const, command: answeredCommand }
+          : resolveVoicePartyCommand(
+            localPaymentCommand,
+            clarification?.kind === "party" ? `${clarification.originalRequest}\nUser clarification: ${q}` : q,
+            { suppliers, customers, capitalAccounts },
+          );
         if (!resolution.ok) {
           setPendingClarification({
             kind: "party",
@@ -798,7 +821,7 @@ export default function AskBooks() {
             )}
             <TextInput
               value={input}
-              onChangeText={setInput}
+              onChangeText={updateInput}
               placeholder="Message Ledgr..."
               placeholderTextColor={theme.color.muted}
               style={[styles.input, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
@@ -806,11 +829,11 @@ export default function AskBooks() {
               numberOfLines={1}
               submitBehavior="submit"
               returnKeyType="send"
-              onSubmitEditing={() => send(input)}
+              onSubmitEditing={() => send(inputRef.current)}
               maxLength={4000}
             />
             {input.trim().length > 0 ? (
-              <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(input)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
+              <Pressable accessibilityLabel="Send message" hitSlop={8} onPress={() => send(inputRef.current)} disabled={loading || applyingProposal} style={[styles.sendBtn, loading && { opacity: 0.5 }]}>
                 <Ionicons name="send" size={22} color={theme.color.brandPrimary} />
               </Pressable>
             ) : (
