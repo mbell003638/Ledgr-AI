@@ -3,6 +3,8 @@ import path from 'path';
 
 const read = (relative: string) => fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
 
+const CALLERS = ['app/voice.tsx', 'src/components/VoiceFab.tsx'];
+
 describe('voice and capability UI contracts', () => {
   it('re-reads the AI capability on focus so the mic appears without a restart', () => {
     const fab = read('src/components/VoiceFab.tsx');
@@ -42,5 +44,20 @@ describe('voice and capability UI contracts', () => {
     expect(customize).toContain('lockPill');
     expect(customize).toContain('{core ? "Always on" : "Required"}');
     expect(customize).toContain('accessibilityRole={locked ? undefined : "switch"}');
+  });
+
+  it('keeps speech on the phone when the user chose On-device only', () => {
+    const recognizer = read('src/utils/deviceSpeechRecognizer.ts');
+    const kotlin = read('modules/ledgr-native-ai/android/src/main/java/expo/modules/ledgrnativeai/LedgrSpeechRecognizerModule.kt');
+    // EXTRA_PREFER_OFFLINE is only a hint; Google's recognizer falls back to
+    // its cloud service (and its consent prompt) when the offline language
+    // pack is missing. The API 31 recognizer has no cloud path at all.
+    expect(kotlin).toContain('createOnDeviceSpeechRecognizer');
+    expect(kotlin).toContain('isOnDeviceRecognitionAvailable');
+    expect(kotlin).toContain('onDeviceOnly: Boolean?');
+    expect(recognizer).toContain('options.onDeviceOnly === true');
+    for (const file of CALLERS) {
+      expect(read(file)).toContain('onDeviceOnly: isOnDeviceInterpretation(');
+    }
   });
 });

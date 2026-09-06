@@ -30,4 +30,10 @@ describe('device speech recognizer boundary', () => {
     await expect(second.promise).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     expect(second.promise).rejects.toBeInstanceOf(DeviceSpeechError);
   });
+
+  it('passes the strict on-device request through to the bridge', async () => {
+    const native = bridge();
+    new DeviceSpeechSession(native, { onDeviceOnly: true });
+    expect(native.startListening).toHaveBeenCalledWith(expect.objectContaining({ onDeviceOnly: true }));
+  });
 });

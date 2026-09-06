@@ -22,13 +22,20 @@ class LedgrSpeechRecognizerModule : Module(), RecognitionListener {
     Name("LedgrSpeechRecognizer")
     Events("partial", "final", "error", "end")
     AsyncFunction("isAvailable") { SpeechRecognizer.isRecognitionAvailable(context) }
-    AsyncFunction("start") { locale: String? ->
+    AsyncFunction("isOnDeviceAvailable") { onDeviceRecognitionAvailable() }
+    AsyncFunction("start") { locale: String?, onDeviceOnly: Boolean? ->
       if (active) throw IllegalStateException("Speech recognition is already running")
       if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) throw SecurityException("Microphone permission is required for Android device recognition")
       if (!SpeechRecognizer.isRecognitionAvailable(context)) throw IllegalStateException("No Android speech recognition service is available")
+      // EXTRA_PREFER_OFFLINE is only a hint: Google's recognizer ignores it
+      // when the offline language pack is missing and falls back to its cloud
+      // service, which is what raises the "send data to Google" consent
+      // screen. When the user has chosen On-device only, use the recognizer
+      // that has no cloud path at all so that setting's promise holds.
+      val strictOnDevice = onDeviceOnly == true && onDeviceRecognitionAvailable()
       appContext.currentActivity?.runOnUiThread {
         destroyRecognizer()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
+        recognizer = createRecognizer(strictOnDevice).also {
           it.setRecognitionListener(this@LedgrSpeechRecognizerModule)
         }
         active = true
@@ -57,6 +64,17 @@ class LedgrSpeechRecognizerModule : Module(), RecognitionListener {
   override fun onRmsChanged(rmsdB: Float) = Unit
   override fun onBufferReceived(buffer: ByteArray?) = Unit
   override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+  private fun onDeviceRecognitionAvailable(): Boolean =
+    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+      SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+
+  private fun createRecognizer(strictOnDevice: Boolean): SpeechRecognizer =
+    if (strictOnDevice && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+      SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+    } else {
+      SpeechRecognizer.createSpeechRecognizer(context)
+    }
 
   private fun bestResult(results: Bundle?): String? = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
   private fun finishSession() { if (!active) return; active = false; sendEvent("end"); recognizer?.destroy(); recognizer = null }
