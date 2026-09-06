@@ -195,7 +195,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
-          name: Ledgr-AI-APK${{ steps.check.outputs.artifact_suffix }}
+          name: Ledgr-AI-APK-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
@@ -203,6 +203,6 @@ jobs:
         if: steps.check.outputs.has_keystore == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: Ledgr-AI-AAB${{ steps.check.outputs.artifact_suffix }}
+          name: Ledgr-AI-AAB-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/bundle/release/*.aab
           retention-days: 30
