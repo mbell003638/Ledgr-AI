@@ -33,7 +33,7 @@ import { createSyncEnrollmentCode, enrollSyncDevice, installServerSnapshot, list
 import { BOOK_PROJECTION_SCHEMA_VERSION, exportBookProjection, hashBookProjection, installBookProjection } from '@/src/sync/projection';
 import { hashPayload, type SyncSnapshot, type SyncOperation } from '@/src/sync/protocol';
 import { authorizeSyncOidc as runSyncOidcAuthorization } from '@/src/sync/oidc';
-import { getCloudConfig, saveCloudConfig, type CloudDriveConfig } from '@/src/sync/cloudDriveProvider';
+import { adoptRemoteKey, getCloudConfig, getStorageClient, saveCloudConfig, type CloudDriveConfig } from '@/src/sync/cloudDriveProvider';
 import { createWifiP2pSession, packWifiTransfer, type WifiP2pTransferPackage } from '@/src/sync/wifiP2pSync';
 import { checkLocalIntegrity } from '@/src/utils/localIntegrity';
 import { getRequestedHostingMode, setRequestedHostingMode, type HostingMode } from '@/src/utils/hostingMode';
@@ -1044,6 +1044,13 @@ export const api = {
   // Multi-Device Sync: Cloud Drive E2EE & Local Wi-Fi P2P
   getCloudSyncConfig: async (bookId = beActiveBookId()) => getCloudConfig(bookId),
   saveCloudSyncConfig: async (config: CloudDriveConfig, bookId = beActiveBookId()) => saveCloudConfig(bookId, config),
+  // Lets a second phone open an existing encrypted book with the passphrase
+  // alone. adoptRemoteKey already existed; nothing exposed it to the UI.
+  adoptCloudSyncKey: async (passphrase: string, bookId = beActiveBookId()) => {
+    const config = await getCloudConfig(bookId);
+    if (!config) throw new Error('Set up cloud sync on this device first.');
+    return adoptRemoteKey(bookId, passphrase, getStorageClient(config));
+  },
   createWifiP2pSession: (bookId = beActiveBookId(), hostIp?: string, port?: number) => {
     return createWifiP2pSession(bookId, hostIp, port);
   },

@@ -179,6 +179,23 @@ export default function SyncSettingsScreen() {
     );
   };
 
+  const handleJoinWithPassphrase = async () => {
+    const passphrase = cloudPassphrase.trim();
+    if (!passphrase) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const key = await api.adoptCloudSyncKey(passphrase);
+      setMessage(key
+        ? 'Joined the existing encrypted book. Pull to sync when you are ready.'
+        : 'No encrypted book was found for that passphrase on this Drive account.');
+    } catch (error: any) {
+      setMessage(error?.message || 'Could not join with that passphrase.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Wi-Fi P2P handlers
   const handleStartWifiShare = async () => {
     setBusy(true);
@@ -548,15 +565,15 @@ export default function SyncSettingsScreen() {
 
           {/* Top Segmented Tab Switcher */}
           <View style={styles.tabBar}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Google Drive Tab" onPress={() => setActiveTab('cloud')} style={[styles.tabItem, activeTab === 'cloud' && styles.tabItemActive]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Google Drive Tab" testID="sync-tab-cloud" onPress={() => setActiveTab('cloud')} style={[styles.tabItem, activeTab === 'cloud' && styles.tabItemActive]}>
               <Ionicons name="logo-google" size={16} color={activeTab === 'cloud' ? theme.color.brandPrimary : theme.color.muted} />
               <Text style={[styles.tabText, activeTab === 'cloud' && styles.tabTextActive]}>Google Drive</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Nearby Wi-Fi Tab" onPress={() => setActiveTab('wifi')} style={[styles.tabItem, activeTab === 'wifi' && styles.tabItemActive]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Nearby Wi-Fi Tab" testID="sync-tab-wifi" onPress={() => setActiveTab('wifi')} style={[styles.tabItem, activeTab === 'wifi' && styles.tabItemActive]}>
               <Ionicons name="wifi-outline" size={16} color={activeTab === 'wifi' ? theme.color.brandPrimary : theme.color.muted} />
               <Text style={[styles.tabText, activeTab === 'wifi' && styles.tabTextActive]}>Nearby Wi-Fi</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Self-Hosted Tab" onPress={() => setActiveTab('self_hosted')} style={[styles.tabItem, activeTab === 'self_hosted' && styles.tabItemActive]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Self-Hosted Tab" testID="sync-tab-self-hosted" onPress={() => setActiveTab('self_hosted')} style={[styles.tabItem, activeTab === 'self_hosted' && styles.tabItemActive]}>
               <Ionicons name="server-outline" size={16} color={activeTab === 'self_hosted' ? theme.color.brandPrimary : theme.color.muted} />
               <Text style={[styles.tabText, activeTab === 'self_hosted' && styles.tabTextActive]}>Self-Hosted</Text>
             </Pressable>
@@ -587,12 +604,13 @@ export default function SyncSettingsScreen() {
 
               <View style={styles.passphraseHeader}>
                 <Text style={styles.label}>Secret Sync Passphrase</Text>
-                <Pressable onPress={handleGenerateNewPassphrase}>
+                <Pressable testID="cloud-generate-passphrase" onPress={handleGenerateNewPassphrase}>
                   <Text style={styles.inlineAction}>Generate New</Text>
                 </Pressable>
               </View>
               <TextInput
                 value={cloudPassphrase}
+                testID="cloud-passphrase"
                 onChangeText={setCloudPassphrase}
                 autoCapitalize="none"
                 placeholder="24-character security key"
@@ -600,7 +618,7 @@ export default function SyncSettingsScreen() {
                 style={inputStyle}
               />
               <Text style={styles.subHint}>
-                Keep this passphrase safe! You must enter this same passphrase on your other devices to decrypt this business account.
+                Keep this passphrase safe! You must enter this same passphrase on your other devices to decrypt this business account. It is the only thing that unlocks the backup, and nobody can recover it for you.
               </Text>
 
               <Pressable
@@ -611,6 +629,20 @@ export default function SyncSettingsScreen() {
                 style={[styles.primary, (busy || !cloudPassphrase.trim()) && styles.disabled]}
               >
                 <Text style={styles.primaryText}>{busy ? 'Saving...' : cloudConnected ? 'Save & Sync Google Drive' : 'Connect Google Drive'}</Text>
+              </Pressable>
+
+              {/* api.adoptCloudSyncKey existed but nothing called it, so a second
+                  phone had no way to join an existing encrypted book with just
+                  the passphrase. */}
+              <Pressable
+                testID="cloud-join"
+                accessibilityRole="button"
+                accessibilityLabel="Join this book with the passphrase"
+                disabled={busy || !cloudPassphrase.trim()}
+                onPress={handleJoinWithPassphrase}
+                style={[styles.secondary, (busy || !cloudPassphrase.trim()) && styles.disabled]}
+              >
+                <Text style={styles.secondaryText}>This is my second phone - join with the passphrase</Text>
               </Pressable>
             </View>
           )}
@@ -624,7 +656,7 @@ export default function SyncSettingsScreen() {
               </View>
               <Text style={styles.sectionTitle}>Nearby Phone Sync</Text>
               <Text style={styles.hint}>
-                Transfer or sync directly between two phones connected to the same home or office Wi-Fi network. Instant, 100% offline, and zero setup required.
+                Transfer or sync directly between two phones on the same home or office Wi-Fi network. Works with no internet at all, so it suits a market stall or a warehouse. Instant, and zero setup required.
               </Text>
 
               <View style={styles.actionBlock}>
@@ -634,7 +666,7 @@ export default function SyncSettingsScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Create Pairing QR Code"
                   disabled={busy}
-                  onPress={handleStartWifiShare}
+                  testID="wifi-create-session" onPress={handleStartWifiShare}
                   style={[styles.secondaryButtonRow, busy && styles.disabled]}
                 >
                   <Ionicons name="qr-code-outline" size={20} color={theme.color.brandPrimary} />
