@@ -197,7 +197,7 @@ jobs:
         with:
           name: Ledgr-AI-APK-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+          retention-days: 7
 
       - name: Upload AAB
         if: steps.check.outputs.has_keystore == 'true'
@@ -205,4 +205,4 @@ jobs:
         with:
           name: Ledgr-AI-AAB-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
           path: frontend/android/app/build/outputs/bundle/release/*.aab
-          retention-days: 30
+          retention-days: 7
