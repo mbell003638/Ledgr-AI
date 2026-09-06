@@ -65,12 +65,16 @@ export async function postCashSale(repo: V2SqlRepository, input: { bookId: strin
   const amount = cents(input.amount); if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be positive');
   const method = input.method || 'cash';
   const tax = cents(Number(input.metadata?.tax || 0));
-  const subtotal = tax > 0 && tax < amount ? cents(amount - tax) : amount;
+  // `tax < amount` used to be part of the subtotal expression, so a tax at or
+  // above the total silently produced subtotal === amount and the tax line was
+  // never emitted: the books balanced while understating the tax liability.
+  if (tax > 0 && tax >= amount) throw new Error('Tax cannot be greater than or equal to the total amount');
+  const subtotal = tax > 0 ? cents(amount - tax) : amount;
   const source: V2Source = { id: uid('cash_sale'), bookId: input.bookId, type: 'cash_sale', date: input.date, reference: input.reference, locationId: input.locationId, metadata: withLocation({ total: amount, method, ...(input.metadata || {}) }, input.locationId) };
   const lines: any[] = [
     { accountId: `${input.bookId}:account:${paymentCode(method)}`, debit: amount, credit: 0 },
   ];
-  if (tax > 0 && subtotal < amount) {
+  if (tax > 0) {
     lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: subtotal });
     lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax });
   } else {
@@ -102,12 +106,16 @@ export async function postInvoice(repo: V2SqlRepository, input: { bookId: string
   const appliedTotal = cents(advanceAllocations.reduce((sum, a) => sum + a.amount, 0));
   const status = appliedTotal >= amount - 0.005 ? 'paid' : appliedTotal > 0 ? 'partial' : 'unpaid';
   const tax = cents(Number(input.metadata?.tax || 0));
-  const subtotal = tax > 0 && tax < amount ? cents(amount - tax) : amount;
+  // `tax < amount` used to be part of the subtotal expression, so a tax at or
+  // above the total silently produced subtotal === amount and the tax line was
+  // never emitted: the books balanced while understating the tax liability.
+  if (tax > 0 && tax >= amount) throw new Error('Tax cannot be greater than or equal to the total amount');
+  const subtotal = tax > 0 ? cents(amount - tax) : amount;
   const source: V2Source = { id: sourceId, bookId: input.bookId, type: 'invoice', date: input.date, reference: input.reference, locationId: input.locationId, metadata: withLocation({ ...(input.metadata || {}), partyId: input.partyId, total: amount, status, ...(appliedTotal > 0 ? { advanceApplied: appliedTotal } : {}) }, input.locationId) };
   const lines: any[] = [
     { accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.AR}`, partyId: input.partyId, debit: amount, credit: 0 },
   ];
-  if (tax > 0 && subtotal < amount) {
+  if (tax > 0) {
     lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.SALES}`, debit: 0, credit: subtotal });
     lines.push({ accountId: `${input.bookId}:account:${V2_ACCOUNT_CODES.TAX_PAYABLE}`, debit: 0, credit: tax });
   } else {

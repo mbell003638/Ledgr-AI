@@ -388,17 +388,38 @@ async function syncNowSerialized(db: SqlRunner, bookId: string, applyRemote?: Re
     try {
       const pushed = await request(profile, '/v1/sync/push', { method: 'POST', body: JSON.stringify({ bookId, operations: pending }) }, token);
       const handled = new Set<string>();
+      // Accepting a push raises the aggregate's revision on the server, but only
+      // pull and snapshot install ever wrote sync_entity_revisions. A second edit
+      // to the same aggregate before the next pull therefore re-sent the stale
+      // revision and the server reported a conflict between two of this device's
+      // own sequential edits. The server accepts at baseRevision + 1, so that is
+      // the revision this device now holds.
+      const bumpAcceptedRevision = async (operation: SyncOperation) => {
+        if (operation.baseRevision == null || !operation.aggregateId) return;
+        const next = Number(operation.baseRevision) + 1;
+        if (!Number.isSafeInteger(next) || next < 1) return;
+        await db.run(
+          `INSERT INTO sync_entity_revisions(book_id,aggregate_type,aggregate_id,revision,updated_at) VALUES(?,?,?,?,?)
+           ON CONFLICT(book_id,aggregate_type,aggregate_id) DO UPDATE SET revision=MAX(revision,excluded.revision),updated_at=excluded.updated_at`,
+          [bookId, String(operation.commandType).split('.')[0] || 'unknown', operation.aggregateId, next, now()],
+        );
+      };
       for (const accepted of Array.isArray(pushed.accepted) ? pushed.accepted : []) {
         const opId = String(accepted.opId || ''); if (!opId) continue;
         const sequence = Number(accepted.bookSequence);
-        if (Number.isSafeInteger(sequence) && sequence > 0) { await markSyncOperationAccepted(db, opId, sequence); handled.add(opId); }
+        if (Number.isSafeInteger(sequence) && sequence > 0) {
+          await markSyncOperationAccepted(db, opId, sequence);
+          const operation = pending.find((item) => item.opId === opId);
+          if (operation) await bumpAcceptedRevision(operation);
+          handled.add(opId);
+        }
       }
       for (const result of Array.isArray(pushed.results) ? pushed.results : []) {
         const opId = String(result.opId || ''); const operation = pending.find((item) => item.opId === opId);
         if (!operation || handled.has(opId)) continue;
         if (result.status === 'accepted' || result.status === 'duplicate') {
           const sequence = Number(result.bookSequence);
-          if (Number.isSafeInteger(sequence) && sequence > 0) await markSyncOperationAccepted(db, opId, sequence);
+          if (Number.isSafeInteger(sequence) && sequence > 0) { await markSyncOperationAccepted(db, opId, sequence); await bumpAcceptedRevision(operation); }
           else await markSyncOperationFailed(db, opId, 'retryable', 'Server omitted the canonical sequence');
         }
         else if (result.status === 'conflict') { const reason = String(result.message || 'Canonical conflict'); await markSyncOperationFailed(db, opId, 'conflict', reason); await recordConflict(db, operation, reason, { ...(result.canonicalEvent || {}), conflictId: result.conflictId }); }

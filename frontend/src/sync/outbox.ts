@@ -25,11 +25,14 @@ export async function nextDeviceSequence(db: SqlRunner, bookId: string, deviceId
 }
 
 export function makeSyncOperation(input: Omit<SyncOperation, 'protocolVersion' | 'payloadVersion' | 'opId'> & { opId?: string }): SyncOperation {
+  // `...input` came last, so an explicitly-present-but-undefined opId in the
+  // caller's object overwrote the generated one and failed downstream as a
+  // confusing validation error instead of defaulting.
   const operation: SyncOperation = {
+    ...input,
     protocolVersion: SYNC_PROTOCOL_VERSION,
     payloadVersion: SYNC_PAYLOAD_VERSION,
     opId: input.opId || createSyncId(),
-    ...input,
   };
   assertSyncOperation(operation);
   return operation;

@@ -23,10 +23,33 @@ export function closeBooks(ledger: V2Ledger, bookId: string, periodId: string, d
   const capital = ledger.store.accounts.find((a) => a.bookId === bookId && a.code === '3000');
   const currentProfit = ledger.store.accounts.find((a) => a.bookId === bookId && a.code === '3200');
   if (!capital || !currentProfit) throw new Error('Capital accounts missing');
+  // The commission is subtracted from net profit above and recorded in the
+  // snapshot, but no journal line ever posted it, so the ledger balanced while
+  // understating both expenses and liabilities by the commission and recording
+  // the amount owed nowhere. Post it like closeBooksRepository already does.
+  const commissionExpense = ledger.store.accounts.find((a) => a.bookId === bookId && a.code === '6100');
+  const commissionPayable = ledger.store.accounts.find((a) => a.bookId === bookId && a.code === '2200');
+  if (result.commission > 0 && (!commissionExpense || !commissionPayable)) {
+    throw new Error('Commission accounts missing');
+  }
+  if (result.commission > 0 && commissionExpense && commissionPayable) {
+    ledger.post({
+      bookId, periodId, date, memo: 'Commission expense',
+      lines: [
+        { accountId: commissionExpense.id, debit: result.commission, credit: 0 },
+        { accountId: commissionPayable.id, debit: 0, credit: result.commission },
+      ],
+    });
+  }
+  // Capital equity is credit-balanced, so ledger.balance (debit - credit)
+  // returns it negated; read it before the close journal moves profit across.
+  const capitalBefore = cents(-ledger.balance(bookId, capital.id));
   const amount = Math.abs(result.netProfit);
   const lines = result.netProfit >= 0
     ? [{ accountId: currentProfit.id, debit: amount, credit: 0 }, { accountId: capital.id, debit: 0, credit: amount }]
     : [{ accountId: capital.id, debit: amount, credit: 0 }, { accountId: currentProfit.id, debit: 0, credit: amount }];
   const journal = ledger.post({ bookId, periodId, date, memo: 'Period close', lines });
-  return { periodId, netProfit: result.netProfit, closingCapital: result.netProfit, snapshot, journalId: journal.id };
+  // closingCapital used to carry netProfit, so a book with 500,000 of capital
+  // and 40,000 of profit reported 40,000 as its closing capital.
+  return { periodId, netProfit: result.netProfit, closingCapital: cents(capitalBefore + result.netProfit), snapshot, journalId: journal.id };
 }
