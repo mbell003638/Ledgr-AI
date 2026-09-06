@@ -12,6 +12,7 @@
     "lint": "expo lint",
     "lint:ci": "expo lint --no-cache --max-warnings 0",
     "audit:ci": "node ./scripts/audit-ci.js",
+    "qa:release": "node ./scripts/qa-release.js",
     "test": "jest"
   },
   "dependencies": {

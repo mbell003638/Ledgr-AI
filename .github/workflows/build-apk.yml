@@ -2,21 +2,12 @@ name: Build Ledgr AI Android
 
 on:
   workflow_dispatch:
-    inputs:
-      source_ref:
-        description: "Optional Git ref to build instead of the workflow branch (read-only source checkout)"
-        required: false
-        default: ""
-        type: string
 
-permissions:
-  contents: write
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Gate: type-check + unit tests must pass before we spend ~20 min on a build.
-  # Mirrors the standalone Tests workflow so a manually-dispatched build is also
-  # verified. The build job below declares `needs: test`.
+  # Gate: the shared Play-release software checks must pass before we spend
+  # ~20 min on a build. The build job below declares `needs: test`.
   # ---------------------------------------------------------------------------
   test:
     name: Type-check & unit tests
@@ -27,8 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -40,20 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: TypeScript type-check
-        run: npx tsc --noEmit
-
-      - name: ESLint
-        run: npm run lint:ci
-
-      - name: Expo dependency and config validation
-        run: npx expo-doctor
-
-      - name: Production dependency audit
-        run: npm run audit:ci
-
-      - name: Run unit tests
-        run: npx jest --ci
+      - name: Play-release software gate
+        run: npm run qa:release
 
   build:
     name: Build Release APK & AAB
@@ -65,8 +42,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -78,8 +53,8 @@ jobs:
       - name: Setup Java JDK 17
         uses: actions/setup-java@v5
         with:
-          distribution: "temurin"
-          java-version: "17"
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -217,66 +192,17 @@ jobs:
           find frontend/android -name "*.apk" -type f
           find frontend/android -name "*.aab" -type f
 
-      # Actions artifact storage is quota-limited. Publish the latest CI output to
-      # one private, prerelease tag instead, replacing the previous APK/AAB assets.
-      # Test-signed outputs are named explicitly and must never be submitted to Play.
-      - name: Publish latest Android CI outputs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          # Every branch except a source_ref dispatch used to publish to the
-          # same `android-ci` tag and the same asset name, with --clobber. Four
-          # branches building in the same minute therefore left whichever
-          # finished last, under a filename that named no branch at all, so a
-          # download could silently be a different branch's app. One tag and
-          # one asset name per source ref instead.
-          SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/ledgr-android-ci
-          source_sha="$(git rev-parse HEAD)"
-          slug="$(printf '%s' "$SOURCE_REF" | tr '[:upper:]' '[:lower:]' | sed 's#[^a-z0-9._-]#-#g; s#^-*##; s#-*$##')"
-          if [ -z "$slug" ]; then
-            echo "Could not derive a release slug from '$SOURCE_REF'" >&2
-            exit 1
-          fi
-          RELEASE_TAG="android-ci-${slug}"
-          apk="$(find frontend/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          if [ -z "$apk" ]; then
-            echo "No release APK was produced" >&2
-            exit 1
-          fi
-          if [ "${{ steps.check.outputs.has_keystore }}" = "true" ]; then
-            cp "$apk" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}.apk"
-            aab="$(find frontend/android/app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
-            if [ -z "$aab" ]; then
-              echo "No release AAB was produced despite persistent signing being configured" >&2
-              exit 1
-            fi
-            cp "$aab" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}.aab"
-            title="$SOURCE_REF — Android CI build $GITHUB_RUN_NUMBER (Play-Store-signable path)"
-            notes="Built from **$SOURCE_REF** at commit $source_sha. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
-          else
-            cp "$apk" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}-testsigned.apk"
-            title="$SOURCE_REF — Android CI build $GITHUB_RUN_NUMBER (TEST-SIGNED)"
-            notes="Built from **$SOURCE_REF** at commit $source_sha. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
-          fi
-          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --title "$title" --notes "$notes"
-          else
-            gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --target "$source_sha" --prerelease --title "$title" --notes "$notes"
-          fi
-          gh release upload "$RELEASE_TAG" --repo "$REPOSITORY" /tmp/ledgr-android-ci/* --clobber
-          apk_asset="$(find /tmp/ledgr-android-ci -maxdepth 1 -type f -name '*.apk' -printf '%f\\n' | head -n 1)"
-          apk_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${apk_asset}"
-          {
-            echo "## Android build download — $SOURCE_REF"
-            echo ""
-            echo "[Download the APK](${apk_url})"
-            echo ""
-            echo "Release page: https://github.com/${REPOSITORY}/releases/tag/${RELEASE_TAG}"
-            if [ "${{ steps.check.outputs.has_keystore }}" != "true" ]; then
-              echo ""
-              echo "> This is a TEST-SIGNED APK. It is for device testing only and must not be submitted to Google Play."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ledgr-AI-APK-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
+          path: frontend/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload AAB
+        if: steps.check.outputs.has_keystore == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Ledgr-AI-AAB-${{ github.ref_name }}${{ steps.check.outputs.artifact_suffix }}
+          path: frontend/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
