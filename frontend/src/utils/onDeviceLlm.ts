@@ -3,6 +3,7 @@ import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
   advertisedRamBytes,
   ledgrOnDeviceToolContext,
+  isReadToolName,
   ledgrOnDeviceToolsJson,
   toolCallToAskAction,
   toolCallToVoiceCommand,
@@ -66,7 +67,12 @@ function parseToolCall(raw: string): LedgrOnDeviceToolCall | null {
   const text = String(raw || '').trim();
   if (!text || text === 'null' || text === '{}') return null;
   try {
-    const parsed = JSON.parse(text);
+    const decoded = JSON.parse(text);
+    // The training set frames a call as `answers: [{name, arguments}]`, so the
+    // model emits an array. Accepting only a bare object meant a correctly
+    // formed call parsed to null and looked like "no tool call".
+    const parsed = Array.isArray(decoded) ? decoded[0] : decoded;
+    if (!parsed || typeof parsed !== 'object') return null;
     const name = String(parsed.name || parsed.tool || parsed.type || parsed.function?.name || '').trim() as LedgrOnDeviceToolName;
     if (!LEDGR_ON_DEVICE_TOOL_NAMES.includes(name)) return null;
     const args = parsed.arguments || parsed.params || parsed.function?.arguments || {};
@@ -109,6 +115,52 @@ export async function runNeedleTools(transcript: string, partyHints: string[] = 
 USER: ${transcript.trim()}`;
   const raw = await module.runNeedle(prompt, ledgrOnDeviceToolsJson(partyHints));
   return parseToolCall(String(raw || ''));
+}
+
+/**
+ * One agent turn: let Needle read before it acts.
+ *
+ * Reads are chained -- "how much does Amit owe" may need a lookup before an
+ * answer -- but the loop stops the moment a WRITE tool is proposed, so the
+ * proposal reaches validateAssistantProposal and the user's confirmation sheet
+ * exactly as a single-shot call would. The cap is small on purpose: a phone is
+ * not the place for an open-ended agent loop, and three steps covers the
+ * look-up-then-act shape without ever running away.
+ */
+export const NEEDLE_MAX_AGENT_STEPS = 3;
+
+export type NeedleAgentTurn =
+  | { kind: 'write'; call: LedgrOnDeviceToolCall; steps: number }
+  | { kind: 'answer'; text: string; steps: number }
+  | { kind: 'none'; steps: number };
+
+export async function runNeedleAgentTurn(
+  transcript: string,
+  partyHints: string[] = [],
+  runRead: (call: LedgrOnDeviceToolCall) => Promise<string> = async () => '',
+): Promise<NeedleAgentTurn> {
+  let prompt = transcript.trim();
+  const observations: string[] = [];
+
+  for (let step = 1; step <= NEEDLE_MAX_AGENT_STEPS; step += 1) {
+    const call = await runNeedleTools(prompt, partyHints);
+    if (!call) {
+      return observations.length
+        ? { kind: 'answer', text: observations.join('\n'), steps: step }
+        : { kind: 'none', steps: step };
+    }
+    if (!isReadToolName(call.name)) {
+      return { kind: 'write', call, steps: step };
+    }
+    const observation = await runRead(call);
+    if (observation) observations.push(observation);
+    // Feed the result back so the next step can build on what was just read.
+    prompt = `${prompt}\nTOOL ${call.name} RESULT: ${observation || '(nothing found)'}`;
+  }
+
+  return observations.length
+    ? { kind: 'answer', text: observations.join('\n'), steps: NEEDLE_MAX_AGENT_STEPS }
+    : { kind: 'none', steps: NEEDLE_MAX_AGENT_STEPS };
 }
 
 export async function interpretNeedleVoiceCommand(transcript: string, partyHints: string[] = []): Promise<VoiceCommand | null> {
