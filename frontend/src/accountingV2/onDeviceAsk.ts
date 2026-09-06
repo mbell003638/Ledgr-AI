@@ -21,6 +21,16 @@ function parseAskJson(raw: string): { answer: string; action: { type: string; pa
   } catch { return null; }
 }
 
+/**
+ * Small on-device models answer "how are you?" in prose, not JSON. Prose is a
+ * real answer, so keep it rather than discarding the reply for the wrong shape.
+ */
+function plainAnswer(raw: string): string {
+  const text = String(raw || '').replace(/```[a-z]*\n?|```/gi, '').trim();
+  if (!text || text.startsWith('{')) return '';
+  return text.length > 1200 ? `${text.slice(0, 1200).trimEnd()}\u2026` : text;
+}
+
 /** Device-only / device-first Ask: Needle for mutations, optional Gemma for answers. */
 export async function askBooksOnDevice(
   cfg: Parameters<typeof isOnDeviceInterpretation>[0],
@@ -38,17 +48,23 @@ export async function askBooksOnDevice(
   const installed = await bestOnDevicePack(['text']);
   if (installed) {
     const prompt = [
-      'You are Ledgr on-device. Answer from the snapshot only. Return JSON {answer, action|null}.',
-      'Never invent IDs. Do not delete inventory_count, customer, or supplier.',
+      'You are Ledgr, a helpful assistant running privately on the phone.',
+      'If the question is about this business, answer from the SNAPSHOT and never invent figures or IDs.',
+      'If it is a greeting, small talk, or general knowledge, simply answer it in your own words.',
+      'Do not delete inventory_count, customer, or supplier.',
+      'Prefer JSON {answer, action|null}; plain text is accepted too.',
       `SNAPSHOT:\n${trimSnapshot(dataContext)}`,
       `USER: ${question}`,
     ].join('\n');
     try {
-      const parsed = parseAskJson(await runOptionalOnDeviceModel({ id: installed.id, prompt }));
+      const raw = await runOptionalOnDeviceModel({ id: installed.id, prompt });
+      const parsed = parseAskJson(raw);
       if (parsed) {
         if (parsed.action && !mutation) parsed.action = null;
-        return parsed;
+        if (parsed.answer || parsed.action) return parsed;
       }
+      const prose = plainAnswer(raw);
+      if (prose) return { answer: prose, action: null };
     } catch {
       /* fall through */
     }
@@ -60,7 +76,7 @@ export async function askBooksOnDevice(
   }
   return {
     answer: installed
-      ? 'I could not answer from the on-device model. Try a shorter question about cash, profit, or a named party.'
+      ? 'The on-device model returned nothing usable. Try asking again, or keep the question shorter.'
       : `On-device Ask can record simple entries with Needle. Download ${OPTIONAL_ON_DEVICE_MODELS[0]?.label || 'a model pack'} in Advanced Settings for explanations, or use Reports.`,
     action: null,
   };

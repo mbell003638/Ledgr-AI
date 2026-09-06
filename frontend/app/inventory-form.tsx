@@ -185,7 +185,7 @@ export default function InventoryForm() {
                 />
 
                 {actual !== "" && (
-                  <View style={[styles.varBox, { backgroundColor: variance === 0 ? theme.color.surfaceTertiary : variance > 0 ? "#E7F1EA" : "#FBE8E5" }]}>
+                  <View style={[styles.varBox, { backgroundColor: variance === 0 ? theme.color.surfaceTertiary : variance > 0 ? theme.color.successBg : theme.color.errorBg }]}>
                     <Text style={styles.varLabel}>Variance</Text>
                     <Text style={[styles.varValue, { color: varColor }]} testID="inv-variance">
                       {variance > 0 ? "+" : ""}{fmt(variance)}
