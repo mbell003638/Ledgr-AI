@@ -224,30 +224,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.source_ref != '' && 'android-ci-codex-sol' || 'android-ci' }}
+          # Every branch except a source_ref dispatch used to publish to the
+          # same `android-ci` tag and the same asset name, with --clobber. Four
+          # branches building in the same minute therefore left whichever
+          # finished last, under a filename that named no branch at all, so a
+          # download could silently be a different branch's app. One tag and
+          # one asset name per source ref instead.
+          SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/ledgr-android-ci
           source_sha="$(git rev-parse HEAD)"
+          slug="$(printf '%s' "$SOURCE_REF" | tr '[:upper:]' '[:lower:]' | sed 's#[^a-z0-9._-]#-#g; s#^-*##; s#-*$##')"
+          if [ -z "$slug" ]; then
+            echo "Could not derive a release slug from '$SOURCE_REF'" >&2
+            exit 1
+          fi
+          RELEASE_TAG="android-ci-${slug}"
           apk="$(find frontend/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           if [ -z "$apk" ]; then
             echo "No release APK was produced" >&2
             exit 1
           fi
           if [ "${{ steps.check.outputs.has_keystore }}" = "true" ]; then
-            cp "$apk" /tmp/ledgr-android-ci/Ledgr-AI-APK.apk
+            cp "$apk" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}.apk"
             aab="$(find frontend/android/app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
             if [ -z "$aab" ]; then
               echo "No release AAB was produced despite persistent signing being configured" >&2
               exit 1
             fi
-            cp "$aab" /tmp/ledgr-android-ci/Ledgr-AI-AAB.aab
-            title="Android CI build $GITHUB_RUN_NUMBER (Play-Store-signable path)"
-            notes="Latest Android CI output from source commit $source_sha. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
+            cp "$aab" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}.aab"
+            title="$SOURCE_REF — Android CI build $GITHUB_RUN_NUMBER (Play-Store-signable path)"
+            notes="Built from **$SOURCE_REF** at commit $source_sha. The APK/AAB is built with the configured persistent release keystore. Verify the signing identity and test on physical devices before Play submission."
           else
-            cp "$apk" /tmp/ledgr-android-ci/Ledgr-AI-APK-testsigned.apk
-            title="Android CI build $GITHUB_RUN_NUMBER (TEST-SIGNED)"
-            notes="Latest Android CI output from source commit $source_sha. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
+            cp "$apk" "/tmp/ledgr-android-ci/Ledgr-AI-${slug}-testsigned.apk"
+            title="$SOURCE_REF — Android CI build $GITHUB_RUN_NUMBER (TEST-SIGNED)"
+            notes="Built from **$SOURCE_REF** at commit $source_sha. This APK uses a throwaway test keystore and must not be submitted to Google Play. Configure the persistent release-keystore secrets for a publishable AAB."
           fi
           if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --repo "$REPOSITORY" --title "$title" --notes "$notes"
@@ -258,7 +270,7 @@ jobs:
           apk_asset="$(find /tmp/ledgr-android-ci -maxdepth 1 -type f -name '*.apk' -printf '%f\\n' | head -n 1)"
           apk_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/${apk_asset}"
           {
-            echo "## Android build download"
+            echo "## Android build download — $SOURCE_REF"
             echo ""
             echo "[Download the APK](${apk_url})"
             echo ""
