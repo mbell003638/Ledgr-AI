@@ -1,10 +1,11 @@
 import { isExplicitBookMutationRequest, isOnDeviceInterpretation } from '../db/ai';
 import {
   interpretNeedleAskAction,
+  runNeedleAgentTurn,
   listOptionalOnDeviceModels,
   runOptionalOnDeviceModel,
 } from '../utils/onDeviceLlm';
-import { OPTIONAL_ON_DEVICE_MODELS } from './onDeviceTools';
+import { OPTIONAL_ON_DEVICE_MODELS, type LedgrOnDeviceToolCall } from './onDeviceTools';
 
 function trimSnapshot(dataContext: string): string {
   return dataContext.length > 4000 ? `${dataContext.slice(0, 4000)}\n[truncated]` : dataContext;
@@ -36,6 +37,9 @@ export async function askBooksOnDevice(
   cfg: Parameters<typeof isOnDeviceInterpretation>[0],
   question: string,
   dataContext: string,
+  /** Injected so this module never imports `api`, which would pull the whole
+   *  app into its module graph. The Ask screen passes runReadTool. */
+  runRead?: (call: LedgrOnDeviceToolCall) => Promise<string>,
 ): Promise<{ answer: string; action: any } | null> {
   const mutation = isExplicitBookMutationRequest(question);
   if (mutation) {
@@ -43,6 +47,21 @@ export async function askBooksOnDevice(
     if (action) {
       return { answer: 'I prepared this Ledgr change on the phone for your confirmation.', action };
     }
+  }
+
+  // Not a mutation: let Needle read the book before answering. A read tool
+  // answers from real figures instead of whatever a small model recalls, and
+  // the loop stops at any write so the confirmation path is never bypassed.
+  try {
+    const turn = runRead ? await runNeedleAgentTurn(question, [], runRead) : { kind: 'none' as const, steps: 0 };
+    if (turn.kind === 'answer' && turn.text.trim()) {
+      return { answer: turn.text.trim(), action: null };
+    }
+    if (turn.kind === 'write' && mutation) {
+      return { answer: 'I prepared this Ledgr change on the phone for your confirmation.', action: { type: turn.call.name, params: turn.call.arguments || {} } };
+    }
+  } catch {
+    /* Needle is optional; fall through to the prose pack. */
   }
 
   const installed = (await listOptionalOnDeviceModels()).find((model) => model.installed);
