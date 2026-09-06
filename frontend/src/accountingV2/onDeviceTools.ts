@@ -30,7 +30,14 @@ export type LedgrOnDeviceToolCall = {
   confidence?: number;
 };
 
-export type OptionalOnDeviceModelId = 'gemma-3-1b' | 'gemma-4-e2b' | 'gemma-4-e4b';
+export type OptionalOnDeviceModelId = 'qwen25-0-5b' | 'qwen25-1-5b' | 'phi4-mini';
+
+/**
+ * What a pack can be asked to do. Selection never routes a task to a pack that
+ * does not declare the capability it needs, so a text-only pack is never handed
+ * an image.
+ */
+export type OnDevicePackCapability = 'text' | 'tools' | 'vision' | 'audio';
 
 export const OPTIONAL_ON_DEVICE_MODELS: {
   id: OptionalOnDeviceModelId;
@@ -40,61 +47,113 @@ export const OPTIONAL_ON_DEVICE_MODELS: {
   minRamBytes: number;
   vision: boolean;
   audio: boolean;
+  /**
+   * Higher wins when several packs are installed. Gaps are deliberate so a pack
+   * can be slotted between two others later without renumbering. Becomes
+   * manifest-supplied in phase 2.
+   */
+  rank: number;
+  capabilities: OnDevicePackCapability[];
   filename: string;
   downloadUrl: string;
 }[] = [
   {
-    id: 'gemma-3-1b',
-    label: 'Gemma 3 1B',
-    summary: 'On-device Ask AI and tool calls. Text only — no scan or native audio.',
-    bytes: 700 * 1024 * 1024,
-    minRamBytes: Math.round(5.5 * 1024 * 1024 * 1024),
+    id: 'qwen25-0-5b',
+    label: 'Qwen 2.5 0.5B',
+    summary: 'Smallest pack. Short answers about your books on modest phones.',
+    bytes: 546_660_344,
+    minRamBytes: 4 * 1024 * 1024 * 1024,
     vision: false,
     audio: false,
-    filename: 'gemma-3-1b-it.cact',
-    downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-3-1b-it/resolve/main/gemma-3-1b-it.cact',
+    rank: 10,
+    capabilities: ['text', 'tools'],
+    filename: 'Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
+    downloadUrl: 'https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task',
   },
   {
-    id: 'gemma-4-e2b',
-    label: 'Gemma 4 E2B',
-    summary: 'Scan, native audio, Ask AI, and tools on high-end phones.',
-    bytes: 2.4 * 1024 * 1024 * 1024,
-    minRamBytes: Math.round(7.5 * 1024 * 1024 * 1024),
-    vision: true,
-    audio: true,
-    filename: 'gemma-4-e2b-it.cact',
-    downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-4-e2b-it/resolve/main/gemma-4-e2b-it.cact',
+    id: 'qwen25-1-5b',
+    label: 'Qwen 2.5 1.5B',
+    summary: 'Better explanations of your books. Text only — scanning stays on-device via OCR.',
+    bytes: 1_567_364_648,
+    minRamBytes: 6 * 1024 * 1024 * 1024,
+    vision: false,
+    audio: false,
+    rank: 20,
+    capabilities: ['text', 'tools'],
+    filename: 'Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
+    downloadUrl: 'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_seq128_q8_ekv1280.task',
   },
   {
-    id: 'gemma-4-e4b',
-    label: 'Gemma 4 E4B',
-    summary: 'Same as E2B with higher quality. Flagship 12GB phones.',
-    bytes: 3.8 * 1024 * 1024 * 1024,
-    minRamBytes: 11 * 1024 * 1024 * 1024,
-    vision: true,
-    audio: true,
-    filename: 'gemma-4-e4b-it.cact',
-    downloadUrl: 'https://huggingface.co/Cactus-Compute/gemma-4-e4b-it/resolve/main/gemma-4-e4b-it.cact',
+    id: 'phi4-mini',
+    label: 'Phi-4 mini',
+    summary: 'Highest quality answers. Large download, flagship phones only.',
+    bytes: 3_944_280_650,
+    minRamBytes: 12 * 1024 * 1024 * 1024,
+    vision: false,
+    audio: false,
+    rank: 30,
+    capabilities: ['text', 'tools'],
+    filename: 'phi4_q8_ekv1280.task',
+    downloadUrl: 'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/phi4_q8_ekv1280.task',
   },
 ];
 
+/**
+ * Android reports less memory than the phone is sold with, because the kernel
+ * and firmware reserve some before userspace ever sees it: a 12 GB phone
+ * commonly reports around 11.2 GB. Comparing that raw figure against a 12 GB
+ * requirement hid packs from phones that meet the spec, so round up to the
+ * nearest size phones are actually sold in before deciding eligibility.
+ * Mirrors advertisedRamBytes() in LedgrOnDeviceLlmModule.kt.
+ */
+export function advertisedRamBytes(reported?: number | null): number | null {
+  if (reported == null || reported <= 0) return null;
+  const gib = 1024 ** 3;
+  for (const tier of [2, 3, 4, 6, 8, 12, 16, 24, 32]) {
+    if (reported <= tier * gib) return tier * gib;
+  }
+  return reported;
+}
+
 export const NEEDLE_ASSET_FILENAME = 'needle2.cact';
 
-export function ledgrOnDeviceToolsJson(partyHints: string[] = []): string {
-  const tools = LEDGR_ON_DEVICE_TOOL_NAMES.map((name) => ({
-    type: 'function',
-    function: {
-      name,
-      description: toolDescription(name),
-      parameters: { type: 'object', additionalProperties: true },
-    },
-  }));
-  // needle_init takes a JSON ARRAY of tool definitions -- the JNI wrapper's own
-  // fallback when the argument is null is the literal "[]". Passing an object
-  // with tools/partyHints/date/rules made every init fail, which surfaced in
-  // Ask AI as "Needle could not load the Ledgr tool list". The context that
-  // used to ride along in that object now goes in with the transcript.
-  return JSON.stringify(tools);
+/**
+ * The exact parameter map Needle was fine-tuned against.
+ *
+ * scripts/on-device-ai/ledgr-tools.json is the training-time tool list, and
+ * needle_init expects the same shape at runtime: a flat ARRAY of
+ * {name, parameters}, where parameters maps a field to its type name. The
+ * previous OpenAI-style {type:'function', function:{...}} object matched
+ * neither, so every init failed with "Needle could not load the Ledgr tool
+ * list" and the model never saw an argument list at all.
+ *
+ * onDeviceToolsMatchTrainingSet.test.ts asserts this stays byte-identical to
+ * that file, so the runtime list cannot drift away from what the weights know.
+ */
+export const LEDGR_ON_DEVICE_TOOL_PARAMETERS: Record<LedgrOnDeviceToolName, Record<string, string>> = {
+  add_expense: { category: 'string', amount: 'number', date: 'string', method: 'string', notes: 'string' },
+  log_personal_expense: { category: 'string', amount: 'number', date: 'string', method: 'string', notes: 'string' },
+  add_sale: { amount: 'number', date: 'string', paymentType: 'string', notes: 'string' },
+  add_bill: { supplierName: 'string', amount: 'number', date: 'string', paymentType: 'string', notes: 'string' },
+  create_supplier_payment: { supplierName: 'string', amount: 'number', date: 'string', method: 'string', notes: 'string' },
+  add_debtor: { name: 'string', phone: 'string', notes: 'string' },
+  add_supplier: { name: 'string', phone: 'string', notes: 'string' },
+  add_debtor_payment: { name: 'string', amount: 'number', date: 'string', method: 'string' },
+  create_invoice: { clientName: 'string', amount: 'number', date: 'string', notes: 'string' },
+  create_receipt: { amount: 'number', mode: 'string', customerName: 'string', invoiceId: 'string', date: 'string', method: 'string' },
+  create_quote: { clientName: 'string', amount: 'number', date: 'string', notes: 'string' },
+  create_drawing: { partnerName: 'string', amount: 'number', date: 'string', notes: 'string' },
+  add_capital: { partnerName: 'string', amount: 'number', date: 'string', notes: 'string' },
+  record_inventory: { amount: 'number', date: 'string', notes: 'string' },
+  update_entry: { entity: 'string', id: 'string', changes: 'object' },
+  delete_entry: { entity: 'string', id: 'string' },
+};
+
+export function ledgrOnDeviceToolsJson(_partyHints: string[] = []): string {
+  return JSON.stringify(LEDGR_ON_DEVICE_TOOL_NAMES.map((name) => ({
+    name,
+    parameters: LEDGR_ON_DEVICE_TOOL_PARAMETERS[name],
+  })));
 }
 
 /** Per-call context for Needle: the tool list itself carries no state. */
@@ -108,7 +167,12 @@ export function ledgrOnDeviceToolContext(partyHints: string[] = []): string {
   ].filter(Boolean).join('\n');
 }
 
-function toolDescription(name: LedgrOnDeviceToolName): string {
+/**
+ * Human-readable tool descriptions. Needle takes none -- its training set is
+ * name plus parameters only -- but the optional prose packs (Qwen, Phi) are
+ * plain instruction models and need the wording.
+ */
+export function toolDescription(name: LedgrOnDeviceToolName): string {
   switch (name) {
     case 'add_expense': return 'Record a business expense. Params: category, amount, date?, method?, notes?';
     case 'log_personal_expense': return 'Record a personal (non-business) expense. Params: category, amount, date?, notes?';
