@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, Platform, TextInput, Keyboard, ScrollView, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
@@ -10,7 +10,7 @@ import { effectiveVoiceProvider } from "@/src/db/ai";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
-import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
+import { materializePendingVoiceParty, suggestedVoicePartyCreateRole, voiceCommandPartyName } from "@/src/accountingV2/voicePartyResolution";
 import { resolveAgainstInvoiceTarget, unpaidInvoicesForCustomer, type VoiceTransactionDraft } from "@/src/accountingV2/voiceTransactionDraft";
 import type { LocalTransactionContinuation } from "@/src/accountingV2/localTransactionParser";
 import Animated, { SlideInDown } from "react-native-reanimated";
@@ -75,11 +75,13 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
   const dockBottom = keyboardHeight > 0 ? keyboardHeight + 10 : defaultBottom;
   const maxDockHeight = Math.max(220, windowHeight - dockBottom - Math.max(insets.top, 24) - 16);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let active = true;
-    api.getSettings().then((settings) => { if (active) setVoiceAvailable(isCapabilityEnabled(settings, "ai_assistant")); }).catch(() => { if (active) setVoiceAvailable(false); });
+    api.getSettings()
+      .then((settings) => { if (active) setVoiceAvailable(isCapabilityEnabled(settings, "ai_assistant")); })
+      .catch(() => { if (active) setVoiceAvailable(false); });
     return () => { active = false; };
-  }, []);
+  }, []));
 
   useEffect(() => () => { deviceSession.current?.cancel(); deviceSession.current = null; void cancelVoiceRecorder(recorder); }, [recorder]);
 
@@ -199,6 +201,32 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
       setPhase("confirm");
     } catch (e: any) {
       setError(e?.message || "Could not rebuild the draft from that transcript.");
+      setPhase("error");
+    }
+  };
+
+  /**
+   * The unknown-party question is the one clarification a user cannot guess the
+   * wording for, so offer its two answers as buttons. "supplier"/"customer" are
+   * the words the parser already understands, and appending one to the
+   * transcript is what marks the party for creation on save.
+   */
+  const partyChoice = pendingClarification?.missingField === "party_role"
+    ? { name: voiceCommandPartyName(pendingClarification.partial as any), suggested: suggestedVoicePartyCreateRole(String(pendingClarification.partial?.intent || "")) }
+    : null;
+
+  const answerClarification = async (answer: string) => {
+    const text = answer.trim();
+    if (!text || !pendingClarification) return;
+    setError(""); setPhase("processing");
+    try {
+      const ready = await buildVoiceDraft(transcript.trim(), text);
+      setDrafts(ready);
+      setParsed(ready[0]?.parsed || null);
+      setValidatedAction(ready[0]?.validation || null);
+      setPhase("confirm");
+    } catch (e: any) {
+      setError(e?.message || "Could not continue the draft.");
       setPhase("error");
     }
   };
@@ -381,11 +409,22 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
               </View>
             ) : (
               <View style={styles.errorDock}>
-                <Ionicons name="alert-circle-outline" size={20} color={theme.color.error} />
+                <Ionicons name={pendingClarification ? "help-circle-outline" : "alert-circle-outline"} size={20} color={pendingClarification ? theme.color.brandPrimary : theme.color.error} />
                 <View style={styles.errorCopy}>
                   {transcript ? <TextInput accessibilityLabel="Editable failed voice transcript" testID="voice-fab-error-transcript-input" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
-                  <Text numberOfLines={3} style={[styles.errorText, { color: theme.color.error }]}>{error}</Text>
+                  <Text numberOfLines={4} style={[styles.errorText, { color: pendingClarification ? theme.color.onSurface : theme.color.error }]}>{error}</Text>
+                  {partyChoice?.name ? (
+                    <View style={styles.choiceRow}>
+                      <Pressable testID="voice-fab-create-supplier" accessibilityRole="button" accessibilityLabel={`Create supplier ${partyChoice.name}`} onPress={() => void answerClarification("supplier")} style={[styles.choiceBtn, { backgroundColor: partyChoice.suggested === "supplier" ? theme.color.brandPrimary : theme.color.surfaceTertiary }]}>
+                        <Text style={[styles.choiceText, { color: partyChoice.suggested === "supplier" ? theme.color.onBrandPrimary : theme.color.onSurface }]} numberOfLines={1}>Supplier “{partyChoice.name}”</Text>
+                      </Pressable>
+                      <Pressable testID="voice-fab-create-customer" accessibilityRole="button" accessibilityLabel={`Create customer ${partyChoice.name}`} onPress={() => void answerClarification("customer")} style={[styles.choiceBtn, { backgroundColor: partyChoice.suggested === "customer" ? theme.color.brandPrimary : theme.color.surfaceTertiary }]}>
+                        <Text style={[styles.choiceText, { color: partyChoice.suggested === "customer" ? theme.color.onBrandPrimary : theme.color.onSurface }]} numberOfLines={1}>Customer “{partyChoice.name}”</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                   {pendingClarification ? <TextInput accessibilityLabel="Answer voice clarification" testID="voice-fab-clarification-answer" value={clarificationAnswer} onChangeText={setClarificationAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} style={[styles.answerInput, { color: theme.color.onSurface, backgroundColor: theme.color.surface, borderColor: theme.color.border }]} /> : null}
+                  {pendingClarification ? <Pressable testID="voice-fab-submit-clarification" accessibilityRole="button" accessibilityLabel="Continue voice draft with this answer" disabled={!clarificationAnswer.trim()} onPress={() => void answerClarification(clarificationAnswer)} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary, opacity: clarificationAnswer.trim() ? 1 : 0.5 }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Continue draft</Text></Pressable> : null}
                   {transcript ? <Pressable testID="voice-fab-error-rebuild-draft" accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft from edited transcript" onPress={() => void rebuildDraft()} style={[styles.rebuildButton, { borderColor: theme.color.brandPrimary }]}><Text style={[styles.rebuildText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
                   {/API key|Anthropic|Base URL|Advanced Settings/i.test(error) ? <Pressable testID="voice-fab-open-provider-settings" accessibilityRole="button" accessibilityLabel="Open AI provider settings" onPress={() => router.push('/advanced-settings?section=ai-provider' as any)}><Text style={[styles.setupLink, { color: theme.color.brandPrimary }]}>Open AI provider settings</Text></Pressable> : null}
                 </View>
@@ -457,6 +496,9 @@ const styles = StyleSheet.create({
   errorDock: { flexDirection: "row", alignItems: "center", minHeight: 42, gap: 8 },
   errorCopy: { flex: 1, minWidth: 0, gap: 4 },
   errorText: { fontSize: 11, fontWeight: "600" },
+  choiceRow: { flexDirection: "row", gap: 8, marginTop: 2 },
+  choiceBtn: { flex: 1, minHeight: 34, paddingHorizontal: 10, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  choiceText: { fontSize: 11, fontWeight: "700" },
   answerInput: { minHeight: 38, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, fontSize: 12 },
   setupLink: { fontSize: 11, fontWeight: "800" },
   retryButton: { paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderRadius: 10 },

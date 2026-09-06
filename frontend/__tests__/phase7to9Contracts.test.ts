@@ -58,7 +58,10 @@ describe('Phase 7–9 remediation contracts', () => {
     expect(reports).toContain('accessibilityRole="radio"');
     expect(reports).toContain('accessibilityState={{ selected: !locationId }}');
     expect(reports).toContain('All locations');
-    expect(customize).toContain('accessibilityRole="switch"');
-    expect(customize).toContain('accessibilityState={{ checked: enabled, disabled: locked }}');
+    // A row that cannot be switched must not announce itself as a switch: core
+    // capabilities carry an "Always on" badge instead of a toggle that ignores taps.
+    expect(customize).toContain('accessibilityRole={locked ? undefined : "switch"}');
+    expect(customize).toContain('accessibilityState={locked ? undefined : { checked: enabled }}');
+    expect(customize).toContain('{core ? "Always on" : "Required"}');
   });
 });

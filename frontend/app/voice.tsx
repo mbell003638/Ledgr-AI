@@ -354,9 +354,9 @@ function makeStyles(theme: any) { return StyleSheet.create({
   draftGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   actionBtn: { flex: 1, padding: 12, borderRadius: theme.radius.md, alignItems: "center", justifyContent: "center" },
   actionText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md },
+  errorBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: theme.color.errorBg, borderRadius: theme.radius.md, marginTop: theme.spacing.md },
   errorText: { color: theme.color.error, fontSize: 13, flex: 1 },
   setupLink: { color: theme.color.brandPrimary, fontSize: 12, fontWeight: "800" },
-  destructiveWarn: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: "#FBE8E5", borderRadius: theme.radius.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.color.error },
+  destructiveWarn: { flexDirection: "row", alignItems: "center", gap: 8, padding: theme.spacing.md, backgroundColor: theme.color.errorBg, borderRadius: theme.radius.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.color.error },
   destructiveWarnText: { color: theme.color.error, fontSize: 13, flex: 1, fontWeight: "600" },
 }); }
