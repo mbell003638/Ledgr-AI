@@ -2,6 +2,7 @@
 import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
   advertisedRamBytes,
+  ledgrOnDeviceToolContext,
   ledgrOnDeviceToolsJson,
   toolCallToAskAction,
   toolCallToVoiceCommand,
@@ -102,7 +103,11 @@ export async function getOnDeviceLlmStatus(): Promise<OnDeviceLlmStatus> {
 export async function runNeedleTools(transcript: string, partyHints: string[] = []): Promise<LedgrOnDeviceToolCall | null> {
   const module = nativeModule();
   if (!module?.runNeedle) return null;
-  const raw = await module.runNeedle(transcript.trim(), ledgrOnDeviceToolsJson(partyHints));
+  // The date, known parties and rules travel with the transcript now that the
+  // tool argument is the bare array needle_init expects.
+  const prompt = `${ledgrOnDeviceToolContext(partyHints)}
+USER: ${transcript.trim()}`;
+  const raw = await module.runNeedle(prompt, ledgrOnDeviceToolsJson(partyHints));
   return parseToolCall(String(raw || ''));
 }
 
