@@ -31,6 +31,10 @@ export const LEDGR_ON_DEVICE_READ_TOOL_NAMES = [
   'describe_capabilities',
 ] as const;
 
+export function isReadToolName(name: string): boolean {
+  return (LEDGR_ON_DEVICE_READ_TOOL_NAMES as readonly string[]).includes(name);
+}
+
 export const LEDGR_ON_DEVICE_TOOL_NAMES = [
   ...LEDGR_ON_DEVICE_WRITE_TOOL_NAMES,
   ...LEDGR_ON_DEVICE_READ_TOOL_NAMES,

@@ -9,6 +9,7 @@ import type { AIConfig } from '@/src/db/ai';
 import { recognizeLocalOcr } from '@/src/utils/localOcr';
 import { analyzeDocumentLocalFirst } from '@/src/accountingV2/documentInterpretationRouter';
 import { askBooksOnDevice } from '@/src/accountingV2/onDeviceAsk';
+import { runReadTool } from '@/src/accountingV2/onDeviceReadTools';
 import { adoptRemoteKey, getCloudConfig, getStorageClient, saveCloudConfig, type CloudDriveConfig } from '@/src/sync/cloudDriveProvider';
 import { createWifiP2pSession, packWifiTransfer, type WifiP2pTransferPackage } from '@/src/sync/wifiP2pSync';
 import { getPreferredOnDevicePack, listOptionalOnDeviceModels, runOptionalOnDeviceModel, setPreferredOnDevicePack } from '@/src/utils/onDeviceLlm';
@@ -1609,7 +1610,7 @@ export const api = {
   askBooks: async (question: string, dataContext: string) => {
     const config = await getAIConfig();
     if (ai.isOnDeviceInterpretation(config) || config.entryHelpOrder === 'device-first') {
-      const onDevice = await askBooksOnDevice(config, question, dataContext);
+      const onDevice = await askBooksOnDevice(config, question, dataContext, runReadTool);
       if (onDevice) return onDevice;
     }
     return ai.askBooks(config, question, dataContext);
