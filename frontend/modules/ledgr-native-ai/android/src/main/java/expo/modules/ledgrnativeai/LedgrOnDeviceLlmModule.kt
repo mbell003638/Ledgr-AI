@@ -405,6 +405,11 @@ class LedgrOnDeviceLlmModule : Module() {
 
       // Initial progress notification
       sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+      // One event per 64KB read is ~32k bridge round-trips for a 2GB pack, which
+      // is enough JS work on a low-end phone to stall the very UI showing the
+      // percentage. Twice a second is finer than a progress bar can display.
+      var lastProgressAt = System.currentTimeMillis()
+      var lastProgressBytes = received
 
       connection.inputStream.use { input ->
         FileOutputStream(tmp, appendMode).use { output ->
@@ -418,9 +423,18 @@ class LedgrOnDeviceLlmModule : Module() {
             if (read <= 0) break
             output.write(buffer, 0, read)
             received += read
-            sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+            val now = System.currentTimeMillis()
+            if (now - lastProgressAt >= 500L) {
+              lastProgressAt = now
+              lastProgressBytes = received
+              sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
+            }
           }
         }
+      }
+
+      if (received != lastProgressBytes) {
+        sendEvent("downloadProgress", mapOf("id" to id, "received" to received, "total" to total))
       }
 
       if (downloadTask.isCancelled) {
