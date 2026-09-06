@@ -3,7 +3,7 @@ import type { AssistantProposalType } from './aiActions';
 import type { VoiceCommand } from './voicePartyResolution';
 
 /** OpenAI-style tools Needle/Gemma must call. Keep in lockstep with ASK_SCHEMA / AssistantProposalType. */
-export const LEDGR_ON_DEVICE_TOOL_NAMES = [
+export const LEDGR_ON_DEVICE_WRITE_TOOL_NAMES = [
   'add_expense',
   'log_personal_expense',
   'add_sale',
@@ -20,7 +20,36 @@ export const LEDGR_ON_DEVICE_TOOL_NAMES = [
   'record_inventory',
   'update_entry',
   'delete_entry',
+  'create_marketplace_order',
+  'record_marketplace_refund',
+  'record_marketplace_rto',
+  'create_marketplace_settlement',
+  'create_project',
+  'add_project_time',
+  'record_project_cost',
+  'create_creator_contract',
+  'record_creator_payout',
+  'create_bom',
+  'add_bom_line',
+  'create_production_order',
+  'create_trade_shipment',
+  'add_trade_landed_cost',
+  'record_fx_remeasurement',
 ] as const satisfies readonly AssistantProposalType[];
+
+/** Reads answer a question from the book. They never mutate, so they need
+ *  no proposal, no validation pipeline and no user confirmation. */
+export const LEDGR_ON_DEVICE_READ_TOOL_NAMES = [
+  'report_query',
+  'party_lookup',
+  'inventory_profit',
+  'describe_capabilities',
+] as const;
+
+export const LEDGR_ON_DEVICE_TOOL_NAMES = [
+  ...LEDGR_ON_DEVICE_WRITE_TOOL_NAMES,
+  ...LEDGR_ON_DEVICE_READ_TOOL_NAMES,
+] as const;
 
 export type LedgrOnDeviceToolName = (typeof LEDGR_ON_DEVICE_TOOL_NAMES)[number];
 
@@ -147,6 +176,25 @@ export const LEDGR_ON_DEVICE_TOOL_PARAMETERS: Record<LedgrOnDeviceToolName, Reco
   record_inventory: { amount: 'number', date: 'string', notes: 'string' },
   update_entry: { entity: 'string', id: 'string', changes: 'object' },
   delete_entry: { entity: 'string', id: 'string' },
+  report_query: { report: 'string', from: 'string', to: 'string' },
+  party_lookup: { query: 'string', role: 'string' },
+  inventory_profit: { from: 'string', to: 'string' },
+  describe_capabilities: {},
+  create_marketplace_order: { platform: 'string', externalOrderId: 'string', gross: 'number', tax: 'number', marketplaceFee: 'number', shippingFee: 'number', status: 'string', date: 'string' },
+  record_marketplace_refund: { orderId: 'string', amount: 'number', date: 'string' },
+  record_marketplace_rto: { orderId: 'string', fee: 'number', date: 'string' },
+  create_marketplace_settlement: { platform: 'string', settlementId: 'string', payout: 'number', date: 'string' },
+  create_project: { name: 'string', budget: 'number', date: 'string' },
+  add_project_time: { projectId: 'string', hours: 'number', rate: 'number', date: 'string' },
+  record_project_cost: { projectId: 'string', amount: 'number', date: 'string', notes: 'string' },
+  create_creator_contract: { brand: 'string', campaign: 'string', agreedAmount: 'number', date: 'string' },
+  record_creator_payout: { contractId: 'string', amount: 'number', date: 'string' },
+  create_bom: { productId: 'string', name: 'string', date: 'string' },
+  add_bom_line: { bomId: 'string', componentProductId: 'string', quantity: 'number', unitCost: 'number' },
+  create_production_order: { bomId: 'string', quantity: 'number', date: 'string' },
+  create_trade_shipment: { reference: 'string', direction: 'string', goodsValue: 'number', date: 'string' },
+  add_trade_landed_cost: { shipmentId: 'string', kind: 'string', amount: 'number', method: 'string' },
+  record_fx_remeasurement: { gainLoss: 'string', amount: 'number', date: 'string' },
 };
 
 export function ledgrOnDeviceToolsJson(_partyHints: string[] = []): string {
@@ -190,6 +238,11 @@ export function toolDescription(name: LedgrOnDeviceToolName): string {
     case 'record_inventory': return 'Stock count. Params: amount, date?, notes?';
     case 'update_entry': return 'Update an existing entry. Params: entity, id, memberId?, changes.';
     case 'delete_entry': return 'Reverse a posted entry. Never inventory_count, customer, or supplier. Params: entity, id, memberId?';
+    case 'report_query': return 'Read a financial report. Params: report (profit_and_loss|balance_sheet|cash_flow|trial_balance), from, to.';
+    case 'party_lookup': return 'Look up a customer or supplier and their balance. Params: query, role?';
+    case 'inventory_profit': return 'Read stock profit and gross margin for a period. Params: from, to.';
+    case 'describe_capabilities': return 'Describe what this app and this book can currently do. No params.';
+    default: return `${String(name).replace(/_/g, ' ')}. Params: see LEDGR_ON_DEVICE_TOOL_PARAMETERS.`;
   }
 }
 
