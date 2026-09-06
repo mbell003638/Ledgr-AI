@@ -7,7 +7,7 @@ import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { fmt } from "@/src/theme";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api, getAIConfig } from "@/src/api";
-import { effectiveVoiceProvider } from "@/src/db/ai";
+import { effectiveVoiceProvider, isOnDeviceInterpretation } from "@/src/db/ai";
 import { Card } from "@/src/components/UI";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { materializePendingVoiceParty } from "@/src/accountingV2/voicePartyResolution";
@@ -146,7 +146,7 @@ export default function VoiceModal() {
         const status = await getDeviceSpeechStatus();
         if (status.available) {
           transcriptRef.current = "";
-          deviceStopRef.current = await startDeviceSpeechRecognition({ onPartial: (text) => { transcriptRef.current = text; setTranscript(text); }, onFinal: (text) => { transcriptRef.current = text; setTranscript(text); }, onError: (speechError) => { setError(speechError.message); setPhase("error"); } });
+          deviceStopRef.current = await startDeviceSpeechRecognition({ onPartial: (text) => { transcriptRef.current = text; setTranscript(text); }, onFinal: (text) => { transcriptRef.current = text; setTranscript(text); }, onError: (speechError) => { setError(speechError.message); setPhase("error"); } }, { onDeviceOnly: isOnDeviceInterpretation(cfg) });
           setPhase("recording");
           return;
         }
