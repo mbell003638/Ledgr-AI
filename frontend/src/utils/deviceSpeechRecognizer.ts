@@ -18,7 +18,8 @@ export type DeviceSpeechCallbacks = {
 
 type NativeSpeechRecognizer = {
   isAvailable?: () => Promise<boolean> | boolean;
-  start: (locale?: string) => Promise<void> | void;
+  start: (locale?: string, onDeviceOnly?: boolean) => Promise<void> | void;
+  isOnDeviceAvailable?: () => Promise<boolean> | boolean;
   cancel?: () => Promise<void> | void;
   stop?: () => Promise<void> | void;
   destroy?: () => Promise<void> | void;
@@ -76,7 +77,7 @@ export async function getDeviceSpeechStatus(): Promise<DeviceSpeechStatus> {
 
 export async function startDeviceSpeechRecognition(
   callbacks: DeviceSpeechCallbacks,
-  options: { locale?: string } = {},
+  options: { locale?: string; onDeviceOnly?: boolean } = {},
 ): Promise<() => Promise<void>> {
   const module = nativeModule();
   if (!module) {
@@ -93,7 +94,7 @@ export async function startDeviceSpeechRecognition(
   ].filter(Boolean) as { remove: () => void }[];
 
   try {
-    await module.start(options.locale);
+    await module.start(options.locale, options.onDeviceOnly === true);
   } catch (error: any) {
     subscriptions.forEach((subscription) => subscription.remove());
     const message = String(error?.message || error || "Could not start speech recognition.");

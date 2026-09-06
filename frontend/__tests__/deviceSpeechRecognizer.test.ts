@@ -38,7 +38,9 @@ describe("device speech recognizer capability boundary", () => {
     expect(final).toHaveBeenCalledWith("Paid $1");
     await stop();
     await stop();
-    expect(native.start).toHaveBeenCalledWith("en-CA");
+    // The second argument is the strict-on-device flag: false here because
+    // this caller did not ask for it.
+    expect(native.start).toHaveBeenCalledWith("en-CA", false);
     expect(native.stop).toHaveBeenCalledTimes(1);
   });
 
@@ -48,5 +50,11 @@ describe("device speech recognizer capability boundary", () => {
     await expect(cancelDeviceSpeechRecognition()).resolves.toBeUndefined();
     expect(native.cancel).toHaveBeenCalled();
     expect(native.destroy).toHaveBeenCalled();
+  });
+
+  it("asks the native module for strict on-device recognition when requested", async () => {
+    const stop = await startDeviceSpeechRecognition({}, { locale: "en-CA", onDeviceOnly: true });
+    expect(native.start).toHaveBeenCalledWith("en-CA", true);
+    await stop();
   });
 });
