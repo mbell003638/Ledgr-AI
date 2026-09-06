@@ -422,29 +422,40 @@ export default function VoiceFab() {
                   </View>
                 </View>
               ) : phase === "error" ? (
-                <View style={styles.errorBox}>
-                  <Ionicons name="alert-circle" size={32} color={theme.color.error} />
-                  {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary }]} /> : null}
-                  <Text style={styles.errorText}>{error}</Text>
+                <View style={[styles.errorBox, { backgroundColor: (createProposal || pendingClarification) ? theme.color.surfaceTertiary : theme.color.errorBg, borderColor: (createProposal || pendingClarification) ? theme.color.brandPrimary + "55" : theme.color.error + "55" }]}>
+                  <View style={styles.errorHeader}>
+                    <Ionicons name={(createProposal || pendingClarification) ? "help-circle" : "alert-circle"} size={22} color={(createProposal || pendingClarification) ? theme.color.brandPrimary : theme.color.error} />
+                    <Text style={[styles.errorText, { color: (createProposal || pendingClarification) ? theme.color.onSurface : theme.color.error }]}>{error}</Text>
+                  </View>
+                  {transcript ? <TextInput accessibilityLabel="Editable failed homepage voice transcript" value={transcript} onChangeText={setTranscript} multiline autoCorrect onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginBottom: 0 }]} /> : null}
                   {createProposal ? (
-                    <View style={{ width: "100%", marginTop: 12, gap: 8 }}>
+                    <View style={styles.errorChoices}>
                       {(createProposal.suggestions || []).map((name) => (
-                        <Pressable key={name} accessibilityRole="button" onPress={() => { setFollowUpAnswer(name); void continueDraft(name); }} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
+                        <Pressable key={name} accessibilityRole="button" onPress={() => { setFollowUpAnswer(name); void continueDraft(name); }} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
                           <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Use existing “{name}”</Text>
                         </Pressable>
                       ))}
-                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("supplier")} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary }]}>
-                        <Text style={[styles.actionText, { color: "#000" }]}>Create Supplier{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("supplier")} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: createProposal.suggestedRole === "customer" ? theme.color.surfaceTertiary : theme.color.brandPrimary }]}>
+                        <Text style={[styles.actionText, { color: createProposal.suggestedRole === "customer" ? theme.color.onSurface : theme.color.onBrandPrimary }]}>Create Supplier{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
                       </Pressable>
-                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("customer")} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary }]}>
-                        <Text style={[styles.actionText, { color: theme.color.onSurface }]}>Create Customer{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
+                      <Pressable accessibilityRole="button" onPress={() => void continueDraft("customer")} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: createProposal.suggestedRole === "customer" ? theme.color.brandPrimary : theme.color.surfaceTertiary }]}>
+                        <Text style={[styles.actionText, { color: createProposal.suggestedRole === "customer" ? theme.color.onBrandPrimary : theme.color.onSurface }]}>Create Customer{createProposal.name ? ` “${createProposal.name}”` : ""}</Text>
                       </Pressable>
                     </View>
-                  ) : pendingClarification ? <><TextInput testID="voice-fab-clarification-answer" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]} /><Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" onPress={() => void continueDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 10 }]}><Text style={[styles.actionText, { color: "#000" }]}>Continue draft</Text></Pressable></> : null}
-                  {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, { backgroundColor: theme.color.surfaceTertiary, marginTop: 12 }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
-                  <Pressable onPress={start} style={[styles.actionBtn, { backgroundColor: theme.color.brandPrimary, marginTop: 16 }]}>
-                    <Text style={[styles.actionText, { color: "#000" }]}>Try Again</Text>
-                  </Pressable>
+                  ) : pendingClarification ? (
+                    <View style={styles.errorChoices}>
+                      <TextInput testID="voice-fab-clarification-answer" accessibilityLabel="Voice follow-up answer" value={followUpAnswer} onChangeText={setFollowUpAnswer} placeholder="Your answer" placeholderTextColor={theme.color.muted} onSubmitEditing={Keyboard.dismiss} style={[styles.transcriptBubble, { color: theme.color.onSurface, backgroundColor: theme.color.surfaceTertiary, marginBottom: 0 }]} />
+                      <Pressable accessibilityRole="button" accessibilityLabel="Continue voice draft" disabled={!followUpAnswer.trim()} onPress={() => void continueDraft()} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: theme.color.brandPrimary, opacity: followUpAnswer.trim() ? 1 : 0.5 }]}>
+                        <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>Continue draft</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  <View style={styles.errorChoices}>
+                    {transcript ? <Pressable accessibilityRole="button" accessibilityLabel="Update failed homepage voice draft" onPress={() => void rebuildDraft()} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: theme.color.surfaceTertiary }]}><Text style={[styles.actionText, { color: theme.color.brandPrimary }]}>Update draft</Text></Pressable> : null}
+                    <Pressable accessibilityRole="button" accessibilityLabel="Try voice entry again" onPress={start} style={[styles.actionBtn, styles.stackedBtn, { backgroundColor: theme.color.brandPrimary }]}>
+                      <Text style={[styles.actionText, { color: theme.color.onBrandPrimary }]}>Try Again</Text>
+                    </Pressable>
+                  </View>
                 </View>
               ) : null}
             </ScrollView>
@@ -589,16 +600,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   errorBox: {
-    padding: 32,
-    backgroundColor: "#FBE8E5",
+    padding: 20,
     borderRadius: 24,
-    alignItems: "center",
+    borderWidth: 1,
+    alignItems: "stretch",
+    gap: 12,
+  },
+  errorHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  errorChoices: {
+    gap: 8,
   },
   errorText: {
-    color: "#e3342f",
-    fontSize: 16,
+    flex: 1,
+    fontSize: 14,
     fontWeight: "500",
-    marginTop: 16,
-    textAlign: "center",
+    lineHeight: 19,
+  },
+  stackedBtn: {
+    flex: 0,
+    alignSelf: "stretch",
   },
 });
