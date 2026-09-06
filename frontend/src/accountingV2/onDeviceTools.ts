@@ -3,7 +3,7 @@ import type { AssistantProposalType } from './aiActions';
 import type { VoiceCommand } from './voicePartyResolution';
 
 /** OpenAI-style tools Needle/Gemma must call. Keep in lockstep with ASK_SCHEMA / AssistantProposalType. */
-export const LEDGR_ON_DEVICE_TOOL_NAMES = [
+export const LEDGR_ON_DEVICE_WRITE_TOOL_NAMES = [
   'add_expense',
   'log_personal_expense',
   'add_sale',
@@ -21,6 +21,20 @@ export const LEDGR_ON_DEVICE_TOOL_NAMES = [
   'update_entry',
   'delete_entry',
 ] as const satisfies readonly AssistantProposalType[];
+
+/** Reads answer a question from the book. They never mutate, so they need
+ *  no proposal, no validation pipeline and no user confirmation. */
+export const LEDGR_ON_DEVICE_READ_TOOL_NAMES = [
+  'report_query',
+  'party_lookup',
+  'inventory_profit',
+  'describe_capabilities',
+] as const;
+
+export const LEDGR_ON_DEVICE_TOOL_NAMES = [
+  ...LEDGR_ON_DEVICE_WRITE_TOOL_NAMES,
+  ...LEDGR_ON_DEVICE_READ_TOOL_NAMES,
+] as const;
 
 export type LedgrOnDeviceToolName = (typeof LEDGR_ON_DEVICE_TOOL_NAMES)[number];
 
@@ -147,6 +161,10 @@ export const LEDGR_ON_DEVICE_TOOL_PARAMETERS: Record<LedgrOnDeviceToolName, Reco
   record_inventory: { amount: 'number', date: 'string', notes: 'string' },
   update_entry: { entity: 'string', id: 'string', changes: 'object' },
   delete_entry: { entity: 'string', id: 'string' },
+  report_query: { report: 'string', from: 'string', to: 'string' },
+  party_lookup: { query: 'string', role: 'string' },
+  inventory_profit: { from: 'string', to: 'string' },
+  describe_capabilities: {},
 };
 
 export function ledgrOnDeviceToolsJson(_partyHints: string[] = []): string {
@@ -190,6 +208,11 @@ export function toolDescription(name: LedgrOnDeviceToolName): string {
     case 'record_inventory': return 'Stock count. Params: amount, date?, notes?';
     case 'update_entry': return 'Update an existing entry. Params: entity, id, memberId?, changes.';
     case 'delete_entry': return 'Reverse a posted entry. Never inventory_count, customer, or supplier. Params: entity, id, memberId?';
+    case 'report_query': return 'Read a financial report. Params: report (profit_and_loss|balance_sheet|cash_flow|trial_balance), from, to.';
+    case 'party_lookup': return 'Look up a customer or supplier and their balance. Params: query, role?';
+    case 'inventory_profit': return 'Read stock profit and gross margin for a period. Params: from, to.';
+    case 'describe_capabilities': return 'Describe what this app and this book can currently do. No params.';
+    default: return `${String(name).replace(/_/g, ' ')}. Params: see LEDGR_ON_DEVICE_TOOL_PARAMETERS.`;
   }
 }
 

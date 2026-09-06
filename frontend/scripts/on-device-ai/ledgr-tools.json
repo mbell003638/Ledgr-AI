@@ -14,5 +14,9 @@
   {"name":"add_capital","parameters":{"partnerName":"string","amount":"number","date":"string","notes":"string"}},
   {"name":"record_inventory","parameters":{"amount":"number","date":"string","notes":"string"}},
   {"name":"update_entry","parameters":{"entity":"string","id":"string","changes":"object"}},
-  {"name":"delete_entry","parameters":{"entity":"string","id":"string"}}
+  {"name":"delete_entry","parameters":{"entity":"string","id":"string"}},
+  {"name":"report_query","parameters":{"report":"string","from":"string","to":"string"}},
+  {"name":"party_lookup","parameters":{"query":"string","role":"string"}},
+  {"name":"inventory_profit","parameters":{"from":"string","to":"string"}},
+  {"name":"describe_capabilities","parameters":{}}
 ]
