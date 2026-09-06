@@ -1,5 +1,6 @@
 import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
+  LEDGR_ON_DEVICE_WRITE_TOOL_NAMES,
   NEEDLE_GOLDEN_SET,
   ledgrOnDeviceToolsJson,
   needleGoldenGate,
@@ -11,7 +12,9 @@ import { ASSISTANT_PROPOSAL_TYPES, validateAssistantProposal } from '../src/acco
 
 describe('on-device Ledgr tools', () => {
   it('exports core tool names the assistant validator accepts', () => {
-    expect(LEDGR_ON_DEVICE_TOOL_NAMES.every((name) => ASSISTANT_PROPOSAL_TYPES.includes(name))).toBe(true);
+    // Only the write tools are proposals. Reads answer a question and never
+    // reach validateAssistantProposal.
+    expect(LEDGR_ON_DEVICE_WRITE_TOOL_NAMES.every((name) => ASSISTANT_PROPOSAL_TYPES.includes(name))).toBe(true);
   });
 
   it('keeps inventory_count deletes invalid after a Needle-shaped proposal', () => {

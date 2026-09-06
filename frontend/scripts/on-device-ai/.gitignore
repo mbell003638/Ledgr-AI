@@ -4,3 +4,5 @@ needle-ledgr-train-ckpt.pkl.json
 needle-ledgr-train-ckpt.pkl.tmp
 needle-ledgr.jsonl
 checkpoints/
+finetune.log
+checkpoints/
