@@ -9,6 +9,7 @@ import type { AIConfig } from '@/src/db/ai';
 import { recognizeLocalOcr } from '@/src/utils/localOcr';
 import { interpretLocalDocumentText } from '@/src/accountingV2/localDocumentParser';
 import { askBooksOnDevice } from '@/src/accountingV2/onDeviceAsk';
+import { runReadTool } from '@/src/accountingV2/onDeviceReadTools';
 import { listOptionalOnDeviceModels, runOptionalOnDeviceModel } from '@/src/utils/onDeviceLlm';
 import { V2AppService, createAppWriteRouter, createAppMutationRouter, createCloseBooksRouter, stablePartyId, type V2ClosingBalancesImportInput, type V2ScanPartyRequest, type V2ScanTransactionImportInput } from '@/src/accountingV2/appService';
 import { initializeV2Book, accountingBookVersion } from '@/src/accountingV2/appBootstrap';
@@ -1910,7 +1911,7 @@ export const api = {
   askBooks: async (question: string, dataContext: string) => {
     const config = await getAIConfig();
     if (ai.isOnDeviceInterpretation(config) || config.entryHelpOrder === 'device-first') {
-      const onDevice = await askBooksOnDevice(config, question, dataContext);
+      const onDevice = await askBooksOnDevice(config, question, dataContext, runReadTool);
       if (onDevice) return onDevice;
     }
     return ai.askBooks(config, question, dataContext);
