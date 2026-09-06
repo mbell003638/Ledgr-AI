@@ -18,7 +18,8 @@ export type DeviceSpeechCallbacks = {
 
 type NativeSpeechRecognizer = {
   isAvailable?: () => Promise<boolean> | boolean;
-  start: (locale?: string) => Promise<void> | void;
+  start: (locale?: string, onDeviceOnly?: boolean) => Promise<void> | void;
+  isOnDeviceAvailable?: () => Promise<boolean> | boolean;
   cancel?: () => Promise<void> | void;
   stop?: () => Promise<void> | void;
   destroy?: () => Promise<void> | void;
@@ -76,7 +77,7 @@ export async function getDeviceSpeechStatus(): Promise<DeviceSpeechStatus> {
 
 export async function startDeviceSpeechRecognition(
   callbacks: DeviceSpeechCallbacks,
-  options: { locale?: string } = {},
+  options: { locale?: string; onDeviceOnly?: boolean } = {},
 ): Promise<() => Promise<void>> {
   const module = nativeModule();
   if (!module) {
@@ -94,7 +95,7 @@ export async function startDeviceSpeechRecognition(
   ].filter(Boolean) as { remove: () => void }[];
 
   try {
-    await module.start(options.locale);
+    await module.start(options.locale, options.onDeviceOnly === true);
   } catch (error: any) {
     subscriptions.forEach((subscription) => subscription.remove());
     const message = String(error?.message || error || "Could not start speech recognition.");
@@ -122,7 +123,7 @@ export async function cancelDeviceSpeechRecognition(): Promise<void> {
 
 export type DeviceSpeechErrorCode = 'UNAVAILABLE' | 'PERMISSION_DENIED' | 'NETWORK' | 'NO_RESULT' | 'CANCELLED' | 'BUSY' | 'UNKNOWN';
 export class DeviceSpeechError extends Error { readonly code: DeviceSpeechErrorCode; constructor(code: DeviceSpeechErrorCode, message: string) { super(message); this.name = 'DeviceSpeechError'; this.code = code; } }
-export type DeviceSpeechBridge = { isAvailable?: () => boolean | Promise<boolean>; startListening: (options?: { locale?: string; partialResults?: boolean }) => void | Promise<void>; stopListening?: () => void | Promise<void>; cancelListening?: () => void | Promise<void>; addListener: (event: 'partial' | 'result' | 'final' | 'error' | 'end', listener: (payload?: unknown) => void) => { remove: () => void } };
+export type DeviceSpeechBridge = { isAvailable?: () => boolean | Promise<boolean>; startListening: (options?: { locale?: string; partialResults?: boolean; onDeviceOnly?: boolean }) => void | Promise<void>; stopListening?: () => void | Promise<void>; cancelListening?: () => void | Promise<void>; addListener: (event: 'partial' | 'result' | 'final' | 'error' | 'end', listener: (payload?: unknown) => void) => { remove: () => void } };
 function deviceSpeechError(payload: unknown): DeviceSpeechError {
   const rawCode = String((payload as any)?.code || '').toUpperCase();
   const code: DeviceSpeechErrorCode = rawCode.includes('PERMISSION') ? 'PERMISSION_DENIED'
@@ -147,7 +148,7 @@ export function getDeviceSpeechBridge(): DeviceSpeechBridge | undefined {
     isAvailable: module.isAvailable,
     startListening: async (options) => {
       await ensureMicrophonePermission();
-      await module.start(options?.locale);
+      await module.start(options?.locale, options?.onDeviceOnly === true);
     },
     stopListening: module.stop,
     cancelListening: module.cancel,
@@ -158,7 +159,7 @@ export async function isDeviceSpeechAvailable(bridge = getDeviceSpeechBridge()):
 export class DeviceSpeechSession {
   private settled = false; private removers: (() => void)[] = []; private resolvePromise!: (text: string) => void; private rejectPromise!: (error: DeviceSpeechError) => void;
   readonly promise: Promise<string>;
-  constructor(private readonly bridge: DeviceSpeechBridge, options?: { locale?: string }) {
+  constructor(private readonly bridge: DeviceSpeechBridge, options?: { locale?: string; onDeviceOnly?: boolean }) {
     this.promise = new Promise((resolve, reject) => { this.resolvePromise = resolve; this.rejectPromise = reject; });
     const sub = (event: any, fn: (payload?: unknown) => void) => { const x = this.bridge.addListener(event, fn); this.removers.push(() => x.remove()); };
     sub('partial', () => undefined); const finish = (p?: unknown) => { const t = typeof p === 'string' ? p : String((p as any)?.text || ''); if (t.trim()) { this.settled = true; this.cleanup(); this.resolvePromise(t.trim()); } };

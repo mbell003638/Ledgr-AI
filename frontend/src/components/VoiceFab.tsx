@@ -6,7 +6,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useAudioRecorder, RecordingPresets } from "expo-audio";
 import { useTheme } from "@/src/context/ThemeContext";
 import { api } from "@/src/api";
-import { effectiveVoiceProvider } from "@/src/db/ai";
+import { effectiveVoiceProvider, isOnDeviceInterpretation } from "@/src/db/ai";
 import { loadLocationsIfEnabled } from "@/src/components/LocationPicker";
 import { executeAssistantProposal, type AssistantProposalValidationResult } from "@/src/accountingV2/aiActions";
 import { prepareVoiceTransactionDraft } from "@/src/accountingV2/prepareVoiceTransactionDraft";
@@ -120,7 +120,7 @@ export default function VoiceFab({ showFab = true }: { showFab?: boolean } = {})
       const available = bridge ? await isDeviceSpeechAvailable(bridge) : false;
       if (voiceMode === "android-device" || (voiceMode !== "cloud" && available)) {
         if (!bridge || !available) throw new Error("Android device speech recognition is unavailable on this device.");
-        deviceSession.current = new DeviceSpeechSession(bridge);
+        deviceSession.current = new DeviceSpeechSession(bridge, { onDeviceOnly: isOnDeviceInterpretation(config) });
         setPhase("recording");
         deviceSession.current.promise.then(async (txt) => {
           deviceSession.current = null; setTranscript(txt);
