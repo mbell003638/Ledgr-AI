@@ -214,6 +214,7 @@ test("PostgreSQL authorizer rejects a revoked device", async () => {
   const pool = {
     query: async (sql: string) => sql.includes("FROM sync_devices d")
       ? { rows: [{ subject: "user-1", revoked_at: "2026-08-20T00:00:00.000Z", expires_at: "2099-08-20T00:00:00.000Z", enrolled_epoch: "epoch-1", book_epoch: "epoch-1" }] }
+      : sql.includes("sync_memberships") ? { rows: [{ role: "editor" }] }
       : { rows: [] },
   } as any;
   await assert.rejects(() => new PostgresBookAuthorizer(pool).authorize(principal, "book-1", "pull", "device-1"), /revoked/);
@@ -223,6 +224,7 @@ test("PostgreSQL authorizer rejects an expired device enrollment", async () => {
   const pool = {
     query: async (sql: string) => sql.includes("FROM sync_devices d")
       ? { rows: [{ subject: "user-1", revoked_at: null, expires_at: "2020-01-01T00:00:00.000Z", enrolled_epoch: "epoch-1", book_epoch: "epoch-1" }] }
+      : sql.includes("sync_memberships") ? { rows: [{ role: "editor" }] }
       : { rows: [] },
   } as any;
   await assert.rejects(() => new PostgresBookAuthorizer(pool).authorize(principal, "book-1", "pull", "device-1"), /expired/);
@@ -232,7 +234,7 @@ test("PostgreSQL authorizer requires explicit enrollment and records last seen",
   const pullPrincipal = { ...principal, scopes: new Set(["sync:pull"]) };
   const calls: string[] = [];
   const unknownPool = {
-    query: async (sql: string) => { calls.push(sql); return { rows: [] }; },
+    query: async (sql: string) => { calls.push(sql); return sql.includes("sync_memberships") ? { rows: [{ role: "editor" }] } : { rows: [] }; },
   } as any;
   await assert.rejects(() => new PostgresBookAuthorizer(unknownPool).authorize(pullPrincipal, "book-1", "pull", "unknown-device"), /not enrolled/);
   assert.equal(calls.some((sql) => sql.includes("INSERT INTO sync_devices")), false);
@@ -242,10 +244,48 @@ test("PostgreSQL authorizer requires explicit enrollment and records last seen",
     query: async (sql: string) => {
       enrolledCalls.push(sql);
       if (sql.includes("FROM sync_devices d")) return { rows: [{ subject: "user-1", revoked_at: null, expires_at: "2099-08-20T00:00:00.000Z", enrolled_epoch: "epoch-1", book_epoch: "epoch-1" }] };
+      if (sql.includes("sync_memberships")) return { rows: [{ role: "editor" }] };
       return { rows: [] };
     },
   } as any;
   const pushPrincipal = { ...principal, scopes: new Set(["sync:push"]) };
   await new PostgresBookAuthorizer(enrolledPool).authorize(pushPrincipal, "book-1", "push", "device-1");
   assert.equal(enrolledCalls.some((sql) => sql.includes("SET last_seen_at=now()")), true);
+});
+
+test("PostgreSQL authorizer consults membership even when the token claims the book", async () => {
+  // A stale token still listing the book must not outrank a demotion recorded
+  // on the server: the claim is an additional gate, not a substitute for it.
+  const demoted = { ...principal, scopes: new Set(["sync:push"]) };
+  const viewerPool = {
+    query: async (sql: string) => sql.includes("sync_memberships") ? { rows: [{ role: "viewer" }] } : { rows: [] },
+  } as any;
+  await assert.rejects(() => new PostgresBookAuthorizer(viewerPool).authorize(demoted, "book-1", "push"), AuthorizationError);
+
+  // Removed from the book entirely, token unchanged.
+  const removedPool = { query: async () => ({ rows: [] }) } as any;
+  await assert.rejects(() => new PostgresBookAuthorizer(removedPool).authorize(demoted, "book-1", "push"), AuthorizationError);
+
+  // An editor recorded on the server is still allowed.
+  const editorPool = {
+    query: async (sql: string) => sql.includes("sync_memberships") ? { rows: [{ role: "editor" }] } : { rows: [] },
+  } as any;
+  await new PostgresBookAuthorizer(editorPool).authorize(demoted, "book-1", "push");
+});
+
+test("book membership authorizer does not let a broad scope reach an unclaimed book", async () => {
+  // sync:* is a wildcard over actions, not over books.
+  const wideScope = { ...principal, scopes: new Set(["sync:*"]) };
+  assert.throws(() => new BookMembershipAuthorizer().authorize(wideScope, "book-2", "pull"), AuthorizationError);
+  new BookMembershipAuthorizer().authorize(wideScope, "book-1", "push");
+});
+
+test("revision-sensitive commands reject a null baseRevision as well as a missing one", async () => {
+  const arbitrator = new DefaultAccountingArbitrator();
+  for (const baseRevision of [undefined, null]) {
+    await assert.rejects(
+      () => arbitrator.validate({ bookId: "book-1", principal, operations: [{ ...operation({}, "cash.patch"), baseRevision } as any] }),
+      /requires a baseRevision/,
+    );
+  }
 });

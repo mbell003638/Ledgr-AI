@@ -42,7 +42,11 @@ export function stableJson(value: unknown): string {
     if (item === null || typeof item !== "object") return JSON.stringify(item);
     if (Array.isArray(item)) return `[${item.map(order).join(",")}]`;
     const entries = Object.entries(item as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
+      // Codepoint order, deliberately not localeCompare: the client runs under Hermes
+      // with limited ICU and the server under Node with full ICU, so a locale-aware
+      // sort can order the same keys differently and produce two different payload
+      // hashes for one payload, which the receiving side then rejects forever.
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, child]) => `${JSON.stringify(key)}:${order(child)}`);
     return `{${entries.join(",")}}`;
   };

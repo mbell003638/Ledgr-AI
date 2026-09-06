@@ -21,8 +21,14 @@ export class PostgresBookAuthorizer implements Authorizer {
   async authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", deviceId?: string): Promise<void> {
     const global = principal.scopes.has("sync:*");
     const bookClaim = principal.books.has("*") || principal.books.has(bookId);
-    const claimAllowed = global || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
-    if (!claimAllowed) {
+    const scopeAllowed = global || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
+    if (!scopeAllowed) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
+    // A token claim records what the identity provider believed when it issued
+    // the token; sync_memberships records what this server grants right now.
+    // The claim is an additional gate, never a substitute, so a member demoted
+    // to viewer cannot keep pushing on a token that still lists the book.
+    // sync:* stays a deliberate server-operator escape hatch.
+    if (!global) {
       const rows = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id = $1 AND subject = $2", [bookId, principal.subject])).rows;
       const role = rows[0]?.role;
       if (!role || (action === "push" && (role === "viewer" || role === "auditor"))) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
@@ -157,7 +163,14 @@ export class PostgresBookAuthorizer implements Authorizer {
     const role = (await this.pool.query<{ role: string }>("SELECT role FROM sync_memberships WHERE book_id=$1 AND subject=$2", [operation.bookId, principal.subject])).rows[0]?.role;
     if (role === 'owner' || role === 'admin') return;
     const locationIds = operationLocationIds(operation.payload);
-    if (!locationIds.length) return;
+    if (!locationIds.length) {
+      // A book-wide operation carries no locationId, so location scoping cannot
+      // constrain it. Returning early let a member confined to one location
+      // rewrite book configuration and opening balances for the whole book.
+      const scoped = (await this.pool.query<{ location_id: string }>("SELECT location_id FROM sync_membership_locations WHERE book_id=$1 AND subject=$2 LIMIT 1", [operation.bookId, principal.subject])).rows;
+      if (scoped.length) throw new AuthorizationError(`principal is scoped to specific locations and cannot push book-wide operation ${operation.commandType}`);
+      return;
+    }
     const rows = (await this.pool.query<{ location_id: string }>("SELECT location_id FROM sync_membership_locations WHERE book_id=$1 AND subject=$2 AND location_id=ANY($3::text[])", [operation.bookId, principal.subject, locationIds])).rows;
     const allowed = new Set(rows.map((row) => row.location_id));
     const denied = locationIds.find((locationId) => !allowed.has(locationId));

@@ -44,7 +44,10 @@ export class AnonymousAuthenticator implements Authenticator {
 export class BookMembershipAuthorizer implements Authorizer {
   authorize(principal: SyncPrincipal, bookId: string, action: "pull" | "push", _deviceId?: string): void {
     const bookClaim = principal.books.has("*") || principal.books.has(bookId);
-    const allowed = principal.scopes.has("sync:*") || (bookClaim && (action === "pull" || principal.scopes.has(`sync:${action}`)));
+    // sync:* is a wildcard over ACTIONS, not over books: a token claimed for one
+    // book must not reach every book on the server just because it is broadly
+    // scoped. The book claim is required either way.
+    const allowed = bookClaim && (principal.scopes.has("sync:*") || action === "pull" || principal.scopes.has(`sync:${action}`));
     if (!allowed) throw new AuthorizationError(`principal is not authorized to ${action} book ${bookId}`);
   }
 }

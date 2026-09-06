@@ -94,7 +94,11 @@ export class DefaultAccountingArbitrator implements AccountingArbitrator {
       if (operation.actorId !== principal.subject && !principal.scopes.has("sync:act-as")) {
         throw new ArbitrationError("operation actor does not match authenticated principal", "ACTOR_MISMATCH", { opId: operation.opId, aggregateId: operation.aggregateId }, operation);
       }
-      if (REVISION_SENSITIVE_COMMANDS.has(operation.commandType) && operation.baseRevision === undefined) {
+      // `null` is an accepted wire value for baseRevision, and both stores skip the
+      // revision comparison when it is null, so accepting null here would let a
+      // client opt out of optimistic concurrency entirely. validatePeriodClose
+      // already tests both; this is the shape every revision-sensitive command needs.
+      if (REVISION_SENSITIVE_COMMANDS.has(operation.commandType) && (operation.baseRevision === undefined || operation.baseRevision === null)) {
         throw new ArbitrationError(`${operation.commandType} requires a baseRevision`);
       }
       if (operation.commandType === "journal.post" || operation.commandType === "journal.create") this.validateJournal(operation);
