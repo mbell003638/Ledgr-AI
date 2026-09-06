@@ -156,19 +156,226 @@ const tails = ['please', 'now', 'for this shop', 'this year', 'quickly', 'in Led
 for (const q of questions) {
   for (const tail of tails) add(`${q} ${tail}`, []);
 }
+// ---- write tools that were declared but never trained ----------------------
+// add_debtor_payment, update_entry and delete_entry have been in the tool list
+// all along with zero examples behind them, so the model could never emit them.
+for (const party of parties) {
+  for (const amount of amounts.slice(0, 12)) {
+    add(`${party} paid ${amount}`, call('add_debtor_payment', { name: party, amount }));
+    add(`received ${amount} from ${party}`, call('add_debtor_payment', { name: party, amount }));
+    for (const method of methods) {
+      add(`${party} paid ${amount} by ${method}`, call('add_debtor_payment', { name: party, amount, method }));
+    }
+  }
+}
+const entities = ['expense', 'sale', 'bill', 'invoice', 'receipt', 'supplier_payment'];
+for (const entity of entities) {
+  for (const amount of amounts.slice(0, 10)) {
+    add(`change that ${entity} to ${amount}`, call('update_entry', { entity, changes: { amount } }));
+    add(`correct the ${entity} amount to ${amount}`, call('update_entry', { entity, changes: { amount } }));
+    add(`edit last ${entity} amount ${amount}`, call('update_entry', { entity, changes: { amount } }));
+  }
+  add(`delete that ${entity}`, call('delete_entry', { entity }));
+  add(`remove the last ${entity}`, call('delete_entry', { entity }));
+  add(`cancel that ${entity}`, call('delete_entry', { entity }));
+}
+
+// ---- workflow tools (marketplace, projects, creator, manufacturing, trade) --
+// These 15 were declared in ASSISTANT_PROPOSAL_TYPES and validated by
+// validateAssistantProposal, but were never in the on-device tool list, so the
+// model had no way to reach any of them.
+const platforms = ['amazon', 'flipkart', 'shopify', 'etsy', 'meesho'];
+const brands = ['Nova', 'Zephyr', 'Lumen', 'Orbit'];
+const kinds = ['freight', 'duty', 'insurance', 'handling'];
+for (const platform of platforms) {
+  for (const amount of amounts.slice(0, 10)) {
+    const id = `${platform.slice(0, 2).toUpperCase()}${amount}`;
+    add(`${platform} order ${id} for ${amount}`, call('create_marketplace_order', { platform, externalOrderId: id, gross: amount }));
+    add(`new ${platform} sale ${id} ${amount}`, call('create_marketplace_order', { platform, externalOrderId: id, gross: amount }));
+    add(`refund ${amount} on order ${id}`, call('record_marketplace_refund', { orderId: id, amount }));
+    add(`customer returned order ${id} fee ${amount}`, call('record_marketplace_rto', { orderId: id, fee: amount }));
+    add(`${platform} payout ${amount} settlement S${amount}`, call('create_marketplace_settlement', { platform, settlementId: `S${amount}`, payout: amount }));
+  }
+}
+for (const party of parties) {
+  for (const amount of amounts.slice(0, 8)) {
+    add(`start project ${party} budget ${amount}`, call('create_project', { name: party, budget: amount }));
+    add(`new project ${party}`, call('create_project', { name: party }));
+    add(`log ${amount} hours on project ${party}`, call('add_project_time', { projectId: party, hours: amount }));
+    add(`project ${party} cost ${amount}`, call('record_project_cost', { projectId: party, amount }));
+  }
+}
+for (const brand of brands) {
+  for (const amount of amounts.slice(0, 8)) {
+    add(`contract with ${brand} campaign summer for ${amount}`, call('create_creator_contract', { brand, campaign: 'summer', agreedAmount: amount }));
+    add(`${brand} deal ${amount}`, call('create_creator_contract', { brand, campaign: 'general', agreedAmount: amount }));
+    add(`payout ${amount} on contract ${brand}`, call('record_creator_payout', { contractId: brand, amount }));
+  }
+}
+for (const amount of amounts.slice(0, 10)) {
+  add(`create bom for product P${amount} called kit`, call('create_bom', { productId: `P${amount}`, name: 'kit' }));
+  add(`add component C${amount} quantity ${amount} to bom B1`, call('add_bom_line', { bomId: 'B1', componentProductId: `C${amount}`, quantity: amount }));
+  add(`produce ${amount} from bom B1`, call('create_production_order', { bomId: 'B1', quantity: amount }));
+  add(`production order B1 quantity ${amount}`, call('create_production_order', { bomId: 'B1', quantity: amount }));
+  add(`import shipment REF${amount} worth ${amount}`, call('create_trade_shipment', { reference: `REF${amount}`, direction: 'import', goodsValue: amount }));
+  add(`export shipment REF${amount}`, call('create_trade_shipment', { reference: `REF${amount}`, direction: 'export' }));
+  for (const kind of kinds) {
+    add(`${kind} ${amount} on shipment REF${amount}`, call('add_trade_landed_cost', { shipmentId: `REF${amount}`, kind, amount }));
+  }
+  add(`fx gain ${amount}`, call('record_fx_remeasurement', { gainLoss: 'gain', amount }));
+  add(`fx loss ${amount}`, call('record_fx_remeasurement', { gainLoss: 'loss', amount }));
+  add(`exchange rate loss of ${amount}`, call('record_fx_remeasurement', { gainLoss: 'loss', amount }));
+}
+
+// ---- read tools -------------------------------------------------------------
+// The write tools above record things; these let the model answer a question
+// instead of only acting. Without them "how much does Amit owe" has no tool to
+// reach for and the assistant looks like it does not know the app.
+const reports = [
+  ['profit and loss', 'profit_and_loss'], ['p and l', 'profit_and_loss'], ['profit', 'profit_and_loss'],
+  ['balance sheet', 'balance_sheet'], ['cash flow', 'cash_flow'], ['trial balance', 'trial_balance'],
+];
+const ranges = [
+  ['this month', 'month'], ['last month', 'last_month'], ['this year', 'year'], ['today', 'today'],
+];
+for (const [spoken, report] of reports) {
+  for (const [phrase, range] of ranges) {
+    add(`show ${spoken} ${phrase}`, call('report_query', { report, from: range, to: range }));
+    add(`what is my ${spoken} ${phrase}`, call('report_query', { report, from: range, to: range }));
+    add(`${spoken} report ${phrase}`, call('report_query', { report, from: range, to: range }));
+  }
+  add(`show ${spoken}`, call('report_query', { report }));
+}
+for (const party of parties) {
+  add(`how much does ${party} owe`, call('party_lookup', { query: party, role: 'customer' }));
+  add(`how much do we owe ${party}`, call('party_lookup', { query: party, role: 'supplier' }));
+  add(`balance for ${party}`, call('party_lookup', { query: party }));
+  add(`find ${party}`, call('party_lookup', { query: party }));
+  add(`${party} account`, call('party_lookup', { query: party }));
+  add(`show me ${party} ledger`, call('party_lookup', { query: party }));
+}
+for (const [phrase, range] of ranges) {
+  add(`stock profit ${phrase}`, call('inventory_profit', { from: range, to: range }));
+  add(`inventory profit ${phrase}`, call('inventory_profit', { from: range, to: range }));
+  add(`gross margin ${phrase}`, call('inventory_profit', { from: range, to: range }));
+}
+for (const phrase of [
+  'what can you do', 'what can this app do', 'what do you know about this app',
+  'help', 'what features are on', 'which workflows are enabled', 'what is ledgr',
+]) {
+  add(phrase, call('describe_capabilities', {}));
+}
+
 for (const party of parties) {
   for (const category of categories) {
     add(`did I record ${category} for ${party}`, []);
   }
 }
 
+// ---- refusals ---------------------------------------------------------------
+// Teaching the model when NOT to call a tool matters as much as when to. Too
+// few negatives and it fires on greetings, questions and half-finished thoughts.
+for (const phrase of [
+  'hi', 'hello', 'hey there', 'good morning', 'thanks', 'thank you', 'ok', 'never mind',
+  'how are you', 'are you there', 'testing', 'what', 'huh', 'sorry',
+  'i paid', 'paid', 'add', 'record', 'create', 'delete', 'update it', 'change it',
+  'paid to', 'sold to', 'bill from', 'expense of', 'amount', 'yesterday', 'today',
+  'is that right', 'did it save', 'is it done', 'show me', 'open it', 'go back',
+  'what should i do', 'i am not sure', 'maybe later', 'call my accountant',
+  'what is the weather', 'tell me a joke', 'who won the match', 'set an alarm',
+  'send a whatsapp', 'call amit', 'email the invoice to someone',
+]) {
+  add(phrase, []);
+  for (const lead of ['please ', 'can you ', 'hey ']) add(lead + phrase, []);
+}
+for (const party of parties) {
+  add(`about ${party}`, []);
+  add(`${party}`, []);
+  add(`something for ${party}`, []);
+  add(`did ${party} pay`, []);
+}
+for (const amount of amounts) {
+  add(`${amount}`, []);
+  add(`about ${amount}`, []);
+  add(`maybe ${amount} or so`, []);
+}
+
+// ---- phrasing augmentation --------------------------------------------------
+// Real users do not speak in clean commands. They say "please", "can you",
+// "hey", they trail off, and they answer a question with the request restated.
+// Training only on terse forms is why "Yes create amit account and paid 100$"
+// missed. Every generated row gets natural variants of the same call.
+const LEAD_INS = ['please ', 'can you ', 'could you ', 'hey ', 'ok ', 'yes ', 'i want to ', 'i need to ', 'help me '];
+const TAIL_ONS = [' please', ' thanks', ' today', ' now', ' for me'];
+
+{
+  const base = rows.slice();
+  for (const row of base) {
+    // Negatives are augmented too: "please" in front of a half-finished thought
+    // is still a half-finished thought, and skipping them left refusals at ~1%
+    // of the set, which teaches the model to fire on almost anything.
+    for (const lead of LEAD_INS) add(lead + row.query, row.answers);
+    for (const tail of TAIL_ONS) add(row.query + tail, row.answers);
+    add(row.query.charAt(0).toUpperCase() + row.query.slice(1), row.answers);
+    add(row.query.replace(/(\d+)/, '$$$1'), row.answers);
+  }
+  // More ways to ask what the app is, so the answer never falls through to the
+  // generic "returned nothing usable".
+  for (const phrase of [
+    'what can you do', 'what can this app do', 'what do you know about this app',
+    'what is ledgr', 'what does ledgr do', 'who are you', 'what are you',
+    'tell me about this app', 'what features do i have', 'what is enabled',
+    'which workflows are on', 'what can i ask you', 'how can you help',
+    'what are your abilities', 'list your tools', 'what do you support',
+    'capabilities', 'features', 'help', 'help me understand this app',
+  ]) {
+    add(phrase, call('describe_capabilities', {}));
+    for (const lead of LEAD_INS) add(lead + phrase, call('describe_capabilities', {}));
+  }
+}
+
+// push(...array) passes every element as an argument, which overflows the call
+// stack once the dataset reaches six figures. Append in place instead.
+function pushAll(target, source) {
+  for (let i = 0; i < source.length; i += 1) target.push(source[i]);
+  return target;
+}
+
 if (rows.length > TARGET) {
+  // Trim stratified by tool, not by insertion order. Slicing the first N rows
+  // silently dropped every example for tools generated last -- the read tools
+  // ended up with zero rows in a 10k dataset, so the model could never learn
+  // to call them however the runtime declared them.
   const negatives = rows.filter((row) => row.answers.length === 0);
-  const rest = rows.filter((row) => row.answers.length > 0);
   const refuseKeep = Math.min(negatives.length, Math.floor(TARGET * 0.15));
   const callKeep = TARGET - refuseKeep;
+
+  const byTool = new Map();
+  for (const row of rows) {
+    if (!row.answers.length) continue;
+    const name = row.answers[0].name;
+    if (!byTool.has(name)) byTool.set(name, []);
+    byTool.get(name).push(row);
+  }
+
+  const kept = [];
+  const buckets = [...byTool.values()];
+  const perTool = Math.max(1, Math.floor(callKeep / Math.max(1, buckets.length)));
+  for (const bucket of buckets) pushAll(kept, bucket.slice(0, perTool));
+  // Fill any remaining budget round-robin so common tools stay well covered.
+  let cursor = perTool;
+  while (kept.length < callKeep) {
+    let added = false;
+    for (const bucket of buckets) {
+      if (cursor < bucket.length && kept.length < callKeep) { kept.push(bucket[cursor]); added = true; }
+    }
+    if (!added) break;
+    cursor += 1;
+  }
+
   rows.length = 0;
-  rows.push(...negatives.slice(0, refuseKeep), ...rest.slice(0, callKeep));
+  pushAll(rows, negatives.slice(0, refuseKeep));
+  pushAll(rows, kept);
 }
 
 const out = path.join(root, 'needle-ledgr.jsonl');

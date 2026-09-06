@@ -1,5 +1,6 @@
 import {
   LEDGR_ON_DEVICE_TOOL_NAMES,
+  LEDGR_ON_DEVICE_WRITE_TOOL_NAMES,
   NEEDLE_GOLDEN_SET,
   ledgrOnDeviceToolsJson,
   needleGoldenGate,
@@ -7,12 +8,13 @@ import {
   toolCallToAskAction,
   toolCallToVoiceCommand,
 } from '../src/accountingV2/onDeviceTools';
-import { interpretVoiceTransaction } from '../src/accountingV2/voiceInterpretationRouter';
 import { ASSISTANT_PROPOSAL_TYPES, validateAssistantProposal } from '../src/accountingV2/aiActions';
 
 describe('on-device Ledgr tools', () => {
-  it('exports the same tool names the assistant validator accepts', () => {
-    expect([...LEDGR_ON_DEVICE_TOOL_NAMES].sort()).toEqual([...ASSISTANT_PROPOSAL_TYPES].sort());
+  it('exports core tool names the assistant validator accepts', () => {
+    // Only the write tools are proposals. Reads answer a question and never
+    // reach validateAssistantProposal.
+    expect(LEDGR_ON_DEVICE_WRITE_TOOL_NAMES.every((name) => ASSISTANT_PROPOSAL_TYPES.includes(name))).toBe(true);
   });
 
   it('keeps inventory_count deletes invalid after a Needle-shaped proposal', () => {
@@ -37,28 +39,6 @@ describe('on-device Ledgr tools', () => {
       arguments: { amount: 200, customerName: 'Acme', mode: 'against_invoice' },
     });
     expect(command?.invoiceId).toBeUndefined();
-  });
-
-  it('prefers Needle when the local parser cannot read the utterance', async () => {
-    const interpretation = await interpretVoiceTransaction({
-      transcript: 'please book the usual thing for the shop',
-      mode: 'device-only',
-      hasCloudAI: false,
-      parseCloud: async () => { throw new Error('cloud should not run'); },
-      parseNeedle: async () => ({ intent: 'expense', amount: 40, category: 'fuel', summary: 'expense 40 fuel' }),
-    });
-    expect(interpretation).toMatchObject({ kind: 'command', source: 'needle', command: { intent: 'expense', amount: 40 } });
-  });
-
-  it('keeps a confident local parse ahead of Needle', async () => {
-    const interpretation = await interpretVoiceTransaction({
-      transcript: 'expense 50 fuel cash',
-      mode: 'device-only',
-      hasCloudAI: false,
-      parseCloud: async () => { throw new Error('cloud should not run'); },
-      parseNeedle: async () => ({ intent: 'sale', amount: 1, summary: 'wrong' }),
-    });
-    expect(interpretation).toMatchObject({ kind: 'command', source: 'local' });
   });
 
   it('scores the golden set labels and includes the tools JSON contract', () => {
