@@ -385,7 +385,11 @@ describe('V2 UI contracts', () => {
     expect(source).not.toContain('behavior={Platform.OS === "ios" ? "padding" : "height"}');
     expect(source).toContain('testID="ask-pending-action-card"');
     expect(source).toContain('submitBehavior="submit"');
-    expect(source).toContain('onSubmitEditing={() => send(input)}');
+    // Reading `input` from the render closure dropped the IME's last word when
+    // the send button blurred the field, so the ref is the source of truth.
+    expect(source).toContain('onSubmitEditing={() => send(inputRef.current)}');
+    expect(source).toContain('onChangeText={updateInput}');
+    expect(source).not.toContain('send(input)');
     expect(source).toContain('keyboardDismissMode="on-drag"');
     expect(source).toContain('setKeyboardHeight(height)');
     expect(source).toContain('composerBottomPad');
