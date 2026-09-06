@@ -1,3 +1,6 @@
+// Must be first: Hermes has no Web Crypto, and every sync key, nonce and
+// pairing secret is generated through crypto.getRandomValues.
+import "@/src/utils/cryptoPolyfill";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";

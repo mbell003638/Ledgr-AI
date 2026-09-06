@@ -5,10 +5,10 @@ function randomBytes(size: number): Uint8Array {
     cryptoImpl.getRandomValues(bytes);
     return bytes;
   }
-  // Expo's supported release runtimes expose Web Crypto. This fallback only
-  // keeps legacy/test environments usable; sync-capable builds should use CSPRNG.
-  for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-  return bytes;
+  // Falling back to Math.random() made operation and conflict ids predictable
+  // while looking like it worked. src/utils/cryptoPolyfill installs a CSPRNG at
+  // app start, so reaching here means the polyfill did not run.
+  throw new Error('Secure random values are unavailable: crypto.getRandomValues is not installed.');
 }
 
 function hex(bytes: Uint8Array): string {
