@@ -89,18 +89,23 @@ export function ledgrOnDeviceToolsJson(partyHints: string[] = []): string {
       parameters: { type: 'object', additionalProperties: true },
     },
   }));
-  return JSON.stringify({
-    tools,
-    partyHints: partyHints.slice(0, 12),
-    date: localTodayIso(),
-    rules: [
-      'Call exactly one tool or none.',
-      'Never invent invoice IDs, entry IDs, or amounts.',
-      'Do not delete or update inventory_count.',
-      'Do not delete customer or supplier records.',
-      'If several unpaid invoices could match, call nothing.',
-    ],
-  });
+  // needle_init takes a JSON ARRAY of tool definitions -- the JNI wrapper's own
+  // fallback when the argument is null is the literal "[]". Passing an object
+  // with tools/partyHints/date/rules made every init fail, which surfaced in
+  // Ask AI as "Needle could not load the Ledgr tool list". The context that
+  // used to ride along in that object now goes in with the transcript.
+  return JSON.stringify(tools);
+}
+
+/** Per-call context for Needle: the tool list itself carries no state. */
+export function ledgrOnDeviceToolContext(partyHints: string[] = []): string {
+  return [
+    `DATE: ${localTodayIso()}`,
+    partyHints.length ? `KNOWN PARTIES: ${partyHints.slice(0, 12).join(', ')}` : '',
+    'RULES: Call exactly one tool or none. Never invent invoice IDs, entry IDs, or amounts.',
+    'Do not delete or update inventory_count. Do not delete customer or supplier records.',
+    'If several unpaid invoices could match, call nothing.',
+  ].filter(Boolean).join('\n');
 }
 
 function toolDescription(name: LedgrOnDeviceToolName): string {
