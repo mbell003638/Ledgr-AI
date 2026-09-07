@@ -85,6 +85,11 @@ def _to_numpy(tree):
 
 
 def _to_jax(tree):
+    # `import jax.numpy as jnp` binds only `jnp`, not `jax`, so jax.tree.map
+    # below raised NameError. _to_numpy (the save path) imports jax and worked,
+    # which is why checkpoints were written happily and could never be restored:
+    # every resume died here before the first step.
+    import jax
     import jax.numpy as jnp
     return jax.tree.map(lambda x: jnp.asarray(x) if isinstance(x, np.ndarray) else x, tree)
 
